@@ -268,6 +268,47 @@ test_spaced_filename(){
     || bad "spaced-filename: doc with a space in its path is still scanned (false green!)" "$out"
 }
 
+# --- 19. Edge hardening: embed-fence collision, CRLF manifest, indented embed -
+test_edge_hardening(){
+  local t out; t="$(newrepo)"
+  # (a) embed source range containing a ``` fence: must refuse, never corrupt, converge
+  ( cd "$t" || exit 1
+    mkdir -p src docs
+    printf 'fn a() {}\n```\nfn b() {}\n' > src/x.txt
+    printf '# Doc\n<!-- evergreen:embed src/x.txt:1-3 -->\n```rust\nfn a() {}\n```\nprose tail\n' > docs/g.md
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'contains a code fence' && ! printf '%s' "$out" | grep -q 'has drifted' \
+    && ok "embed: source containing a fence is refused (not mis-reported as drift)" || bad "embed: fence-collision refused" "$out"
+  cp "$t/docs/g.md" "$t/.before"
+  ( cd "$t" && bash "$SCAN" --fix >/dev/null 2>&1 )
+  cmp -s "$t/.before" "$t/docs/g.md" && ok "embed: --fix leaves a fence-containing embed UNCHANGED (no corruption)" || bad "embed: --fix corrupted doc"
+  rm -rf "$t"
+
+  # (b) CRLF in manifest must not cause a false needs_reverify
+  t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src docs; printf 'v1\n' > src/a.py; printf '# d\n' > docs/a.md
+    printf 'docs/a.md\tsrc/a.py\t%s\r\n' "$(git hash-object src/a.py)" > .evergreen-manifest
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'no drift' && ok "manifest: CRLF line is tolerated (no false needs_reverify)" || bad "manifest: CRLF false positive" "$out"
+  rm -rf "$t"
+
+  # (c) embed marker/fence indented in a list is still detected
+  t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src docs; printf 'A\nB\nC\n' > src/s.txt
+    printf '# Doc\n1. item\n   <!-- evergreen:embed src/s.txt:1-2 -->\n   ```\n   A\n   WRONG\n   ```\n' > docs/g.md
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'drifted from source' && ok "embed: indented (list) embed is detected" || bad "embed: indented embed detected" "$out"
+  rm -rf "$t"
+}
+
 # --- 18. --fix applies derivable fixes only; never edits prose ---------------
 test_fix_engine(){
   local t out; t="$(newrepo)"
@@ -490,6 +531,7 @@ test_embed
 test_manifest
 test_coverage
 test_fix_engine
+test_edge_hardening
 test_args
 
 echo "----------------------------------------"

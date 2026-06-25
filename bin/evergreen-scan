@@ -173,9 +173,10 @@ embed_source(){ [ -f "$1" ] || return 1; awk -v s="$2" -v e="$3" 'NR>=s&&NR<=e' 
 # rewriting it from source (mode=fix). Shared 3-state machine: 0 normal, 1 awaiting the
 # opening fence, 2 inside the block body.
 embed_one(){
-  local doc="$1" mode="$2" line spec src rng start end want body exp tmp
+  local doc="$1" mode="$2" line trimmed spec src rng start end want body exp tmp
   want=0; body=""; tmp="$(mktemp)"
   while IFS= read -r line; do
+    trimmed="${line#"${line%%[![:space:]]*}"}"   # tolerate indented markers/fences (CommonMark lists)
     case $want in
       0) [ "$mode" = fix ] && printf '%s\n' "$line" >> "$tmp"
          case "$line" in *'evergreen:embed'*)
@@ -185,12 +186,19 @@ embed_one(){
             case "$start$end" in ''|*[!0-9]*) want=0;; *) want=1;; esac;;
          esac;;
       1) [ "$mode" = fix ] && printf '%s\n' "$line" >> "$tmp"
-         case "$line" in '```'*) want=2; body="";; '') ;; *) want=0;; esac;;
-      2) case "$line" in
+         case "$trimmed" in '```'*) want=2; body="";; '') ;; *) want=0;; esac;;
+      2) case "$trimmed" in
            '```'*)
              if exp="$(embed_source "$src" "$start" "$end")"; then
-               [ "$mode" = check ] && { [ "${body%$'\n'}" != "$exp" ] && emit in_docs_not_code high "$doc" "embedded snippet from \`$src:$start-$end\` has drifted from source"; }
-               [ "$mode" = fix ] && printf '%s\n' "$exp" >> "$tmp"
+               if printf '%s\n' "$exp" | grep -q '^[[:space:]]*```'; then
+                 # the source range itself contains a fence line; writing it would break the
+                 # markdown block and never converge — refuse, leave the body untouched.
+                 [ "$mode" = check ] && emit in_docs_not_code high "$doc" "embed source \`$src:$start-$end\` contains a code fence — cannot embed safely (narrow the range)"
+                 [ "$mode" = fix ] && printf '%s' "$body" >> "$tmp"
+               else
+                 [ "$mode" = check ] && { [ "${body%$'\n'}" != "$exp" ] && emit in_docs_not_code high "$doc" "embedded snippet from \`$src:$start-$end\` has drifted from source"; }
+                 [ "$mode" = fix ] && printf '%s\n' "$exp" >> "$tmp"
+               fi
              else
                [ "$mode" = check ] && emit in_docs_not_code high "$doc" "embed source \`$src\` missing or range $start-$end invalid"
                [ "$mode" = fix ] && printf '%s' "$body" >> "$tmp"
@@ -219,6 +227,7 @@ scan_manifest(){
   [ -f "$MANIFEST" ] || return 0
   local doc src sha cur
   while IFS=$'\t' read -r doc src sha || [ -n "${doc:-}" ]; do
+    sha="${sha%$'\r'}"   # tolerate CRLF (Windows-edited manifest) — else SHAs never match
     case "$doc" in ''|'#'*) continue;; esac
     [ -n "$src" ] && [ -n "$sha" ] || continue
     if [ ! -f "$src" ]; then emit in_docs_not_code high "$doc" "manifest source \`$src\` no longer exists"; continue; fi
