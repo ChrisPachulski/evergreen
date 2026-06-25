@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# evergreen-scan — deterministic, zero-LLM documentation-drift detector.
+# Portable (bash 3.2+, git, grep, awk). Runs in any repo, any language.
+#
+# Signals (cheapest, most-reliable first — see docs/DESIGN.md for prior-art credit):
+#   1. doc-named path existence  : a path a doc names but that no longer exists  -> in_docs_not_code
+#   2. rename cross-reference    : a doc still cites a path git just renamed/deleted -> in_docs_not_code
+#   3. contract existence        : a CLI flag/env var a doc documents but no code uses -> in_docs_not_code
+#   4. runnable example (opt-in) : a fenced block tagged `evergreen` that exits nonzero -> in_docs_not_code
+#
+# Exit: 0 = clean; 2 = findings at/above --fail-level (for hooks/CI); 1 = usage/error.
+# NB: no `set -e`/`pipefail` — grep returns 1 on no-match (normal here); exit codes are explicit.
+set -u
+
+BASE=""                       # git ref to diff against (default: auto)
+MODE="human"                  # human | json
+FAIL_LEVEL="high"             # none|low|medium|high — min severity that exits nonzero in --ci
+CI=0
+# Doc files we gate.
+DOC_GLOB='(^|/)(README|CHANGELOG|CONTRIBUTING)[^/]*\.(md|markdown)$|(^|/)docs?/.*\.(md|markdown|rst)$'
+# A doc-named path is only validated if it (a) starts with a REAL top-level tracked
+# dir in THIS repo (kills URL paths like api/iptv/health, frameworks like lib/CryptoKit,
+# and sibling-repo refs like server/routes/x.ts) AND (b) looks like a file (known
+# extension). This is the false-positive discipline: a noisy detector gets ignored.
+EXT='\.(swift|ts|tsx|js|jsx|mjs|cjs|rs|go|py|rb|java|kt|kts|c|h|cc|cpp|hpp|m|mm|cs|php|scala|ex|exs|md|markdown|rst|ya?ml|json|toml|sh|bash|sql|proto|graphql)$'
+# Doc subtrees that are aspirational by nature and exempt from gating (ponytail: specs lead code).
+EXEMPT='/specs?/|/adr/|/rfcs?/|/proposals?/'
+
+usage(){ echo "usage: evergreen-scan [--base REF] [--json] [--ci] [--fail-level L] [--selftest]"; exit 1; }
+[ -f .evergreen.sh ] && . ./.evergreen.sh   # optional per-repo overrides
+
+while [ $# -gt 0 ]; do case "$1" in
+  --base) BASE="$2"; shift 2;;
+  --json) MODE="json"; shift;;
+  --ci) CI=1; shift;;
+  --fail-level) FAIL_LEVEL="$2"; shift 2;;
+  --selftest) shift; exec "$0" __selftest "$@";;
+  __selftest) RUN_SELFTEST=1; shift;;
+  -h|--help) usage;;
+  *) echo "unknown arg: $1" >&2; usage;;
+esac; done
+
+sev_rank(){ case "$1" in none) echo 0;; low) echo 1;; medium) echo 2;; high) echo 3;; *) echo 3;; esac; }
+
+# ---- finding sink: category \t severity \t file \t detail ------------------
+FIND="$(mktemp)"; trap 'rm -f "$FIND"' EXIT
+emit(){ printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$FIND"; }
+
+default_base(){
+  if [ -n "$BASE" ]; then echo "$BASE"; return; fi
+  if git rev-parse --verify -q origin/main >/dev/null; then echo origin/main
+  elif git rev-parse --verify -q HEAD~1 >/dev/null; then echo HEAD~1
+  else echo ""; fi
+}
+
+doc_files(){ git ls-files | grep -Ei "$DOC_GLOB" | grep -Ev "$EXEMPT" || true; }
+
+# Real top-level tracked dirs in THIS repo (override CODE_ROOTS in .evergreen.sh to pin).
+top_roots(){ if [ -n "${CODE_ROOTS:-}" ]; then echo "$CODE_ROOTS"; else git ls-files | awk -F/ 'NF>1{print $1}' | sort -u | paste -sd'|' -; fi; }
+
+# Signal 1: every file-like, in-repo path a doc names must exist on disk (or be tracked).
+scan_path_existence(){
+  local doc p roots; roots="$(top_roots)"; [ -n "$roots" ] || return 0
+  for doc in $(doc_files); do
+    grep -oE "($roots)/[A-Za-z0-9_./-]+" "$doc" 2>/dev/null | sort -u | while read -r p; do
+      p="${p%%[).,\`\"]}"; case "$p" in */) p="${p%/}";; esac
+      printf '%s' "$p" | grep -qiE "$EXT" || continue          # must look like a file
+      [ -e "$p" ] && continue                                   # exists on disk
+      git ls-files --error-unmatch "$p" >/dev/null 2>&1 && continue  # tracked
+      emit in_docs_not_code high "$doc" "names \`$p\` which does not exist on disk"
+    done
+  done
+}
+
+# Signal 2: docs that still cite a path git renamed/deleted since BASE.
+scan_renames(){
+  local base="$1" status old new doc
+  [ -n "$base" ] || return 0
+  git diff --name-status --find-renames=50 "$base" HEAD 2>/dev/null | while IFS=$'\t' read -r status old new; do
+    case "$status" in
+      R*) for doc in $(doc_files); do grep -q -- "$old" "$doc" 2>/dev/null && emit in_docs_not_code high "$doc" "cites \`$old\` which was renamed to \`$new\`"; done;;
+      D)  for doc in $(doc_files); do grep -q -- "$old" "$doc" 2>/dev/null && emit in_docs_not_code high "$doc" "cites \`$old\` which was deleted"; done;;
+    esac
+  done
+}
+
+# Signal 3: doc-documented CLI flags / env vars that no longer exist anywhere in code.
+# High precision by construction: flags must be `--word` shaped; env/config tokens must
+# be UPPER_SNAKE with an underscore (kills prose all-caps like JSON, MIT, HTTP, README).
+# Match is plain-string against tracked NON-doc files only — a token living only in docs
+# is still drift. ponytail: O(tokens × files) grep; fine at repo scale, pre-filter if huge.
+scan_contract(){
+  local doc tok codelist
+  codelist="$(mktemp)"; git ls-files -z 2>/dev/null | grep -zEiv "$DOC_GLOB" > "$codelist"
+  [ -s "$codelist" ] || { rm -f "$codelist"; return 0; }
+  in_code(){ [ -n "$(xargs -0 grep -lF -- "$1" < "$codelist" 2>/dev/null | head -1)" ]; }
+  for doc in $(doc_files); do
+    grep -oE -- '--[a-z][a-z0-9]+[a-z0-9-]*' "$doc" 2>/dev/null | sort -u | while read -r tok; do
+      in_code "$tok" || emit in_docs_not_code high "$doc" "documents flag \`$tok\` not found in code"
+    done
+    grep -oE '\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b' "$doc" 2>/dev/null | sort -u | while read -r tok; do
+      in_code "$tok" || emit in_docs_not_code medium "$doc" "documents env/config \`$tok\` not found in code"
+    done
+  done
+  rm -f "$codelist"
+}
+
+# Signal 4 (opt-in): execute fenced blocks whose info string contains `evergreen`; a
+# nonzero exit is ground truth. Opt-in ONLY — running arbitrary doc code is unsafe, so a
+# block runs solely when its author tagged it. Each runs in a throwaway dir, never the repo.
+scan_examples(){
+  command -v bash >/dev/null 2>&1 || return 0
+  local doc line inblk blk n rc tmp
+  for doc in $(doc_files); do
+    inblk=0; blk=""; n=0
+    while IFS= read -r line; do
+      case "$line" in
+        '```'*evergreen*) inblk=1; blk=""; n=$((n+1)); continue;;
+        '```'*) [ "$inblk" = 1 ] || continue
+                inblk=0; tmp="$(mktemp -d)"; rc=0
+                ( cd "$tmp" && bash -c "$blk" ) >/dev/null 2>&1 || rc=$?
+                rm -rf "$tmp"
+                [ "$rc" -ne 0 ] && emit in_docs_not_code high "$doc" "runnable example #$n exits nonzero ($rc)"
+                continue;;
+      esac
+      [ "$inblk" = 1 ] && blk="$blk$line
+"
+    done < "$doc"
+  done
+}
+
+run_scan(){
+  local base; base="$(default_base)"
+  scan_path_existence
+  scan_renames "$base"
+  scan_contract
+  scan_examples
+}
+
+render(){
+  local total worst; total=$(wc -l < "$FIND" | tr -d ' '); worst=0
+  if [ "$MODE" = json ]; then
+    printf '{"findings":['
+    awk -F'\t' 'NR>1{printf ","} {gsub(/"/,"\\\"",$4); printf "{\"category\":\"%s\",\"severity\":\"%s\",\"file\":\"%s\",\"detail\":\"%s\"}",$1,$2,$3,$4}' "$FIND"
+    printf '],"count":%s}\n' "$total"
+  else
+    if [ "$total" -eq 0 ]; then echo "✓ evergreen: no drift detected"; else
+      echo "evergreen: $total finding(s)"
+      sort -t$'\t' -k1,1 "$FIND" | while IFS=$'\t' read -r c s f d; do
+        printf "  [%s] %-18s %s — %s\n" "$s" "$c" "$f" "$d"
+      done
+    fi
+  fi
+  # exit code for --ci
+  if [ "$CI" -eq 1 ]; then
+    local need; need=$(sev_rank "$FAIL_LEVEL")
+    while IFS=$'\t' read -r c s f d; do [ "$(sev_rank "$s")" -ge "$need" ] && worst=1; done < "$FIND"
+    [ "$worst" -eq 1 ] && exit 2
+  fi
+}
+
+# ---- self-test: build a throwaway repo with known drift, assert detection ----
+selftest(){
+  local t; t="$(mktemp -d)"; ( cd "$t"
+    git init -q; git config user.email t@t; git config user.name t
+    mkdir -p src docs
+    printf 'let x = "--real-flag"\n' > src/keep.swift   # --real-flag IS in code: must NOT flag
+    {
+      printf '# Doc\n'
+      printf 'See `src/keep.swift` and `src/GONE.swift`.\n'      # rung 1: GONE.swift missing
+      printf 'Run with `--real-flag` or `--ghost-flag`.\n'        # rung 3: --ghost-flag absent
+      printf 'Set `REAL_VAR` (in code) but not `GHOST_VAR`.\n'    # rung 3: GHOST_VAR absent
+      printf '\n```bash evergreen\nexit 7\n```\n'                 # rung 4: opt-in block fails
+    } > docs/guide.md
+    printf 'REAL_VAR=1\n' >> src/keep.swift
+    git add -A; git commit -qm init
+    git mv src/keep.swift src/renamed.swift; git commit -qm rename
+  )
+  local out; out="$(cd "$t" && bash "$SELF" --base HEAD~1 2>/dev/null || true)"
+  rm -rf "$t"
+  echo "$out" | grep -q "GONE.swift"     || { echo "FAIL: missing path-existence drift"; echo "$out"; exit 1; }
+  echo "$out" | grep -q "renamed"        || { echo "FAIL: missing rename drift"; echo "$out"; exit 1; }
+  echo "$out" | grep -q -- "--ghost-flag" || { echo "FAIL: missing flag-contract drift"; echo "$out"; exit 1; }
+  echo "$out" | grep -q "GHOST_VAR"      || { echo "FAIL: missing env-contract drift"; echo "$out"; exit 1; }
+  echo "$out" | grep -q "example #1"     || { echo "FAIL: missing runnable-example drift"; echo "$out"; exit 1; }
+  echo "$out" | grep -q -- "--real-flag" && { echo "FAIL: false positive on --real-flag"; echo "$out"; exit 1; }
+  echo "$out" | grep -q "REAL_VAR"       && { echo "FAIL: false positive on REAL_VAR"; echo "$out"; exit 1; }
+  echo "✓ selftest passed (path + rename + contract[flag,env] + runnable-example, no false positives)"
+}
+
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+if [ "${RUN_SELFTEST:-0}" = 1 ]; then selftest; exit 0; fi
+# Never report "clean" when we could not actually run: a false green is worse than a miss.
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "evergreen: not a git repository — cannot scan (run inside a repo)" >&2; exit 1; }
+run_scan
+render

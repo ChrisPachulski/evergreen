@@ -1,0 +1,11 @@
+{
+  "name": "evergreen",
+  "version": "0.1.0",
+  "description": "Documentation-freshness companion to ponytail — a ride-along reflex that catches doc drift the cheapest way that works, deterministically before spending a token.",
+  "author": { "name": "Chris Pachulski" },
+  "license": "MIT",
+  "keywords": ["documentation", "drift", "freshness", "staleness", "docs-as-code", "ponytail-companion"],
+  "skills": ["./skills/evergreen"],
+  "commands": "./commands",
+  "hooks": "./hooks/hooks.json"
+}

@@ -1,0 +1,11 @@
+{
+  "name": "evergreen",
+  "owner": { "name": "Chris Pachulski" },
+  "plugins": [
+    {
+      "name": "evergreen",
+      "source": "./",
+      "description": "Documentation-freshness companion to ponytail. Detect cheap (git/grep/AST) → triage smart (model only on candidates) → fix safe (derivable docs only, never prose). Language-agnostic."
+    }
+  ]
+}
