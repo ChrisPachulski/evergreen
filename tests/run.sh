@@ -268,6 +268,37 @@ test_spaced_filename(){
     || bad "spaced-filename: doc with a space in its path is still scanned (false green!)" "$out"
 }
 
+# --- 15. Embed-from-source: match / drift / --fix / missing source -----------
+test_embed(){
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src docs
+    printf 'fn one() {}\nfn two() {}\nfn three() {}\n' > src/lib.rs
+    { printf '# Doc\n<!-- evergreen:embed src/lib.rs:1-2 -->\n```rust\nfn one() {}\nfn two() {}\n```\n'; } > docs/g.md
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'no drift' && ok "embed: matching block is clean" || bad "embed: matching block is clean" "$out"
+
+  ( cd "$t" && printf 'fn one() {}\nfn RENAMED() {}\nfn three() {}\n' > src/lib.rs )
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'has drifted from source' && ok "embed: drifted block is flagged" || bad "embed: drifted block is flagged" "$out"
+
+  ( cd "$t" && bash "$SCAN" --fix >/dev/null 2>&1 )
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  if printf '%s' "$out" | grep -q 'no drift' && grep -q 'fn RENAMED' "$t/docs/g.md"; then
+    ok "embed: --fix refreshes block from source, re-scan clean"
+  else
+    bad "embed: --fix refreshes block from source" "$out"
+  fi
+
+  ( cd "$t" && printf '<!-- evergreen:embed src/NOPE.rs:1-2 -->\n```\nx\n```\n' >> docs/g.md )
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'embed source `src/NOPE.rs` missing' && ok "embed: missing source range is flagged" || bad "embed: missing source range is flagged" "$out"
+  rm -rf "$t"
+}
+
 # --- 14. Output formats: SARIF, freshness score, JSONL audit log -------------
 test_outputs(){
   local t out; t="$(newrepo)"
@@ -372,6 +403,7 @@ test_contract_boundary
 test_spaced_filename
 test_tab_filename
 test_outputs
+test_embed
 test_args
 
 echo "----------------------------------------"

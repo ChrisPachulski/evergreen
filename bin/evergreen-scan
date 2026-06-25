@@ -160,11 +160,68 @@ scan_examples(){
   done < <(doc_files_z)
 }
 
+# Signal 5: embed-from-source. A doc pins a fenced block to a source range with a marker
+#   <!-- evergreen:embed path/to/src.rs:10-20 -->
+#   ```rust
+#   ...lines 10-20 of src.rs...
+#   ```
+# If the block no longer matches those source lines, it has drifted. `--fix` rewrites the
+# block from source — a snippet that is regenerated can't silently lie.
+embed_source(){ [ -f "$1" ] || return 1; awk -v s="$2" -v e="$3" 'NR>=s&&NR<=e' "$1"; }
+
+# Parse one doc, comparing each embed block against its source range (mode=check) or
+# rewriting it from source (mode=fix). Shared 3-state machine: 0 normal, 1 awaiting the
+# opening fence, 2 inside the block body.
+embed_one(){
+  local doc="$1" mode="$2" line spec src rng start end want body exp tmp
+  want=0; body=""; tmp="$(mktemp)"
+  while IFS= read -r line; do
+    case $want in
+      0) [ "$mode" = fix ] && printf '%s\n' "$line" >> "$tmp"
+         case "$line" in *'evergreen:embed'*)
+            spec="$(printf '%s' "$line" | sed -E 's/.*evergreen:embed +([^ ]+).*/\1/')"
+            src="${spec%%:*}"; rng="${spec#*:}"; start="${rng%%-*}"; end="${rng#*-}"
+            [ "$end" = "$rng" ] && end="$start"
+            case "$start$end" in ''|*[!0-9]*) want=0;; *) want=1;; esac;;
+         esac;;
+      1) [ "$mode" = fix ] && printf '%s\n' "$line" >> "$tmp"
+         case "$line" in '```'*) want=2; body="";; '') ;; *) want=0;; esac;;
+      2) case "$line" in
+           '```'*)
+             if exp="$(embed_source "$src" "$start" "$end")"; then
+               [ "$mode" = check ] && { [ "${body%$'\n'}" != "$exp" ] && emit in_docs_not_code high "$doc" "embedded snippet from \`$src:$start-$end\` has drifted from source"; }
+               [ "$mode" = fix ] && printf '%s\n' "$exp" >> "$tmp"
+             else
+               [ "$mode" = check ] && emit in_docs_not_code high "$doc" "embed source \`$src\` missing or range $start-$end invalid"
+               [ "$mode" = fix ] && printf '%s' "$body" >> "$tmp"
+             fi
+             [ "$mode" = fix ] && printf '%s\n' "$line" >> "$tmp"
+             want=0;;
+           *) body="$body$line
+"; [ "$mode" = fix ] || : ;;
+         esac;;
+    esac
+  done < "$doc"
+  if [ "$mode" = fix ] && ! cmp -s "$tmp" "$doc"; then cp "$tmp" "$doc"; echo "fixed (embed): $doc" >&2; fi
+  rm -f "$tmp"
+}
+
+scan_embed(){ while IFS= read -r -d '' doc; do embed_one "$doc" check; done < <(doc_files_z); }
+
+# --fix applies ONLY derivable fixes (embed refresh from source; manifest re-pin). It
+# never rewrites prose — that stays a human/model job. Fix messages go to stderr so
+# --json/--sarif stdout stays clean.
+do_fix(){
+  local doc
+  while IFS= read -r -d '' doc; do embed_one "$doc" fix; done < <(doc_files_z)
+}
+
 run_scan(){
   local base; base="$(default_base)"
   scan_path_existence
   scan_renames "$base"
   scan_contract
+  scan_embed
   scan_examples
 }
 
@@ -259,6 +316,8 @@ SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 if [ "${RUN_SELFTEST:-0}" = 1 ]; then selftest; exit 0; fi
 # Never report "clean" when we could not actually run: a false green is worse than a miss.
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "evergreen: not a git repository — cannot scan (run inside a repo)" >&2; exit 1; }
+if [ "$COVERAGE" -eq 1 ]; then run_coverage; exit $?; fi
+[ "$FIX" -eq 1 ] && do_fix
 run_scan
 render
 exit 0
