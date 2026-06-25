@@ -383,6 +383,22 @@ test_coverage_ast(){
   rm -rf "$t"
 }
 
+# --- 17e. Parser-backed JS/TS coverage via deno doc (skips without deno) ------
+test_coverage_deno(){
+  { command -v deno >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; } || { ok "coverage-deno: skipped (needs deno+python3)"; return; }
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src
+    printf '/** d */\nexport function foo(){}\nexport function bar(){}\nexport class Svc {\n  /** m */\n  run(){}\n  helper(){}\n}\n' > src/a.ts
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" --coverage 2>/dev/null)"
+  # exported: foo(doc) bar Svc + methods run(doc) helper => documented 2 / total 5 = 40%
+  printf '%s' "$out" | grep -q '40% (2/5' && printf '%s' "$out" | grep -q 'js/ts: deno' \
+    && ok "coverage-deno: exact exported symbols + methods via deno doc (40%)" || bad "coverage-deno: 40% (2/5) via deno" "$out"
+  rm -rf "$t"
+}
+
 # --- 17c. Coverage badge: inject, idempotent, json-safe fallback -------------
 test_coverage_badge(){
   local t out; t="$(newrepo)"
@@ -707,6 +723,7 @@ test_manifest_region
 test_coverage
 test_coverage_methods
 test_coverage_ast
+test_coverage_deno
 test_coverage_badge
 test_fix_engine
 test_edge_hardening
