@@ -20,15 +20,17 @@ accredited techniques from that survey into one ride-along skill. Full credit ma
 
 ## How it works — detect cheap → triage smart → fix safe
 
-1. **Deterministic engine** (`bin/evergreen-scan`, zero-LLM, any language): in-repo
-   file paths a doc names that vanished, files git renamed/deleted that docs still
-   cite, CLI flags and env/config keys a doc documents that no code uses, and opt-in
+1. **Deterministic engine** (`bin/evergreen-scan`, zero-LLM, any language) — six
+   signals: in-repo file paths a doc names that vanished; files git renamed/deleted
+   that docs still cite; CLI flags and env/config keys a doc documents that no code
+   uses; embed-from-source snippets that drifted from the source lines they pin;
+   SHA-pinned manifest sources that changed since a doc was last verified; and opt-in
    runnable examples that exit nonzero. Fast, no false-negatives, no token cost.
 2. **Model triage only on candidates** the engine surfaced — to *classify* severity,
    never to *detect*. Never send whole files to a model.
-3. **Fix safe**: auto-propose diffs only for content 1:1 derivable from code
-   (signatures, paths, endpoint/type/config tables). Never auto-rewrite prose/intent —
-   flag it for a human.
+3. **Fix safe**: `--fix` applies only the derivable fixes (embed refresh from source,
+   manifest re-pin, coverage baseline). Prose and intent are never rewritten — flagged
+   for a human. (Temp-0 validator and PR output for prose fixes are roadmap.)
 
 ## Install (Claude Code)
 
@@ -44,11 +46,16 @@ Then it rides along, plus:
 ## Standalone (any repo, no Claude)
 
 ```sh
-bin/evergreen-scan --base origin/main      # human report
-bin/evergreen-scan --json                  # machine output
-bin/evergreen-scan --ci --fail-level high  # exit 2 on high-severity drift (CI/pre-commit)
-bin/evergreen-scan --run-examples          # also execute trusted doc examples (see below)
-bin/evergreen-scan --selftest              # built-in self-check
+bin/evergreen-scan --base origin/main         # human report
+bin/evergreen-scan --json                      # machine output (includes freshness_pct)
+bin/evergreen-scan --sarif                     # SARIF 2.1.0 for GitHub code-scanning
+bin/evergreen-scan --score                     # append a freshness_pct line
+bin/evergreen-scan --log audit.jsonl           # append findings as a JSONL audit trail
+bin/evergreen-scan --ci --fail-level high      # exit 2 on high-severity drift (CI/pre-commit)
+bin/evergreen-scan --coverage --fail-under 80  # doc-comment coverage (py/js/ts/go/rs)
+bin/evergreen-scan --fix                       # apply derivable fixes only (never prose)
+bin/evergreen-scan --run-examples              # also execute trusted doc examples (see below)
+bin/evergreen-scan --selftest                  # built-in self-check
 ```
 
 The engine refuses to run outside a git repository (exits 1) rather than report a
@@ -63,11 +70,25 @@ when its info string contains `evergreen` (e.g. ```` ```bash evergreen ````) AND
 auto-run its README. Blocks run with a scrubbed env and scratch HOME; this is not a
 sandbox, so only use `--run-examples` on docs you trust.
 
+**Pin snippets so they can't drift.** Mark a fenced block with
+`<!-- evergreen:embed path/to/src.rs:10-20 -->`; the block is checked against those
+source lines and `--fix` rewrites it from source. For prose tied to a source file,
+add a `.evergreen-manifest` TSV line (`doc<TAB>source<TAB>blob-sha`, sha via
+`git hash-object`); when the source content changes the doc is flagged
+`needs_reverify` and `--fix` re-pins it.
+
+`--coverage` is a heuristic, dependency-free doc-comment coverage for py/js/ts/go/rs
+(regex, not a parser — it undercounts methods/nested items; a tree-sitter pass is the
+upgrade path). `--coverage --fix` records a `.evergreen-coverage` baseline; under
+`--ci`, dropping below `--fail-under` *or* below the baseline (the ratchet) exits 2.
+
 ## Status
 
-v0.1 — the deterministic spine, the skill, the hook, and the command are live and
-self-tested. The model-triage, coverage-score, and safe-auto-fix layers are designed
-(`docs/DESIGN.md`) and land next. Prior-art mining notes live under `.research/`.
+v0.1 — the deterministic spine (six signals), doc-comment coverage with delta-gating,
+the derivable-only `--fix` engine, SARIF/JSONL/freshness-score outputs, the skill, the
+hook, and the command are live and self-tested (`tests/run.sh`). Model triage and the
+prose-fix gate (temp-0 validator, PR output) are designed (`docs/DESIGN.md`) and land
+next. Prior-art mining notes live under `.research/`.
 
 ## Credits
 

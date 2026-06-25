@@ -43,14 +43,23 @@ Never spend a model on what grep, git, or the AST already knows.
 4. **Only then, semantic drift.** A model — but only on the candidates rungs 1–3
    surfaced, and only to *classify*, never to *detect*. *(driftcheck/kedge hybrid)*
 
-Rungs 1–3 are in the binary; rung 4 (semantic) is model-side. If rungs 1–3 are
-clean, most "stale doc" worries are already answered for free.
+Two opt-in source bindings make rungs 1–2 even tighter, both deterministic and in
+the binary: **embed-from-source** (`<!-- evergreen:embed src.rs:10-20 -->` before a
+fenced block — the block is checked against those lines, `--fix` rewrites it) and a
+**SHA-pinned manifest** (`.evergreen-manifest` TSV `doc<TAB>source<TAB>blob-sha` — a
+source whose content hash changed flags the doc `needs_reverify`, `--fix` re-pins).
+*(embed: ifiokjr/mdt; manifest: os-tack/docfresh)*
+
+Rungs 1–3 (plus embed + manifest) are in the binary; rung 4 (semantic) is model-side.
+If rungs 1–3 are clean, most "stale doc" worries are already answered for free.
 
 ## What counts as drift (the taxonomy)
 
 Category — every finding is one of: `in_code_not_docs` · `in_docs_not_code` ·
 `name_mismatch` · `UNVERIFIABLE` (a claim about another system — drop it, don't
-guess). *(memoriant-docforce, Tenormusica)*
+guess). The engine emits `in_docs_not_code` (a documented thing the code lacks) and
+`needs_reverify` (a pinned source moved under the doc); the rest are model-side.
+*(memoriant-docforce, Tenormusica)*
 
 Comment/prose rot lenses, each verifiable against the code, each with a fix action:
 `contradiction · stale-reference · signature-mismatch · outdated-example ·
@@ -85,9 +94,12 @@ Auto-fixing prose hallucinates intent. Draw the line hard:
   lists, endpoint tables, type/enum/config schemas, dead path references.
 - **Never auto-fix** (flag for a human, write nothing): architecture rationale,
   tutorials, "how it works", security model, the *why*.
-- **Gate**: draft, then a temperature-0 validator must pass; a failed validation
-  becomes a `needs_review` flag, never a silent edit. Output a **PR/diff**, never a
-  surprise commit. *(docugardener, ArjunVenat, Sintesi)*
+- **What `--fix` does today**: only the *fully* derivable subset — refresh an embed
+  block from its source, re-pin a manifest sha, set the coverage baseline. It never
+  edits prose; dead path refs and signatures stay flagged for a human/model.
+- **Gate (roadmap for prose fixes)**: draft, then a temperature-0 validator must pass;
+  a failed validation becomes a `needs_review` flag, never a silent edit. Output a
+  **PR/diff**, never a surprise commit. *(docugardener, ArjunVenat, Sintesi)*
 
 ## Output
 
@@ -104,11 +116,17 @@ you cannot cite code for. Stable docs that are old but still true — age is not
 
 ## Tools
 
-- `bin/evergreen-scan [--base REF] [--json] [--ci] [--fail-level high]` — the
-  deterministic engine (rungs 1–3, zero-LLM, any language): path/rename existence,
-  flag/env contract existence, and (with `--run-examples`) runnable-example execution. `--selftest`
-  self-checks. Refuses to run outside a git repo (exits 1) rather than report a false
-  "clean".
+- `bin/evergreen-scan [--base REF] [--json|--sarif] [--ci] [--fail-level high] [--score]
+  [--log FILE] [--run-examples] [--fix]` — the deterministic engine (zero-LLM, any
+  language): six signals (path/rename existence, flag/env contract existence,
+  embed-from-source, SHA-pinned manifest, and with `--run-examples` runnable-example
+  execution). `--sarif` emits SARIF 2.1.0; `--score` appends a freshness_pct (also in
+  `--json`); `--log FILE` appends a JSONL audit trail; `--fix` applies derivable-only
+  fixes (embed/manifest/coverage baseline, never prose). `--selftest` self-checks.
+  Refuses to run outside a git repo (exits 1) rather than report a false "clean".
+- `bin/evergreen-scan --coverage [--fail-under N]` — heuristic doc-comment coverage
+  for py/js/ts/go/rs (regex, undercounts; tree-sitter is the upgrade path). With `--ci`,
+  dropping below `--fail-under` or the `--fix`-set baseline (ratchet) exits 2.
 - Per-repo `CODE_ROOTS` via `.evergreen.sh`. The suite lives at `tests/run.sh`.
 
 Lazy first, deterministic before model, prove-or-drop. The freshest doc is the one

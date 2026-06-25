@@ -21,7 +21,7 @@ approach already exists.
 ## Architecture: detect cheap → triage smart → fix safe
 
 ### 1. Deterministic detection first (zero LLM, runs everywhere) — BUILT
-The four signals in `bin/evergreen-scan` today, ranked by cost/reliability (mined
+The six signals in `bin/evergreen-scan` today, ranked by cost/reliability (mined
 from agent B). The engine refuses to run outside a git repo (exits 1) rather than
 report a false "clean":
 1. **Doc-named path existence** — every file-like, in-repo path a doc names must
@@ -38,7 +38,17 @@ report a false "clean":
    all-caps like JSON/HTTP/README, and existence is a whole-token boundary match so
    `--verbose` is not satisfied by `--verbose-mode`. *(credit: Akshaysanthosh/docs-drift-check,
    killytoronto/drift-guardian, MarekWadinger/doc-checks)*
-4. **Runnable example** — a fenced block whose info string contains `evergreen` is
+4. **Embed-from-source** — a fenced block pinned with
+   `<!-- evergreen:embed path:Lstart-Lend -->` is checked against those source lines;
+   a mismatch (or a missing source/range) is drift. `--fix` rewrites the block from
+   source, so an embedded snippet structurally cannot silently lie.
+   *(credit: ifiokjr/mdt)*
+5. **SHA-pinned manifest** — `.evergreen-manifest` is TSV `doc<TAB>source<TAB>blob-sha`
+   (sha via `git hash-object`, captured when the doc was last verified). When the
+   source content hashes differently the doc is flagged `needs_reverify` (medium) — not
+   proven wrong, just no longer pinned; `--fix` re-pins. A missing source is high.
+   *(credit: os-tack/docfresh)*
+6. **Runnable example** — a fenced block whose info string contains `evergreen` is
    executed; a nonzero exit is drift. Double-gated: doc-author tag AND operator
    `--run-examples` (never the Stop hook), run with a scrubbed env + scratch HOME. This
    is blast-radius reduction, not a sandbox — running doc code is inherently unsafe, so
@@ -46,8 +56,9 @@ report a false "clean":
 
 ROADMAP for this layer (designed, not yet coded):
 - **AST fingerprint (opt-in)** — tree-sitter hash of a tracked symbol, stored as
-  `sig:<hex>` in the doc's frontmatter anchor; whitespace/rebase-immune.
-  *(credit: danielhirt/kedge — the most robust binding found)*
+  `sig:<hex>` in the doc's frontmatter anchor; whitespace/rebase-immune. The
+  method-level AST-hash variant of the manifest above is part of this.
+  *(credit: danielhirt/kedge, NicoSchwandner/docdrift — the most robust binding found)*
 - A **staleness spectrum** (`src.mtime − doc.mtime` → fresh/getting-stale/stale/
   rotten, *credit: e4we/doc-staleness*) was prototyped and **dropped**: age is a weak
   proxy — an old doc can still be true, and a freshly-touched one can still lie.
@@ -64,34 +75,47 @@ Model routing: Haiku for mechanical work, Sonnet/Opus for semantic behavior drif
 
 ### 3. Drift taxonomy (so findings are actionable) — partially BUILT
 The full taxonomy `in_code_not_docs · in_docs_not_code · name_mismatch · UNVERIFIABLE`
-guides the skill. The deterministic engine emits only `in_docs_not_code` today (a
-documented thing the code lacks); the other categories are model-side.
+guides the skill. The deterministic engine emits `in_docs_not_code` (a documented
+thing the code lacks) and `needs_reverify` (a pinned manifest source moved under the
+doc); the remaining categories are model-side.
 *(credit: NathanMaine/memoriant-docforce + Tenormusica/doc-freshness-analyzer)*
 
 Severity with an explicit **Auto-Fixable?** flag per finding. *(credit:
 Zarl-prog/doc-drift-detector)*
 
-### 4. Coverage as a defensible score — ROADMAP
-tree-sitter universal query — *public symbol* + *immediately-preceding doc-comment*,
-per-language. `fail_under` default 80, README badge, and **delta-gating** (block a
-PR that *drops* coverage even if above threshold — the ratchet). *(credit:
-econchick/interrogate 667★, epassaro/docstr-cov-workflow)*
+### 4. Coverage as a defensible score — BUILT (heuristic)
+`--coverage` counts module-level public symbols and whether each carries an adjacent
+doc-comment, for py/js/ts/go/rs. `--fail-under` defaults to 80 and gates under `--ci`
+(exit 2), with **delta-gating**: `--coverage --fix` records a `.evergreen-coverage`
+baseline, and dropping below it fails even when above threshold (the ratchet).
+Honest limit: it is regex, **not** tree-sitter — it undercounts methods and nested
+items, so treat the number as a floor. The tree-sitter universal query (*public
+symbol* + *immediately-preceding doc-comment*) and a README badge remain the upgrade
+path. *(credit: econchick/interrogate 667★, epassaro/docstr-cov-workflow)*
 
-### 5. Safe auto-fix (the "keep fresh" half) — ROADMAP
+### 5. Safe auto-fix (the "keep fresh" half) — partially BUILT
 The generate-vs-review line *(credit: agent-D synthesis across docugardener /
 ArjunVenat / Sintesi)*:
-- **Auto-fixable** (1:1 derivable from code): signatures, param lists, endpoint
-  tables, type/enum/config schemas, dead path references.
-- **Never auto-fix** (prose/intent): architecture rationale, tutorials, "how it
+- **BUILT — `--fix` (fully derivable only):** refresh an embed block from its source,
+  re-pin a manifest sha, set the coverage baseline. These are mechanical and need no
+  model. `--fix` **never** edits prose — dead path refs, signatures, and rationale stay
+  flagged for a human/model. Fix messages go to stderr so `--json`/`--sarif` stdout
+  stays clean.
+- **ROADMAP — model-drafted fixes for the rest:** signatures, param lists, endpoint
+  tables, type/enum/config schemas, dead path references (1:1 derivable from code but
+  needing generation). Never prose/intent: architecture rationale, tutorials, "how it
   works", security model.
-- **Gate**: two-pass — generator drafts, temperature-0 validator must pass; failures
-  downgrade to `needs_review`, never silently dropped.
-- **Output**: a PR/diff by default, not a silent commit. Bot-loop prevention.
-- **CI**: golden-dataset regression scored by an LLM-free rubric (no API spend in CI).
+- **ROADMAP — gate**: two-pass — generator drafts, temperature-0 validator must pass;
+  failures downgrade to `needs_review`, never silently dropped. Output a PR/diff by
+  default, not a silent commit; bot-loop prevention. CI scored by an LLM-free rubric
+  (no API spend in CI).
 
-### 6. Persistence & reporting — ROADMAP
-JSONL audit log of drift across sessions *(credit: memoriant-docforce)*; SARIF
-output for GitHub code-scanning; an **alignment score** with a CI regression gate
+### 6. Persistence & reporting — BUILT
+`--log FILE` appends each finding as one JSON object (a cross-session JSONL audit
+trail) *(credit: memoriant-docforce)*; `--sarif` emits SARIF 2.1.0 for GitHub
+code-scanning; `--score`/`--json` report a `freshness_pct` (100 minus a
+severity-weighted penalty — high 15, medium 5, low 2; floored at 0, deterministic and
+monotonic). ROADMAP: the opt-in local NLI judge and a learned **alignment score**
 *(credit: Arthur920/Staleguard — deterministic core + opt-in local NLI judge)*.
 
 ## What stays homegrown
@@ -110,11 +134,14 @@ the slice our own assertion tests (and the LLM triage) fill.
 - **Non-blocking Stop-hook nudge** *(Jan-ARN/drift)* — implemented in `hooks/`.
 
 ## Roadmap (designed, not yet in the engine)
-- **Defensible freshness score** — two-column own/link severity → project entropy →
-  `freshness_pct` *(axiom-graph + docsentinel hard/soft split + Entropy-Meter)*.
-- **SHA-pinned source→doc manifest** with `verified_at:{sha}` + three-tier auto-suggest
-  *(os-tack/docfresh)*; method-level AST-hash context nodes *(NicoSchwandner/docdrift, kedge)*.
-- **Embed-from-source** snippets that structurally cannot drift *(ifiokjr/mdt)*.
-- **Coverage score** — tree-sitter public-symbol + adjacent-doc-comment, `fail_under`
-  80, badge, delta-gating ratchet *(interrogate, docstr-cov-workflow)*.
-- **Safe auto-fix** — derivable-only diffs, temp-0 validator, PR output, golden-set CI.
+The current `freshness_pct`, embed-from-source, SHA-pinned manifest, coverage, and the
+derivable-only `--fix` are BUILT (sections 1, 4, 5, 6 above). What is still designed-only:
+- **Richer freshness score** — two-column own/link severity → project entropy, beyond
+  today's flat severity-weighted penalty *(axiom-graph + docsentinel hard/soft split +
+  Entropy-Meter)*.
+- **Method-level AST-hash binding** — the tree-sitter context-node variant of the
+  manifest, so a pin survives line-number churn *(NicoSchwandner/docdrift, kedge)*.
+- **Tree-sitter coverage + badge** — replace the regex heuristic with a parser-backed
+  public-symbol query, add a README badge *(interrogate, docstr-cov-workflow)*.
+- **Model-drafted prose fixes** — temp-0 validator, PR output, golden-set CI for the
+  non-mechanical fixes `--fix` deliberately leaves to a human today.
