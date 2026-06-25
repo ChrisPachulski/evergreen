@@ -268,6 +268,47 @@ test_spaced_filename(){
     || bad "spaced-filename: doc with a space in its path is still scanned (false green!)" "$out"
 }
 
+# --- 14. Output formats: SARIF, freshness score, JSONL audit log -------------
+test_outputs(){
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src docs; printf 'x\n' > src/a.py
+    printf '# Doc\nSee `src/GONE.py` and `--ghost-flag`.\n' > docs/g.md   # two high findings
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+
+  # SARIF valid + 2 results (use python3 if present, else structural).
+  out="$(cd "$t" && bash "$SCAN" --sarif 2>/dev/null)"
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$out" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["version"]=="2.1.0";assert len(d["runs"][0]["results"])==2' >/dev/null 2>&1 \
+      && ok "sarif: valid 2.1.0 with 2 results" || bad "sarif: valid 2.1.0 with 2 results" "$out"
+  else
+    printf '%s' "$out" | grep -q '"version":"2.1.0"' && ok "sarif: emits 2.1.0 envelope" || bad "sarif: emits 2.1.0 envelope" "$out"
+  fi
+
+  # freshness_pct: 2 high -> 100 - 30 = 70, in json and human.
+  out="$(cd "$t" && bash "$SCAN" --json 2>/dev/null)"
+  printf '%s' "$out" | grep -q '"freshness_pct":70' && ok "score: json freshness_pct=70 for 2 high" || bad "score: json freshness_pct=70" "$out"
+  out="$(cd "$t" && bash "$SCAN" --score 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'freshness: 70%' && ok "score: human freshness line" || bad "score: human freshness line" "$out"
+
+  # JSONL log: one valid JSON object per finding, appended.
+  ( cd "$t" && bash "$SCAN" --log audit.jsonl >/dev/null 2>&1 )
+  local n; n="$(wc -l < "$t/audit.jsonl" | tr -d ' ')"
+  if [ "$n" = 2 ] && { ! command -v python3 >/dev/null 2>&1 || python3 -c 'import sys,json;[json.loads(l) for l in open(sys.argv[1])]' "$t/audit.jsonl" >/dev/null 2>&1; }; then
+    ok "log: appends one valid JSONL object per finding"
+  else
+    bad "log: appends one valid JSONL object per finding (lines=$n)"
+  fi
+  rm -rf "$t"
+
+  # clean repo -> freshness 100
+  t="$(newrepo)"
+  ( cd "$t" || exit 1; mkdir -p src; printf 'x\n' > src/a.txt; git add -A && git commit -qm init ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" --json 2>/dev/null)"; rm -rf "$t"
+  printf '%s' "$out" | grep -q '"freshness_pct":100' && ok "score: clean repo is 100" || bad "score: clean repo is 100" "$out"
+}
+
 # --- 13. Tab in a doc filename must not corrupt the TSV finding sink ----------
 test_tab_filename(){
   local t out; t="$(newrepo)"
@@ -330,6 +371,7 @@ test_contract_prose
 test_contract_boundary
 test_spaced_filename
 test_tab_filename
+test_outputs
 test_args
 
 echo "----------------------------------------"

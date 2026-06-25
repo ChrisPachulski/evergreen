@@ -17,6 +17,11 @@ MODE="human"                  # human | json
 FAIL_LEVEL="high"             # none|low|medium|high — min severity that exits nonzero in --ci
 CI=0
 RUN_EXAMPLES=0                # rung-4 example execution runs code: OFF unless --run-examples
+LOGFILE=""                    # --log FILE: append findings as a JSONL audit trail
+SCORE=0                       # --score: also print a freshness_pct
+COVERAGE=0                    # --coverage: doc-comment coverage mode (completeness, not drift)
+FAIL_UNDER=80                 # --fail-under N: coverage % below which --ci exits 2
+FIX=0                         # --fix: apply derivable fixes (embed refresh, manifest re-pin)
 # Doc files we gate.
 DOC_GLOB='(^|/)(README|CHANGELOG|CONTRIBUTING)[^/]*\.(md|markdown)$|(^|/)docs?/.*\.(md|markdown|rst)$'
 # A doc-named path is only validated if it (a) starts with a REAL top-level tracked
@@ -27,22 +32,29 @@ EXT='\.(swift|ts|tsx|js|jsx|mjs|cjs|rs|go|py|rb|java|kt|kts|c|h|cc|cpp|hpp|m|mm|
 # Doc subtrees that are aspirational by nature and exempt from gating (ponytail: specs lead code).
 EXEMPT='/specs?/|/adr/|/rfcs?/|/proposals?/'
 
-usage(){ echo "usage: evergreen-scan [--base REF] [--json] [--ci] [--fail-level L] [--run-examples] [--selftest]"; exit 1; }
+usage(){ echo "usage: evergreen-scan [--base REF] [--json|--sarif] [--ci] [--fail-level L] [--score] [--log FILE] [--run-examples] [--fix] [--coverage [--fail-under N]] [--selftest]"; exit 1; }
 [ -f .evergreen.sh ] && . ./.evergreen.sh   # optional per-repo overrides
 
 while [ $# -gt 0 ]; do case "$1" in
   --base) [ $# -ge 2 ] || usage; BASE="$2"; shift 2;;
   --json) MODE="json"; shift;;
+  --sarif) MODE="sarif"; shift;;
   --ci) CI=1; shift;;
   --fail-level) [ $# -ge 2 ] || usage; FAIL_LEVEL="$2"; shift 2;;
+  --score) SCORE=1; shift;;
+  --log) [ $# -ge 2 ] || usage; LOGFILE="$2"; shift 2;;
+  --coverage) COVERAGE=1; shift;;
+  --fail-under) [ $# -ge 2 ] || usage; FAIL_UNDER="$2"; shift 2;;
+  --fix) FIX=1; shift;;
   --run-examples) RUN_EXAMPLES=1; shift;;
   --selftest) shift; exec "$0" __selftest "$@";;
   __selftest) RUN_SELFTEST=1; shift;;
   -h|--help) usage;;
   *) echo "unknown arg: $1" >&2; usage;;
 esac; done
-# A typo'd fail-level must not silently mean "high".
+# A typo'd fail-level must not silently mean "high"; fail-under must be an integer.
 case "$FAIL_LEVEL" in none|low|medium|high) ;; *) echo "bad --fail-level: $FAIL_LEVEL (want none|low|medium|high)" >&2; exit 1;; esac
+case "$FAIL_UNDER" in ''|*[!0-9]*) echo "bad --fail-under: $FAIL_UNDER (want integer)" >&2; exit 1;; esac
 
 sev_rank(){ case "$1" in none) echo 0;; low) echo 1;; medium) echo 2;; high) echo 3;; *) echo 3;; esac; }
 
@@ -156,23 +168,50 @@ run_scan(){
   scan_examples
 }
 
+# freshness_pct: 100 minus a severity-weighted penalty (high 15, med 5, low 2), floored at 0.
+# Deterministic and monotonic — more/worse drift can only lower it. Empty findings -> 100.
+compute_score(){ awk -F'\t' '{if($2=="high")h++;else if($2=="medium")m++;else l++} END{s=100-(h*15+m*5+l*2); if(s<0)s=0; print s}' "$FIND"; }
+
+# Append each finding as one JSON object to the --log file: a cross-session audit trail.
+log_jsonl(){
+  [ -n "$LOGFILE" ] || return 0
+  local ts; ts="$(date -u +%FT%TZ 2>/dev/null || echo "")"
+  awk -F'\t' -v ts="$ts" 'function j(s){gsub(/\\/,"\\\\",s);gsub(/"/,"\\\"",s);return s}
+    {printf "{\"ts\":\"%s\",\"category\":\"%s\",\"severity\":\"%s\",\"file\":\"%s\",\"detail\":\"%s\"}\n", ts, j($1), j($2), j($3), j($4)}' "$FIND" >> "$LOGFILE"
+}
+
+render_sarif(){
+  printf '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":"evergreen","informationUri":"https://github.com/","rules":[]}},"results":['
+  awk -F'\t' 'function j(s){gsub(/\\/,"\\\\",s);gsub(/"/,"\\\"",s);return s}
+    {lvl=($2=="high")?"error":(($2=="medium")?"warning":"note");
+     printf "%s{\"ruleId\":\"%s\",\"level\":\"%s\",\"message\":{\"text\":\"%s\"},\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"%s\"}}}]}", (NR>1?",":""), j($1), lvl, j($4), j($3)}' "$FIND"
+  printf ']}]}\n'
+}
+
 render(){
-  local total worst; total=$(wc -l < "$FIND" | tr -d ' '); worst=0
-  if [ "$MODE" = json ]; then
-    printf '{"findings":['
-    awk -F'\t' 'NR>1{printf ","} {gsub(/"/,"\\\"",$4); printf "{\"category\":\"%s\",\"severity\":\"%s\",\"file\":\"%s\",\"detail\":\"%s\"}",$1,$2,$3,$4}' "$FIND"
-    printf '],"count":%s}\n' "$total"
-  else
-    if [ "$total" -eq 0 ]; then echo "✓ evergreen: no drift detected"; else
-      echo "evergreen: $total finding(s)"
-      sort -t$'\t' -k1,1 "$FIND" | while IFS=$'\t' read -r c s f d; do
-        printf "  [%s] %-18s %s — %s\n" "$s" "$c" "$f" "$d"
-      done
-    fi
-  fi
+  log_jsonl
+  local total pct; total=$(wc -l < "$FIND" | tr -d ' '); pct="$(compute_score)"
+  case "$MODE" in
+    json)
+      printf '{"findings":['
+      awk -F'\t' 'function j(s){gsub(/\\/,"\\\\",s);gsub(/"/,"\\\"",s);return s}
+        NR>1{printf ","} {printf "{\"category\":\"%s\",\"severity\":\"%s\",\"file\":\"%s\",\"detail\":\"%s\"}", j($1),j($2),j($3),j($4)}' "$FIND"
+      printf '],"count":%s,"freshness_pct":%s}\n' "$total" "$pct"
+      ;;
+    sarif) render_sarif ;;
+    *)
+      if [ "$total" -eq 0 ]; then echo "✓ evergreen: no drift detected"; else
+        echo "evergreen: $total finding(s)"
+        sort -t$'\t' -k1,1 "$FIND" | while IFS=$'\t' read -r c s f d; do
+          printf "  [%s] %-18s %s — %s\n" "$s" "$c" "$f" "$d"
+        done
+      fi
+      [ "$SCORE" -eq 1 ] && echo "freshness: ${pct}% (100 = no drift)"
+      ;;
+  esac
   # exit code for --ci
   if [ "$CI" -eq 1 ]; then
-    local need; need=$(sev_rank "$FAIL_LEVEL")
+    local need worst; need=$(sev_rank "$FAIL_LEVEL"); worst=0
     while IFS=$'\t' read -r c s f d; do [ "$(sev_rank "$s")" -ge "$need" ] && worst=1; done < "$FIND"
     if [ "$worst" -eq 1 ]; then exit 2; fi
   fi
