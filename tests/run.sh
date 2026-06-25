@@ -363,6 +363,34 @@ test_coverage(){
   rm -rf "$t"
 }
 
+# --- 17c. Coverage badge: inject, idempotent, json-safe fallback -------------
+test_coverage_badge(){
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src
+    printf 'def a():\n    """d"""\n    return 1\ndef b():\n    return 2\n' > src/x.py   # 50%
+    printf '# P\n<!-- evergreen:badge:start -->\nOLD\n<!-- evergreen:badge:end -->\n' > README.md
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  ( cd "$t" && bash "$SCAN" --coverage --badge >/dev/null 2>&1 )
+  if grep -q 'docs_coverage-50%25-yellow' "$t/README.md" && ! grep -q '^OLD$' "$t/README.md"; then
+    ok "badge: injected between markers (replaces old)"
+  else bad "badge: injected between markers" "$(cat "$t/README.md")"; fi
+  # idempotent
+  local b; b="$(cat "$t/README.md")"; ( cd "$t" && bash "$SCAN" --coverage --badge >/dev/null 2>&1 )
+  [ "$b" = "$(cat "$t/README.md")" ] && ok "badge: idempotent" || bad "badge: idempotent"
+  # no markers + --json -> stdout stays valid json
+  ( cd "$t" && rm -f README.md )
+  out="$(cd "$t" && bash "$SCAN" --coverage --badge --json 2>/dev/null)"
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$out" | python3 -c 'import sys,json;json.load(sys.stdin)' >/dev/null 2>&1 \
+      && ok "badge: no-marker fallback keeps --json stdout valid" || bad "badge: json-safe fallback" "$out"
+  else
+    printf '%s' "$out" | grep -q '^{"coverage_pct"' && ok "badge: no-marker fallback keeps --json stdout valid" || bad "badge: json-safe fallback" "$out"
+  fi
+  rm -rf "$t"
+}
+
 # --- 17b. Coverage counts methods/nested (python), excludes _private ----------
 test_coverage_methods(){
   local t out; t="$(newrepo)"
@@ -577,6 +605,7 @@ test_manifest
 test_manifest_region
 test_coverage
 test_coverage_methods
+test_coverage_badge
 test_fix_engine
 test_edge_hardening
 test_args

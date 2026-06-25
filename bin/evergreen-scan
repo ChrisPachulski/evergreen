@@ -21,6 +21,7 @@ LOGFILE=""                    # --log FILE: append findings as a JSONL audit tra
 SCORE=0                       # --score: also print a freshness_pct
 COVERAGE=0                    # --coverage: doc-comment coverage mode (completeness, not drift)
 FAIL_UNDER=80                 # --fail-under N: coverage % below which --ci exits 2
+BADGE=0                       # --badge: inject a shields.io coverage badge into README.md
 FIX=0                         # --fix: apply derivable fixes (embed refresh, manifest re-pin)
 # Doc files we gate.
 DOC_GLOB='(^|/)(README|CHANGELOG|CONTRIBUTING)[^/]*\.(md|markdown)$|(^|/)docs?/.*\.(md|markdown|rst)$'
@@ -32,7 +33,7 @@ EXT='\.(swift|ts|tsx|js|jsx|mjs|cjs|rs|go|py|rb|java|kt|kts|c|h|cc|cpp|hpp|m|mm|
 # Doc subtrees that are aspirational by nature and exempt from gating (ponytail: specs lead code).
 EXEMPT='/specs?/|/adr/|/rfcs?/|/proposals?/'
 
-usage(){ echo "usage: evergreen-scan [--base REF] [--json|--sarif] [--ci] [--fail-level L] [--score] [--log FILE] [--run-examples] [--fix] [--coverage [--fail-under N]] [--selftest]"; exit 1; }
+usage(){ echo "usage: evergreen-scan [--base REF] [--json|--sarif] [--ci] [--fail-level L] [--score] [--log FILE] [--run-examples] [--fix] [--coverage [--fail-under N] [--badge]] [--selftest]"; exit 1; }
 [ -f .evergreen.sh ] && . ./.evergreen.sh   # optional per-repo overrides
 
 while [ $# -gt 0 ]; do case "$1" in
@@ -45,6 +46,7 @@ while [ $# -gt 0 ]; do case "$1" in
   --log) [ $# -ge 2 ] || usage; LOGFILE="$2"; shift 2;;
   --coverage) COVERAGE=1; shift;;
   --fail-under) [ $# -ge 2 ] || usage; FAIL_UNDER="$2"; shift 2;;
+  --badge) BADGE=1; shift;;
   --fix) FIX=1; shift;;
   --run-examples) RUN_EXAMPLES=1; shift;;
   --selftest) shift; exec "$0" __selftest "$@";;
@@ -316,6 +318,7 @@ run_coverage(){
   if [ "$tot" -eq 0 ]; then pct=100; else pct=$(( doc * 100 / tot )); fi
   base=""; [ -f .evergreen-coverage ] && base="$(tr -dc 0-9 < .evergreen-coverage)"
   if [ "$FIX" -eq 1 ]; then echo "$pct" > .evergreen-coverage; echo "coverage baseline set: ${pct}%" >&2; fi
+  [ "$BADGE" -eq 1 ] && badge_inject "$pct"
   if [ "$MODE" = json ]; then
     printf '{"coverage_pct":%s,"documented":%s,"total":%s,"fail_under":%s,"baseline":%s}\n' "$pct" "$doc" "$tot" "$FAIL_UNDER" "${base:-null}"
   else
@@ -327,6 +330,27 @@ run_coverage(){
     if [ -n "$base" ] && [ "$pct" -lt "$base" ]; then echo "coverage dropped: ${pct}% < baseline ${base}% (ratchet)" >&2; return 2; fi
   fi
   return 0
+}
+
+# --badge: write/refresh a shields.io coverage badge between marker comments in README.md
+#   <!-- evergreen:badge:start --> ... <!-- evergreen:badge:end -->
+# Idempotent; if the markers are absent, the badge markdown is printed to stderr (so it
+# never corrupts --json/--sarif stdout) with a hint to add them.
+badge_inject(){
+  local pct="$1" color md tmp f="README.md"
+  if [ "$pct" -ge 80 ]; then color=brightgreen; elif [ "$pct" -ge 50 ]; then color=yellow; else color=red; fi
+  md="![docs coverage](https://img.shields.io/badge/docs_coverage-${pct}%25-${color})"
+  if [ -f "$f" ] && grep -q 'evergreen:badge:start' "$f"; then
+    tmp="$(mktemp)"
+    awk -v md="$md" '
+      /evergreen:badge:start/{print; print md; skip=1; next}
+      /evergreen:badge:end/{skip=0}
+      !skip{print}' "$f" > "$tmp"
+    if ! cmp -s "$tmp" "$f"; then cp "$tmp" "$f"; echo "updated coverage badge in $f (${pct}%)" >&2; fi
+    rm -f "$tmp"
+  else
+    { printf '%s\n' "$md"; echo "(add <!-- evergreen:badge:start --> / <!-- evergreen:badge:end --> to README.md to inject)"; } >&2
+  fi
 }
 
 run_scan(){
