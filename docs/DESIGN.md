@@ -87,38 +87,48 @@ doc); the remaining categories are model-side.
 Severity with an explicit **Auto-Fixable?** flag per finding. *(credit:
 Zarl-prog/doc-drift-detector)*
 
-### 4. Coverage as a defensible score — BUILT (heuristic)
-`--coverage` counts public symbols and whether each carries an adjacent doc-comment,
-for py/js/ts/go/rs: Python `def`/`async def`/`class` at any indent (methods/nested
-included, `_private` excluded), Rust `pub` items at any indent (impl methods included),
-exported Go funcs/types and methods. `--fail-under` defaults to 80 and gates under
-`--ci` (exit 2), with **delta-gating**: `--coverage --fix` records a
+### 4. Coverage as a defensible score — BUILT (Python parser-backed; rest heuristic)
+`--coverage` counts public symbols and whether each carries an adjacent doc-comment.
+**Python is parser-backed**: when `python3` is present it uses the stdlib `ast` parser
+(exact functions/classes incl. `async def`, ignoring defs in comments/strings,
+excluding `_`-prefixed names incl. dunders), falling back to the regex heuristic only
+when `python3` is absent or a file has a syntax error. **JS/TS/Go/Rust remain regex**:
+Rust `pub` items at any indent (impl methods included), exported Go funcs/types and
+methods, JS/TS top-level `export`s only. The human label reads `[py: ast; js/ts/go/rs:
+regex]` (or `py: regex` when `python3` is absent). `--fail-under` defaults to 80 and
+gates under `--ci` (exit 2), with **delta-gating**: `--coverage --fix` records a
 `.evergreen-coverage` baseline, and dropping below it fails even when above threshold
 (the ratchet). `--coverage --badge` writes/refreshes a shields.io markdown badge
 between `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in
 README.md (idempotent; brightgreen ≥80, yellow ≥50, red else; with no markers it prints
-the badge to stderr so `--json`/`--sarif` stdout stays valid). Honest limit: it is
-regex, **not** tree-sitter — JS/TS sees only top-level `export`s (class methods need a
-parser), so treat the number as a floor; a tree-sitter universal query (*public
-symbol* + *immediately-preceding doc-comment*) is the upgrade path.
-*(credit: econchick/interrogate 667★, epassaro/docstr-cov-workflow)*
+the badge to stderr so `--json`/`--sarif` stdout stays valid). Honest limit: the
+non-Python regex sees only top-level `export`s for JS/TS (class methods need a parser),
+so treat that slice as a floor; a tree-sitter universal query for the remaining
+languages is the upgrade path. *(credit: econchick/interrogate 667★, epassaro/docstr-cov-workflow)*
 
 ### 5. Safe auto-fix (the "keep fresh" half) — partially BUILT
 The generate-vs-review line *(credit: agent-D synthesis across docugardener /
 ArjunVenat / Sintesi)*:
 - **BUILT — `--fix` (fully derivable only):** refresh an embed block from its source,
   re-pin a manifest sha, set the coverage baseline. These are mechanical and need no
-  model. `--fix` **never** edits prose — dead path refs, signatures, and rationale stay
-  flagged for a human/model. Fix messages go to stderr so `--json`/`--sarif` stdout
-  stays clean.
-- **ROADMAP — model-drafted fixes for the rest:** signatures, param lists, endpoint
-  tables, type/enum/config schemas, dead path references (1:1 derivable from code but
-  needing generation). Never prose/intent: architecture rationale, tutorials, "how it
-  works", security model.
-- **ROADMAP — gate**: two-pass — generator drafts, temperature-0 validator must pass;
-  failures downgrade to `needs_review`, never silently dropped. Output a PR/diff by
-  default, not a silent commit; bot-loop prevention. CI scored by an LLM-free rubric
-  (no API spend in CI).
+  model. `--fix` **never** edits prose — fix messages go to stderr so `--json`/`--sarif`
+  stdout stays clean.
+- **BUILT — `--fix-prose` (model, scoped to dead-path prose):** opt-in (requires the
+  `claude` CLI). For docs the deterministic pass flagged with a dead-path reference, it
+  asks the model for a minimal correction, then gates the draft twice: (a) a
+  deterministic, LLM-independent check that the draft no longer contains the dead path,
+  and (b) an independent review-call that must answer PASS (only dead refs changed,
+  nothing added). Up to 3 retries recover from model variance; the gates guarantee a bad
+  draft is never applied. A validated fix is written to the **working tree** and the diff
+  printed — never committed; failures are left as `needs_review`. The
+  `tests/golden-prose.sh` harness scores it with an LLM-free rubric (post-fix the finding
+  is resolved, unrelated content preserved, no new drift), opt-in via
+  `EVERGREEN_LLM_TESTS=1` and skipping cleanly without `claude`.
+- **ROADMAP — broader prose fixes:** signatures, param lists, endpoint/type/config
+  tables, rationale. Never prose/intent that explains *why*: architecture rationale,
+  tutorials, "how it works", security model. The gate (temp-0 validator, PR output,
+  golden-set CI scored by an LLM-free rubric, bot-loop prevention) extends the
+  dead-path gate above to these cases.
 
 ### 6. Persistence & reporting — BUILT
 `--log FILE` appends each finding as one JSON object (a cross-session JSONL audit
@@ -153,8 +163,8 @@ coverage (incl. the `--badge`), and the derivable-only `--fix` are BUILT (sectio
 - **AST-hash binding** — a tree-sitter context-node hash, so a pin survives line-number
   churn and reformatting; today's deterministic line-range pin is the stand-in
   *(NicoSchwandner/docdrift, kedge)*.
-- **Tree-sitter coverage** — replace the regex heuristic with a parser-backed
-  public-symbol query (would catch JS/TS class methods the regex can't)
+- **Tree-sitter coverage for JS/TS/Go/Rust** — Python is already parser-backed (ast);
+  a tree-sitter query would catch JS/TS class methods the regex can't
   *(interrogate, docstr-cov-workflow)*.
-- **Model-drafted prose fixes** — temp-0 validator, PR output, golden-set CI for the
-  non-mechanical fixes `--fix` deliberately leaves to a human today.
+- **Broader model-drafted prose fixes** — extend the dead-path `--fix-prose` gate
+  (BUILT, section 5) to signatures/tables/rationale.

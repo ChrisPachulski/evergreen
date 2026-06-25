@@ -97,10 +97,13 @@ Auto-fixing prose hallucinates intent. Draw the line hard:
   tutorials, "how it works", security model, the *why*.
 - **What `--fix` does today**: only the *fully* derivable subset — refresh an embed
   block from its source, re-pin a manifest sha, set the coverage baseline. It never
-  edits prose; dead path refs and signatures stay flagged for a human/model.
-- **Gate (roadmap for prose fixes)**: draft, then a temperature-0 validator must pass;
-  a failed validation becomes a `needs_review` flag, never a silent edit. Output a
-  **PR/diff**, never a surprise commit. *(docugardener, ArjunVenat, Sintesi)*
+  edits prose.
+- **`--fix-prose` is the built generate-vs-review gate for dead-path prose** (opt-in,
+  needs the `claude` CLI): the model drafts a minimal correction, then a deterministic
+  check (the dead path is gone) AND an independent review-call (PASS = only dead refs
+  changed) must both pass before the fix is written to the working tree and the diff
+  printed — never a commit. Failures stay `needs_review`. Broader prose fixes
+  (signatures, rationale) remain roadmap. *(docugardener, ArjunVenat, Sintesi)*
 
 ## Output
 
@@ -118,19 +121,21 @@ you cannot cite code for. Stable docs that are old but still true — age is not
 ## Tools
 
 - `bin/evergreen-scan [--base REF] [--json|--sarif] [--ci] [--fail-level high] [--score]
-  [--log FILE] [--run-examples] [--fix]` — the deterministic engine (zero-LLM, any
-  language): six signals (path/rename existence, flag/env contract existence,
-  embed-from-source, SHA-pinned manifest, and with `--run-examples` runnable-example
-  execution). `--sarif` emits SARIF 2.1.0; `--score` appends a freshness_pct (also in
-  `--json`); `--log FILE` appends a JSONL audit trail; `--fix` applies derivable-only
-  fixes (embed/manifest/coverage baseline, never prose). `--selftest` self-checks.
-  Refuses to run outside a git repo (exits 1) rather than report a false "clean".
-- `bin/evergreen-scan --coverage [--fail-under N] [--badge]` — heuristic doc-comment
-  coverage for py/js/ts/go/rs (counts methods/nested where regex can see them; JS/TS
-  class methods need a parser — tree-sitter is the upgrade path). With `--ci`, dropping
-  below `--fail-under` or the `--fix`-set baseline (ratchet) exits 2. `--badge`
-  writes/refreshes a shields.io badge between `<!-- evergreen:badge:start -->`/`<!--
-  evergreen:badge:end -->` markers in README.md.
+  [--log FILE] [--run-examples] [--fix] [--fix-prose]` — the deterministic engine
+  (zero-LLM core, any language): six signals (path/rename existence, flag/env contract
+  existence, embed-from-source, SHA-pinned manifest, and with `--run-examples`
+  runnable-example execution). `--sarif` emits SARIF 2.1.0; `--score` appends a
+  freshness_pct (also in `--json`); `--log FILE` appends a JSONL audit trail; `--fix`
+  applies derivable-only fixes (embed/manifest/coverage baseline, never prose);
+  `--fix-prose` is the opt-in, gated LLM fixer for dead-path prose (needs the `claude`
+  CLI, writes to the working tree, never commits). `--selftest` self-checks. Refuses to
+  run outside a git repo (exits 1) rather than report a false "clean".
+- `bin/evergreen-scan --coverage [--fail-under N] [--badge]` — doc-comment coverage for
+  py/js/ts/go/rs. Python is parser-backed (stdlib `ast` when `python3` is present, else
+  regex); JS/TS/Go/Rust stay regex (JS/TS class methods need a parser — tree-sitter is
+  the upgrade path). With `--ci`, dropping below `--fail-under` or the `--fix`-set
+  baseline (ratchet) exits 2. `--badge` writes/refreshes a shields.io badge between
+  `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in README.md.
 - Per-repo `CODE_ROOTS` via `.evergreen.sh`. The suite lives at `tests/run.sh`.
 
 Lazy first, deterministic before model, prove-or-drop. The freshest doc is the one

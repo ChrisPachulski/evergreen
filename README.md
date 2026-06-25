@@ -55,6 +55,7 @@ bin/evergreen-scan --ci --fail-level high      # exit 2 on high-severity drift (
 bin/evergreen-scan --coverage --fail-under 80  # doc-comment coverage (py/js/ts/go/rs)
 bin/evergreen-scan --coverage --badge          # write a shields.io coverage badge into README
 bin/evergreen-scan --fix                       # apply derivable fixes only (never prose)
+bin/evergreen-scan --fix-prose                 # LLM-fix dead-path prose, gated (needs claude CLI)
 bin/evergreen-scan --run-examples              # also execute trusted doc examples (see below)
 bin/evergreen-scan --selftest                  # built-in self-check
 ```
@@ -79,25 +80,34 @@ add a `.evergreen-manifest` TSV line — whole-file `doc<TAB>source<TAB>blob-sha
 doc to just a source line range (edits elsewhere in the file won't trip it). When the
 pinned content changes the doc is flagged `needs_reverify` and `--fix` re-pins it.
 
-`--coverage` is a heuristic, dependency-free doc-comment coverage for py/js/ts/go/rs.
-It counts methods and nested items where regex can see them (Python at any indent, Rust
-`pub` impl methods, Go methods), but it is not a parser — JS/TS class methods need
-`export` to be seen, so treat the number as a floor; a tree-sitter pass is the upgrade
-path. `--coverage --fix` records a `.evergreen-coverage` baseline; under `--ci`,
+`--coverage` is doc-comment coverage for py/js/ts/go/rs. **Python is parser-backed**:
+with `python3` present it uses the stdlib `ast` parser (exact, ignores defs in
+comments/strings, excludes `_`-prefixed names), falling back to regex only when
+`python3` is absent or a file won't parse. JS/TS/Go/Rust stay regex — JS/TS sees only
+top-level `export`s, so treat that slice as a floor; tree-sitter is the upgrade path for
+those. `--coverage --fix` records a `.evergreen-coverage` baseline; under `--ci`,
 dropping below `--fail-under` *or* below the baseline (the ratchet) exits 2.
 `--coverage --badge` writes/refreshes a shields.io badge between
 `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in README.md
 (idempotent; with no markers it prints the badge to stderr so `--json`/`--sarif` stays
 valid).
 
+**`--fix-prose` is the opt-in LLM fixer** for dead-path references (requires the
+`claude` CLI). It drafts a minimal correction, then gates it twice — a deterministic
+check that the dead path is gone, plus an independent review-call that must pass — before
+writing the fix to the working tree and printing the diff (never committed). Anything it
+can't validate is left as `needs_review`. Scoped to dead-path prose; signatures and
+rationale stay flagged for a human.
+
 ## Status
 
 v0.1 — the deterministic spine (six signals, with region-pinned manifests),
-method-aware doc-comment coverage with delta-gating and a shields.io badge, the
-derivable-only `--fix` engine, SARIF/JSONL/freshness-score outputs, the skill, the
-hook, and the command are live and self-tested (`tests/run.sh`). Model triage and the
-prose-fix gate (temp-0 validator, PR output) are designed (`docs/DESIGN.md`) and land
-next. Prior-art mining notes live under `.research/`.
+doc-comment coverage with delta-gating and a shields.io badge (Python parser-backed via
+`ast`, the rest regex), the derivable-only `--fix` engine, the opt-in `--fix-prose` LLM
+fixer for dead-path references, SARIF/JSONL/freshness-score outputs, the skill, the hook,
+and the command are live and self-tested (`tests/run.sh`, plus `tests/golden-prose.sh`).
+Model triage and broader prose fixes are designed (`docs/DESIGN.md`) and land next.
+Prior-art mining notes live under `.research/`.
 
 ## Credits
 
