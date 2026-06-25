@@ -16,6 +16,7 @@ BASE=""                       # git ref to diff against (default: auto)
 MODE="human"                  # human | json
 FAIL_LEVEL="high"             # none|low|medium|high — min severity that exits nonzero in --ci
 CI=0
+RUN_EXAMPLES=0                # rung-4 example execution runs code: OFF unless --run-examples
 # Doc files we gate.
 DOC_GLOB='(^|/)(README|CHANGELOG|CONTRIBUTING)[^/]*\.(md|markdown)$|(^|/)docs?/.*\.(md|markdown|rst)$'
 # A doc-named path is only validated if it (a) starts with a REAL top-level tracked
@@ -26,19 +27,22 @@ EXT='\.(swift|ts|tsx|js|jsx|mjs|cjs|rs|go|py|rb|java|kt|kts|c|h|cc|cpp|hpp|m|mm|
 # Doc subtrees that are aspirational by nature and exempt from gating (ponytail: specs lead code).
 EXEMPT='/specs?/|/adr/|/rfcs?/|/proposals?/'
 
-usage(){ echo "usage: evergreen-scan [--base REF] [--json] [--ci] [--fail-level L] [--selftest]"; exit 1; }
+usage(){ echo "usage: evergreen-scan [--base REF] [--json] [--ci] [--fail-level L] [--run-examples] [--selftest]"; exit 1; }
 [ -f .evergreen.sh ] && . ./.evergreen.sh   # optional per-repo overrides
 
 while [ $# -gt 0 ]; do case "$1" in
-  --base) BASE="$2"; shift 2;;
+  --base) [ $# -ge 2 ] || usage; BASE="$2"; shift 2;;
   --json) MODE="json"; shift;;
   --ci) CI=1; shift;;
-  --fail-level) FAIL_LEVEL="$2"; shift 2;;
+  --fail-level) [ $# -ge 2 ] || usage; FAIL_LEVEL="$2"; shift 2;;
+  --run-examples) RUN_EXAMPLES=1; shift;;
   --selftest) shift; exec "$0" __selftest "$@";;
   __selftest) RUN_SELFTEST=1; shift;;
   -h|--help) usage;;
   *) echo "unknown arg: $1" >&2; usage;;
 esac; done
+# A typo'd fail-level must not silently mean "high".
+case "$FAIL_LEVEL" in none|low|medium|high) ;; *) echo "bad --fail-level: $FAIL_LEVEL (want none|low|medium|high)" >&2; exit 1;; esac
 
 sev_rank(){ case "$1" in none) echo 0;; low) echo 1;; medium) echo 2;; high) echo 3;; *) echo 3;; esac; }
 
@@ -53,7 +57,9 @@ default_base(){
   else echo ""; fi
 }
 
-doc_files(){ git ls-files | grep -Ei "$DOC_GLOB" | grep -Ev "$EXEMPT" || true; }
+# Gated doc files, NUL-delimited — a tracked doc path may contain spaces/globs; never
+# word-split it (a skipped file would print a FALSE "clean"). Consumers: read -r -d ''.
+doc_files_z(){ git ls-files -z | grep -zEi "$DOC_GLOB" | grep -zEv "$EXEMPT" || true; }
 
 # Real top-level tracked dirs in THIS repo (override CODE_ROOTS in .evergreen.sh to pin).
 top_roots(){ if [ -n "${CODE_ROOTS:-}" ]; then echo "$CODE_ROOTS"; else git ls-files | awk -F/ 'NF>1{print $1}' | sort -u | paste -sd'|' -; fi; }
@@ -61,7 +67,7 @@ top_roots(){ if [ -n "${CODE_ROOTS:-}" ]; then echo "$CODE_ROOTS"; else git ls-f
 # Signal 1: every file-like, in-repo path a doc names must exist on disk (or be tracked).
 scan_path_existence(){
   local doc p roots; roots="$(top_roots)"; [ -n "$roots" ] || return 0
-  for doc in $(doc_files); do
+  while IFS= read -r -d '' doc; do
     grep -oE "($roots)/[A-Za-z0-9_./-]+" "$doc" 2>/dev/null | sort -u | while read -r p; do
       p="${p%%[).,\`\"]}"; case "$p" in */) p="${p%/}";; esac
       printf '%s' "$p" | grep -qiE "$EXT" || continue          # must look like a file
@@ -69,7 +75,7 @@ scan_path_existence(){
       git ls-files --error-unmatch "$p" >/dev/null 2>&1 && continue  # tracked
       emit in_docs_not_code high "$doc" "names \`$p\` which does not exist on disk"
     done
-  done
+  done < <(doc_files_z)
 }
 
 # Signal 2: docs that still cite a path git renamed/deleted since BASE.
@@ -78,47 +84,58 @@ scan_renames(){
   [ -n "$base" ] || return 0
   git diff --name-status --find-renames=50 "$base" HEAD 2>/dev/null | while IFS=$'\t' read -r status old new; do
     case "$status" in
-      R*) for doc in $(doc_files); do grep -q -- "$old" "$doc" 2>/dev/null && emit in_docs_not_code high "$doc" "cites \`$old\` which was renamed to \`$new\`"; done;;
-      D)  for doc in $(doc_files); do grep -q -- "$old" "$doc" 2>/dev/null && emit in_docs_not_code high "$doc" "cites \`$old\` which was deleted"; done;;
+      R*) while IFS= read -r -d '' doc; do grep -qF -- "$old" "$doc" 2>/dev/null && emit in_docs_not_code high "$doc" "cites \`$old\` which was renamed to \`$new\`"; done < <(doc_files_z);;
+      D)  while IFS= read -r -d '' doc; do grep -qF -- "$old" "$doc" 2>/dev/null && emit in_docs_not_code high "$doc" "cites \`$old\` which was deleted"; done < <(doc_files_z);;
     esac
   done
 }
 
 # Signal 3: doc-documented CLI flags / env vars that no longer exist anywhere in code.
-# High precision by construction: flags must be `--word` shaped; env/config tokens must
-# be UPPER_SNAKE with an underscore (kills prose all-caps like JSON, MIT, HTTP, README).
-# Match is plain-string against tracked NON-doc files only — a token living only in docs
-# is still drift. ponytail: O(tokens × files) grep; fine at repo scale, pre-filter if huge.
+# Precision discipline (a noisy detector gets muted):
+#  - only tokens inside `inline-code` spans count — prose UPPER_SNAKE (BOLD_TEXT) and
+#    markdown rules/tables never reach the matcher; docs already backtick real flags/vars.
+#  - flags are `--word` shaped; env/config tokens are UPPER_SNAKE *with* an underscore.
+#  - existence is a WHOLE-TOKEN (boundary-aware) match against tracked NON-doc files, so
+#    `--verbose` is NOT satisfied by `--verbose-mode` (that false-negative is the dangerous
+#    direction for a zero-false-negative tool). A token living only in docs is drift.
+# ponytail: O(tokens × files) grep; fine at repo scale, pre-filter if huge.
 scan_contract(){
-  local doc tok codelist
+  local doc spans tok codelist
   codelist="$(mktemp)"; git ls-files -z 2>/dev/null | grep -zEiv "$DOC_GLOB" > "$codelist"
   [ -s "$codelist" ] || { rm -f "$codelist"; return 0; }
-  in_code(){ [ -n "$(xargs -0 grep -lF -- "$1" < "$codelist" 2>/dev/null | head -1)" ]; }
-  for doc in $(doc_files); do
-    grep -oE -- '--[a-z][a-z0-9]+[a-z0-9-]*' "$doc" 2>/dev/null | sort -u | while read -r tok; do
-      in_code "$tok" || emit in_docs_not_code high "$doc" "documents flag \`$tok\` not found in code"
+  in_code(){ [ -n "$(xargs -0 grep -lE -- "(^|[^A-Za-z0-9_-])$1([^A-Za-z0-9_-]|$)" < "$codelist" 2>/dev/null | head -1)" ]; }
+  while IFS= read -r -d '' doc; do
+    spans="$(grep -oE '`[^`]+`' "$doc" 2>/dev/null)"
+    [ -n "$spans" ] || continue
+    printf '%s\n' "$spans" | grep -oE -- '--[a-z][a-z0-9]+[a-z0-9-]*' | sort -u | while read -r tok; do
+      [ -n "$tok" ] && { in_code "$tok" || emit in_docs_not_code high "$doc" "documents flag \`$tok\` not found in code"; }
     done
-    grep -oE '\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b' "$doc" 2>/dev/null | sort -u | while read -r tok; do
-      in_code "$tok" || emit in_docs_not_code medium "$doc" "documents env/config \`$tok\` not found in code"
+    printf '%s\n' "$spans" | grep -oE '\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b' | sort -u | while read -r tok; do
+      [ -n "$tok" ] && { in_code "$tok" || emit in_docs_not_code medium "$doc" "documents env/config \`$tok\` not found in code"; }
     done
-  done
+  done < <(doc_files_z)
   rm -f "$codelist"
 }
 
-# Signal 4 (opt-in): execute fenced blocks whose info string contains `evergreen`; a
-# nonzero exit is ground truth. Opt-in ONLY — running arbitrary doc code is unsafe, so a
-# block runs solely when its author tagged it. Each runs in a throwaway dir, never the repo.
+# Signal 4 — RUNS CODE FROM THE DOC. OFF unless the operator passes --run-examples; the
+# Stop hook NEVER passes it, so opening an untrusted repo can't auto-execute its README.
+# Doc-author opt-in (a fence info string containing `evergreen`) is necessary but not
+# sufficient — operator consent is required too. Execution gets a scrubbed env + scratch
+# HOME/TMPDIR to shrink blast radius; this is NOT a sandbox (absolute paths/network still
+# reach out). Only run --run-examples on docs you trust. A nonzero exit is drift.
 scan_examples(){
+  [ "$RUN_EXAMPLES" = 1 ] || return 0
   command -v bash >/dev/null 2>&1 || return 0
-  local doc line inblk blk n rc tmp
-  for doc in $(doc_files); do
+  local doc line trimmed inblk blk n rc tmp
+  while IFS= read -r -d '' doc; do
     inblk=0; blk=""; n=0
     while IFS= read -r line; do
-      case "$line" in
+      trimmed="${line#"${line%%[![:space:]]*}"}"   # tolerate indented fences (CommonMark lists)
+      case "$trimmed" in
         '```'*evergreen*) inblk=1; blk=""; n=$((n+1)); continue;;
         '```'*) [ "$inblk" = 1 ] || continue
                 inblk=0; tmp="$(mktemp -d)"; rc=0
-                ( cd "$tmp" && bash -c "$blk" ) >/dev/null 2>&1 || rc=$?
+                ( cd "$tmp" && env -i HOME="$tmp" TMPDIR="$tmp" PATH="$PATH" bash -c "$blk" ) >/dev/null 2>&1 || rc=$?
                 rm -rf "$tmp"
                 [ "$rc" -ne 0 ] && emit in_docs_not_code high "$doc" "runnable example #$n exits nonzero ($rc)"
                 continue;;
@@ -126,7 +143,7 @@ scan_examples(){
       [ "$inblk" = 1 ] && blk="$blk$line
 "
     done < "$doc"
-  done
+  done < <(doc_files_z)
 }
 
 run_scan(){
@@ -161,31 +178,40 @@ render(){
 
 # ---- self-test: build a throwaway repo with known drift, assert detection ----
 selftest(){
-  local t; t="$(mktemp -d)"; ( cd "$t"
+  local t; t="$(mktemp -d)"; ( cd "$t" || exit 1
     git init -q; git config user.email t@t; git config user.name t
     mkdir -p src docs
-    printf 'let x = "--real-flag"\n' > src/keep.swift   # --real-flag IS in code: must NOT flag
+    {                                                  # code contains these whole tokens:
+      printf 'let x = "--real-flag"\n'                  #   --real-flag (must NOT flag)
+      printf '// also --verbose-mode here\n'            #   --verbose-mode (so --verbose must NOT substring-match)
+      printf 'REAL_VAR=1\n'                             #   REAL_VAR (must NOT flag)
+      printf 'API_KEY_SECRET=2\n'                       #   API_KEY_SECRET (so API_KEY must NOT substring-match)
+    } > src/keep.swift
     {
       printf '# Doc\n'
       printf 'See `src/keep.swift` and `src/GONE.swift`.\n'      # rung 1: GONE.swift missing
       printf 'Run with `--real-flag` or `--ghost-flag`.\n'        # rung 3: --ghost-flag absent
-      printf 'Set `REAL_VAR` (in code) but not `GHOST_VAR`.\n'    # rung 3: GHOST_VAR absent
+      printf 'Also `--verbose` (only --verbose-mode exists).\n'   # rung 3: boundary -> --verbose IS drift
+      printf 'Set `REAL_VAR` but not `GHOST_VAR` or `API_KEY`.\n' # rung 3: GHOST_VAR + API_KEY are drift
+      printf 'Prose MAX_SIZE and BOLD_TEXT are not code.\n'       # no backticks -> must NOT flag
       printf '\n```bash evergreen\nexit 7\n```\n'                 # rung 4: opt-in block fails
     } > docs/guide.md
-    printf 'REAL_VAR=1\n' >> src/keep.swift
     git add -A; git commit -qm init
     git mv src/keep.swift src/renamed.swift; git commit -qm rename
   )
-  local out; out="$(cd "$t" && bash "$SELF" --base HEAD~1 2>/dev/null || true)"
+  local out; out="$(cd "$t" && bash "$SELF" --base HEAD~1 --run-examples 2>/dev/null || true)"
   rm -rf "$t"
   echo "$out" | grep -q "GONE.swift"     || { echo "FAIL: missing path-existence drift"; echo "$out"; exit 1; }
   echo "$out" | grep -q "renamed"        || { echo "FAIL: missing rename drift"; echo "$out"; exit 1; }
   echo "$out" | grep -q -- "--ghost-flag" || { echo "FAIL: missing flag-contract drift"; echo "$out"; exit 1; }
+  echo "$out" | grep -q -- "--verbose\`"  || { echo "FAIL: boundary false-negative (--verbose vs --verbose-mode)"; echo "$out"; exit 1; }
   echo "$out" | grep -q "GHOST_VAR"      || { echo "FAIL: missing env-contract drift"; echo "$out"; exit 1; }
+  echo "$out" | grep -q "API_KEY\`"      || { echo "FAIL: boundary false-negative (API_KEY vs API_KEY_SECRET)"; echo "$out"; exit 1; }
   echo "$out" | grep -q "example #1"     || { echo "FAIL: missing runnable-example drift"; echo "$out"; exit 1; }
   echo "$out" | grep -q -- "--real-flag" && { echo "FAIL: false positive on --real-flag"; echo "$out"; exit 1; }
   echo "$out" | grep -q "REAL_VAR"       && { echo "FAIL: false positive on REAL_VAR"; echo "$out"; exit 1; }
-  echo "✓ selftest passed (path + rename + contract[flag,env] + runnable-example, no false positives)"
+  echo "$out" | grep -qE "MAX_SIZE|BOLD_TEXT" && { echo "FAIL: false positive on prose (non-backticked) token"; echo "$out"; exit 1; }
+  echo "✓ selftest passed (path + rename + boundary-contract + opt-in example, no prose/substring false positives)"
 }
 
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"

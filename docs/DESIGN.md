@@ -20,46 +20,64 @@ approach already exists.
 
 ## Architecture: detect cheap → triage smart → fix safe
 
-### 1. Deterministic detection first (zero LLM, runs everywhere)
-Ranked by cost/reliability (mined from agent B):
-1. **Git-diff high-signal regex** — env vars, routes, CLI flags, config keys, public
-   symbols added/changed in `git diff base..HEAD`, cross-checked against doc text.
-   *(credit: Akshaysanthosh/docs-drift-check, killytoronto/drift-guardian)*
-2. **Rename cross-reference** — `git diff --name-status --find-renames`; docs that
-   still cite a renamed/deleted path are confirmed drift. *(credit: agent-B synthesis)*
-3. **Doc-named path/symbol existence** — every repo path/symbol a doc names must
-   exist. Generic, no false-negative. *(credit: our own ReadmeAccuracyTests + lychee)*
-4. **Staleness spectrum** — `staleDays = src.mtime − doc.mtime` →
-   `fresh/getting-stale/stale/rotten`; libraries use missed-git-tag count.
-   *(credit: e4we/doc-staleness)*
-5. **Fenced-code execution** — run doc code blocks, fail on error. *(credit:
-   georg-nikola/docs-drift; `evergreen:skip` opt-out)*
-6. **AST fingerprint (opt-in)** — tree-sitter hash of a tracked symbol, stored as
-   `sig:<hex>` in the doc's frontmatter anchor; whitespace/rebase-immune.
-   *(credit: danielhirt/kedge — the most robust binding found)*
+### 1. Deterministic detection first (zero LLM, runs everywhere) — BUILT
+The four signals in `bin/evergreen-scan` today, ranked by cost/reliability (mined
+from agent B). The engine refuses to run outside a git repo (exits 1) rather than
+report a false "clean":
+1. **Doc-named path existence** — every file-like, in-repo path a doc names must
+   exist on disk or be tracked. A path is only validated if it starts with a real
+   top-level tracked dir and carries a known file extension (kills URL paths,
+   framework refs, sibling-repo refs). Generic, no false-negative.
+   *(credit: our own ReadmeAccuracyTests + lychee)*
+2. **Rename cross-reference** — `git diff --name-status --find-renames` vs `--base`;
+   docs that still cite a renamed/deleted path are confirmed drift. *(credit: agent-B synthesis)*
+3. **Contract existence** — a `--word` CLI flag (high) or `UPPER_SNAKE` env/config
+   key (medium) that a doc documents but that no tracked non-doc file contains. Plain
+   Precision by construction: only tokens inside `inline-code` spans count (prose
+   UPPER_SNAKE and markdown rules never reach the matcher), the underscore rule kills
+   all-caps like JSON/HTTP/README, and existence is a whole-token boundary match so
+   `--verbose` is not satisfied by `--verbose-mode`. *(credit: Akshaysanthosh/docs-drift-check,
+   killytoronto/drift-guardian, MarekWadinger/doc-checks)*
+4. **Runnable example** — a fenced block whose info string contains `evergreen` is
+   executed; a nonzero exit is drift. Double-gated: doc-author tag AND operator
+   `--run-examples` (never the Stop hook), run with a scrubbed env + scratch HOME. This
+   is blast-radius reduction, not a sandbox — running doc code is inherently unsafe, so
+   it is off by default and for trusted docs only. *(credit: georg-nikola/docs-drift)*
 
-### 2. LLM triage only on confirmed candidates
-Never ask an LLM to *detect* what grep/git/AST already knows. The deterministic
-pass emits a candidate list; an LLM classifies **severity** only. *(credit:
-kedge + deichrenner/driftcheck hybrid)*
+ROADMAP for this layer (designed, not yet coded):
+- **AST fingerprint (opt-in)** — tree-sitter hash of a tracked symbol, stored as
+  `sig:<hex>` in the doc's frontmatter anchor; whitespace/rebase-immune.
+  *(credit: danielhirt/kedge — the most robust binding found)*
+- A **staleness spectrum** (`src.mtime − doc.mtime` → fresh/getting-stale/stale/
+  rotten, *credit: e4we/doc-staleness*) was prototyped and **dropped**: age is a weak
+  proxy — an old doc can still be true, and a freshly-touched one can still lie.
+  Evergreen flags only what it can prove against the code.
 
-Model routing: Haiku for mechanical/timestamp work, Sonnet/Opus for semantic
-behavior drift. *(credit: xiaolai/docs-guardian)*
+### 2. LLM triage only on confirmed candidates — model-side (skill, not engine)
+Never ask an LLM to *detect* what grep/git already knows. The deterministic pass
+emits a candidate list; an LLM classifies **severity** only. This is rung 4 of the
+freshness ladder and lives in the skill, not the binary. *(credit: kedge +
+deichrenner/driftcheck hybrid)*
 
-### 3. Drift taxonomy (so findings are actionable)
-`in_code_not_docs · in_docs_not_code · name_mismatch · UNVERIFIABLE`
+Model routing: Haiku for mechanical work, Sonnet/Opus for semantic behavior drift.
+*(credit: xiaolai/docs-guardian)*
+
+### 3. Drift taxonomy (so findings are actionable) — partially BUILT
+The full taxonomy `in_code_not_docs · in_docs_not_code · name_mismatch · UNVERIFIABLE`
+guides the skill. The deterministic engine emits only `in_docs_not_code` today (a
+documented thing the code lacks); the other categories are model-side.
 *(credit: NathanMaine/memoriant-docforce + Tenormusica/doc-freshness-analyzer)*
 
 Severity with an explicit **Auto-Fixable?** flag per finding. *(credit:
 Zarl-prog/doc-drift-detector)*
 
-### 4. Coverage as a defensible score
+### 4. Coverage as a defensible score — ROADMAP
 tree-sitter universal query — *public symbol* + *immediately-preceding doc-comment*,
 per-language. `fail_under` default 80, README badge, and **delta-gating** (block a
 PR that *drops* coverage even if above threshold — the ratchet). *(credit:
 econchick/interrogate 667★, epassaro/docstr-cov-workflow)*
 
-### 5. Safe auto-fix (the "keep fresh" half)
+### 5. Safe auto-fix (the "keep fresh" half) — ROADMAP
 The generate-vs-review line *(credit: agent-D synthesis across docugardener /
 ArjunVenat / Sintesi)*:
 - **Auto-fixable** (1:1 derivable from code): signatures, param lists, endpoint
@@ -71,7 +89,7 @@ ArjunVenat / Sintesi)*:
 - **Output**: a PR/diff by default, not a silent commit. Bot-loop prevention.
 - **CI**: golden-dataset regression scored by an LLM-free rubric (no API spend in CI).
 
-### 6. Persistence & reporting
+### 6. Persistence & reporting — ROADMAP
 JSONL audit log of drift across sessions *(credit: memoriant-docforce)*; SARIF
 output for GitHub code-scanning; an **alignment score** with a CI regression gate
 *(credit: Arthur920/Staleguard — deterministic core + opt-in local NLI judge)*.

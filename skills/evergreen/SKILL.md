@@ -25,18 +25,24 @@ unsure. Off only: "stop evergreen" / "normal mode". Strictness: `off | warn | bl
 When code changes, find the drift at the first rung that holds — cheapest first.
 Never spend a model on what grep, git, or the AST already knows.
 
-1. **Did a doc-named thing vanish?** Run `bin/evergreen-scan` — paths/symbols a doc
-   names that no longer exist, files git just renamed/deleted that docs still cite.
-   Deterministic, zero false-negatives. *(prior art: kedge, docs-drift-check, lychee)*
-2. **Did a documented contract change?** AST/signature diff of changed symbols vs
-   what the doc claims — env vars, routes, CLI flags, config keys, public signatures.
+1. **Did a doc-named thing vanish?** Run `bin/evergreen-scan` — in-repo file paths a
+   doc names that no longer exist on disk, files git just renamed/deleted that docs
+   still cite. Deterministic, zero false-negatives. *(prior art: kedge, docs-drift-check, lychee)*
+2. **Does a documented contract still exist?** The engine plain-string checks every
+   `--word` CLI flag and `UPPER_SNAKE` env/config key a doc documents against tracked
+   non-doc files; a token that lives only in the docs is drift (flags high, env medium).
    Code is the source of truth; the doc is the claim under test. *(doc-checks, readme-drift, sachn1)*
-3. **Is a runnable example broken?** Execute fenced code blocks; a non-zero exit is
-   ground truth, no interpretation. *(docs-drift, README-Truth-Checker)*
+3. **Is a runnable example broken?** Execute fenced blocks whose info string contains
+   `evergreen` (e.g. ```` ```bash evergreen ````); a non-zero exit is ground truth.
+   This RUNS CODE FROM THE DOC, so it is double-gated: the doc author tags the block AND
+   the operator must pass `--run-examples` (never set by the Stop hook). It runs with a
+   scrubbed env + scratch HOME — not a sandbox; only enable on docs you trust.
+   *(docs-drift, README-Truth-Checker)*
 4. **Only then, semantic drift.** A model — but only on the candidates rungs 1–3
    surfaced, and only to *classify*, never to *detect*. *(driftcheck/kedge hybrid)*
 
-If rungs 1–3 are clean, most "stale doc" worries are already answered for free.
+Rungs 1–3 are in the binary; rung 4 (semantic) is model-side. If rungs 1–3 are
+clean, most "stale doc" worries are already answered for free.
 
 ## What counts as drift (the taxonomy)
 
@@ -97,8 +103,11 @@ you cannot cite code for. Stable docs that are old but still true — age is not
 ## Tools
 
 - `bin/evergreen-scan [--base REF] [--json] [--ci] [--fail-level high]` — the
-  deterministic engine (rungs 1–3, zero-LLM, any language). `--selftest` self-checks.
-- Strictness via `.evergreen.sh` (`CODE_ROOTS`) per repo.
+  deterministic engine (rungs 1–3, zero-LLM, any language): path/rename existence,
+  flag/env contract existence, and (with `--run-examples`) runnable-example execution. `--selftest`
+  self-checks. Refuses to run outside a git repo (exits 1) rather than report a false
+  "clean".
+- Per-repo `CODE_ROOTS` via `.evergreen.sh`. The suite lives at `tests/run.sh`.
 
 Lazy first, deterministic before model, prove-or-drop. The freshest doc is the one
 the code can't make a liar.

@@ -9,9 +9,11 @@ the evergreen skill — cheapest signal first, prove-or-drop, never gate exempt 
    `bash "${CLAUDE_PLUGIN_ROOT}/bin/evergreen-scan" --base ${1:-origin/main}`
 2. For each `in_docs_not_code` / `name_mismatch` finding, confirm it against the
    code (cite the file/line that makes the doc wrong). Drop anything you can't cite.
-3. Add any contract-level drift the engine can't see (rung 2): a changed public
-   signature, route, env var, or config key whose doc still shows the old shape.
-   Code is the source of truth; the doc is the claim under test.
+3. The engine already catches doc-documented CLI flags and env/config keys that no
+   code contains (rung 2). Add only the contract drift it still can't see: a public
+   signature, type, or route that *exists but changed shape* (the doc shows the old
+   parameters/return/path), and semantic/prose drift (rung 4). Code is the source of
+   truth; the doc is the claim under test.
 4. Classify each surviving finding: category (`in_code_not_docs` / `in_docs_not_code`
    / `name_mismatch` / `UNVERIFIABLE`), severity, and **Auto-Fixable?**
 5. Report verdict-first, one line per finding:

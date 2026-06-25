@@ -20,9 +20,10 @@ accredited techniques from that survey into one ride-along skill. Full credit ma
 
 ## How it works — detect cheap → triage smart → fix safe
 
-1. **Deterministic engine** (`bin/evergreen-scan`, zero-LLM, any language): paths/
-   symbols a doc names that vanished, files git renamed that docs still cite, and a
-   staleness spectrum. Fast, no false-negatives, no token cost.
+1. **Deterministic engine** (`bin/evergreen-scan`, zero-LLM, any language): in-repo
+   file paths a doc names that vanished, files git renamed/deleted that docs still
+   cite, CLI flags and env/config keys a doc documents that no code uses, and opt-in
+   runnable examples that exit nonzero. Fast, no false-negatives, no token cost.
 2. **Model triage only on candidates** the engine surfaced — to *classify* severity,
    never to *detect*. Never send whole files to a model.
 3. **Fix safe**: auto-propose diffs only for content 1:1 derivable from code
@@ -46,11 +47,21 @@ Then it rides along, plus:
 bin/evergreen-scan --base origin/main      # human report
 bin/evergreen-scan --json                  # machine output
 bin/evergreen-scan --ci --fail-level high  # exit 2 on high-severity drift (CI/pre-commit)
+bin/evergreen-scan --run-examples          # also execute trusted doc examples (see below)
 bin/evergreen-scan --selftest              # built-in self-check
 ```
 
-Per-repo tuning via `.evergreen.sh` (`CODE_ROOTS`, `STALE_DAYS`). Design specs, ADRs,
-roadmaps and CHANGELOG history are exempt by default — they lead the code.
+The engine refuses to run outside a git repository (exits 1) rather than report a
+false "clean". Contract checks (CLI flags, env/config keys) only consider tokens written
+in `` `inline code` `` — prose is never flagged. Per-repo tuning via `.evergreen.sh`
+(`CODE_ROOTS`). Design specs, ADRs, roadmaps and CHANGELOG history are exempt by default
+— they lead the code. A test suite lives at `tests/run.sh`.
+
+**Runnable examples execute code, so they are off by default.** A fenced block runs only
+when its info string contains `evergreen` (e.g. ```` ```bash evergreen ````) AND you pass
+`--run-examples` — the Stop hook never passes it, so opening an untrusted repo can't
+auto-run its README. Blocks run with a scrubbed env and scratch HOME; this is not a
+sandbox, so only use `--run-examples` on docs you trust.
 
 ## Status
 
