@@ -363,6 +363,20 @@ test_coverage(){
   rm -rf "$t"
 }
 
+# --- 17b. Coverage counts methods/nested (python), excludes _private ----------
+test_coverage_methods(){
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src
+    printf 'def top():\n    """d"""\n    return 1\n\nclass S:\n    """c"""\n    def m_doc(self):\n        """d"""\n        return 2\n    def m_undoc(self):\n        return 3\n    async def a_undoc(self):\n        return 4\n    def _hidden(self):\n        return 5\n' > src/a.py
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" --coverage 2>/dev/null)"
+  # documented: top, S, m_doc = 3; total adds m_undoc + a_undoc = 5; _hidden excluded -> 60%
+  printf '%s' "$out" | grep -q '60% (3/5' && ok "coverage: counts methods + async def, excludes _private (60%)" || bad "coverage: method-aware (60%)" "$out"
+  rm -rf "$t"
+}
+
 # --- 16. SHA-pinned manifest: pin / source-change / --fix re-pin / missing ----
 test_manifest(){
   local t out sha; t="$(newrepo)"
@@ -562,6 +576,7 @@ test_embed
 test_manifest
 test_manifest_region
 test_coverage
+test_coverage_methods
 test_fix_engine
 test_edge_hardening
 test_args

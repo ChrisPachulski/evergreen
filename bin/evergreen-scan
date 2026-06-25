@@ -273,12 +273,13 @@ do_fix(){
 
 # ---- coverage (completeness, a different axis from drift) --------------------
 # Heuristic, dependency-free doc-comment coverage for the common languages. Counts
-# module-level PUBLIC symbols and whether each carries an adjacent doc comment:
-#   python: `def`/`class` at col 0 (non-_), followed by a """ docstring
-#   js/ts:  `export function|class|const`, preceded by // or */ comment
-#   go:     exported `func`/`type` (Capitalized), preceded by // comment
-#   rust:   `pub fn|struct|enum|trait`, preceded by /// //! or */
-# ponytail: regex, not a parser — undercounts methods/nested items; honest ceiling, a
+# PUBLIC symbols (incl. methods/nested where regex can see them) and whether each
+# carries an adjacent doc comment:
+#   python: `def`/`async def`/`class` at any indent (non-_), followed by a """ docstring
+#   js/ts:  `export function|class|const`, preceded by // or */ comment (top-level only)
+#   go:     exported `func`/`type` (Capitalized), preceded by // comment (methods incl.)
+#   rust:   `pub fn|struct|enum|trait` at any indent, preceded by /// //! or */ (impl methods incl.)
+# ponytail: regex, not a parser — JS/TS class methods (no `export`) aren't seen; a
 # tree-sitter pass is the upgrade path if this proves too coarse. Per-language only.
 coverage_file(){
   awk -v lang="$2" '
@@ -290,7 +291,7 @@ coverage_file(){
     }
     {
       sym=0
-      if(lang=="python"){ if(($0 ~ /^(def|class)[[:space:]]+[A-Za-z]/)) sym=1 }
+      if(lang=="python"){ if(($0 ~ /^[[:space:]]*((async[[:space:]]+)?def|class)[[:space:]]+[A-Za-z]/)) sym=1 }
       else if(lang=="go"){ if(($0 ~ /^func[[:space:]]+[A-Z]/)||($0 ~ /^func[[:space:]]*\([^)]*\)[[:space:]]*[A-Z]/)||($0 ~ /^type[[:space:]]+[A-Z]/)) sym=1 }
       else if(lang=="rust"){ if($0 ~ /^[[:space:]]*pub[[:space:]]+(fn|struct|enum|trait)[[:space:]]+[A-Za-z]/) sym=1 }
       else if(lang=="js"){ if(($0 ~ /^export[[:space:]]+(default[[:space:]]+)?(async[[:space:]]+)?(function|class)[[:space:]]+[A-Za-z]/)||($0 ~ /^export[[:space:]]+const[[:space:]]+[A-Za-z_]/)) sym=1 }
