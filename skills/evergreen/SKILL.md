@@ -91,19 +91,22 @@ Severity `high|medium|low` with an explicit **Auto-Fixable?** flag. *(Zarl-prog)
 
 Auto-fixing prose hallucinates intent. Draw the line hard:
 
-- **Auto-fixable** (1:1 derivable from code — propose a diff): signatures, param
-  lists, endpoint tables, type/enum/config schemas, dead path references.
-- **Never auto-fix** (flag for a human, write nothing): architecture rationale,
-  tutorials, "how it works", security model, the *why*.
+- **Auto-fixable** (1:1 derivable from code — propose a diff): endpoint tables,
+  type/enum/config schemas, dead references (file paths, CLI flags, env/config keys).
+- **Never auto-fix** (flag for a human, write nothing): a changed (not absent)
+  signature, architecture rationale, tutorials, "how it works", security model, the
+  *why* — no deterministic anchor makes them too unsafe to touch.
 - **What `--fix` does today**: only the *fully* derivable subset — refresh an embed
   block from its source, re-pin a manifest sha, set the coverage baseline. It never
   edits prose.
-- **`--fix-prose` is the built generate-vs-review gate for dead-path prose** (opt-in,
-  needs the `claude` CLI): the model drafts a minimal correction, then a deterministic
-  check (the dead path is gone) AND an independent review-call (PASS = only dead refs
-  changed) must both pass before the fix is written to the working tree and the diff
-  printed — never a commit. Failures stay `needs_review`. Broader prose fixes
-  (signatures, rationale) remain roadmap. *(docugardener, ArjunVenat, Sintesi)*
+- **`--fix-prose` is the built generate-vs-review gate for dead-reference prose**
+  (opt-in, needs the `claude` CLI): for a flagged dead reference — file path, CLI flag,
+  or `UPPER_SNAKE` env/config key the code no longer has — the model drafts a minimal
+  correction, then three deterministic gates (the draft removes every stale token, adds
+  no net lines, and changes only lines that carried a stale token) plus an independent
+  review-call (best-effort) must pass before the fix is written to the working tree and the diff printed —
+  never a commit. Failures stay `needs_review`. Changed signatures and rationale remain
+  human-only. *(docugardener, ArjunVenat, Sintesi)*
 
 ## Output
 
@@ -127,14 +130,15 @@ you cannot cite code for. Stable docs that are old but still true — age is not
   runnable-example execution). `--sarif` emits SARIF 2.1.0; `--score` appends a
   freshness_pct (also in `--json`); `--log FILE` appends a JSONL audit trail; `--fix`
   applies derivable-only fixes (embed/manifest/coverage baseline, never prose);
-  `--fix-prose` is the opt-in, gated LLM fixer for dead-path prose (needs the `claude`
-  CLI, writes to the working tree, never commits). `--selftest` self-checks. Refuses to
-  run outside a git repo (exits 1) rather than report a false "clean".
+  `--fix-prose` is the opt-in, gated LLM fixer for dead-reference prose — paths, flags,
+  env/config keys (needs the `claude` CLI, writes to the working tree, never commits).
+  `--selftest` self-checks. Refuses to run outside a git repo (exits 1) rather than
+  report a false "clean".
 - `bin/evergreen-scan --coverage [--fail-under N] [--badge]` — doc-comment coverage for
-  py/js/ts/go/rs. Python is parser-backed (stdlib `ast` when `python3` is present, else
-  regex); JS/TS/Go/Rust stay regex (JS/TS class methods need a parser — tree-sitter is
-  the upgrade path). With `--ci`, dropping below `--fail-under` or the `--fix`-set
-  baseline (ratchet) exits 2. `--badge` writes/refreshes a shields.io badge between
+  py/js/ts/go/rs. Python (`ast`) and JS/TS (`deno doc`) are parser-backed when their
+  parser is present, else regex; Go/Rust stay regex (tree-sitter is the upgrade path for
+  those two). With `--ci`, dropping below `--fail-under` or the `--fix`-set baseline
+  (ratchet) exits 2. `--badge` writes/refreshes a shields.io badge between
   `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in README.md.
 - Per-repo `CODE_ROOTS` via `.evergreen.sh`. The suite lives at `tests/run.sh`.
 

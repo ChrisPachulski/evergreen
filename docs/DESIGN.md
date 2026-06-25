@@ -87,24 +87,25 @@ doc); the remaining categories are model-side.
 Severity with an explicit **Auto-Fixable?** flag per finding. *(credit:
 Zarl-prog/doc-drift-detector)*
 
-### 4. Coverage as a defensible score — BUILT (Python parser-backed; rest heuristic)
-`--coverage` counts public symbols and whether each carries an adjacent doc-comment.
-**Python is parser-backed**: when `python3` is present it uses the stdlib `ast` parser
-(exact functions/classes incl. `async def`, ignoring defs in comments/strings,
-excluding `_`-prefixed names incl. dunders), falling back to the regex heuristic only
-when `python3` is absent or a file has a syntax error. **JS/TS/Go/Rust remain regex**:
-Rust `pub` items at any indent (impl methods included), exported Go funcs/types and
-methods, JS/TS top-level `export`s only. The human label reads `[py: ast; js/ts/go/rs:
-regex]` (or `py: regex` when `python3` is absent). `--fail-under` defaults to 80 and
-gates under `--ci` (exit 2), with **delta-gating**: `--coverage --fix` records a
-`.evergreen-coverage` baseline, and dropping below it fails even when above threshold
-(the ratchet). `--coverage --badge` writes/refreshes a shields.io markdown badge
-between `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in
+### 4. Coverage as a defensible score — BUILT (Python + JS/TS parser-backed; Go/Rust heuristic)
+`--coverage` counts public symbols and whether each carries an adjacent doc-comment,
+parser-backed where a parser is available and gracefully falling back to regex otherwise.
+**Python** uses the stdlib `ast` parser when `python3` is present (exact functions/classes
+incl. `async def`, ignoring defs in comments/strings, excluding `_`-prefixed names incl.
+dunders). **JS/TS** use `deno doc --json` — a real parser — when both `deno` and `python3`
+(to read deno's JSON) are present (exported functions/classes/interfaces/enums/types/
+variables + public class methods, jsDoc = documented). Each falls back to the regex
+heuristic when its parser is absent or a file won't parse. **Go/Rust remain regex** (Rust
+`pub` items at any indent incl. impl methods; exported Go funcs/types and methods). The
+human label reads `[py: ast|regex; js/ts: deno|regex; go/rs: regex]`. `--fail-under`
+defaults to 80 and gates under `--ci` (exit 2), with **delta-gating**: `--coverage --fix`
+records a `.evergreen-coverage` baseline, and dropping below it fails even when above
+threshold (the ratchet). `--coverage --badge` writes/refreshes a shields.io markdown
+badge between `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in
 README.md (idempotent; brightgreen ≥80, yellow ≥50, red else; with no markers it prints
-the badge to stderr so `--json`/`--sarif` stdout stays valid). Honest limit: the
-non-Python regex sees only top-level `export`s for JS/TS (class methods need a parser),
-so treat that slice as a floor; a tree-sitter universal query for the remaining
-languages is the upgrade path. *(credit: econchick/interrogate 667★, epassaro/docstr-cov-workflow)*
+the badge to stderr so `--json`/`--sarif` stdout stays valid). Now that Python and JS/TS
+are parser-backed, only Go and Rust await a tree-sitter pass.
+*(credit: econchick/interrogate 667★, epassaro/docstr-cov-workflow)*
 
 ### 5. Safe auto-fix (the "keep fresh" half) — partially BUILT
 The generate-vs-review line *(credit: agent-D synthesis across docugardener /
@@ -113,22 +114,25 @@ ArjunVenat / Sintesi)*:
   re-pin a manifest sha, set the coverage baseline. These are mechanical and need no
   model. `--fix` **never** edits prose — fix messages go to stderr so `--json`/`--sarif`
   stdout stays clean.
-- **BUILT — `--fix-prose` (model, scoped to dead-path prose):** opt-in (requires the
-  `claude` CLI). For docs the deterministic pass flagged with a dead-path reference, it
-  asks the model for a minimal correction, then gates the draft twice: (a) a
-  deterministic, LLM-independent check that the draft no longer contains the dead path,
-  and (b) an independent review-call that must answer PASS (only dead refs changed,
-  nothing added). Up to 3 retries recover from model variance; the gates guarantee a bad
-  draft is never applied. A validated fix is written to the **working tree** and the diff
-  printed — never committed; failures are left as `needs_review`. The
-  `tests/golden-prose.sh` harness scores it with an LLM-free rubric (post-fix the finding
-  is resolved, unrelated content preserved, no new drift), opt-in via
-  `EVERGREEN_LLM_TESTS=1` and skipping cleanly without `claude`.
-- **ROADMAP — broader prose fixes:** signatures, param lists, endpoint/type/config
-  tables, rationale. Never prose/intent that explains *why*: architecture rationale,
-  tutorials, "how it works", security model. The gate (temp-0 validator, PR output,
-  golden-set CI scored by an LLM-free rubric, bot-loop prevention) extends the
-  dead-path gate above to these cases.
+- **BUILT — `--fix-prose` (model, scoped to dead-reference prose):** opt-in (requires
+  the `claude` CLI). For docs the deterministic pass flagged with a **dead reference** —
+  a file path, a CLI flag, or an `UPPER_SNAKE` env/config key the code no longer
+  has — it asks the model for a minimal correction, then enforces three deterministic gates
+  without trusting the model: (1) the draft no longer contains any flagged stale token,
+  (2) it adds no net lines (kills injected preambles), and (3) every changed/removed original
+  line carried a stale token (kills rewording of unrelated prose). An independent review-call
+  (PASS) backs these up best-effort. Up to 3 retries recover from model
+  variance; the gates guarantee a bad draft is never applied. A validated fix is written
+  to the **working tree** and the diff printed — never committed; failures are left as
+  `needs_review`. The `tests/golden-prose.sh` harness scores it with an LLM-free rubric
+  (post-fix the finding is resolved, unrelated content preserved, no new drift), opt-in
+  via `EVERGREEN_LLM_TESTS=1` and skipping cleanly without `claude`.
+- **ROADMAP / human-only — what stays unfixed:** a changed (not absent) signature or
+  type, and free-form rationale that explains *why* (architecture, tutorials, "how it
+  works", security model). These have no deterministic anchor for the gates to check, so
+  auto-fixing them is too unsafe — they remain flagged for a human. Extending the gate
+  (temp-0 validator, PR output, golden-set CI, bot-loop prevention) to derivable
+  signature/table fixes is the roadmap.
 
 ### 6. Persistence & reporting — BUILT
 `--log FILE` appends each finding as one JSON object (a cross-session JSONL audit
@@ -163,8 +167,9 @@ coverage (incl. the `--badge`), and the derivable-only `--fix` are BUILT (sectio
 - **AST-hash binding** — a tree-sitter context-node hash, so a pin survives line-number
   churn and reformatting; today's deterministic line-range pin is the stand-in
   *(NicoSchwandner/docdrift, kedge)*.
-- **Tree-sitter coverage for JS/TS/Go/Rust** — Python is already parser-backed (ast);
-  a tree-sitter query would catch JS/TS class methods the regex can't
+- **Tree-sitter coverage for Go/Rust** — Python (ast) and JS/TS (deno) are already
+  parser-backed; only Go and Rust remain on the regex heuristic
   *(interrogate, docstr-cov-workflow)*.
-- **Broader model-drafted prose fixes** — extend the dead-path `--fix-prose` gate
-  (BUILT, section 5) to signatures/tables/rationale.
+- **Broader model-drafted prose fixes** — extend the dead-reference `--fix-prose` gate
+  (BUILT, section 5) to derivable signatures/tables; changed signatures and free-form
+  rationale stay human-only (no deterministic anchor).

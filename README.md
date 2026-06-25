@@ -80,33 +80,35 @@ add a `.evergreen-manifest` TSV line — whole-file `doc<TAB>source<TAB>blob-sha
 doc to just a source line range (edits elsewhere in the file won't trip it). When the
 pinned content changes the doc is flagged `needs_reverify` and `--fix` re-pins it.
 
-`--coverage` is doc-comment coverage for py/js/ts/go/rs. **Python is parser-backed**:
-with `python3` present it uses the stdlib `ast` parser (exact, ignores defs in
-comments/strings, excludes `_`-prefixed names), falling back to regex only when
-`python3` is absent or a file won't parse. JS/TS/Go/Rust stay regex — JS/TS sees only
-top-level `export`s, so treat that slice as a floor; tree-sitter is the upgrade path for
-those. `--coverage --fix` records a `.evergreen-coverage` baseline; under `--ci`,
-dropping below `--fail-under` *or* below the baseline (the ratchet) exits 2.
+`--coverage` is doc-comment coverage for py/js/ts/go/rs, **parser-backed where a parser
+exists**. Python uses the stdlib `ast` parser (with `python3`); JS/TS use `deno doc
+--json` (with both `deno` and `python3` to read its output) — both exact, ignoring defs
+in comments/strings and excluding non-public names. Each falls back to regex when its
+parser is absent or a file won't parse. Go/Rust stay regex (tree-sitter is the upgrade
+path for those two). `--coverage --fix` records a `.evergreen-coverage` baseline; under
+`--ci`, dropping below `--fail-under` *or* below the baseline (the ratchet) exits 2.
 `--coverage --badge` writes/refreshes a shields.io badge between
 `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in README.md
 (idempotent; with no markers it prints the badge to stderr so `--json`/`--sarif` stays
 valid).
 
-**`--fix-prose` is the opt-in LLM fixer** for dead-path references (requires the
-`claude` CLI). It drafts a minimal correction, then gates it twice — a deterministic
-check that the dead path is gone, plus an independent review-call that must pass — before
-writing the fix to the working tree and printing the diff (never committed). Anything it
-can't validate is left as `needs_review`. Scoped to dead-path prose; signatures and
-rationale stay flagged for a human.
+**`--fix-prose` is the opt-in LLM fixer** for dead references — a file path, CLI flag,
+or env/config key the code no longer has (requires the `claude` CLI). It drafts a minimal
+correction, then enforces two deterministic gates (the draft removes every stale token,
+and adds no net lines) plus an independent review-call that must pass — before writing the
+fix to the working tree and printing the diff (never committed). Anything it can't
+validate is left as `needs_review`. A changed (not absent) signature and free-form
+rationale have no deterministic anchor, so they stay flagged for a human.
 
 ## Status
 
 v0.1 — the deterministic spine (six signals, with region-pinned manifests),
-doc-comment coverage with delta-gating and a shields.io badge (Python parser-backed via
-`ast`, the rest regex), the derivable-only `--fix` engine, the opt-in `--fix-prose` LLM
-fixer for dead-path references, SARIF/JSONL/freshness-score outputs, the skill, the hook,
-and the command are live and self-tested (`tests/run.sh`, plus `tests/golden-prose.sh`).
-Model triage and broader prose fixes are designed (`docs/DESIGN.md`) and land next.
+doc-comment coverage with delta-gating and a shields.io badge (Python via `ast` and
+JS/TS via `deno doc` parser-backed, Go/Rust regex), the derivable-only `--fix` engine,
+the opt-in `--fix-prose` LLM fixer for dead references (paths, flags, env keys),
+SARIF/JSONL/freshness-score outputs, the skill, the hook, and the command are live and
+self-tested (`tests/run.sh`, plus `tests/golden-prose.sh`). Model triage and broader
+prose fixes are designed (`docs/DESIGN.md`) and land next.
 Prior-art mining notes live under `.research/`.
 
 ## Credits
