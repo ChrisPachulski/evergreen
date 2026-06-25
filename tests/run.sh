@@ -268,6 +268,35 @@ test_spaced_filename(){
     || bad "spaced-filename: doc with a space in its path is still scanned (false green!)" "$out"
 }
 
+# --- 17. Coverage: count, fail-under gate, baseline ratchet ------------------
+test_coverage(){
+  local t out rc; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src
+    printf 'def documented(x):\n    """d"""\n    return x\n\ndef undocumented(y):\n    return y\n' > src/a.py
+    printf '/// docs\npub fn good() {}\npub fn bad() {}\n' > src/c.rs
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  # 2 documented (documented, good) of 4 total (documented, undocumented, good, bad) = 50%
+  out="$(cd "$t" && bash "$SCAN" --coverage 2>/dev/null)"
+  printf '%s' "$out" | grep -q '50% (2/4' && ok "coverage: counts public symbols + doc-comments (50%)" || bad "coverage: 50% (2/4)" "$out"
+
+  out="$(cd "$t" && bash "$SCAN" --coverage --json 2>/dev/null)"
+  printf '%s' "$out" | grep -q '"coverage_pct":50' && ok "coverage: json shape" || bad "coverage: json shape" "$out"
+
+  ( cd "$t" && bash "$SCAN" --coverage --ci --fail-under 80 >/dev/null 2>&1 ); rc=$?
+  [ "$rc" -eq 2 ] && ok "coverage: --ci below fail-under exits 2" || bad "coverage: fail-under gate (got $rc)"
+  ( cd "$t" && bash "$SCAN" --coverage --ci --fail-under 40 >/dev/null 2>&1 ); rc=$?
+  [ "$rc" -eq 0 ] && ok "coverage: --ci above fail-under exits 0" || bad "coverage: above fail-under (got $rc)"
+
+  # set baseline, then drop coverage -> ratchet fails even above fail-under
+  ( cd "$t" && bash "$SCAN" --coverage --fix >/dev/null 2>&1 )           # baseline 50
+  ( cd "$t" && printf 'def another_undoc(z):\n    return z\n' >> src/a.py && git add -A && git commit -qm more ) >/dev/null 2>&1
+  ( cd "$t" && bash "$SCAN" --coverage --ci --fail-under 1 >/dev/null 2>&1 ); rc=$?
+  [ "$rc" -eq 2 ] && ok "coverage: drop below baseline trips ratchet (exit 2)" || bad "coverage: ratchet (got $rc)"
+  rm -rf "$t"
+}
+
 # --- 16. SHA-pinned manifest: pin / source-change / --fix re-pin / missing ----
 test_manifest(){
   local t out sha; t="$(newrepo)"
@@ -434,6 +463,7 @@ test_tab_filename
 test_outputs
 test_embed
 test_manifest
+test_coverage
 test_args
 
 echo "----------------------------------------"

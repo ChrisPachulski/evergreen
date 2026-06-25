@@ -251,6 +251,63 @@ do_fix(){
   fix_manifest
 }
 
+# ---- coverage (completeness, a different axis from drift) --------------------
+# Heuristic, dependency-free doc-comment coverage for the common languages. Counts
+# module-level PUBLIC symbols and whether each carries an adjacent doc comment:
+#   python: `def`/`class` at col 0 (non-_), followed by a """ docstring
+#   js/ts:  `export function|class|const`, preceded by // or */ comment
+#   go:     exported `func`/`type` (Capitalized), preceded by // comment
+#   rust:   `pub fn|struct|enum|trait`, preceded by /// //! or */
+# ponytail: regex, not a parser — undercounts methods/nested items; honest ceiling, a
+# tree-sitter pass is the upgrade path if this proves too coarse. Per-language only.
+coverage_file(){
+  awk -v lang="$2" '
+    function prev_is_doc(p){
+      if(lang=="go")   return p ~ /^[[:space:]]*\/\//
+      if(lang=="rust") return (p ~ /^[[:space:]]*\/\/\//)||(p ~ /^[[:space:]]*\/\/!/)||(p ~ /\*\/[[:space:]]*$/)
+      if(lang=="js")   return (p ~ /^[[:space:]]*\/\//)||(p ~ /\*\/[[:space:]]*$/)
+      return 0
+    }
+    {
+      sym=0
+      if(lang=="python"){ if(($0 ~ /^(def|class)[[:space:]]+[A-Za-z]/)) sym=1 }
+      else if(lang=="go"){ if(($0 ~ /^func[[:space:]]+[A-Z]/)||($0 ~ /^func[[:space:]]*\([^)]*\)[[:space:]]*[A-Z]/)||($0 ~ /^type[[:space:]]+[A-Z]/)) sym=1 }
+      else if(lang=="rust"){ if($0 ~ /^[[:space:]]*pub[[:space:]]+(fn|struct|enum|trait)[[:space:]]+[A-Za-z]/) sym=1 }
+      else if(lang=="js"){ if(($0 ~ /^export[[:space:]]+(default[[:space:]]+)?(async[[:space:]]+)?(function|class)[[:space:]]+[A-Za-z]/)||($0 ~ /^export[[:space:]]+const[[:space:]]+[A-Za-z_]/)) sym=1 }
+      if(sym){ total++; if(lang=="python") pend=1; else if(prev_is_doc(prevnb)) doc++ }
+      else if(pend){ if($0 ~ /^[[:space:]]*$/){} else { if($0 ~ /^[[:space:]]*"""/) doc++; pend=0 } }
+      if($0 !~ /^[[:space:]]*$/) prevnb=$0
+    }
+    END{ print (doc+0), (total+0) }
+  ' "$1"
+}
+run_coverage(){
+  local f lang r d t doc=0 tot=0 pct base
+  while IFS= read -r -d '' f; do
+    case "$f" in
+      *.py) lang=python;; *.go) lang=go;; *.rs) lang=rust;;
+      *.js|*.jsx|*.mjs|*.cjs|*.ts|*.tsx) lang=js;;
+      *) continue;;
+    esac
+    r="$(coverage_file "$f" "$lang")"; d="${r%% *}"; t="${r##* }"
+    doc=$((doc + d)); tot=$((tot + t))
+  done < <(git ls-files -z)
+  if [ "$tot" -eq 0 ]; then pct=100; else pct=$(( doc * 100 / tot )); fi
+  base=""; [ -f .evergreen-coverage ] && base="$(tr -dc 0-9 < .evergreen-coverage)"
+  if [ "$FIX" -eq 1 ]; then echo "$pct" > .evergreen-coverage; echo "coverage baseline set: ${pct}%" >&2; fi
+  if [ "$MODE" = json ]; then
+    printf '{"coverage_pct":%s,"documented":%s,"total":%s,"fail_under":%s,"baseline":%s}\n' "$pct" "$doc" "$tot" "$FAIL_UNDER" "${base:-null}"
+  else
+    printf 'evergreen coverage: %s%% (%s/%s public symbols documented) [py/js/ts/go/rs heuristic]\n' "$pct" "$doc" "$tot"
+    [ -n "$base" ] && printf '  baseline: %s%%\n' "$base"
+  fi
+  if [ "$CI" -eq 1 ]; then
+    if [ "$pct" -lt "$FAIL_UNDER" ]; then echo "coverage ${pct}% < fail-under ${FAIL_UNDER}%" >&2; return 2; fi
+    if [ -n "$base" ] && [ "$pct" -lt "$base" ]; then echo "coverage dropped: ${pct}% < baseline ${base}% (ratchet)" >&2; return 2; fi
+  fi
+  return 0
+}
+
 run_scan(){
   local base; base="$(default_base)"
   scan_path_existence
