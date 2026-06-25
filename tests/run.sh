@@ -268,6 +268,31 @@ test_spaced_filename(){
     || bad "spaced-filename: doc with a space in its path is still scanned (false green!)" "$out"
 }
 
+# --- 18. --fix applies derivable fixes only; never edits prose ---------------
+test_fix_engine(){
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src docs
+    printf 'fn a() {}\nfn b() {}\n' > src/lib.rs; printf 'v1\n' > src/api.py
+    { printf '# Doc\nProse cites `src/DEAD.swift` (gone).\n<!-- evergreen:embed src/lib.rs:1-2 -->\n```rust\nfn a() {}\nfn b() {}\n```\n'; } > docs/g.md
+    printf 'docs/g.md\tsrc/api.py\t%s\n' "$(git hash-object src/api.py)" > .evergreen-manifest
+    git add -A && git commit -qm init
+    printf 'fn a() {}\nfn RENAMED() {}\n' > src/lib.rs       # embed drift
+    printf 'v2\n' > src/api.py                                # manifest drift
+  ) >/dev/null 2>&1
+  ( cd "$t" && bash "$SCAN" --fix >/dev/null 2>&1 )
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  # derivable fixed (embed + manifest gone), prose dead-ref preserved AND still flagged
+  if ! printf '%s' "$out" | grep -qE 'drifted from source|needs_reverify' \
+     && printf '%s' "$out" | grep -q 'src/DEAD.swift' \
+     && grep -q 'src/DEAD.swift' "$t/docs/g.md" && grep -q 'fn RENAMED' "$t/docs/g.md"; then
+    ok "fix: refreshes embed + re-pins manifest, leaves prose untouched"
+  else
+    bad "fix: derivable-only, prose preserved" "$out"
+  fi
+  rm -rf "$t"
+}
+
 # --- 17. Coverage: count, fail-under gate, baseline ratchet ------------------
 test_coverage(){
   local t out rc; t="$(newrepo)"
@@ -464,6 +489,7 @@ test_outputs
 test_embed
 test_manifest
 test_coverage
+test_fix_engine
 test_args
 
 echo "----------------------------------------"
