@@ -155,7 +155,7 @@ render(){
   if [ "$CI" -eq 1 ]; then
     local need; need=$(sev_rank "$FAIL_LEVEL")
     while IFS=$'\t' read -r c s f d; do [ "$(sev_rank "$s")" -ge "$need" ] && worst=1; done < "$FIND"
-    [ "$worst" -eq 1 ] && exit 2
+    if [ "$worst" -eq 1 ]; then exit 2; fi
   fi
 }
 
@@ -194,3 +194,4 @@ if [ "${RUN_SELFTEST:-0}" = 1 ]; then selftest; exit 0; fi
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "evergreen: not a git repository — cannot scan (run inside a repo)" >&2; exit 1; }
 run_scan
 render
+exit 0
