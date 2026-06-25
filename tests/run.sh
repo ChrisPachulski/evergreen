@@ -6,6 +6,7 @@
 set -u
 
 SCAN="$(cd "$(dirname "$0")/.." && pwd)/bin/evergreen-scan"
+GOLDEN="$(cd "$(dirname "$0")" && pwd)/golden/expected.json"
 [ -x "$SCAN" ] || { echo "FATAL: engine not found/executable at $SCAN"; exit 1; }
 
 PASS=0; FAIL=0
@@ -561,6 +562,34 @@ test_tab_filename(){
   fi
 }
 
+# --- 20. Golden snapshot: full --json of a canonical multi-signal fixture -----
+# LLM-free regression rubric — exact match against tests/golden/expected.json.
+# Regenerate intentionally with UPDATE_GOLDEN=1 bash tests/run.sh.
+build_golden_fixture(){
+  ( cd "$1" || exit 1
+    git init -q && git config user.email t@t && git config user.name t
+    mkdir -p src docs
+    printf 'use --real-flag\nREAL_VAR=1\nfn a() {}\nfn b() {}\n' > src/keep.rs
+    { printf '# Guide\n'
+      printf 'Missing path `src/GONE.rs`.\n'
+      printf 'Flags `--real-flag` and `--ghost-flag`.\n'
+      printf 'Env `REAL_VAR` and `GHOST_VAR`.\n'
+      printf '<!-- evergreen:embed src/keep.rs:3-4 -->\n```rust\nfn a() {}\nfn DRIFTED() {}\n```\n'
+    } > docs/g.md
+    git add -A && git commit -qm init ) >/dev/null 2>&1
+}
+test_golden(){
+  local t out; t="$(mktemp -d)"; build_golden_fixture "$t"
+  out="$(cd "$t" && bash "$SCAN" --json 2>/dev/null)"; rm -rf "$t"
+  if [ "${UPDATE_GOLDEN:-0}" = 1 ]; then printf '%s\n' "$out" > "$GOLDEN"; ok "golden: regenerated tests/golden/expected.json"; return; fi
+  [ -f "$GOLDEN" ] || { bad "golden: tests/golden/expected.json missing (run UPDATE_GOLDEN=1)"; return; }
+  if [ "$out" = "$(cat "$GOLDEN")" ]; then
+    ok "golden: full --json matches the committed snapshot"
+  else
+    bad "golden: --json drifted from snapshot (UPDATE_GOLDEN=1 to refresh after intended changes)" "GOT: $out"
+  fi
+}
+
 # --- 12. Arg validation ------------------------------------------------------
 test_args(){
   local t rc; t="$(newrepo)"
@@ -608,6 +637,7 @@ test_coverage_methods
 test_coverage_badge
 test_fix_engine
 test_edge_hardening
+test_golden
 test_args
 
 echo "----------------------------------------"

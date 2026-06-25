@@ -43,11 +43,14 @@ report a false "clean":
    a mismatch (or a missing source/range) is drift. `--fix` rewrites the block from
    source, so an embedded snippet structurally cannot silently lie.
    *(credit: ifiokjr/mdt)*
-5. **SHA-pinned manifest** — `.evergreen-manifest` is TSV `doc<TAB>source<TAB>blob-sha`
-   (sha via `git hash-object`, captured when the doc was last verified). When the
-   source content hashes differently the doc is flagged `needs_reverify` (medium) — not
-   proven wrong, just no longer pinned; `--fix` re-pins. A missing source is high.
-   *(credit: os-tack/docfresh)*
+5. **SHA-pinned manifest** — `.evergreen-manifest` is TSV: whole-file
+   `doc<TAB>source<TAB>blob-sha`, or region-pinned (method-level)
+   `doc<TAB>source<TAB>Lstart-Lend<TAB>sha` where the sha hashes only the pinned lines.
+   The sha is captured when the doc was last verified. When that content hashes
+   differently the doc is flagged `needs_reverify` (medium) — not proven wrong, just no
+   longer pinned; a range pin means edits *outside* the range don't trip it. `--fix`
+   re-pins (preserving the range field); a missing source is high, a malformed range is
+   `needs_reverify`. *(credit: os-tack/docfresh)*
 6. **Runnable example** — a fenced block whose info string contains `evergreen` is
    executed; a nonzero exit is drift. Double-gated: doc-author tag AND operator
    `--run-examples` (never the Stop hook), run with a scrubbed env + scratch HOME. This
@@ -57,8 +60,9 @@ report a false "clean":
 ROADMAP for this layer (designed, not yet coded):
 - **AST fingerprint (opt-in)** — tree-sitter hash of a tracked symbol, stored as
   `sig:<hex>` in the doc's frontmatter anchor; whitespace/rebase-immune. The
-  method-level AST-hash variant of the manifest above is part of this.
-  *(credit: danielhirt/kedge, NicoSchwandner/docdrift — the most robust binding found)*
+  deterministic *line-range* pin (signal 5) is the method-level stand-in and is BUILT;
+  a true AST hash (immune to whitespace/rebase and line-number churn) remains the
+  upgrade. *(credit: danielhirt/kedge, NicoSchwandner/docdrift — the most robust binding found)*
 - A **staleness spectrum** (`src.mtime − doc.mtime` → fresh/getting-stale/stale/
   rotten, *credit: e4we/doc-staleness*) was prototyped and **dropped**: age is a weak
   proxy — an old doc can still be true, and a freshly-touched one can still lie.
@@ -84,14 +88,20 @@ Severity with an explicit **Auto-Fixable?** flag per finding. *(credit:
 Zarl-prog/doc-drift-detector)*
 
 ### 4. Coverage as a defensible score — BUILT (heuristic)
-`--coverage` counts module-level public symbols and whether each carries an adjacent
-doc-comment, for py/js/ts/go/rs. `--fail-under` defaults to 80 and gates under `--ci`
-(exit 2), with **delta-gating**: `--coverage --fix` records a `.evergreen-coverage`
-baseline, and dropping below it fails even when above threshold (the ratchet).
-Honest limit: it is regex, **not** tree-sitter — it undercounts methods and nested
-items, so treat the number as a floor. The tree-sitter universal query (*public
-symbol* + *immediately-preceding doc-comment*) and a README badge remain the upgrade
-path. *(credit: econchick/interrogate 667★, epassaro/docstr-cov-workflow)*
+`--coverage` counts public symbols and whether each carries an adjacent doc-comment,
+for py/js/ts/go/rs: Python `def`/`async def`/`class` at any indent (methods/nested
+included, `_private` excluded), Rust `pub` items at any indent (impl methods included),
+exported Go funcs/types and methods. `--fail-under` defaults to 80 and gates under
+`--ci` (exit 2), with **delta-gating**: `--coverage --fix` records a
+`.evergreen-coverage` baseline, and dropping below it fails even when above threshold
+(the ratchet). `--coverage --badge` writes/refreshes a shields.io markdown badge
+between `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in
+README.md (idempotent; brightgreen ≥80, yellow ≥50, red else; with no markers it prints
+the badge to stderr so `--json`/`--sarif` stdout stays valid). Honest limit: it is
+regex, **not** tree-sitter — JS/TS sees only top-level `export`s (class methods need a
+parser), so treat the number as a floor; a tree-sitter universal query (*public
+symbol* + *immediately-preceding doc-comment*) is the upgrade path.
+*(credit: econchick/interrogate 667★, epassaro/docstr-cov-workflow)*
 
 ### 5. Safe auto-fix (the "keep fresh" half) — partially BUILT
 The generate-vs-review line *(credit: agent-D synthesis across docugardener /
@@ -134,14 +144,17 @@ the slice our own assertion tests (and the LLM triage) fill.
 - **Non-blocking Stop-hook nudge** *(Jan-ARN/drift)* — implemented in `hooks/`.
 
 ## Roadmap (designed, not yet in the engine)
-The current `freshness_pct`, embed-from-source, SHA-pinned manifest, coverage, and the
-derivable-only `--fix` are BUILT (sections 1, 4, 5, 6 above). What is still designed-only:
+The current `freshness_pct`, embed-from-source, SHA-pinned manifest (incl. region pins),
+coverage (incl. the `--badge`), and the derivable-only `--fix` are BUILT (sections 1, 4,
+5, 6 above). What is still designed-only:
 - **Richer freshness score** — two-column own/link severity → project entropy, beyond
   today's flat severity-weighted penalty *(axiom-graph + docsentinel hard/soft split +
   Entropy-Meter)*.
-- **Method-level AST-hash binding** — the tree-sitter context-node variant of the
-  manifest, so a pin survives line-number churn *(NicoSchwandner/docdrift, kedge)*.
-- **Tree-sitter coverage + badge** — replace the regex heuristic with a parser-backed
-  public-symbol query, add a README badge *(interrogate, docstr-cov-workflow)*.
+- **AST-hash binding** — a tree-sitter context-node hash, so a pin survives line-number
+  churn and reformatting; today's deterministic line-range pin is the stand-in
+  *(NicoSchwandner/docdrift, kedge)*.
+- **Tree-sitter coverage** — replace the regex heuristic with a parser-backed
+  public-symbol query (would catch JS/TS class methods the regex can't)
+  *(interrogate, docstr-cov-workflow)*.
 - **Model-drafted prose fixes** — temp-0 validator, PR output, golden-set CI for the
   non-mechanical fixes `--fix` deliberately leaves to a human today.

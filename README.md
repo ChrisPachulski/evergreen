@@ -53,6 +53,7 @@ bin/evergreen-scan --score                     # append a freshness_pct line
 bin/evergreen-scan --log audit.jsonl           # append findings as a JSONL audit trail
 bin/evergreen-scan --ci --fail-level high      # exit 2 on high-severity drift (CI/pre-commit)
 bin/evergreen-scan --coverage --fail-under 80  # doc-comment coverage (py/js/ts/go/rs)
+bin/evergreen-scan --coverage --badge          # write a shields.io coverage badge into README
 bin/evergreen-scan --fix                       # apply derivable fixes only (never prose)
 bin/evergreen-scan --run-examples              # also execute trusted doc examples (see below)
 bin/evergreen-scan --selftest                  # built-in self-check
@@ -73,19 +74,27 @@ sandbox, so only use `--run-examples` on docs you trust.
 **Pin snippets so they can't drift.** Mark a fenced block with
 `<!-- evergreen:embed path/to/src.rs:10-20 -->`; the block is checked against those
 source lines and `--fix` rewrites it from source. For prose tied to a source file,
-add a `.evergreen-manifest` TSV line (`doc<TAB>source<TAB>blob-sha`, sha via
-`git hash-object`); when the source content changes the doc is flagged
-`needs_reverify` and `--fix` re-pins it.
+add a `.evergreen-manifest` TSV line — whole-file `doc<TAB>source<TAB>blob-sha` (sha via
+`git hash-object`), or region-pinned `doc<TAB>source<TAB>Lstart-Lend<TAB>sha` to bind a
+doc to just a source line range (edits elsewhere in the file won't trip it). When the
+pinned content changes the doc is flagged `needs_reverify` and `--fix` re-pins it.
 
-`--coverage` is a heuristic, dependency-free doc-comment coverage for py/js/ts/go/rs
-(regex, not a parser — it undercounts methods/nested items; a tree-sitter pass is the
-upgrade path). `--coverage --fix` records a `.evergreen-coverage` baseline; under
-`--ci`, dropping below `--fail-under` *or* below the baseline (the ratchet) exits 2.
+`--coverage` is a heuristic, dependency-free doc-comment coverage for py/js/ts/go/rs.
+It counts methods and nested items where regex can see them (Python at any indent, Rust
+`pub` impl methods, Go methods), but it is not a parser — JS/TS class methods need
+`export` to be seen, so treat the number as a floor; a tree-sitter pass is the upgrade
+path. `--coverage --fix` records a `.evergreen-coverage` baseline; under `--ci`,
+dropping below `--fail-under` *or* below the baseline (the ratchet) exits 2.
+`--coverage --badge` writes/refreshes a shields.io badge between
+`<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in README.md
+(idempotent; with no markers it prints the badge to stderr so `--json`/`--sarif` stays
+valid).
 
 ## Status
 
-v0.1 — the deterministic spine (six signals), doc-comment coverage with delta-gating,
-the derivable-only `--fix` engine, SARIF/JSONL/freshness-score outputs, the skill, the
+v0.1 — the deterministic spine (six signals, with region-pinned manifests),
+method-aware doc-comment coverage with delta-gating and a shields.io badge, the
+derivable-only `--fix` engine, SARIF/JSONL/freshness-score outputs, the skill, the
 hook, and the command are live and self-tested (`tests/run.sh`). Model triage and the
 prose-fix gate (temp-0 validator, PR output) are designed (`docs/DESIGN.md`) and land
 next. Prior-art mining notes live under `.research/`.

@@ -46,9 +46,10 @@ Never spend a model on what grep, git, or the AST already knows.
 Two opt-in source bindings make rungs 1–2 even tighter, both deterministic and in
 the binary: **embed-from-source** (`<!-- evergreen:embed src.rs:10-20 -->` before a
 fenced block — the block is checked against those lines, `--fix` rewrites it) and a
-**SHA-pinned manifest** (`.evergreen-manifest` TSV `doc<TAB>source<TAB>blob-sha` — a
-source whose content hash changed flags the doc `needs_reverify`, `--fix` re-pins).
-*(embed: ifiokjr/mdt; manifest: os-tack/docfresh)*
+**SHA-pinned manifest** (`.evergreen-manifest` TSV — whole-file
+`doc<TAB>source<TAB>blob-sha` or region-pinned `doc<TAB>source<TAB>Lstart-Lend<TAB>sha`
+to bind a doc to one source range so edits elsewhere don't trip it; a changed hash flags
+the doc `needs_reverify`, `--fix` re-pins). *(embed: ifiokjr/mdt; manifest: os-tack/docfresh)*
 
 Rungs 1–3 (plus embed + manifest) are in the binary; rung 4 (semantic) is model-side.
 If rungs 1–3 are clean, most "stale doc" worries are already answered for free.
@@ -124,9 +125,12 @@ you cannot cite code for. Stable docs that are old but still true — age is not
   `--json`); `--log FILE` appends a JSONL audit trail; `--fix` applies derivable-only
   fixes (embed/manifest/coverage baseline, never prose). `--selftest` self-checks.
   Refuses to run outside a git repo (exits 1) rather than report a false "clean".
-- `bin/evergreen-scan --coverage [--fail-under N]` — heuristic doc-comment coverage
-  for py/js/ts/go/rs (regex, undercounts; tree-sitter is the upgrade path). With `--ci`,
-  dropping below `--fail-under` or the `--fix`-set baseline (ratchet) exits 2.
+- `bin/evergreen-scan --coverage [--fail-under N] [--badge]` — heuristic doc-comment
+  coverage for py/js/ts/go/rs (counts methods/nested where regex can see them; JS/TS
+  class methods need a parser — tree-sitter is the upgrade path). With `--ci`, dropping
+  below `--fail-under` or the `--fix`-set baseline (ratchet) exits 2. `--badge`
+  writes/refreshes a shields.io badge between `<!-- evergreen:badge:start -->`/`<!--
+  evergreen:badge:end -->` markers in README.md.
 - Per-repo `CODE_ROOTS` via `.evergreen.sh`. The suite lives at `tests/run.sh`.
 
 Lazy first, deterministic before model, prove-or-drop. The freshest doc is the one
