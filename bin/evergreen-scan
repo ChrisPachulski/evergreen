@@ -23,6 +23,7 @@ COVERAGE=0                    # --coverage: doc-comment coverage mode (completen
 FAIL_UNDER=80                 # --fail-under N: coverage % below which --ci exits 2
 BADGE=0                       # --badge: inject a shields.io coverage badge into README.md
 FIX=0                         # --fix: apply derivable fixes (embed refresh, manifest re-pin)
+FIX_PROSE=0                   # --fix-prose: LLM-draft + validate fixes for dead-path prose (opt-in, needs claude)
 # Doc files we gate.
 DOC_GLOB='(^|/)(README|CHANGELOG|CONTRIBUTING)[^/]*\.(md|markdown)$|(^|/)docs?/.*\.(md|markdown|rst)$'
 # A doc-named path is only validated if it (a) starts with a REAL top-level tracked
@@ -33,7 +34,7 @@ EXT='\.(swift|ts|tsx|js|jsx|mjs|cjs|rs|go|py|rb|java|kt|kts|c|h|cc|cpp|hpp|m|mm|
 # Doc subtrees that are aspirational by nature and exempt from gating (ponytail: specs lead code).
 EXEMPT='/specs?/|/adr/|/rfcs?/|/proposals?/'
 
-usage(){ echo "usage: evergreen-scan [--base REF] [--json|--sarif] [--ci] [--fail-level L] [--score] [--log FILE] [--run-examples] [--fix] [--coverage [--fail-under N] [--badge]] [--selftest]"; exit 1; }
+usage(){ echo "usage: evergreen-scan [--base REF] [--json|--sarif] [--ci] [--fail-level L] [--score] [--log FILE] [--run-examples] [--fix] [--fix-prose] [--coverage [--fail-under N] [--badge]] [--selftest]"; exit 1; }
 [ -f .evergreen.sh ] && . ./.evergreen.sh   # optional per-repo overrides
 
 while [ $# -gt 0 ]; do case "$1" in
@@ -48,6 +49,7 @@ while [ $# -gt 0 ]; do case "$1" in
   --fail-under) [ $# -ge 2 ] || usage; FAIL_UNDER="$2"; shift 2;;
   --badge) BADGE=1; shift;;
   --fix) FIX=1; shift;;
+  --fix-prose) FIX_PROSE=1; shift;;
   --run-examples) RUN_EXAMPLES=1; shift;;
   --selftest) shift; exec "$0" __selftest "$@";;
   __selftest) RUN_SELFTEST=1; shift;;
@@ -273,6 +275,52 @@ do_fix(){
   fix_manifest
 }
 
+# --fix-prose: the model half of "keep fresh", drawn safely. For docs the deterministic
+# pass flagged with a DEAD PATH reference, ask the model to draft a MINIMAL correction,
+# then a second independent model call must validate the draft only fixes the dead ref and
+# changes nothing else (the generate-vs-review gate). Validated edits are written to the
+# WORKING TREE (reviewable via git diff) and the diff is printed — never committed. A
+# failed validation is left as needs_review. Opt-in; requires the `claude` CLI.
+prose_fix_one(){
+  local doc="$1" deadpaths="$2" orig fixed verdict p attempt clean
+  orig="$(cat "$doc")"
+  # Up to 3 attempts: the gates below guarantee SAFETY on every try (a bad draft is never
+  # applied); retries just recover EFFICACY from model variance (e.g. an added preamble).
+  for attempt in 1 2 3; do
+    [ "$attempt" -gt 1 ] && echo "prose-fix: retry $attempt for $doc" >&2
+    fixed="$(claude -p "You fix documentation drift. The file below names file path(s) that NO LONGER EXIST in the repo. Output the ENTIRE file with ONLY the dead path reference(s) minimally corrected or removed and EVERYTHING else byte-identical. Your output's first character MUST be the file's first character — no preamble, no 'Here is', no explanation, no code fences, and do NOT restate the dead path anywhere.
+
+$orig" 2>/dev/null)"
+    [ -n "$fixed" ] && [ "$fixed" != "$orig" ] || continue
+    # Deterministic gate (LLM-independent): the draft must actually REMOVE every dead path.
+    # Catches the model re-mentioning the path (e.g. in a preamble) — that draft is refused.
+    clean=1; for p in $deadpaths; do printf '%s' "$fixed" | grep -qF -- "$p" && { clean=0; break; }; done
+    [ "$clean" = 1 ] || continue
+    # Independent review gate: a second model call must confirm nothing else changed.
+    verdict="$(claude -p "Reply with exactly one word, PASS or FAIL. PASS only if PROPOSED differs from ORIGINAL solely by correcting or removing dead file-path references — no other prose changed, nothing added, no new sentences/claims. Else FAIL.
+
+ORIGINAL:
+$orig
+
+PROPOSED:
+$fixed" 2>/dev/null | grep -oiE 'PASS|FAIL' | head -1 | tr '[:lower:]' '[:upper:]')"
+    [ "$verdict" = PASS ] || continue
+    printf '%s\n' "$fixed" > "$doc"
+    { echo "prose-fix applied + validated (review with git diff): $doc"; diff -u <(printf '%s\n' "$orig") <(printf '%s\n' "$fixed") | sed 's/^/  /'; } >&2
+    return 0
+  done
+  echo "prose-fix: no validated fix for $doc after 3 attempts — left as needs_review (no edit)" >&2
+}
+prose_fix(){
+  command -v claude >/dev/null 2>&1 || { echo "evergreen: --fix-prose needs the \`claude\` CLI" >&2; return 1; }
+  local doc deadpaths
+  awk -F'\t' '$1=="in_docs_not_code" && $4 ~ /does not exist on disk/ {print $3}' "$FIND" | sort -u | while read -r doc; do
+    [ -f "$doc" ] || continue
+    deadpaths="$(awk -F'\t' -v d="$doc" '$3==d && $4 ~ /does not exist on disk/ {p=$4; sub(/.*names `/,"",p); sub(/`.*/,"",p); print p}' "$FIND")"
+    prose_fix_one "$doc" "$deadpaths"
+  done
+}
+
 # ---- coverage (completeness, a different axis from drift) --------------------
 # Heuristic, dependency-free doc-comment coverage for the common languages. Counts
 # PUBLIC symbols (incl. methods/nested where regex can see them) and whether each
@@ -484,5 +532,6 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "evergreen: not a 
 if [ "$COVERAGE" -eq 1 ]; then run_coverage; exit $?; fi
 [ "$FIX" -eq 1 ] && do_fix
 run_scan
+if [ "$FIX_PROSE" -eq 1 ]; then prose_fix; : > "$FIND"; run_scan; fi   # re-scan to reflect applied fixes
 render
 exit 0

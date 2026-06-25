@@ -615,6 +615,15 @@ test_golden(){
   fi
 }
 
+# --- 21. LLM prose-fixer harness (opt-in; live model + claude CLI) -----------
+# Default-skipped so the suite stays fast/deterministic. Run with:
+#   EVERGREEN_LLM_TESTS=1 bash tests/run.sh
+test_golden_prose(){
+  if [ "${EVERGREEN_LLM_TESTS:-0}" != 1 ]; then ok "golden-prose: skipped (EVERGREEN_LLM_TESTS=1 to run; needs claude)"; return; fi
+  if bash "$(dirname "$0")/golden-prose.sh" >/dev/null 2>&1; then ok "golden-prose: --fix-prose resolves drift, preserves prose, adds no drift"
+  else bad "golden-prose: harness failed (see: bash tests/golden-prose.sh)"; fi
+}
+
 # --- 12. Arg validation ------------------------------------------------------
 test_args(){
   local t rc; t="$(newrepo)"
@@ -664,6 +673,7 @@ test_coverage_badge
 test_fix_engine
 test_edge_hardening
 test_golden
+test_golden_prose
 test_args
 
 echo "----------------------------------------"
