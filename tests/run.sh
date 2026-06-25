@@ -392,6 +392,37 @@ test_manifest(){
   rm -rf "$t"
 }
 
+# --- 16b. Region-pinned (method-level) manifest ------------------------------
+test_manifest_region(){
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src docs
+    printf 'l1\nfn target() {\n  body\n}\nl5\nl6\n' > src/lib.rs; printf '# d\n' > docs/api.md
+    printf 'docs/api.md\tsrc/lib.rs\t2-4\t%s\n' "$(awk 'NR>=2&&NR<=4' src/lib.rs | git hash-object --stdin)" > .evergreen-manifest
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'no drift' && ok "manifest-region: pinned range matches" || bad "manifest-region: matches" "$out"
+
+  ( cd "$t" && printf 'l1\nfn target() {\n  body\n}\nl5\nCHANGED\n' > src/lib.rs )   # edit OUTSIDE 2-4
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'no drift' && ok "manifest-region: edit outside range stays clean (the win)" || bad "manifest-region: outside-range" "$out"
+
+  ( cd "$t" && printf 'l1\nfn target() {\n  NEWBODY\n}\nl5\nCHANGED\n' > src/lib.rs )  # edit INSIDE 2-4
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'src/lib.rs:2-4` changed' && ok "manifest-region: edit inside range -> needs_reverify" || bad "manifest-region: inside-range" "$out"
+
+  ( cd "$t" && bash "$SCAN" --fix >/dev/null 2>&1 )
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'no drift' && grep -q '2-4' "$t/.evergreen-manifest" \
+    && ok "manifest-region: --fix re-pins range (keeps range field)" || bad "manifest-region: --fix re-pin" "$out"
+
+  ( cd "$t" && printf 'docs/api.md\tsrc/lib.rs\t2to4\tdead\n' >> .evergreen-manifest )
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'range `2to4`.*malformed' && ok "manifest-region: malformed range flagged" || bad "manifest-region: malformed range" "$out"
+  rm -rf "$t"
+}
+
 # --- 15. Embed-from-source: match / drift / --fix / missing source -----------
 test_embed(){
   local t out; t="$(newrepo)"
@@ -529,6 +560,7 @@ test_tab_filename
 test_outputs
 test_embed
 test_manifest
+test_manifest_region
 test_coverage
 test_fix_engine
 test_edge_hardening

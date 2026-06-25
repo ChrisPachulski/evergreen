@@ -217,34 +217,45 @@ embed_one(){
 scan_embed(){ while IFS= read -r -d '' doc; do embed_one "$doc" check; done < <(doc_files_z); }
 
 # Signal 6: SHA-pinned source→doc manifest. `.evergreen-manifest` is TSV lines
-#   doc<TAB>source<TAB>blob-sha   (# comments / blank lines ignored)
-# where blob-sha is `git hash-object source` captured when the doc was last verified
-# against that source. When the source's current content hashes differently, the doc is
-# flagged for re-verification (it isn't proven wrong — the source just moved under it).
-# `--fix` re-pins the sha (the operator asserting they re-verified).
+#   doc<TAB>source<TAB>blob-sha               (whole-file pin)
+#   doc<TAB>source<TAB>Lstart-Lend<TAB>sha    (line-range pin — method-level)
+# (# comments / blank lines ignored). The sha is captured when the doc was last verified
+# against that source: `git hash-object source` for the whole file, or the hash of just
+# the pinned lines. A range pin is the deterministic stand-in for an AST-hash — unrelated
+# edits elsewhere in the file don't trip it. Content hashing differently flags the doc for
+# re-verification (not proven wrong — the source moved under it). `--fix` re-pins.
 MANIFEST=".evergreen-manifest"
+# pin_hash SRC RANGE: hash the whole file (empty RANGE) or just lines start-end.
+pin_hash(){
+  if [ -z "$2" ]; then git hash-object "$1" 2>/dev/null
+  else awk -v s="${2%-*}" -v e="${2#*-}" 'NR>=s&&NR<=e' "$1" 2>/dev/null | git hash-object --stdin 2>/dev/null; fi
+}
 scan_manifest(){
   [ -f "$MANIFEST" ] || return 0
-  local doc src sha cur
-  while IFS=$'\t' read -r doc src sha || [ -n "${doc:-}" ]; do
-    sha="${sha%$'\r'}"   # tolerate CRLF (Windows-edited manifest) — else SHAs never match
+  local doc src f3 f4 range sha cur where
+  while IFS=$'\t' read -r doc src f3 f4 || [ -n "${doc:-}" ]; do
     case "$doc" in ''|'#'*) continue;; esac
+    if [ -n "$f4" ]; then range="$f3"; sha="${f4%$'\r'}"; where="$src:$range"
+    else range=""; sha="${f3%$'\r'}"; where="$src"; fi   # tolerate CRLF on the last field
     [ -n "$src" ] && [ -n "$sha" ] || continue
+    case "$range" in *[!0-9-]*) emit needs_reverify medium "$doc" "manifest range \`$range\` for \`$src\` is malformed"; continue;; esac
     if [ ! -f "$src" ]; then emit in_docs_not_code high "$doc" "manifest source \`$src\` no longer exists"; continue; fi
-    cur="$(git hash-object "$src" 2>/dev/null)"; [ -n "$cur" ] || continue
-    [ "$cur" = "$sha" ] || emit needs_reverify medium "$doc" "source \`$src\` changed since verified (pinned ${sha:0:8}…, now ${cur:0:8}…) — re-verify"
+    cur="$(pin_hash "$src" "$range")"; [ -n "$cur" ] || continue
+    [ "$cur" = "$sha" ] || emit needs_reverify medium "$doc" "source \`$where\` changed since verified (pinned ${sha:0:8}…, now ${cur:0:8}…) — re-verify"
   done < "$MANIFEST"
 }
 fix_manifest(){
   [ -f "$MANIFEST" ] || return 0
-  local tmp line doc src sha cur; tmp="$(mktemp)"
+  local tmp line doc src f3 f4 range cur; tmp="$(mktemp)"
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in ''|'#'*) printf '%s\n' "$line" >> "$tmp"; continue;; esac
-    IFS=$'\t' read -r doc src sha <<EOF
+    IFS=$'\t' read -r doc src f3 f4 <<EOF
 $line
 EOF
-    if [ -n "$src" ] && [ -f "$src" ] && cur="$(git hash-object "$src" 2>/dev/null)" && [ -n "$cur" ]; then
-      printf '%s\t%s\t%s\n' "$doc" "$src" "$cur" >> "$tmp"
+    [ -n "$f4" ] && range="$f3" || range=""
+    if [ -n "$src" ] && [ -f "$src" ] && cur="$(pin_hash "$src" "$range")" && [ -n "$cur" ]; then
+      if [ -n "$range" ]; then printf '%s\t%s\t%s\t%s\n' "$doc" "$src" "$range" "$cur" >> "$tmp"
+      else printf '%s\t%s\t%s\n' "$doc" "$src" "$cur" >> "$tmp"; fi
     else printf '%s\n' "$line" >> "$tmp"; fi
   done < "$MANIFEST"
   if ! cmp -s "$tmp" "$MANIFEST"; then cp "$tmp" "$MANIFEST"; echo "fixed (manifest re-pin): $MANIFEST" >&2; fi
