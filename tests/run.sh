@@ -389,6 +389,12 @@ test_coverage_badge(){
   else
     printf '%s' "$out" | grep -q '^{"coverage_pct"' && ok "badge: no-marker fallback keeps --json stdout valid" || bad "badge: json-safe fallback" "$out"
   fi
+
+  # start marker but NO end marker -> file must be left byte-for-byte unchanged (no data loss)
+  ( cd "$t" && printf 'BEFORE\n<!-- evergreen:badge:start -->\nKEEP_1\nKEEP_2\n' > README.md )
+  cp "$t/README.md" "$t/.bk"
+  ( cd "$t" && bash "$SCAN" --coverage --badge >/dev/null 2>&1 )
+  cmp -s "$t/.bk" "$t/README.md" && ok "badge: missing end marker leaves README untouched (no data loss)" || bad "badge: data loss on missing end marker" "$(cat "$t/README.md")"
   rm -rf "$t"
 }
 

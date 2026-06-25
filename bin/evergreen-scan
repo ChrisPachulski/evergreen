@@ -240,7 +240,7 @@ scan_manifest(){
     if [ -n "$f4" ]; then range="$f3"; sha="${f4%$'\r'}"; where="$src:$range"
     else range=""; sha="${f3%$'\r'}"; where="$src"; fi   # tolerate CRLF on the last field
     [ -n "$src" ] && [ -n "$sha" ] || continue
-    case "$range" in *[!0-9-]*) emit needs_reverify medium "$doc" "manifest range \`$range\` for \`$src\` is malformed"; continue;; esac
+    case "$range" in *[!0-9-]*|*-*-*) emit needs_reverify medium "$doc" "manifest range \`$range\` for \`$src\` is malformed"; continue;; esac
     if [ ! -f "$src" ]; then emit in_docs_not_code high "$doc" "manifest source \`$src\` no longer exists"; continue; fi
     cur="$(pin_hash "$src" "$range")"; [ -n "$cur" ] || continue
     [ "$cur" = "$sha" ] || emit needs_reverify medium "$doc" "source \`$where\` changed since verified (pinned ${sha:0:8}…, now ${cur:0:8}…) — re-verify"
@@ -342,11 +342,18 @@ badge_inject(){
   md="![docs coverage](https://img.shields.io/badge/docs_coverage-${pct}%25-${color})"
   if [ -f "$f" ] && grep -q 'evergreen:badge:start' "$f"; then
     tmp="$(mktemp)"
+    # Buffer the whole file and replace only the lines strictly between the FIRST start
+    # marker and the FIRST end marker after it. If there is no such pair (missing/typo'd
+    # end, or end-before-start), leave the file byte-for-byte UNCHANGED — never drop content.
     awk -v md="$md" '
-      /evergreen:badge:start/{print; print md; skip=1; next}
-      /evergreen:badge:end/{skip=0}
-      !skip{print}' "$f" > "$tmp"
-    if ! cmp -s "$tmp" "$f"; then cp "$tmp" "$f"; echo "updated coverage badge in $f (${pct}%)" >&2; fi
+      {lines[NR]=$0} /evergreen:badge:start/{if(!s)s=NR}
+      END{
+        e=0; for(i=s+1;i<=NR;i++) if(lines[i] ~ /evergreen:badge:end/){e=i; break}
+        if(s && e){ for(i=1;i<=NR;i++){ if(i==s){print lines[i]; print md; continue} if(i>s && i<e) continue; print lines[i] } }
+        else      { for(i=1;i<=NR;i++) print lines[i] }
+      }' "$f" > "$tmp"
+    if ! cmp -s "$tmp" "$f"; then cp "$tmp" "$f"; echo "updated coverage badge in $f (${pct}%)" >&2
+    elif ! grep -q 'evergreen:badge:end' "$f"; then echo "badge: 'badge:start' present but no 'badge:end' in $f — left untouched" >&2; fi
     rm -f "$tmp"
   else
     { printf '%s\n' "$md"; echo "(add <!-- evergreen:badge:start --> / <!-- evergreen:badge:end --> to README.md to inject)"; } >&2
