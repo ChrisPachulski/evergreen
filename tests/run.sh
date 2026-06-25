@@ -667,6 +667,27 @@ test_prose_safety(){
   before="$(cat "$t/docs/setup.md")"; ( cd "$t" && PATH="$s:$PATH" bash "$SCAN" --fix-prose >/dev/null 2>&1 )
   [ "$before" = "$(cat "$t/docs/setup.md")" ] && ok "prose-safety: review-gate FAIL blocks the edit" || bad "prose-safety: applied despite FAIL"
   rm -rf "$t" "$s"
+  # (5) CONTRACT drift (a documented flag not in code) is fixable too, same gates
+  t="$(mktemp -d)"; ( cd "$t" || exit 1
+    git init -q && git config user.email t@t && git config user.name t
+    mkdir -p src docs; printf 'code\n' > src/main.sh
+    printf '# CLI\n\nUse `--ghost-flag` to run.\n' > docs/cli.md
+    git add -A && git commit -qm init ) >/dev/null 2>&1
+  s="$(mk_stub 'printf "# CLI\n\nUse the real flag to run.\n"')"   # clean draft drops the flag
+  ( cd "$t" && PATH="$s:$PATH" bash "$SCAN" --fix-prose >/dev/null 2>&1 )
+  ( cd "$t" && bash "$SCAN" 2>/dev/null ) | grep -q 'ghost-flag' \
+    && bad "prose-contract: flag drift resolved" "$(cat "$t/docs/cli.md")" || ok "prose-contract: a documented dead FLAG is fixed (beyond dead-path)"
+  rm -rf "$t" "$s"
+  # (6) contract: a draft that KEEPS the flag is refused (det gate generalizes)
+  t="$(mktemp -d)"; ( cd "$t" || exit 1
+    git init -q && git config user.email t@t && git config user.name t
+    mkdir -p src docs; printf 'code\n' > src/main.sh
+    printf '# CLI\n\nUse `--ghost-flag` to run.\n' > docs/cli.md
+    git add -A && git commit -qm init ) >/dev/null 2>&1
+  s="$(mk_stub 'printf "# CLI\n\nUse \`--ghost-flag\` (still here) to run.\n"')"
+  before="$(cat "$t/docs/cli.md")"; ( cd "$t" && PATH="$s:$PATH" bash "$SCAN" --fix-prose >/dev/null 2>&1 )
+  [ "$before" = "$(cat "$t/docs/cli.md")" ] && ok "prose-contract: draft keeping the flag is refused (det gate)" || bad "prose-contract: kept-flag draft applied!"
+  rm -rf "$t" "$s"
 }
 
 # --- 21. LLM prose-fixer harness (opt-in; live model + claude CLI) -----------

@@ -276,33 +276,37 @@ do_fix(){
 }
 
 # --fix-prose: the model half of "keep fresh", drawn safely. For docs the deterministic
-# pass flagged with a DEAD PATH reference, ask the model to draft a MINIMAL correction.
-# Two DETERMINISTIC gates then guarantee, without trusting the model: (1) the draft no
-# longer contains the dead path, and (2) it adds no net lines (no injected preamble). A
+# pass flagged with a dead reference (a file path, CLI flag, or env/config key the code
+# no longer has), ask the model to draft a MINIMAL correction. Two DETERMINISTIC gates
+# then guarantee, without trusting the model: (1) the draft no longer contains any flagged
+# stale token, and (2) it adds no net lines (no injected preamble). A
 # third independent model review-call backs these up against rewording — but that part is
 # best-effort, so applied edits go to the WORKING TREE and the diff is printed for you to
 # review with `git diff`; nothing is committed. Anything that fails a gate (after 3 tries)
 # is left as needs_review. Opt-in; requires the `claude` CLI.
 prose_fix_one(){
-  local doc="$1" deadpaths="$2" orig fixed verdict p attempt clean
+  local doc="$1" stale="$2" orig fixed verdict p attempt clean
   orig="$(cat "$doc")"
   # Up to 3 attempts: the gates below guarantee SAFETY on every try (a bad draft is never
   # applied); retries just recover EFFICACY from model variance (e.g. an added preamble).
   for attempt in 1 2 3; do
     [ "$attempt" -gt 1 ] && echo "prose-fix: retry $attempt for $doc" >&2
-    fixed="$(claude -p "You fix documentation drift. The file below names file path(s) that NO LONGER EXIST in the repo. Output the ENTIRE file with ONLY the dead path reference(s) minimally corrected or removed and EVERYTHING else byte-identical. Your output's first character MUST be the file's first character — no preamble, no 'Here is', no explanation, no code fences, and do NOT restate the dead path anywhere.
+    fixed="$(claude -p "You fix documentation drift. The file below references these things that NO LONGER EXIST in the repo (dead file paths, CLI flags, or env/config keys):
+$stale
+
+Output the ENTIRE file with ONLY those dead references minimally corrected or removed and EVERYTHING else byte-identical. Your output's first character MUST be the file's first character — no preamble, no 'Here is', no explanation, no code fences, and do NOT restate any of those dead references anywhere.
 
 $orig" 2>/dev/null)"
     [ -n "$fixed" ] && [ "$fixed" != "$orig" ] || continue
-    # Deterministic gate (LLM-independent): the draft must actually REMOVE every dead path.
-    # Catches the model re-mentioning the path (e.g. in a preamble) — that draft is refused.
-    clean=1; for p in $deadpaths; do printf '%s' "$fixed" | grep -qF -- "$p" && { clean=0; break; }; done
+    # Deterministic gate (LLM-independent): the draft must actually REMOVE every stale token.
+    # Catches the model re-mentioning one (e.g. in a preamble) — that draft is refused.
+    clean=1; for p in $stale; do printf '%s' "$fixed" | grep -qF -- "$p" && { clean=0; break; }; done
     [ "$clean" = 1 ] || continue
     # Deterministic gate 2: a dead-path correction edits/removes lines, it never ADDS them.
     # Rejecting net-new lines kills injected preambles/commentary without trusting the model.
     [ "$(printf '%s\n' "$fixed" | wc -l)" -le "$(printf '%s\n' "$orig" | wc -l)" ] || continue
     # Review gate: an independent model call backs up the deterministic gates on rewording.
-    verdict="$(claude -p "Reply with exactly one word, PASS or FAIL. PASS only if PROPOSED differs from ORIGINAL solely by correcting or removing dead file-path references — no other prose changed, nothing added, no new sentences/claims. Else FAIL.
+    verdict="$(claude -p "Reply with exactly one word, PASS or FAIL. PASS only if PROPOSED differs from ORIGINAL solely by correcting or removing dead references (file paths, CLI flags, or env/config keys) — no other prose changed, nothing added, no new sentences/claims. Else FAIL.
 
 ORIGINAL:
 $orig
@@ -318,11 +322,11 @@ $fixed" 2>/dev/null | grep -oiE 'PASS|FAIL' | head -1 | tr '[:lower:]' '[:upper:
 }
 prose_fix(){
   command -v claude >/dev/null 2>&1 || { echo "evergreen: --fix-prose needs the \`claude\` CLI" >&2; return 1; }
-  local doc deadpaths
-  awk -F'\t' '$1=="in_docs_not_code" && $4 ~ /does not exist on disk/ {print $3}' "$FIND" | sort -u | while read -r doc; do
+  local doc stale
+  awk -F'\t' '$1=="in_docs_not_code" && ($4 ~ /does not exist on disk/ || $4 ~ /documents flag / || $4 ~ /documents env\/config /){print $3}' "$FIND" | sort -u | while read -r doc; do
     [ -f "$doc" ] || continue
-    deadpaths="$(awk -F'\t' -v d="$doc" '$3==d && $4 ~ /does not exist on disk/ {p=$4; sub(/.*names `/,"",p); sub(/`.*/,"",p); print p}' "$FIND")"
-    prose_fix_one "$doc" "$deadpaths"
+    stale="$(awk -F'\t' -v d="$doc" '$3==d && $1=="in_docs_not_code" && ($4 ~ /does not exist on disk/ || $4 ~ /documents flag / || $4 ~ /documents env\/config /){p=$4; sub(/^[^`]*`/,"",p); sub(/`.*/,"",p); print p}' "$FIND" | sort -u)"
+    prose_fix_one "$doc" "$stale"
   done
 }
 
