@@ -268,6 +268,35 @@ test_spaced_filename(){
     || bad "spaced-filename: doc with a space in its path is still scanned (false green!)" "$out"
 }
 
+# --- 16. SHA-pinned manifest: pin / source-change / --fix re-pin / missing ----
+test_manifest(){
+  local t out sha; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src docs; printf 'v1\n' > src/api.py; printf '# API\n' > docs/api.md
+    sha="$(git hash-object src/api.py)"
+    { printf '# manifest\n'; printf 'docs/api.md\tsrc/api.py\t%s\n' "$sha"; } > .evergreen-manifest
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'no drift' && ok "manifest: pinned-match is clean" || bad "manifest: pinned-match is clean" "$out"
+
+  ( cd "$t" && printf 'v2\n' > src/api.py )
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'needs_reverify' && printf '%s' "$out" | grep -q 'changed since verified' \
+    && ok "manifest: source change -> needs_reverify (medium)" || bad "manifest: source change -> needs_reverify" "$out"
+
+  ( cd "$t" && bash "$SCAN" --fix >/dev/null 2>&1 )
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'no drift' && ok "manifest: --fix re-pins, re-scan clean" || bad "manifest: --fix re-pins" "$out"
+
+  ( cd "$t" && rm -f src/api.py )
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  printf '%s' "$out" | grep -q 'manifest source `src/api.py` no longer exists' \
+    && ok "manifest: deleted source -> high" || bad "manifest: deleted source -> high" "$out"
+  rm -rf "$t"
+}
+
 # --- 15. Embed-from-source: match / drift / --fix / missing source -----------
 test_embed(){
   local t out; t="$(newrepo)"
@@ -404,6 +433,7 @@ test_spaced_filename
 test_tab_filename
 test_outputs
 test_embed
+test_manifest
 test_args
 
 echo "----------------------------------------"

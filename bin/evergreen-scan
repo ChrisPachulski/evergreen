@@ -208,12 +208,47 @@ embed_one(){
 
 scan_embed(){ while IFS= read -r -d '' doc; do embed_one "$doc" check; done < <(doc_files_z); }
 
+# Signal 6: SHA-pinned source→doc manifest. `.evergreen-manifest` is TSV lines
+#   doc<TAB>source<TAB>blob-sha   (# comments / blank lines ignored)
+# where blob-sha is `git hash-object source` captured when the doc was last verified
+# against that source. When the source's current content hashes differently, the doc is
+# flagged for re-verification (it isn't proven wrong — the source just moved under it).
+# `--fix` re-pins the sha (the operator asserting they re-verified).
+MANIFEST=".evergreen-manifest"
+scan_manifest(){
+  [ -f "$MANIFEST" ] || return 0
+  local doc src sha cur
+  while IFS=$'\t' read -r doc src sha || [ -n "${doc:-}" ]; do
+    case "$doc" in ''|'#'*) continue;; esac
+    [ -n "$src" ] && [ -n "$sha" ] || continue
+    if [ ! -f "$src" ]; then emit in_docs_not_code high "$doc" "manifest source \`$src\` no longer exists"; continue; fi
+    cur="$(git hash-object "$src" 2>/dev/null)"; [ -n "$cur" ] || continue
+    [ "$cur" = "$sha" ] || emit needs_reverify medium "$doc" "source \`$src\` changed since verified (pinned ${sha:0:8}…, now ${cur:0:8}…) — re-verify"
+  done < "$MANIFEST"
+}
+fix_manifest(){
+  [ -f "$MANIFEST" ] || return 0
+  local tmp line doc src sha cur; tmp="$(mktemp)"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) printf '%s\n' "$line" >> "$tmp"; continue;; esac
+    IFS=$'\t' read -r doc src sha <<EOF
+$line
+EOF
+    if [ -n "$src" ] && [ -f "$src" ] && cur="$(git hash-object "$src" 2>/dev/null)" && [ -n "$cur" ]; then
+      printf '%s\t%s\t%s\n' "$doc" "$src" "$cur" >> "$tmp"
+    else printf '%s\n' "$line" >> "$tmp"; fi
+  done < "$MANIFEST"
+  if ! cmp -s "$tmp" "$MANIFEST"; then cp "$tmp" "$MANIFEST"; echo "fixed (manifest re-pin): $MANIFEST" >&2; fi
+  rm -f "$tmp"
+}
+
 # --fix applies ONLY derivable fixes (embed refresh from source; manifest re-pin). It
 # never rewrites prose — that stays a human/model job. Fix messages go to stderr so
 # --json/--sarif stdout stays clean.
 do_fix(){
   local doc
   while IFS= read -r -d '' doc; do embed_one "$doc" fix; done < <(doc_files_z)
+  fix_manifest
 }
 
 run_scan(){
@@ -222,6 +257,7 @@ run_scan(){
   scan_renames "$base"
   scan_contract
   scan_embed
+  scan_manifest
   scan_examples
 }
 
