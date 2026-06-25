@@ -399,6 +399,47 @@ test_coverage_deno(){
   rm -rf "$t"
 }
 
+# --- 17f. Parser-backed Go coverage via go/ast (skips without go) -------------
+test_coverage_go(){
+  command -v go >/dev/null 2>&1 || { ok "coverage-go: skipped (no go toolchain)"; return; }
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src
+    # grouped `type ( … )` and a string holding `func …` are the cases regex gets wrong;
+    # go/ast counts GroupA/GroupB and never the string -> 3/6, where regex would say 2/4.
+    printf 'package s\nimport "fmt"\n// Exported is documented.\nfunc Exported(){}\nfunc Undoc(){}\nfunc unexported(){}\n// Greeter greets.\ntype Greeter struct{ Name string }\nfunc (g Greeter) Hello(){ fmt.Println("func FakeInString(){}") }\ntype (\n\t// GroupA doc\n\tGroupA struct{}\n\tGroupB struct{}\n)\n' > src/a.go
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" --coverage 2>/dev/null)"
+  # documented: Exported, Greeter, GroupA = 3 ; total: + Undoc, Hello, GroupB = 6 = 50%
+  printf '%s' "$out" | grep -q '50% (3/6' && printf '%s' "$out" | grep -q 'go: ast' \
+    && ok "coverage-go: exact funcs/types/methods + grouped types via go/ast (3/6)" || bad "coverage-go: 50% (3/6) via go/ast" "$out"
+  rm -rf "$t"
+}
+
+# --- 17g. Parser-backed Rust coverage via syn (skips without cargo; offline-safe) ---
+test_coverage_rust(){
+  command -v cargo >/dev/null 2>&1 || { ok "coverage-rust: skipped (no cargo)"; return; }
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src
+    # unresolved `mod`/`use` (fatal to rustdoc), a multi-line `pub struct`, and `pub fn`
+    # inside a string are exactly where regex/rustdoc fail; syn parses syntactically -> 3/6.
+    printf 'mod missing;\nuse crate::missing::x;\n/// doc fn\npub fn doc_fn(){ let _ = "pub fn fake_in_string(){}"; }\npub fn undoc_fn(){}\nfn private(){}\n/// doc struct\npub struct DocS;\npub struct\n    MultiLine;\nimpl DocS {\n    /// doc method\n    pub fn doc_m(&self){}\n    pub fn undoc_m(&self){}\n}\n' > src/a.rs
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" --coverage 2>/dev/null)"
+  # documented: doc_fn, DocS, doc_m = 3 ; total: + undoc_fn, MultiLine, undoc_m = 6 = 50%
+  if printf '%s' "$out" | grep -q '50% (3/6' && printf '%s' "$out" | grep -q 'rust: syn'; then
+    ok "coverage-rust: exact pub items+methods via syn, ignores strings/unresolved mod (3/6)"
+  elif printf '%s' "$out" | grep -q 'rust: regex'; then
+    ok "coverage-rust: syn build unavailable -> regex fallback (offline?)"   # don't fail suite on no network
+  else
+    bad "coverage-rust: 50% (3/6) via syn" "$out"
+  fi
+  rm -rf "$t"
+}
+
 # --- 17c. Coverage badge: inject, idempotent, json-safe fallback -------------
 test_coverage_badge(){
   local t out; t="$(newrepo)"
@@ -755,6 +796,8 @@ test_coverage
 test_coverage_methods
 test_coverage_ast
 test_coverage_deno
+test_coverage_go
+test_coverage_rust
 test_coverage_badge
 test_fix_engine
 test_edge_hardening

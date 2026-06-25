@@ -1,0 +1,15 @@
+[package]
+name = "evergreen-rust-cov"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "evergreen-rust-cov"
+path = "src/main.rs"
+
+[dependencies]
+syn = { version = "2", features = ["full", "parsing"] }
+
+[profile.release]
+opt-level = 0

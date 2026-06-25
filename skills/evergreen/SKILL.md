@@ -135,11 +135,13 @@ you cannot cite code for. Stable docs that are old but still true — age is not
   `--selftest` self-checks. Refuses to run outside a git repo (exits 1) rather than
   report a false "clean".
 - `bin/evergreen-scan --coverage [--fail-under N] [--badge]` — doc-comment coverage for
-  py/js/ts/go/rs. Python (`ast`) and JS/TS (`deno doc`) are parser-backed when their
-  parser is present, else regex; Go/Rust stay regex (tree-sitter is the upgrade path for
-  those two). With `--ci`, dropping below `--fail-under` or the `--fix`-set baseline
-  (ratchet) exits 2. `--badge` writes/refreshes a shields.io badge between
-  `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in README.md.
+  py/js/ts/go/rs. Each language is parser-backed when its toolchain is present, else regex:
+  Python `ast`, JS/TS `deno doc`, Go `go/ast`, Rust `syn` — all single-file syntactic parses
+  (no import resolution). The Go/Rust helpers in `bin/helpers/` build and cache on first use
+  under `$XDG_CACHE_HOME/evergreen` (out-of-tree), falling back to regex if the toolchain is
+  absent or the first build fails (e.g. offline). With `--ci`, dropping below `--fail-under`
+  or the `--fix`-set baseline (ratchet) exits 2. `--badge` writes/refreshes a shields.io badge
+  between `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in README.md.
 - Per-repo `CODE_ROOTS` via `.evergreen.sh`. The suite lives at `tests/run.sh`.
 
 Lazy first, deterministic before model, prove-or-drop. The freshest doc is the one

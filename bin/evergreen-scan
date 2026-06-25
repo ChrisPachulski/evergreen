@@ -345,8 +345,9 @@ prose_fix(){
 # graceful regex fallback otherwise:
 #   python : python3 stdlib `ast` (exact) — else regex
 #   js/ts  : `deno doc --json` (exact, real parser) — else regex
-#   go/rust: regex heuristic (no zero-install parser here; tree-sitter is the upgrade path)
-# Regex heuristic (fallback / go / rust):
+#   go     : go/ast via a `go build`-cached helper (exact) — else regex
+#   rust   : `syn` via a cargo-built cached helper (exact) — else regex
+# Regex heuristic (fallback for any language whose parser/toolchain is absent):
 #   python: `def`/`async def`/`class` at any indent (non-_), followed by a """ docstring
 #   js/ts:  `export function|class|const`, preceded by // or */ comment (top-level only)
 #   go:     exported `func`/`type` (Capitalized), preceded by // comment (methods incl.)
@@ -414,10 +415,40 @@ for f,info in d.get("nodes",{}).items():
      if m.get("jsDoc"): doc+=1
 print(doc,tot)'
 }
+# Parser-backed coverage for Go (go/ast) and Rust (syn) — each language's canonical
+# syntactic parser. Both parse a SINGLE file without resolving imports, so unresolved
+# `mod`/`use` or missing sibling packages don't matter (this is why standalone `rustdoc`
+# and `go doc` are unusable here — they build/resolve). The Go helper is `go build`-cached;
+# the Rust helper is a vendored crate, cargo-built out-of-tree. Both build lazily, once,
+# under $XDG_CACHE_HOME/evergreen and rebuild when the helper source changes; both fall
+# back to the regex heuristic when the toolchain is absent or the build fails (e.g. offline).
+EVCACHE="${XDG_CACHE_HOME:-$HOME/.cache}/evergreen"
+ensure_go_cov(){
+  command -v go >/dev/null 2>&1 || return 1
+  local src="${SELF%/*}/helpers/go-cov.go" bin="$EVCACHE/go-cov"
+  [ -f "$src" ] || return 1
+  if [ ! -x "$bin" ] || [ "$src" -nt "$bin" ]; then
+    mkdir -p "$EVCACHE" || return 1
+    go build -o "$bin" "$src" >/dev/null 2>&1 || return 1
+  fi
+  GO_COV_BIN="$bin"
+}
+ensure_rust_cov(){
+  command -v cargo >/dev/null 2>&1 || return 1
+  local proj="${SELF%/*}/helpers/rust-cov" work="$EVCACHE/rust-cov" bin="$EVCACHE/evergreen-rust-cov"
+  [ -f "$proj/src/main.rs" ] || return 1
+  if [ ! -x "$bin" ] || [ "$proj/src/main.rs" -nt "$bin" ]; then
+    mkdir -p "$work/src" || return 1
+    cp "$proj/Cargo.toml" "$work/Cargo.toml" && cp "$proj/src/main.rs" "$work/src/main.rs" || return 1
+    ( cd "$work" && cargo build --release --quiet ) >/dev/null 2>&1 || return 1
+    cp "$work/target/release/evergreen-rust-cov" "$bin" 2>/dev/null || return 1
+  fi
+  RUST_COV_BIN="$bin"
+}
 # Accumulate a "doc total" pair into run_coverage's doc/tot (bash dynamic scope).
 cov_add(){ local d t; d="${1%% *}"; t="${1##* }"; case "$d$t" in ''|*[!0-9]*) return;; esac; doc=$((doc+d)); tot=$((tot+t)); }
 run_coverage(){
-  local f r doc=0 tot=0 pct base pylabel=regex jslabel=regex
+  local f r doc=0 tot=0 pct base pylabel=regex jslabel=regex golabel=regex rslabel=regex
   local -a pyf=() jsf=() gof=() rsf=()
   while IFS= read -r -d '' f; do
     case "$f" in
@@ -441,8 +472,14 @@ run_coverage(){
            done; fi
     else r="$(for f in "${jsf[@]}"; do coverage_file "$f" js; done | awk '{d+=$1;t+=$2}END{print d,t}')"; cov_add "$r"; fi
   fi
-  [ "${#gof[@]}" -gt 0 ] && for f in "${gof[@]}"; do cov_add "$(coverage_file "$f" go)"; done
-  [ "${#rsf[@]}" -gt 0 ] && for f in "${rsf[@]}"; do cov_add "$(coverage_file "$f" rust)"; done
+  if [ "${#gof[@]}" -gt 0 ]; then
+    if ensure_go_cov && r="$("$GO_COV_BIN" "${gof[@]}" 2>/dev/null)" && [ -n "$r" ]; then golabel=ast; cov_add "$r"
+    else for f in "${gof[@]}"; do cov_add "$(coverage_file "$f" go)"; done; fi
+  fi
+  if [ "${#rsf[@]}" -gt 0 ]; then
+    if ensure_rust_cov && r="$("$RUST_COV_BIN" "${rsf[@]}" 2>/dev/null)" && [ -n "$r" ]; then rslabel=syn; cov_add "$r"
+    else for f in "${rsf[@]}"; do cov_add "$(coverage_file "$f" rust)"; done; fi
+  fi
   if [ "$tot" -eq 0 ]; then pct=100; else pct=$(( doc * 100 / tot )); fi
   base=""; [ -f .evergreen-coverage ] && base="$(tr -dc 0-9 < .evergreen-coverage)"
   if [ "$FIX" -eq 1 ]; then echo "$pct" > .evergreen-coverage; echo "coverage baseline set: ${pct}%" >&2; fi
@@ -450,7 +487,7 @@ run_coverage(){
   if [ "$MODE" = json ]; then
     printf '{"coverage_pct":%s,"documented":%s,"total":%s,"fail_under":%s,"baseline":%s}\n' "$pct" "$doc" "$tot" "$FAIL_UNDER" "${base:-null}"
   else
-    printf 'evergreen coverage: %s%% (%s/%s public symbols documented) [py: %s; js/ts: %s; go/rs: regex]\n' "$pct" "$doc" "$tot" "$pylabel" "$jslabel"
+    printf 'evergreen coverage: %s%% (%s/%s public symbols documented) [py: %s; js/ts: %s; go: %s; rust: %s]\n' "$pct" "$doc" "$tot" "$pylabel" "$jslabel" "$golabel" "$rslabel"
     [ -n "$base" ] && printf '  baseline: %s%%\n' "$base"
   fi
   if [ "$CI" -eq 1 ]; then

@@ -87,24 +87,34 @@ doc); the remaining categories are model-side.
 Severity with an explicit **Auto-Fixable?** flag per finding. *(credit:
 Zarl-prog/doc-drift-detector)*
 
-### 4. Coverage as a defensible score — BUILT (Python + JS/TS parser-backed; Go/Rust heuristic)
+### 4. Coverage as a defensible score — BUILT (parser-backed for py/js/ts/go/rust)
 `--coverage` counts public symbols and whether each carries an adjacent doc-comment,
-parser-backed where a parser is available and gracefully falling back to regex otherwise.
-**Python** uses the stdlib `ast` parser when `python3` is present (exact functions/classes
-incl. `async def`, ignoring defs in comments/strings, excluding `_`-prefixed names incl.
-dunders). **JS/TS** use `deno doc --json` — a real parser — when both `deno` and `python3`
-(to read deno's JSON) are present (exported functions/classes/interfaces/enums/types/
-variables + public class methods, jsDoc = documented). Each falls back to the regex
-heuristic when its parser is absent or a file won't parse. **Go/Rust remain regex** (Rust
-`pub` items at any indent incl. impl methods; exported Go funcs/types and methods). The
-human label reads `[py: ast|regex; js/ts: deno|regex; go/rs: regex]`. `--fail-under`
+parser-backed where the toolchain is available and gracefully falling back to regex otherwise.
+Every parser is a **single-file syntactic** parse — it does not resolve imports, so unresolved
+`mod`/`use`/missing sibling files don't matter (the reason standalone `rustdoc`/`go doc`,
+which build the crate/package, are unusable per-file):
+- **Python** — stdlib `ast` when `python3` is present (functions/classes incl. `async def`,
+  ignoring defs in comments/strings, excluding `_`-prefixed names incl. dunders).
+- **JS/TS** — `deno doc --json` when `deno` + `python3` (to read deno's JSON) are present
+  (exported functions/classes/interfaces/enums/types/variables + public class methods).
+- **Go** — the stdlib `go/ast` parser via a `go build`-cached helper (`bin/helpers/go-cov.go`)
+  when `go` is present (exported funcs/types/methods incl. grouped `type ( … )`, with doc
+  resolved on the GenDecl or the TypeSpec).
+- **Rust** — the `syn` parser (the de-facto Rust syntactic parser, what proc-macros use)
+  via a cargo-built cached helper (`bin/helpers/rust-cov/`) when `cargo` is present (pub
+  fn/struct/enum/trait/type + pub impl methods; `///`/`//!`/`#[doc]` = documented).
+
+Each falls back to the regex heuristic when its toolchain is absent, the first build fails
+(e.g. offline — the Rust helper fetches `syn` once), or a file won't parse. The helpers build
+lazily, once, under `$XDG_CACHE_HOME/evergreen` (out-of-tree — nothing written to the repo)
+and rebuild when the helper source changes. The human label reads
+`[py: ast|regex; js/ts: deno|regex; go: ast|regex; rust: syn|regex]`. `--fail-under`
 defaults to 80 and gates under `--ci` (exit 2), with **delta-gating**: `--coverage --fix`
 records a `.evergreen-coverage` baseline, and dropping below it fails even when above
 threshold (the ratchet). `--coverage --badge` writes/refreshes a shields.io markdown
 badge between `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in
 README.md (idempotent; brightgreen ≥80, yellow ≥50, red else; with no markers it prints
-the badge to stderr so `--json`/`--sarif` stdout stays valid). Now that Python and JS/TS
-are parser-backed, only Go and Rust await a tree-sitter pass.
+the badge to stderr so `--json`/`--sarif` stdout stays valid).
 *(credit: econchick/interrogate 667★, epassaro/docstr-cov-workflow)*
 
 ### 5. Safe auto-fix (the "keep fresh" half) — partially BUILT
@@ -167,9 +177,6 @@ coverage (incl. the `--badge`), and the derivable-only `--fix` are BUILT (sectio
 - **AST-hash binding** — a tree-sitter context-node hash, so a pin survives line-number
   churn and reformatting; today's deterministic line-range pin is the stand-in
   *(NicoSchwandner/docdrift, kedge)*.
-- **Tree-sitter coverage for Go/Rust** — Python (ast) and JS/TS (deno) are already
-  parser-backed; only Go and Rust remain on the regex heuristic
-  *(interrogate, docstr-cov-workflow)*.
 - **Broader model-drafted prose fixes** — extend the dead-reference `--fix-prose` gate
   (BUILT, section 5) to derivable signatures/tables; changed signatures and free-form
   rationale stay human-only (no deterministic anchor).

@@ -80,12 +80,14 @@ add a `.evergreen-manifest` TSV line — whole-file `doc<TAB>source<TAB>blob-sha
 doc to just a source line range (edits elsewhere in the file won't trip it). When the
 pinned content changes the doc is flagged `needs_reverify` and `--fix` re-pins it.
 
-`--coverage` is doc-comment coverage for py/js/ts/go/rs, **parser-backed where a parser
-exists**. Python uses the stdlib `ast` parser (with `python3`); JS/TS use `deno doc
---json` (with both `deno` and `python3` to read its output) — both exact, ignoring defs
-in comments/strings and excluding non-public names. Each falls back to regex when its
-parser is absent or a file won't parse. Go/Rust stay regex (tree-sitter is the upgrade
-path for those two). `--coverage --fix` records a `.evergreen-coverage` baseline; under
+`--coverage` is doc-comment coverage for py/js/ts/go/rs, **parser-backed where the
+toolchain exists** — every parser is a single-file syntactic parse (no import resolution).
+Python uses the stdlib `ast` parser (with `python3`); JS/TS use `deno doc --json` (with
+`deno` + `python3` to read its output); Go uses the stdlib `go/ast` parser (with `go`);
+Rust uses `syn` (with `cargo`). The Go/Rust helpers in `bin/helpers/` build and cache on
+first use under `$XDG_CACHE_HOME/evergreen`. Each falls back to regex when its toolchain
+is absent, a file won't parse, or the first build fails (e.g. offline). `--coverage --fix`
+records a `.evergreen-coverage` baseline; under
 `--ci`, dropping below `--fail-under` *or* below the baseline (the ratchet) exits 2.
 `--coverage --badge` writes/refreshes a shields.io badge between
 `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in README.md
