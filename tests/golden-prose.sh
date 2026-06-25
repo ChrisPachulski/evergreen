@@ -34,6 +34,10 @@ grep -q 'SENTINEL_UNRELATED_LINE' "$t/docs/setup.md" \
   && ok "rubric: unrelated content preserved" || bad "rubric: unrelated content preserved"
 printf '%s' "$after" | grep -q 'no drift detected' \
   && ok "rubric: no new drift introduced" || bad "rubric: no new drift introduced"
+# no net line additions (a dead-path fix edits/removes, never injects a preamble)
+nlines="$(wc -l < "$t/docs/setup.md")"
+[ "$nlines" -le 5 ] \
+  && ok "rubric: no net line additions (no injected preamble)" || bad "rubric: no net line additions (lines=$nlines, want <=5)"
 
 rm -rf "$t"
 echo "----------------------------------------"

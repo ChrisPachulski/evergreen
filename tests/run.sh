@@ -615,6 +615,44 @@ test_golden(){
   fi
 }
 
+# --- 21b. prose-fix SAFETY gates — deterministic, via a stubbed `claude` -------
+# No live model needed: stub claude to MISBEHAVE and prove a bad draft is never applied,
+# and to behave and prove a clean draft is. Locks the safety guarantee permanently.
+mk_prose_repo(){ local t; t="$(mktemp -d)"; ( cd "$t" || exit 1
+  git init -q && git config user.email t@t && git config user.name t
+  mkdir -p src docs; printf 'real\n' > src/real.py
+  printf '# Setup\n\nRun `src/old_runner.py` to start.\n' > docs/setup.md
+  git add -A && git commit -qm init ) >/dev/null 2>&1; printf '%s' "$t"; }
+# mk_stub DRAFT-CMD [VERDICT]: a fake `claude` that answers the review-call with VERDICT
+# (default PASS) and otherwise emits the draft via DRAFT-CMD.
+mk_stub(){ local d v; d="$(mktemp -d)"; v="${2:-PASS}"
+  { printf '#!/usr/bin/env bash\n'
+    printf 'for a in "$@"; do case "$a" in *"PASS or FAIL"*) echo %s; exit 0;; esac; done\n' "$v"
+    printf '%s\n' "$1"; } > "$d/claude"; chmod +x "$d/claude"; printf '%s' "$d"; }
+test_prose_safety(){
+  local t s before
+  # (1) malicious: draft keeps the dead path + reviewer always PASS -> must REFUSE (det gate 1)
+  t="$(mk_prose_repo)"; s="$(mk_stub 'printf "# Setup\n\nRun \`src/old_runner.py\` (gone) — see \`src/real.py\`.\n"')"
+  before="$(cat "$t/docs/setup.md")"; ( cd "$t" && PATH="$s:$PATH" bash "$SCAN" --fix-prose >/dev/null 2>&1 )
+  [ "$before" = "$(cat "$t/docs/setup.md")" ] && ok "prose-safety: draft keeping the dead path is refused (det gate 1)" || bad "prose-safety: dead-path draft applied!"
+  rm -rf "$t" "$s"
+  # (2) preamble injection + reviewer always PASS -> must REFUSE (det gate 2: no net new lines)
+  t="$(mk_prose_repo)"; s="$(mk_stub 'printf "INJECTED\n# Setup\n\nRun \`src/real.py\` to start.\n"')"
+  before="$(cat "$t/docs/setup.md")"; ( cd "$t" && PATH="$s:$PATH" bash "$SCAN" --fix-prose >/dev/null 2>&1 )
+  [ "$before" = "$(cat "$t/docs/setup.md")" ] && ok "prose-safety: added-preamble draft is refused (det gate 2)" || bad "prose-safety: preamble applied!"
+  rm -rf "$t" "$s"
+  # (3) clean draft + reviewer PASS -> APPLIED, dead path gone
+  t="$(mk_prose_repo)"; s="$(mk_stub 'printf "# Setup\n\nRun \`src/real.py\` to start.\n"')"
+  ( cd "$t" && PATH="$s:$PATH" bash "$SCAN" --fix-prose >/dev/null 2>&1 )
+  if ! grep -q 'old_runner.py' "$t/docs/setup.md" && grep -q 'src/real.py' "$t/docs/setup.md"; then ok "prose-safety: a clean validated draft IS applied"; else bad "prose-safety: clean draft not applied"; fi
+  rm -rf "$t" "$s"
+  # (4) clean draft but reviewer FAILs -> must NOT apply
+  t="$(mk_prose_repo)"; s="$(mk_stub 'printf "# Setup\n\nRun \`src/real.py\` to start.\n"' FAIL)"
+  before="$(cat "$t/docs/setup.md")"; ( cd "$t" && PATH="$s:$PATH" bash "$SCAN" --fix-prose >/dev/null 2>&1 )
+  [ "$before" = "$(cat "$t/docs/setup.md")" ] && ok "prose-safety: review-gate FAIL blocks the edit" || bad "prose-safety: applied despite FAIL"
+  rm -rf "$t" "$s"
+}
+
 # --- 21. LLM prose-fixer harness (opt-in; live model + claude CLI) -----------
 # Default-skipped so the suite stays fast/deterministic. Run with:
 #   EVERGREEN_LLM_TESTS=1 bash tests/run.sh
@@ -673,6 +711,7 @@ test_coverage_badge
 test_fix_engine
 test_edge_hardening
 test_golden
+test_prose_safety
 test_golden_prose
 test_args
 

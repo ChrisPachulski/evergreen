@@ -276,11 +276,13 @@ do_fix(){
 }
 
 # --fix-prose: the model half of "keep fresh", drawn safely. For docs the deterministic
-# pass flagged with a DEAD PATH reference, ask the model to draft a MINIMAL correction,
-# then a second independent model call must validate the draft only fixes the dead ref and
-# changes nothing else (the generate-vs-review gate). Validated edits are written to the
-# WORKING TREE (reviewable via git diff) and the diff is printed — never committed. A
-# failed validation is left as needs_review. Opt-in; requires the `claude` CLI.
+# pass flagged with a DEAD PATH reference, ask the model to draft a MINIMAL correction.
+# Two DETERMINISTIC gates then guarantee, without trusting the model: (1) the draft no
+# longer contains the dead path, and (2) it adds no net lines (no injected preamble). A
+# third independent model review-call backs these up against rewording — but that part is
+# best-effort, so applied edits go to the WORKING TREE and the diff is printed for you to
+# review with `git diff`; nothing is committed. Anything that fails a gate (after 3 tries)
+# is left as needs_review. Opt-in; requires the `claude` CLI.
 prose_fix_one(){
   local doc="$1" deadpaths="$2" orig fixed verdict p attempt clean
   orig="$(cat "$doc")"
@@ -296,7 +298,10 @@ $orig" 2>/dev/null)"
     # Catches the model re-mentioning the path (e.g. in a preamble) — that draft is refused.
     clean=1; for p in $deadpaths; do printf '%s' "$fixed" | grep -qF -- "$p" && { clean=0; break; }; done
     [ "$clean" = 1 ] || continue
-    # Independent review gate: a second model call must confirm nothing else changed.
+    # Deterministic gate 2: a dead-path correction edits/removes lines, it never ADDS them.
+    # Rejecting net-new lines kills injected preambles/commentary without trusting the model.
+    [ "$(printf '%s\n' "$fixed" | wc -l)" -le "$(printf '%s\n' "$orig" | wc -l)" ] || continue
+    # Review gate: an independent model call backs up the deterministic gates on rewording.
     verdict="$(claude -p "Reply with exactly one word, PASS or FAIL. PASS only if PROPOSED differs from ORIGINAL solely by correcting or removing dead file-path references — no other prose changed, nothing added, no new sentences/claims. Else FAIL.
 
 ORIGINAL:
