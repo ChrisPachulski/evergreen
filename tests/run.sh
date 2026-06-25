@@ -364,6 +364,25 @@ test_coverage(){
   rm -rf "$t"
 }
 
+# --- 17d. AST-backed Python coverage: exact, ignores comments/strings ---------
+test_coverage_ast(){
+  command -v python3 >/dev/null 2>&1 || { ok "coverage-ast: skipped (no python3)"; return; }
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src
+    printf 'def top():\n    """d"""\nclass S:\n    """c"""\n    def m_doc(self):\n        """d"""\n    def m_undoc(self):\n        pass\n    def _hidden(self):\n        pass\n    def __init__(self):\n        pass\n# def comment_fake():\nx = "def string_fake():"\n' > src/a.py
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" --coverage 2>/dev/null)"
+  # documented: top, S, m_doc = 3 ; total: + m_undoc = 4 ; _hidden/__init__/comment/string excluded
+  printf '%s' "$out" | grep -q '75% (3/4' && printf '%s' "$out" | grep -q 'py: ast' \
+    && ok "coverage-ast: exact, excludes comment/string/dunder/_private (75%)" || bad "coverage-ast: exact 75% (3/4)" "$out"
+  # a syntax-error file must not crash the run
+  ( cd "$t" && printf 'def broken(:\n' > src/bad.py && git add -A && git commit -qm bad ) >/dev/null 2>&1
+  ( cd "$t" && bash "$SCAN" --coverage >/dev/null 2>&1 ) && ok "coverage-ast: parse-error file falls back without crashing" || bad "coverage-ast: parse-error crashed"
+  rm -rf "$t"
+}
+
 # --- 17c. Coverage badge: inject, idempotent, json-safe fallback -------------
 test_coverage_badge(){
   local t out; t="$(newrepo)"
@@ -640,6 +659,7 @@ test_manifest
 test_manifest_region
 test_coverage
 test_coverage_methods
+test_coverage_ast
 test_coverage_badge
 test_fix_engine
 test_edge_hardening
