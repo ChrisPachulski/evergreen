@@ -28,10 +28,12 @@ Never spend a model on what grep, git, or the AST already knows.
 1. **Did a doc-named thing vanish?** Run `bin/evergreen-scan` — in-repo file paths a
    doc names that no longer exist on disk, files git just renamed/deleted that docs
    still cite. Deterministic, zero false-negatives. *(prior art: kedge, docs-drift-check, lychee)*
-2. **Does a documented contract still exist?** The engine plain-string checks every
-   `--word` CLI flag and `UPPER_SNAKE` env/config key a doc documents against tracked
-   non-doc files; a token that lives only in the docs is drift (flags high, env medium).
-   Code is the source of truth; the doc is the claim under test. *(doc-checks, readme-drift, sachn1)*
+2. **Does a documented contract still exist?** The engine whole-token matches every
+   `--word` CLI flag and `UPPER_SNAKE` env/config key written in `` `inline code` `` (prose
+   is never scanned) against tracked non-doc files; a token that lives only in the docs is
+   drift (flags high, env medium). Known limit: any backticked `--dashed` token is read as
+   a CLI flag, so a CSS custom property or autoconf flag in backticks can flag — backtick
+   only real flags. Code is the source of truth; the doc is the claim under test. *(doc-checks, readme-drift, sachn1)*
 3. **Is a runnable example broken?** Execute fenced blocks whose info string contains
    `evergreen` (e.g. ```` ```bash evergreen ````); a non-zero exit is ground truth.
    This RUNS CODE FROM THE DOC, so it is double-gated: the doc author tags the block AND

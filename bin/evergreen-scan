@@ -47,8 +47,10 @@ case "$FAIL_LEVEL" in none|low|medium|high) ;; *) echo "bad --fail-level: $FAIL_
 sev_rank(){ case "$1" in none) echo 0;; low) echo 1;; medium) echo 2;; high) echo 3;; *) echo 3;; esac; }
 
 # ---- finding sink: category \t severity \t file \t detail ------------------
+# TSV is the sink, so a TAB/newline in any field (e.g. a tab in a tracked filename)
+# would corrupt the column split — squash them to spaces before writing.
 FIND="$(mktemp)"; trap 'rm -f "$FIND"' EXIT
-emit(){ printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$FIND"; }
+emit(){ printf '%s\t%s\t%s\t%s\n' "${1//[$'\t\n']/ }" "${2//[$'\t\n']/ }" "${3//[$'\t\n']/ }" "${4//[$'\t\n']/ }" >> "$FIND"; }
 
 default_base(){
   if [ -n "$BASE" ]; then echo "$BASE"; return; fi

@@ -268,6 +268,30 @@ test_spaced_filename(){
     || bad "spaced-filename: doc with a space in its path is still scanned (false green!)" "$out"
 }
 
+# --- 13. Tab in a doc filename must not corrupt the TSV finding sink ----------
+test_tab_filename(){
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src docs; printf 'x\n' > src/a.py
+    printf '# Doc\nSee `src/GONE.swift`.\n' > "$(printf 'docs/tab\tname.md')"
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" --json 2>/dev/null)"
+  rm -rf "$t"
+  # JSON valid and detail intact (the GONE.swift detail must not leak into another field).
+  local valid=0
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$out" | python3 -c 'import sys,json;json.load(sys.stdin)' >/dev/null 2>&1 && valid=1
+  else
+    printf '%s' "$out" | grep -q '^{"findings":\[' && valid=1
+  fi
+  if [ "$valid" = 1 ] && printf '%s' "$out" | grep -q 'GONE.swift'; then
+    ok "tab-filename: TSV sink not corrupted (valid JSON, detail intact)"
+  else
+    bad "tab-filename: TSV sink not corrupted" "$out"
+  fi
+}
+
 # --- 12. Arg validation ------------------------------------------------------
 test_args(){
   local t rc; t="$(newrepo)"
@@ -305,6 +329,7 @@ test_hook_no_rce
 test_contract_prose
 test_contract_boundary
 test_spaced_filename
+test_tab_filename
 test_args
 
 echo "----------------------------------------"
