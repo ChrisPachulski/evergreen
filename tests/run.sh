@@ -171,6 +171,61 @@ test_contract(){
     || ok "contract: all-caps-no-underscore (JSON/HTTP) is not flagged"
 }
 
+# --- 5b. Contract precision: CSS vars / external-tool flags / trailing dash / ignore knobs ---
+test_contract_precision(){
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p src docs
+    printf 'real code\n' > src/code.txt
+    {
+      printf '# Doc\n'
+      printf 'Theme uses `var(--primary)` and a `--accent: #fff` token.\n'        # CSS -> not flags
+      printf 'History: `git log --oneline`; container `docker run --rm img`.\n'   # external tools
+      printf 'Animation `--dur-` ramp fragment.\n'                                 # trailing dash
+      printf 'Pass `--ghost-flag` (absent) — real drift.\n'                        # true positive
+      printf 'Also `--noisy-flag` (suppressed by IGNORE_FLAGS regex).\n'
+      printf 'Env `GHOST_VAR` (absent); `NOISY_VAR` (suppressed by IGNORE_ENV).\n'
+    } > docs/g.md
+    # regex patterns (not literal tokens) so suppression is attributable to the knob, not in_code
+    printf 'IGNORE_FLAGS="--noisy-[a-z]+"\nIGNORE_ENV="NOISY_[A-Z]+"\n' > .evergreen.sh
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+
+  printf '%s' "$out" | grep -q -- '--ghost-flag'                 && ok "precision: a genuine dead flag still fires"                || bad "precision: dead flag still fires" "$out"
+  printf '%s' "$out" | grep -q 'GHOST_VAR'                       && ok "precision: a genuine dead env var still fires"            || bad "precision: dead env still fires" "$out"
+  printf '%s' "$out" | grep -qE -- '--primary|--accent'          && bad "precision: CSS custom property flagged" "$out"           || ok "precision: CSS custom properties (var()/decl) not flagged"
+  printf '%s' "$out" | grep -qE -- '--oneline|--rm'              && bad "precision: external-tool flag flagged" "$out"            || ok "precision: external-tool flags (git/docker) not flagged"
+  printf '%s' "$out" | grep -qE -- '--dur'                       && bad "precision: trailing-dash fragment flagged" "$out"        || ok "precision: trailing-dash fragment not flagged"
+  printf '%s' "$out" | grep -q -- '--noisy-flag'                 && bad "precision: IGNORE_FLAGS not honored" "$out"              || ok "precision: IGNORE_FLAGS regex suppresses a token"
+  printf '%s' "$out" | grep -q 'NOISY_VAR'                       && bad "precision: IGNORE_ENV not honored" "$out"                || ok "precision: IGNORE_ENV regex suppresses a token"
+
+  # #4: flag findings are now MEDIUM (lower confidence than a missing path), not high
+  out="$(cd "$t" && bash "$SCAN" --json 2>/dev/null)"
+  printf '%s' "$out" | grep -qE '"severity":"medium"[^}]*--ghost-flag' \
+    && ok "precision: dead flag is severity medium (#4)" || bad "precision: flag severity medium (#4)" "$out"
+  rm -rf "$t"
+}
+
+# --- 3b. Historical/dated snapshots are exempt (frozen point-in-time records) --
+test_exempt_historical(){
+  local t out; t="$(newrepo)"
+  ( cd "$t" || exit 1
+    mkdir -p docs/audit docs
+    printf '# Snapshot\nReferences `docs/DATED-DEAD.md` (gone).\n'    > docs/AUDIT-2026-05-28.md  # ISO-dated filename
+    printf '# Audit\nReferences `docs/AUDITDIR-DEAD.md` (gone).\n'    > docs/audit/report.md      # audit/ subtree
+    printf '# Live\nReferences `docs/LIVE-DEAD.md` (gone).\n'         > docs/guide.md             # gated
+    git add -A && git commit -qm init
+  ) >/dev/null 2>&1
+  out="$(cd "$t" && bash "$SCAN" 2>/dev/null)"
+  rm -rf "$t"
+  if printf '%s' "$out" | grep -q 'LIVE-DEAD' && ! printf '%s' "$out" | grep -qE 'DATED-DEAD|AUDITDIR-DEAD'; then
+    ok "exempt-historical: ISO-dated + audit/ snapshots skipped, live doc still gated"
+  else
+    bad "exempt-historical: dated/audit snapshots skipped, live gated" "$out"
+  fi
+}
+
 # --- 6. Rung-4 example execution: opt-in + operator-consent gated -------------
 test_examples(){
   local t out; t="$(newrepo)"
@@ -597,11 +652,11 @@ test_outputs(){
     printf '%s' "$out" | grep -q '"version":"2.1.0"' && ok "sarif: emits 2.1.0 envelope" || bad "sarif: emits 2.1.0 envelope" "$out"
   fi
 
-  # freshness_pct: 2 high -> 100 - 30 = 70, in json and human.
+  # freshness_pct: 1 high (missing path) + 1 medium (dead flag) -> 100 - 15 - 5 = 80.
   out="$(cd "$t" && bash "$SCAN" --json 2>/dev/null)"
-  printf '%s' "$out" | grep -q '"freshness_pct":70' && ok "score: json freshness_pct=70 for 2 high" || bad "score: json freshness_pct=70" "$out"
+  printf '%s' "$out" | grep -q '"freshness_pct":80' && ok "score: json freshness_pct=80 (high+medium)" || bad "score: json freshness_pct=80" "$out"
   out="$(cd "$t" && bash "$SCAN" --score 2>/dev/null)"
-  printf '%s' "$out" | grep -q 'freshness: 70%' && ok "score: human freshness line" || bad "score: human freshness line" "$out"
+  printf '%s' "$out" | grep -q 'freshness: 80%' && ok "score: human freshness line" || bad "score: human freshness line" "$out"
 
   # JSONL log: one valid JSON object per finding, appended.
   ( cd "$t" && bash "$SCAN" --log audit.jsonl >/dev/null 2>&1 )
@@ -779,8 +834,10 @@ test_gitguard(){
 test_json
 test_ci
 test_exempt
+test_exempt_historical
 test_ext
 test_contract
+test_contract_precision
 test_examples
 test_gitguard
 test_hook_no_rce

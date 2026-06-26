@@ -31,9 +31,13 @@ Never spend a model on what grep, git, or the AST already knows.
 2. **Does a documented contract still exist?** The engine whole-token matches every
    `--word` CLI flag and `UPPER_SNAKE` env/config key written in `` `inline code` `` (prose
    is never scanned) against tracked non-doc files; a token that lives only in the docs is
-   drift (flags high, env medium). Known limit: any backticked `--dashed` token is read as
-   a CLI flag, so a CSS custom property or autoconf flag in backticks can flag — backtick
-   only real flags. Code is the source of truth; the doc is the claim under test. *(doc-checks, readme-drift, sachn1)*
+   drift (both **medium** — a `--dashed`/`UPPER_SNAKE` token is lower-confidence than a
+   missing file path). It auto-skips things that look like flags but aren't ours: CSS custom
+   properties (`var(--x)`/`--x:`), another tool's flags (a span starting `git …`/`docker …`,
+   extend via `EXTERNAL_TOOLS`), and trailing-dash fragments (`--dur-`). The residual long
+   tail — bare design-token backticks, niche tools — is suppressed per-repo via
+   `IGNORE_FLAGS`/`IGNORE_ENV`/`IGNORE_DOCS` in `.evergreen.sh`. Code is the source of truth;
+   the doc is the claim under test. *(doc-checks, readme-drift, sachn1)*
 3. **Is a runnable example broken?** Execute fenced blocks whose info string contains
    `evergreen` (e.g. ```` ```bash evergreen ````); a non-zero exit is ground truth.
    This RUNS CODE FROM THE DOC, so it is double-gated: the doc author tags the block AND
@@ -81,11 +85,15 @@ Severity `high|medium|low` with an explicit **Auto-Fixable?** flag. *(Zarl-prog)
   reset it. *(axiom-graph: sticky LINKED_STALE)*
 - **Code is the ground truth, the doc is the claim.** Documented-but-missing =
   failure; existing-but-undocumented = informational. *(doc-checks)*
-- **Exempt what's meant to lead code.** Design specs, ADRs, roadmaps, RFCs, CHANGELOG
-  history describe a *future* or a *past* — never gate them as stale. *(ponytail: specs lead)*
+- **Exempt what leads or freezes code.** Docs that *lead* (specs, ADRs, roadmaps, RFCs,
+  proposals, plans) describe a future; docs that *freeze* (audit/readiness/archive/history/
+  snapshot subtrees, and any ISO-dated filename like `AUDIT-2026-05-28`) are a point-in-time
+  record, accurate when written. The engine exempts both by default (`EXEMPT`, overridable).
+  *(ponytail: specs lead)*
 - **Silence the noise or it gets muted.** Short generic symbols (`run`, `build`),
-  cross-repo paths, URL/endpoint strings, frameworks — exclude by default. Keep a
-  per-repo learnings ledger so a rejected flag never returns. *(sachn1 blocklist, drift ledger)*
+  cross-repo paths, URL/endpoint strings, frameworks — exclude by default. The learnings
+  ledger is real: `IGNORE_DOCS`/`IGNORE_FLAGS`/`IGNORE_ENV` regex knobs in `.evergreen.sh`
+  so a rejected finding never returns. *(sachn1 blocklist, drift ledger)*
 
 ## The fix half — generate vs review
 
@@ -142,7 +150,10 @@ you cannot cite code for. Stable docs that are old but still true — age is not
   absent or the first build fails (e.g. offline). With `--ci`, dropping below `--fail-under`
   or the `--fix`-set baseline (ratchet) exits 2. `--badge` writes/refreshes a shields.io badge
   between `<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in README.md.
-- Per-repo `CODE_ROOTS` via `.evergreen.sh`. The suite lives at `tests/run.sh`.
+- Per-repo tuning via `.evergreen.sh` (sourced): `CODE_ROOTS` (pin the dirs that count as
+  code), `EXEMPT` (retune which docs are exempt), `EXTERNAL_TOOLS` (more binaries whose
+  backticked flags are theirs), and `IGNORE_DOCS`/`IGNORE_FLAGS`/`IGNORE_ENV` (regex noise
+  valves). The suite lives at `tests/run.sh`.
 
 Lazy first, deterministic before model, prove-or-drop. The freshest doc is the one
 the code can't make a liar.

@@ -31,12 +31,18 @@ report a false "clean":
    *(credit: our own ReadmeAccuracyTests + lychee)*
 2. **Rename cross-reference** — `git diff --name-status --find-renames` vs `--base`;
    docs that still cite a renamed/deleted path are confirmed drift. *(credit: agent-B synthesis)*
-3. **Contract existence** — a `--word` CLI flag (high) or `UPPER_SNAKE` env/config
-   key (medium) that a doc documents but that no tracked non-doc file contains. Plain
-   Precision by construction: only tokens inside `inline-code` spans count (prose
-   UPPER_SNAKE and markdown rules never reach the matcher), the underscore rule kills
-   all-caps like JSON/HTTP/README, and existence is a whole-token boundary match so
-   `--verbose` is not satisfied by `--verbose-mode`. *(credit: Akshaysanthosh/docs-drift-check,
+3. **Contract existence** — a `--word` CLI flag or `UPPER_SNAKE` env/config key that a
+   doc documents but that no tracked non-doc file contains (both **medium** — a backticked
+   token is lower-confidence than a missing file path; demoted from high after the
+   first-usage report showed flags were the noisiest signal). Precision by construction:
+   only tokens inside `inline-code` spans count (prose UPPER_SNAKE and markdown rules never
+   reach the matcher), the underscore rule kills all-caps like JSON/HTTP/README, and
+   existence is a whole-token boundary match so `--verbose` is not satisfied by
+   `--verbose-mode`. Flag-shaped tokens that aren't *our* flags are dropped: CSS custom
+   properties (`var(--x)`/`--x:`), another tool's flags (span starts with a known binary —
+   `git …`, `docker …`; extend via `EXTERNAL_TOOLS`), and trailing-dash fragments. The
+   residual long tail is suppressed per-repo via `IGNORE_FLAGS`/`IGNORE_ENV`/`IGNORE_DOCS`
+   in `.evergreen.sh`. *(credit: Akshaysanthosh/docs-drift-check,
    killytoronto/drift-guardian, MarekWadinger/doc-checks)*
 4. **Embed-from-source** — a fenced block pinned with
    `<!-- evergreen:embed path:Lstart-Lend -->` is checked against those source lines;
@@ -164,7 +170,9 @@ the slice our own assertion tests (and the LLM triage) fill.
   candidates near changed hunks reach a model; a skeptic must cite code or the flag drops.
 - **"Editing is not verification" (sticky staleness)** *(ddpoe/axiom-graph)*.
 - **"Code is the source of truth, doc is the claim"** asymmetry *(MarekWadinger/doc-checks)*.
-- **Noise blocklist + learnings ledger** *(sachn1/readme-drift, drift)*.
+- **Noise blocklist + learnings ledger** *(sachn1/readme-drift, drift)* — now BUILT in the
+  engine as the `IGNORE_DOCS`/`IGNORE_FLAGS`/`IGNORE_ENV`/`EXTERNAL_TOOLS` knobs in
+  `.evergreen.sh`, plus the lead/freeze `EXEMPT` defaults (specs/plans + audit/dated snapshots).
 - **Non-blocking Stop-hook nudge** *(Jan-ARN/drift)* — implemented in `hooks/`.
 
 ## Roadmap (designed, not yet in the engine)

@@ -61,10 +61,14 @@ bin/evergreen-scan --selftest                  # built-in self-check
 ```
 
 The engine refuses to run outside a git repository (exits 1) rather than report a
-false "clean". Contract checks (CLI flags, env/config keys) only consider tokens written
-in `` `inline code` `` — prose is never flagged. Per-repo tuning via `.evergreen.sh`
-(`CODE_ROOTS`). Design specs, ADRs, roadmaps and CHANGELOG history are exempt by default
-— they lead the code. A test suite lives at `tests/run.sh`.
+false "clean". Contract checks (CLI flags, env/config keys — both **medium** severity)
+only consider tokens written in `` `inline code` `` — prose is never flagged — and auto-skip
+CSS custom properties (`var(--x)`), another tool's flags (`git …`/`docker …`), and
+trailing-dash fragments. Docs that **lead** code (specs, ADRs, roadmaps, RFCs, proposals,
+plans) or **freeze** in time (audit/readiness/archive/history/snapshot dirs and ISO-dated
+filenames like `AUDIT-2026-05-28`) are exempt by default. Per-repo tuning via `.evergreen.sh`:
+`CODE_ROOTS`, `EXEMPT`, `EXTERNAL_TOOLS`, and the `IGNORE_DOCS`/`IGNORE_FLAGS`/`IGNORE_ENV`
+regex noise valves. A test suite lives at `tests/run.sh`.
 
 **Runnable examples execute code, so they are off by default.** A fenced block runs only
 when its info string contains `evergreen` (e.g. ```` ```bash evergreen ````) AND you pass

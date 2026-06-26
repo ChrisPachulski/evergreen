@@ -31,8 +31,16 @@ DOC_GLOB='(^|/)(README|CHANGELOG|CONTRIBUTING)[^/]*\.(md|markdown)$|(^|/)docs?/.
 # and sibling-repo refs like server/routes/x.ts) AND (b) looks like a file (known
 # extension). This is the false-positive discipline: a noisy detector gets ignored.
 EXT='\.(swift|ts|tsx|js|jsx|mjs|cjs|rs|go|py|rb|java|kt|kts|c|h|cc|cpp|hpp|m|mm|cs|php|scala|ex|exs|md|markdown|rst|ya?ml|json|toml|sh|bash|sql|proto|graphql)$'
-# Doc subtrees that are aspirational by nature and exempt from gating (ponytail: specs lead code).
-EXEMPT='/specs?/|/adr/|/rfcs?/|/proposals?/'
+# Docs exempt from gating: ones that LEAD code (specs/adr/rfc/proposals/plans/roadmaps —
+# ponytail: specs lead code) or FREEZE in time (audit/readiness/archive/history/snapshot
+# dirs, and any ISO-dated filename like AUDIT-2026-05-28 — a point-in-time record, accurate
+# when written, never meant to track HEAD). Override EXEMPT in .evergreen.sh to retune.
+EXEMPT='/specs?/|/adr/|/rfcs?/|/proposals?/|/plans?/|/roadmaps?/|/(audit|readiness|archive|history|snapshots?)/|[0-9]{4}-[0-9]{2}-[0-9]{2}'
+# Per-repo noise valves (the "learnings ledger"; set in .evergreen.sh, empty = off). Each is an
+# extended-regex: IGNORE_DOCS skips whole doc paths; IGNORE_FLAGS / IGNORE_ENV skip tokens that
+# would otherwise be flagged (anchored whole-token); EXTERNAL_TOOLS adds binaries whose backticked
+# flags are theirs, not ours (the built-in list already covers git/docker/npm/cargo/…).
+IGNORE_DOCS=""; IGNORE_FLAGS=""; IGNORE_ENV=""; EXTERNAL_TOOLS=""
 
 usage(){ echo "usage: evergreen-scan [--base REF] [--json|--sarif] [--ci] [--fail-level L] [--score] [--log FILE] [--run-examples] [--fix] [--fix-prose] [--coverage [--fail-under N] [--badge]] [--selftest]"; exit 1; }
 [ -f .evergreen.sh ] && . ./.evergreen.sh   # optional per-repo overrides
@@ -77,7 +85,13 @@ default_base(){
 
 # Gated doc files, NUL-delimited — a tracked doc path may contain spaces/globs; never
 # word-split it (a skipped file would print a FALSE "clean"). Consumers: read -r -d ''.
-doc_files_z(){ git ls-files -z | grep -zEi "$DOC_GLOB" | grep -zEv "$EXEMPT" || true; }
+doc_files_z(){
+  if [ -n "$IGNORE_DOCS" ]; then
+    git ls-files -z | grep -zEi "$DOC_GLOB" | grep -zEv "$EXEMPT" | grep -zEv "$IGNORE_DOCS" || true
+  else
+    git ls-files -z | grep -zEi "$DOC_GLOB" | grep -zEv "$EXEMPT" || true
+  fi
+}
 
 # Real top-level tracked dirs in THIS repo (override CODE_ROOTS in .evergreen.sh to pin).
 top_roots(){ if [ -n "${CODE_ROOTS:-}" ]; then echo "$CODE_ROOTS"; else git ls-files | awk -F/ 'NF>1{print $1}' | sort -u | paste -sd'|' -; fi; }
@@ -109,27 +123,48 @@ scan_renames(){
 }
 
 # Signal 3: doc-documented CLI flags / env vars that no longer exist anywhere in code.
-# Precision discipline (a noisy detector gets muted):
+# Precision discipline (a noisy detector gets muted — hardened after the first-usage report):
 #  - only tokens inside `inline-code` spans count — prose UPPER_SNAKE (BOLD_TEXT) and
 #    markdown rules/tables never reach the matcher; docs already backtick real flags/vars.
-#  - flags are `--word` shaped; env/config tokens are UPPER_SNAKE *with* an underscore.
+#  - flags are `--word` shaped (emitted MEDIUM — a `--dashed` token is lower-confidence than a
+#    missing path); env/config tokens are UPPER_SNAKE *with* an underscore (medium).
+#  - a `--token` is NOT treated as one of OUR flags when it is plainly something else:
+#      * a CSS custom property — its span shows `var(--x)` or a `--x:` declaration;
+#      * another tool's flag — its span starts with a known external binary (`git log …`,
+#        `docker run …`; extend the list via EXTERNAL_TOOLS);
+#      * a trailing-dash fragment (`--dur-`) — never a real flag.
+#    The remaining long tail (bare design-token backticks, niche tools) is suppressed per-repo
+#    via IGNORE_FLAGS / IGNORE_ENV / IGNORE_DOCS — context a generic detector can't infer.
 #  - existence is a WHOLE-TOKEN (boundary-aware) match against tracked NON-doc files, so
-#    `--verbose` is NOT satisfied by `--verbose-mode` (that false-negative is the dangerous
-#    direction for a zero-false-negative tool). A token living only in docs is drift.
+#    `--verbose` is NOT satisfied by `--verbose-mode`. A token living only in docs is drift.
 # ponytail: O(tokens × files) grep; fine at repo scale, pre-filter if huge.
 scan_contract(){
-  local doc spans tok codelist
+  local doc spans span s tok codelist tools
+  tools='git|docker|npm|npx|yarn|pnpm|cargo|rustc|go|kubectl|helm|curl|wget|brew|pip3?|python3?|node|deno|make|sed|awk|grep|ssh|scp|tar|gh|aws|gcloud|terraform'
+  [ -n "$EXTERNAL_TOOLS" ] && tools="$tools|$EXTERNAL_TOOLS"
   codelist="$(mktemp)"; git ls-files -z 2>/dev/null | grep -zEiv "$DOC_GLOB" > "$codelist"
   [ -s "$codelist" ] || { rm -f "$codelist"; return 0; }
   in_code(){ [ -n "$(xargs -0 grep -lE -- "(^|[^A-Za-z0-9_-])$1([^A-Za-z0-9_-]|$)" < "$codelist" 2>/dev/null | head -1)" ]; }
   while IFS= read -r -d '' doc; do
     spans="$(grep -oE '`[^`]+`' "$doc" 2>/dev/null)"
     [ -n "$spans" ] || continue
-    printf '%s\n' "$spans" | grep -oE -- '--[a-z][a-z0-9]+[a-z0-9-]*' | sort -u | while read -r tok; do
-      [ -n "$tok" ] && { in_code "$tok" || emit in_docs_not_code high "$doc" "documents flag \`$tok\` not found in code"; }
+    # Flags: decide PER inline-code span so the span's context (CSS / tool-prefixed) is visible.
+    printf '%s\n' "$spans" | while IFS= read -r span; do
+      [ -n "$span" ] || continue
+      s="${span#\`}"; s="${s%\`}"                                               # strip the backticks
+      printf '%s' "$s" | grep -qE 'var\(|--[A-Za-z][A-Za-z0-9-]*:' && continue  # CSS custom property
+      printf '%s' "$s" | grep -qE "^[[:space:]]*($tools)([[:space:]]|$)" && continue  # another tool's flags
+      printf '%s' "$s" | grep -oE -- '--[a-z][a-z0-9]+[a-z0-9-]*' | sort -u | while read -r tok; do
+        [ -n "$tok" ] || continue
+        case "$tok" in *-) continue;; esac                                      # trailing-dash fragment
+        [ -n "$IGNORE_FLAGS" ] && printf '%s' "$tok" | grep -qE "^($IGNORE_FLAGS)$" && continue
+        in_code "$tok" || emit in_docs_not_code medium "$doc" "documents flag \`$tok\` not found in code"
+      done
     done
     printf '%s\n' "$spans" | grep -oE '\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b' | sort -u | while read -r tok; do
-      [ -n "$tok" ] && { in_code "$tok" || emit in_docs_not_code medium "$doc" "documents env/config \`$tok\` not found in code"; }
+      [ -n "$tok" ] || continue
+      [ -n "$IGNORE_ENV" ] && printf '%s' "$tok" | grep -qE "^($IGNORE_ENV)$" && continue
+      in_code "$tok" || emit in_docs_not_code medium "$doc" "documents env/config \`$tok\` not found in code"
     done
   done < <(doc_files_z)
   rm -f "$codelist"
