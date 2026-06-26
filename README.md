@@ -1,5 +1,7 @@
 # evergreen
 
+[![ci](https://github.com/ChrisPachulski/evergreen/actions/workflows/ci.yml/badge.svg)](https://github.com/ChrisPachulski/evergreen/actions/workflows/ci.yml)
+
 **The documentation-freshness companion to [ponytail](https://github.com/DietrichGebert/ponytail).**
 
 Ponytail asks *"does this code need to exist?"*. Evergreen asks *"does this doc still

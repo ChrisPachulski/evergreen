@@ -1,0 +1,37 @@
+name: ci
+
+# Evergreen eats its own dogfood: every push/PR runs the suite, then evergreen-scan
+# gates its OWN docs for drift and its own coverage threshold. Go/Deno/Rust are set up
+# so the parser-backed coverage tests actually run instead of skipping.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # rename/base signals need full history
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Test suite
+        run: bash tests/run.sh
+
+      - name: Engine self-test
+        run: bash bin/evergreen-scan --selftest
+
+      - name: Doc-drift gate (dogfood)
+        run: bash bin/evergreen-scan --ci
+
+      - name: Doc-coverage gate (dogfood)
+        run: bash bin/evergreen-scan --coverage --ci --fail-under 80
