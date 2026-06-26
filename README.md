@@ -37,6 +37,8 @@ left alone: docs/adr/0003.md mentions --workers — an ADR, frozen in time.
 
 She cites the line or she says nothing. And she leaves the docs that are *meant* to describe the past — ADRs, specs, dated snapshots — alone. They lead the code; they don't lie about it.
 
+More of what she catches, one per rung, in [examples/](examples/).
+
 ## How it works
 
 When code changes, she stops at the first rung that catches:
@@ -63,7 +65,7 @@ She rides along every session: flags drift the moment a change leaves a doc lyin
 
 ### Any other agent
 
-The whole of her is [`skills/evergreen/SKILL.md`](skills/evergreen/SKILL.md). Drop it into any skill-capable agent, or paste it into your system prompt, and she comes with it.
+The whole of her is [`skills/evergreen/SKILL.md`](skills/evergreen/SKILL.md). Drop it into any skill-capable agent, or paste it into your system prompt, and she comes with it. For Codex, Copilot, Gemini, and anything that reads [`AGENTS.md`](AGENTS.md), the flat-prose ruleset already lives at the repo root.
 
 That's it. She's already reading your README. The code's open in the other window.
 

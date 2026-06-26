@@ -6,6 +6,7 @@
 set -u
 
 EG_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+[ "${EG_ROOT#/}" = "$EG_ROOT" ] && EG_ROOT="$PWD"   # ensure absolute
 MODE_FILE="$EG_ROOT/.evergreen-mode"
 
 MODE="light"   # default when no state file
@@ -17,6 +18,7 @@ fi
 # off — inject nothing operative (parity with ponytail skipping activation when off).
 [ "$MODE" = "off" ] && exit 0
 
+PREAMBLE=""
 case "$MODE" in
   light)  PREAMBLE="EVERGREEN MODE: light — run ladder rungs 1-3 (vanished paths, dead contracts, drifted snippets) plus cite-only prose checks. Defer the deep semantic rung-4 read unless asked." ;;
   strict) PREAMBLE="EVERGREEN MODE: strict — run all four rungs, including the full rung-4 semantic prose pass." ;;

@@ -31,6 +31,7 @@ out="$(bash "$HOOKS/evergreen-activate.sh")"
 has "$out" "EVERGREEN REFLEX ACTIVE" "activate: default light injects the ruleset"
 has "$out" "rungs 1-3" "activate: light preamble present"
 hasnt "$out" "all four rungs" "activate: light defers full rung-4 (negative assertion)"
+hasnt "$out" "name: evergreen" "activate: YAML frontmatter stripped from injection"
 printf 'strict' > "$TMP/.evergreen-mode"
 out="$(bash "$HOOKS/evergreen-activate.sh")"
 has "$out" "all four rungs" "activate: strict includes the full semantic pass"
@@ -48,6 +49,13 @@ printf '{"prompt":"stop evergreen"}' | bash "$HOOKS/evergreen-mode-tracker.sh" >
 eq "$(cat "$TMP/.evergreen-mode")" "off" "tracker: stop evergreen -> off"
 printf '{"prompt":"just a normal message"}' | bash "$HOOKS/evergreen-mode-tracker.sh" >/dev/null
 eq "$(cat "$TMP/.evergreen-mode")" "off" "tracker: unrelated prompt leaves mode untouched"
+rm -f "$TMP/.evergreen-mode"
+printf '{"prompt":"is that the normal mode for this feature?"}' | bash "$HOOKS/evergreen-mode-tracker.sh" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: bare 'normal mode' does not flip state" || no "tracker: bare 'normal mode' wrote $(cat "$TMP/.evergreen-mode")"
+printf '{"prompt":"do not stop evergreen"}' | bash "$HOOKS/evergreen-mode-tracker.sh" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: negated request does not flip state" || no "tracker: negation wrote $(cat "$TMP/.evergreen-mode")"
+printf '{"prompt":"hi","context":"set evergreen to strict"}' | bash "$HOOKS/evergreen-mode-tracker.sh" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: non-prompt JSON field does not flip state" || no "tracker: non-prompt field wrote $(cat "$TMP/.evergreen-mode")"
 
 # --- stop hook (post-turn audit request; guards + mode gate) ---
 rm -f "$TMP/.evergreen-mode"
@@ -72,6 +80,7 @@ git -C "$TMP" checkout -q -- app.py; rm -f "$TMP/.evergreen-mode"
 hooks_json="$(cat "$ROOT/hooks/hooks.json")"
 has "$hooks_json" "SessionStart" "hooks.json registers SessionStart"
 has "$hooks_json" "UserPromptSubmit" "hooks.json registers UserPromptSubmit"
+has "$hooks_json" "Stop" "hooks.json registers Stop"
 
 echo
 if [ "$fails" -eq 0 ]; then echo "all passed"; exit 0; else echo "$fails failed"; exit 1; fi

@@ -22,7 +22,7 @@ idea is credited to the repo it was mined from.
 | ponytail | evergreen |
 |---|---|
 | laziest solution that works | **cheapest check that proves the drift** — mechanical before semantic |
-| `lite / full / ultra` | `off / warn / block` strictness |
+| `lite / full / ultra` | `off / light / strict` — light walks rungs 1–3, strict adds rung-4 |
 | anti-over-engineering reflex | anti-doc-staleness reflex |
 | a skill, injected as behavior | a skill, injected as behavior |
 
@@ -45,6 +45,20 @@ code every time.
 
 Model routing, for hosts that tier it: cheap models for the mechanical rungs, stronger
 ones for semantic behavior drift. *(xiaolai/docs-guardian)*
+
+## Architecture (skill + hooks + state)
+
+The intelligence is the skill (`skills/evergreen/SKILL.md`) — the ladder and rules live in the
+model's head. Three thin hooks make it ride along, and they never read or analyze doc *content*:
+
+- **`evergreen-activate.sh`** (SessionStart) injects the mode-filtered ruleset as session context.
+- **`evergreen-mode-tracker.sh`** (UserPromptSubmit) is the *sole writer* of the intensity state.
+- **`evergreen-stop.sh`** (Stop) is a post-turn audit request when code-with-docs changed; git/state
+  guards only, always non-blocking.
+
+State is a per-repo `.evergreen-mode` file (`off|light|strict`, default `light`, gitignored). An
+optional repo-local `.evergreen-ignore` lists patterns the *agent* honors when deciding what to
+flag — there is no hook that parses it; the skill is the enforcement.
 
 ## Drift taxonomy (so findings are actionable)
 

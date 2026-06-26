@@ -1,6 +1,6 @@
 {
   "name": "evergreen",
-  "owner": { "name": "Chris Pachulski" },
+  "owner": { "name": "Chris Pachulski", "url": "https://github.com/ChrisPachulski" },
   "plugins": [
     {
       "name": "evergreen",

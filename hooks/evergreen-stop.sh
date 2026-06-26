@@ -7,6 +7,7 @@
 set -u
 
 EG_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+[ "${EG_ROOT#/}" = "$EG_ROOT" ] && EG_ROOT="$PWD"   # ensure absolute
 MODE_FILE="$EG_ROOT/.evergreen-mode"
 if [ -r "$MODE_FILE" ]; then
   m="$(tr -d '[:space:]' < "$MODE_FILE" 2>/dev/null || true)"
