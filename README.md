@@ -1,21 +1,74 @@
-# evergreen
+<h1 align="center">🌲 Evergreen</h1>
 
-[![ci](https://github.com/ChrisPachulski/evergreen/actions/workflows/ci.yml/badge.svg)](https://github.com/ChrisPachulski/evergreen/actions/workflows/ci.yml)
+<p align="center">
+  <em>Your README stopped lying.</em>
+</p>
 
-**The documentation-freshness companion to [ponytail](https://github.com/DietrichGebert/ponytail).**
+<p align="center">
+  <a href="https://github.com/ChrisPachulski/evergreen/actions/workflows/ci.yml"><img src="https://github.com/ChrisPachulski/evergreen/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/drift_detection-any_language-2f855a?style=flat-square" alt="Drift detection: any language">
+  <img src="https://img.shields.io/badge/doc_coverage-py_js_ts_go_rust-2f855a?style=flat-square" alt="Coverage parsers: py js ts go rust">
+  <img src="https://img.shields.io/badge/runtime-git_+_grep_+_awk-111111?style=flat-square" alt="Runtime: git, grep, awk">
+  <img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT license">
+</p>
 
-Ponytail asks *"does this code need to exist?"*. Evergreen asks *"does this doc still
-match the code?"* — and answers it **deterministically before it answers it with a
-model**. A ride-along reflex for Claude Code (and any agent that reads skills) that
-catches doc drift the cheapest way that works.
+<p align="center">
+  <strong>6 deterministic signals &middot; any language &middot; 0 tokens to run</strong><br>
+  <sub>The documentation-freshness companion to <a href="https://github.com/DietrichGebert/ponytail">ponytail</a> — it answers <em>"is this doc still true?"</em> with grep and git before it ever asks a model.</sub>
+</p>
 
-> Fresh means *true to the code right now*, not *recently edited*. A checker that
-> cries wolf gets muted — so evergreen flags only what it can prove against the code.
+---
+
+You got paged at 3am because the README said one thing and the code did another. The setup steps pointed at a file that moved. The flag in the docs was renamed two sprints ago. The "quickstart" hasn't run since Q1. Nobody lied on purpose — the code just walked off and the docs stayed put.
+
+Ponytail asks *"does this code need to exist?"*. **Evergreen asks "does this doc still match the code?"** — and it proves the answer against the code before it spends a single token.
+
+## Before / after
+
+Your README's setup section sends people to `app/server.py`. You moved it to `services/api/main.py` two commits ago. The doc still points at the ghost; the next person to clone burns an hour.
+
+With evergreen, the moment the doc and the code disagree:
+
+```text
+$ evergreen-scan
+evergreen: 1 finding(s)
+  [high] in_docs_not_code   README.md — names `app/server.py` which does not exist on disk
+```
+
+No model. No config. Just grep and git, run in a fraction of a second. Then fix it by hand, or let `--fix` / `--fix-prose` do the derivable part.
+
+## How it works
+
+Find the drift at the first rung that holds — cheapest first, and never spend a model on what grep already knows:
+
+```
+1. Did a doc-named path vanish?          → grep + git          (zero tokens)
+2. Does a documented flag / env exist?   → whole-token match   (zero tokens)
+3. Did a pinned snippet drift?           → embed-from-source + SHA manifest
+4. Does a tagged example still run?      → execute it (opt-in)
+5. Only then — semantic drift            → a model, to CLASSIFY, never to detect
+```
+
+Rungs 1–4 are the deterministic engine (`bin/evergreen-scan`): zero LLM, zero token cost, no false-negatives. A model is the last resort, not the first reflex.
+
+## It is not a two-language tool
+
+Drift detection reads **paths, flags, and env keys — not your AST** — so rungs 1–4 work on **any language, any repo**. The only language-specific feature is *doc-comment coverage*, and that is parser-backed in five languages and regex everywhere else:
+
+| Layer | Languages | How |
+|---|---|---|
+| **Drift signals (1–4)** | **any** | git + grep, language-agnostic |
+| Doc coverage — Python | ✓ | stdlib `ast` |
+| Doc coverage — JS / TS | ✓ | `deno doc --json` |
+| Doc coverage — Go | ✓ | stdlib `go/ast` |
+| Doc coverage — Rust | ✓ | `syn` |
+| Doc coverage — anything else | ✓ | regex heuristic |
+
+Every coverage parser is a single-file syntactic parse (no import resolution), built and cached on first use, with a graceful regex fallback when the toolchain is absent.
 
 ## What it checks
 
-The deterministic signals, pinned to the engine source — **this block is written by
-`evergreen-scan --fix`, not by hand** (embed-from-source; edit the code, run `--fix`):
+The deterministic signals, pinned to the engine source — **this block is written by `evergreen-scan --fix`, not by hand** (see [Keep it fresh](#keep-it-fresh)):
 
 <!-- evergreen:embed bin/evergreen-scan:6-11 -->
 ```text
@@ -27,119 +80,70 @@ The deterministic signals, pinned to the engine source — **this block is writt
 #   6. runnable example (opt-in): a tagged fenced block that exits nonzero           -> in_docs_not_code
 ```
 
-## Why it exists
+## Install
 
-The doc-freshness niche is real but nascent — a survey of **309 GitHub repos** (164
-directly related, **79 of them zero-star**) found dozens of clever-but-unknown
-approaches and no mature, ponytail-grade companion. Evergreen synthesizes the best
-accredited techniques from that survey into one ride-along skill. Full credit map in
-[`docs/DESIGN.md`](docs/DESIGN.md).
-
-## How it works — detect cheap → triage smart → fix safe
-
-1. **Deterministic engine** (`bin/evergreen-scan`, zero-LLM, any language) — six
-   signals: in-repo file paths a doc names that vanished; files git renamed/deleted
-   that docs still cite; CLI flags and env/config keys a doc documents that no code
-   uses; embed-from-source snippets that drifted from the source lines they pin;
-   SHA-pinned manifest sources that changed since a doc was last verified; and opt-in
-   runnable examples that exit nonzero. Fast, no false-negatives, no token cost.
-2. **Model triage only on candidates** the engine surfaced — to *classify* severity,
-   never to *detect*. Never send whole files to a model.
-3. **Fix safe**: `--fix` applies only the derivable fixes (embed refresh from source,
-   manifest re-pin, coverage baseline). Prose and intent are never rewritten — flagged
-   for a human. (Temp-0 validator and PR output for prose fixes are roadmap.)
-
-## Install (Claude Code)
+### Claude Code (plugin)
 
 ```
-/plugin marketplace add <this-repo>
-/plugin install evergreen
+/plugin marketplace add ChrisPachulski/evergreen
+/plugin install evergreen@evergreen
 ```
 
-Then it rides along, plus:
-- `/evergreen:audit [base-ref]` — full freshness audit.
-- A non-blocking **Stop-hook** nudge when your code changes leave a doc lying.
+Then it rides along: it flags drift when your code changes leave a doc lying, adds the `/evergreen:audit` command, and runs a non-blocking Stop-hook nudge. Strictness is `off | warn | block` (default **warn** — flag, never block the commit).
 
-## Standalone (any repo, no Claude)
+### Any repo (standalone CLI)
+
+No Claude required — it is one portable bash script (`bin/evergreen-scan`, needs only `git`, `grep`, `awk`):
 
 ```sh
-bin/evergreen-scan --base origin/main         # human report
-bin/evergreen-scan --json                      # machine output (includes freshness_pct)
-bin/evergreen-scan --sarif                     # SARIF 2.1.0 for GitHub code-scanning
-bin/evergreen-scan --score                     # append a freshness_pct line
-bin/evergreen-scan --log audit.jsonl           # append findings as a JSONL audit trail
-bin/evergreen-scan --ci --fail-level high      # exit 2 on high-severity drift (CI/pre-commit)
-bin/evergreen-scan --coverage --fail-under 80  # doc-comment coverage (py/js/ts/go/rs)
-bin/evergreen-scan --coverage --badge          # write a shields.io coverage badge into README
-bin/evergreen-scan --fix                       # apply derivable fixes only (never prose)
-bin/evergreen-scan --fix-prose                 # LLM-fix dead-path prose, gated (needs claude CLI)
-bin/evergreen-scan --run-examples              # also execute trusted doc examples (see below)
-bin/evergreen-scan --selftest                  # built-in self-check
+git clone https://github.com/ChrisPachulski/evergreen
+ln -s "$PWD/evergreen/bin/evergreen-scan" ~/.local/bin/evergreen-scan
+cd ~/your/repo && evergreen-scan
 ```
 
-The engine refuses to run outside a git repository (exits 1) rather than report a
-false "clean". Contract checks (CLI flags, env/config keys — both **medium** severity)
-only consider tokens written in `` `inline code` `` — prose is never flagged — and auto-skip
-CSS custom properties (`var(--x)`), another tool's flags (`git …`/`docker …`), and
-trailing-dash fragments. Docs that **lead** code (specs, ADRs, roadmaps, RFCs, proposals,
-plans) or **freeze** in time (audit/readiness/archive/history/snapshot dirs and ISO-dated
-filenames like `AUDIT-2026-05-28`) are exempt by default. Per-repo tuning via `.evergreen.sh`:
-`CODE_ROOTS`, `EXEMPT`, `EXTERNAL_TOOLS`, and the `IGNORE_DOCS`/`IGNORE_FLAGS`/`IGNORE_ENV`
-regex noise valves. A test suite lives at `tests/run.sh`.
+## Commands
 
-**Runnable examples execute code, so they are off by default.** A fenced block runs only
-when its info string contains `evergreen` (e.g. ```` ```bash evergreen ````) AND you pass
-`--run-examples` — the Stop hook never passes it, so opening an untrusted repo can't
-auto-run its README. Blocks run with a scrubbed env and scratch HOME; this is not a
-sandbox, so only use `--run-examples` on docs you trust.
+| Command | What it does |
+|---|---|
+| `evergreen-scan` | Scan for drift. Exits 0 clean. |
+| `evergreen-scan --json` / `--sarif` | Machine output (`freshness_pct`) / SARIF 2.1.0 for GitHub code-scanning. |
+| `evergreen-scan --ci --fail-level high` | Exit 2 on drift at/above a severity — for CI and pre-commit. |
+| `evergreen-scan --coverage [--fail-under N] [--badge]` | Doc-comment coverage, with a CI gate and a shields.io badge. |
+| `evergreen-scan --fix` | Apply the *derivable* fixes only (re-embed from source, re-pin a hash). Never prose. |
+| `evergreen-scan --fix-prose` | Opt-in LLM fix for dead references, behind three gates (needs the `claude` CLI). |
+| `evergreen-scan --run-examples` | Also execute fenced examples tagged `evergreen` (off by default — it runs code). |
+| `evergreen-scan --selftest` | Built-in self-check. |
+| `/evergreen:audit [base-ref]` | Full freshness audit (Claude Code plugin). |
 
-**Pin snippets so they can't drift.** Mark a fenced block with
-`<!-- evergreen:embed path/to/src.rs:10-20 -->`; the block is checked against those
-source lines and `--fix` rewrites it from source. For prose tied to a source file,
-add a `.evergreen-manifest` TSV line — whole-file `doc<TAB>source<TAB>blob-sha` (sha via
-`git hash-object`), or region-pinned `doc<TAB>source<TAB>Lstart-Lend<TAB>sha` to bind a
-doc to just a source line range (edits elsewhere in the file won't trip it). When the
-pinned content changes the doc is flagged `needs_reverify` and `--fix` re-pins it.
+Per-repo tuning lives in `.evergreen.sh`: `CODE_ROOTS`, `EXEMPT`, `EXTERNAL_TOOLS`, and the `IGNORE_DOCS` / `IGNORE_FLAGS` / `IGNORE_ENV` noise valves.
 
-`--coverage` is doc-comment coverage for py/js/ts/go/rs, **parser-backed where the
-toolchain exists** — every parser is a single-file syntactic parse (no import resolution).
-Python uses the stdlib `ast` parser (with `python3`); JS/TS use `deno doc --json` (with
-`deno` + `python3` to read its output); Go uses the stdlib `go/ast` parser (with `go`);
-Rust uses `syn` (with `cargo`). The Go/Rust helpers in `bin/helpers/` build and cache on
-first use under `$XDG_CACHE_HOME/evergreen`. Each falls back to regex when its toolchain
-is absent, a file won't parse, or the first build fails (e.g. offline). `--coverage --fix`
-records a `.evergreen-coverage` baseline; under
-`--ci`, dropping below `--fail-under` *or* below the baseline (the ratchet) exits 2.
-`--coverage --badge` writes/refreshes a shields.io badge between
-`<!-- evergreen:badge:start -->`/`<!-- evergreen:badge:end -->` markers in README.md
-(idempotent; with no markers it prints the badge to stderr so `--json`/`--sarif` stays
-valid).
+## Keep it fresh
 
-**`--fix-prose` is the opt-in LLM fixer** for dead references — a file path, CLI flag,
-or env/config key the code no longer has (requires the `claude` CLI). It drafts a minimal
-correction, then enforces three deterministic gates (the draft removes every stale token,
-adds no net lines, and changes only lines that carried a stale token) plus an independent
-review-call that must pass — before writing the
-fix to the working tree and printing the diff (never committed). Anything it can't
-validate is left as `needs_review`. A changed (not absent) signature and free-form
-rationale have no deterministic anchor, so they stay flagged for a human.
+Two opt-in bindings make a doc *structurally unable* to drift, both deterministic and in the binary:
 
-## Status
+- **Embed-from-source** — mark a fenced block with `<!-- evergreen:embed path/to/src:10-20 -->`; the block is checked against those source lines and `--fix` rewrites it from source. (This README's "What it checks" block is one.)
+- **SHA-pinned manifest** — a `.evergreen-manifest` TSV line binds a doc to a source file (or a line range); when the pinned content changes the doc is flagged `needs_reverify` and `--fix` re-pins it.
 
-v0.1 — the deterministic spine (six signals, with region-pinned manifests),
-doc-comment coverage with delta-gating and a shields.io badge (Python via `ast` and
-JS/TS via `deno doc` parser-backed, Go/Rust regex), the derivable-only `--fix` engine,
-the opt-in `--fix-prose` LLM fixer for dead references (paths, flags, env keys),
-SARIF/JSONL/freshness-score outputs, the skill, the hook, and the command are live and
-self-tested (`tests/run.sh`, plus `tests/golden-prose.sh`). Model triage and broader
-prose fixes are designed (`docs/DESIGN.md`) and land next.
-Prior-art mining notes live under `.research/`.
+`--fix` only ever touches the fully derivable bits. `--fix-prose` (opt-in) corrects dead references — a file path, CLI flag, or env key the code no longer has — and gates the draft three ways (removes every stale token, adds no net lines, changes only stale-bearing lines) plus an independent review-call, then writes to the working tree and prints the diff. It never commits, and a changed signature or free-form rationale stays flagged for a human.
+
+## FAQ
+
+**Does it need a model?**
+Not to find drift. Rungs 1–4 are grep and git — a clean repo costs zero tokens. A model only ever *classifies* what the deterministic pass already caught; it never detects.
+
+**Won't it cry wolf?**
+It flags only what it can prove against the code. CSS custom properties, another tool's flags (`git …`, `docker …`), and trailing-dash fragments are dropped automatically; design specs and dated/audit snapshots are exempt by default; the rest you silence once in `.evergreen.sh` and it never returns.
+
+**Only two languages?**
+No — that is the first thing people assume and it is wrong. Drift detection is language-agnostic. Doc-comment coverage is parser-backed in five (Python, JS, TS, Go, Rust) and regex in the rest. See [the table](#it-is-not-a-two-language-tool).
+
+**Does evergreen use evergreen?**
+Yes. This README's "What it checks" block is written by `evergreen-scan --fix` from the engine source, and CI fails the build if any doc drifts. It eats its own dogfood.
 
 ## Credits
 
-Techniques are credited to their source repos in `docs/DESIGN.md` and the
-`.research/mining/` reports — kedge, docs-drift-check, e4we/doc-staleness,
-interrogate, Jan-ARN/drift, doc-checks, axiom-graph, docfresh, docs-guardian, and
-many more from the 309-repo survey. Built to pair with ponytail.
+Synthesized from a survey of **309 GitHub repos** (164 directly related, 79 of them zero-star). Techniques are credited to their source repos in [`docs/DESIGN.md`](docs/DESIGN.md) and the `.research/` mining notes — kedge, docs-drift-check, interrogate, Jan-ARN/drift, doc-checks, axiom-graph, docfresh, and many more. Built to pair with [ponytail](https://github.com/DietrichGebert/ponytail).
 
-MIT.
+## License
+
+[MIT](LICENSE). Keep the docs honest; do what you like with the code.
