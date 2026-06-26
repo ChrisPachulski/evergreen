@@ -19,6 +19,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
+          cache: false            # stdlib-only helper, no go.sum to cache
       - uses: dtolnay/rust-toolchain@stable
       - uses: denoland/setup-deno@v2
         with:
