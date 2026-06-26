@@ -12,6 +12,21 @@ catches doc drift the cheapest way that works.
 > Fresh means *true to the code right now*, not *recently edited*. A checker that
 > cries wolf gets muted — so evergreen flags only what it can prove against the code.
 
+## What it checks
+
+The deterministic signals, pinned to the engine source — **this block is written by
+`evergreen-scan --fix`, not by hand** (embed-from-source; edit the code, run `--fix`):
+
+<!-- evergreen:embed bin/evergreen-scan:6-11 -->
+```text
+#   1. doc-named path existence : a path a doc names that no longer exists on disk  -> in_docs_not_code
+#   2. rename cross-reference   : a doc still cites a path git just renamed/deleted -> in_docs_not_code
+#   3. contract existence       : a CLI flag/env var a doc documents but no code has -> in_docs_not_code
+#   4. embed-from-source        : a fenced block pinned to source lines that drifted -> in_docs_not_code
+#   5. SHA-pinned manifest      : a doc pinned to a source whose hash since changed  -> needs_reverify
+#   6. runnable example (opt-in): a tagged fenced block that exits nonzero           -> in_docs_not_code
+```
+
 ## Why it exists
 
 The doc-freshness niche is real but nascent — a survey of **309 GitHub repos** (164
@@ -102,8 +117,9 @@ valid).
 
 **`--fix-prose` is the opt-in LLM fixer** for dead references — a file path, CLI flag,
 or env/config key the code no longer has (requires the `claude` CLI). It drafts a minimal
-correction, then enforces two deterministic gates (the draft removes every stale token,
-and adds no net lines) plus an independent review-call that must pass — before writing the
+correction, then enforces three deterministic gates (the draft removes every stale token,
+adds no net lines, and changes only lines that carried a stale token) plus an independent
+review-call that must pass — before writing the
 fix to the working tree and printing the diff (never committed). Anything it can't
 validate is left as `needs_review`. A changed (not absent) signature and free-form
 rationale have no deterministic anchor, so they stay flagged for a human.

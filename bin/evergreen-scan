@@ -3,10 +3,12 @@
 # Portable (bash 3.2+, git, grep, awk). Runs in any repo, any language.
 #
 # Signals (cheapest, most-reliable first — see docs/DESIGN.md for prior-art credit):
-#   1. doc-named path existence  : a path a doc names but that no longer exists  -> in_docs_not_code
-#   2. rename cross-reference    : a doc still cites a path git just renamed/deleted -> in_docs_not_code
-#   3. contract existence        : a CLI flag/env var a doc documents but no code uses -> in_docs_not_code
-#   4. runnable example (opt-in) : a fenced block tagged `evergreen` that exits nonzero -> in_docs_not_code
+#   1. doc-named path existence : a path a doc names that no longer exists on disk  -> in_docs_not_code
+#   2. rename cross-reference   : a doc still cites a path git just renamed/deleted -> in_docs_not_code
+#   3. contract existence       : a CLI flag/env var a doc documents but no code has -> in_docs_not_code
+#   4. embed-from-source        : a fenced block pinned to source lines that drifted -> in_docs_not_code
+#   5. SHA-pinned manifest      : a doc pinned to a source whose hash since changed  -> needs_reverify
+#   6. runnable example (opt-in): a tagged fenced block that exits nonzero           -> in_docs_not_code
 #
 # Exit: 0 = clean; 2 = findings at/above --fail-level (for hooks/CI); 1 = usage/error.
 # NB: no `set -e`/`pipefail` — grep returns 1 on no-match (normal here); exit codes are explicit.
