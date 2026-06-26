@@ -8,6 +8,5 @@
   "license": "MIT",
   "keywords": ["documentation", "drift", "freshness", "staleness", "docs-as-code", "ponytail-companion"],
   "skills": ["./skills/evergreen"],
-  "commands": "./commands",
   "hooks": "./hooks/hooks.json"
 }
