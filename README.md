@@ -22,7 +22,7 @@ You got paged at 3am because the README said one thing and the code did another.
 
 Ponytail puts a lazy senior dev inside your agent, so it writes less code. **Evergreen puts a burned documentarian inside your agent, so it won't let the docs lie.** Same idea, the other half of the repo: ponytail is a skill that changes how the agent *writes*; evergreen is a skill that changes what the agent *notices* when the code and the docs drift apart.
 
-No scanner. No CI service. No tokens spent on a clean repo. It's a prompt — a reflex the model runs with the tools it already has.
+No scanner. No CI service. No audit runs on a clean repo. It's a prompt — a reflex the model runs with the tools it already has.
 
 ## Before / after
 
@@ -32,9 +32,9 @@ With evergreen, in the same turn you made the change:
 
 ```
 evergreen: you renamed --workers to --concurrency.
-  [high] in_docs_not_code  README.md:42      documents `--workers`, now absent in cli.py → update or revert
-  [high] in_docs_not_code  docs/cli.md:8     same flag, same fix
-  [low]  exempt            docs/adr/0003.md  cites --workers — ADR, frozen in time, left alone
+  [high] in_docs_not_code  README.md:42   documents `--workers`, now absent in cli.py → update or revert
+  [high] in_docs_not_code  docs/cli.md:8  same flag, same fix
+left alone: docs/adr/0003.md cites --workers — an ADR, frozen in time.
 fresh once those two lines change.
 ```
 
@@ -64,7 +64,7 @@ It is **language-agnostic** — it reads paths, contracts, and prose, not your A
 /plugin install evergreen@evergreen
 ```
 
-Then it rides along every turn that touches code-with-docs: it flags drift the moment your change leaves a doc lying, adds the `/evergreen:audit` command, and runs a non-blocking Stop-hook nudge. Strictness is `off | warn | block` (default **warn** — flag, never block the commit).
+It then rides along every session: a SessionStart hook injects the reflex so it's active while you work, a UserPromptSubmit hook tracks the mode you set, and a non-blocking Stop hook is the post-turn safety net that asks for a freshness pass if you changed code-with-docs without one. Intensity is `off | light | strict` (default **light**), set per repo with `/evergreen off|light|strict` — evergreen flags, it never blocks the commit.
 
 ### Any other agent
 
@@ -74,13 +74,13 @@ Evergreen is a skill — the whole thing is [`skills/evergreen/SKILL.md`](skills
 
 | Command | What it does |
 |---|---|
-| `/evergreen [off \| warn \| block]` | Set strictness, or turn the reflex off. |
-| `/evergreen:audit [base-ref]` | Full freshness pass over what changed since a ref. |
+| `/evergreen [off \| light \| strict]` | Set the freshness intensity for this repo (persists). |
+| `/evergreen:audit [base-ref]` | One-off full (strict) freshness pass over what changed since a ref. |
 
 ## FAQ
 
 **Is it a scanner / linter?**
-No. It's a skill — a prompt that makes the model check doc freshness with the tools it already has. There's no engine to install, nothing to run in CI, and a clean repo costs zero tokens because nothing fires.
+No. It's a skill — a prompt that makes the model check doc freshness with the tools it already has. There's no engine to install and nothing to run in CI; on a clean repo no audit runs (the session-start reflex is tiny — nothing scans your docs).
 
 **Won't it cry wolf?**
 It flags only what it can prove against the code. Third-party tool flags (`git …`, `docker …`), CSS custom properties, and design specs / ADRs / dated snapshots are left alone by default; the rest you tell it to ignore once and it stops.

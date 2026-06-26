@@ -6,6 +6,9 @@ Run an evergreen documentation-freshness audit using the **evergreen skill**. Th
 a reasoning pass, not a tool run — you do the checking with your own tools (read files,
 grep the repo, read the diff), and you cite the code for every finding.
 
+This explicit audit always runs at **strict** depth (all four rungs, including the full rung-4
+semantic prose pass) regardless of the repo's ambient `/evergreen` mode.
+
 Scope: changes since `${1:-origin/main}` (diff against that ref); if it doesn't exist,
 audit the docs against the current tree.
 

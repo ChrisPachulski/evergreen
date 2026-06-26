@@ -17,12 +17,16 @@ binary — this is a reflex, not a linter.
 ## Persistence
 
 ACTIVE EVERY RESPONSE that changes code which has docs, or that writes/reviews docs.
-Stays on if unsure. Off only: "stop evergreen" / "normal mode". Strictness:
-`off | warn | block` (default **warn** — flag the drift, never block the commit).
+Stays on if unsure. Intensity (analogous to ponytail's `lite|full|ultra`, non-blocking at every
+level): `off | light | strict`. **light** (default) walks rungs 1–3 plus cite-only prose; **strict**
+adds the full rung-4 semantic pass; **off** = "stop evergreen" / "normal mode". Set per repo with
+`/evergreen off|light|strict`. Evergreen never blocks a commit — it flags, you decide.
 
 ## The freshness ladder
 
-When code changes, walk the rungs in order and stop reporting at the first that holds.
+When code changes, walk the rungs in order. For each documented claim or surface, stop at the first
+rung that holds *for that claim* — not for the whole file. One file can have a vanished path (rung 1)
+AND a drifted snippet (rung 3); reporting the first must not suppress the second.
 Check the cheap, mechanical things before you reason about prose — but *you* do the
 checking, with the tools you already have (read the file, grep the repo, read the
 diff). Cite the code every time.
@@ -73,8 +77,9 @@ orphaned-comment`. *(Jan-ARN/drift)*
   point-in-time record. Never gate either as stale. *(ponytail: specs lead)*
 - **Silence the noise or you get muted.** Short generic symbols (`run`, `build`),
   cross-repo paths, URL/endpoint strings, third-party tool flags (`git …`, `docker …`),
-  CSS custom properties — not your contracts; don't flag them. Keep a per-repo ledger of
-  rejected flags so they never return. *(sachn1 blocklist, drift ledger)*
+  CSS custom properties — not your contracts; don't flag them. Don't re-raise a flag the user
+  already rejected this session; for permanent suppression, honor an optional repo-local
+  `.evergreen-ignore` (one glob/pattern per line). *(sachn1 blocklist, drift ledger)*
 
 ## The fix half — generate vs review
 
@@ -91,8 +96,19 @@ Auto-fixing prose hallucinates intent. Draw the line hard:
 
 Lead with the verdict. One line per finding:
 `[severity] category  file:line — what's wrong (cite the code) → fix or flag`
-End with a one-line freshness read. No essays — if the explanation outweighs the
-finding, the finding is weak; drop it.
+Exempt docs are **never** findings — if you want to show you considered one, put it in a trailing
+`left alone:` note, not as a `[severity]` line. End with a one-line freshness read. No essays — if
+the explanation outweighs the finding, the finding is weak; drop it.
+
+## Working alongside ponytail
+
+Ponytail and evergreen optimize different axes and never contend for the same decision — ponytail
+governs *brevity* (write less code/prose), evergreen governs *truth* (do the docs still match the
+code). When both are active:
+- **You edit a doc** → evergreen checks it still matches the code; ponytail trims the wording.
+- **You edit code** → ponytail simplifies the code; evergreen checks whether any doc now lies.
+- **You run an audit** → evergreen owns the truth/finding decisions; ponytail may shape the report's
+  brevity but never changes what counts as drift.
 
 ## When NOT to flag
 
