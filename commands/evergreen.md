@@ -1,12 +1,15 @@
 ---
-description: Set the evergreen freshness-reflex intensity for this repo (off | light | strict).
+description: Set or report the evergreen freshness-reflex intensity for this repo (off | light | strict).
 ---
-Set evergreen to ${1:-light}.
+Argument given: `${1}`
 
-This records the evergreen mode for this repository:
-- **off** — pause the reflex (same as saying "stop evergreen").
-- **light** (default) — ladder rungs 1–3 (paths, contracts, snippets) + cite-only prose checks.
-- **strict** — also run the full rung-4 semantic prose pass.
+- **If an intensity was given** (`off`, `light`, or `strict`): record it as this repo's evergreen
+  mode by stating plainly — "set evergreen to ${1}" — so the mode tracker persists it. It takes
+  effect from the next message.
+  - **off** — pause the reflex (same as "stop evergreen").
+  - **light** (default) — ladder rungs 1–3 (paths, contracts, snippets) + cite-only prose.
+  - **strict** — also run the full rung-4 semantic prose pass.
+- **If no argument was given**: read `.evergreen-mode` at the project root (default **light** if
+  absent) and report the current mode. Do not change it.
 
-The new mode takes effect from your next message onward. To run a one-off full audit regardless of
-mode, use `/evergreen:audit` (always strict).
+For a one-off full audit regardless of mode, use `/evergreen:audit` (always strict).

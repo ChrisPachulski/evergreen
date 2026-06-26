@@ -1,59 +1,54 @@
 <h1 align="center">🌲 Evergreen</h1>
 
 <p align="center">
-  <em>Your README stopped lying.</em>
+  <em>The docs said yes. The code said no. She believed the code.</em>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/type-skill,_not_a_scanner-2f855a?style=flat-square" alt="A skill, not a scanner">
-  <img src="https://img.shields.io/badge/scope-any_language-2f855a?style=flat-square" alt="Any language">
-  <img src="https://img.shields.io/badge/companion_to-ponytail-111111?style=flat-square" alt="Companion to ponytail">
+  <img src="https://img.shields.io/badge/a%20skill-not%20a%20scanner-111111?style=flat-square" alt="A skill, not a scanner">
+  <img src="https://img.shields.io/badge/works%20in-any%20language-111111?style=flat-square" alt="Any language">
+  <img src="https://img.shields.io/badge/companion%20to-ponytail-111111?style=flat-square" alt="Companion to ponytail">
   <img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT license">
 </p>
 
 <p align="center">
-  <strong>A reflex, not a linter &middot; prove-or-drop &middot; any language</strong><br>
+  <strong>Cites the line or says nothing &middot; never rewrites your prose &middot; any language</strong><br>
   <sub>The documentation-freshness companion to <a href="https://github.com/DietrichGebert/ponytail">ponytail</a>.</sub>
 </p>
 
 ---
 
-You got paged at 3am because the README said one thing and the code did another. The setup steps pointed at a file that moved. The flag in the docs was renamed two sprints ago. The "quickstart" hasn't run since Q1. Nobody lied on purpose — the code walked off and the docs stayed put.
+You know her. Reads the README with the source open in the other window, and trusts the source. You tell her the docs cover it; she's already on line 42, where the flag you documented stopped existing two sprints ago. She doesn't argue. She points.
 
-Ponytail puts a lazy senior dev inside your agent, so it writes less code. **Evergreen puts a burned documentarian inside your agent, so it won't let the docs lie.** Same idea, the other half of the repo: ponytail is a skill that changes how the agent *writes*; evergreen is a skill that changes what the agent *notices* when the code and the docs drift apart.
-
-No scanner. No CI service. No audit runs on a clean repo. It's a prompt — a reflex the model runs with the tools it already has.
+Evergreen puts her inside your AI agent.
 
 ## Before / after
 
-You rename a flag and move on. Three files still document the old name; nobody notices until a user copies a broken command.
+You rename a flag and move on. Three files still document the old name. Nobody notices until someone copies a broken command.
 
-With evergreen, in the same turn you made the change:
+With evergreen, in the same turn:
 
 ```
 evergreen: you renamed --workers to --concurrency.
-  [high] in_docs_not_code  README.md:42   documents `--workers`, now absent in cli.py → update or revert
-  [high] in_docs_not_code  docs/cli.md:8  same flag, same fix
-left alone: docs/adr/0003.md cites --workers — an ADR, frozen in time.
-fresh once those two lines change.
+  README.md:42   documents --workers — gone from cli.py → fix
+  docs/cli.md:8  same flag, same fix
+left alone: docs/adr/0003.md mentions --workers — an ADR, frozen in time.
 ```
 
-It cites the code for every finding, and it leaves the docs that are *meant* to describe the past (ADRs, specs, dated snapshots) alone.
+She cites the line or she says nothing. And she leaves the docs that are *meant* to describe the past — ADRs, specs, dated snapshots — alone. They lead the code; they don't lie about it.
 
 ## How it works
 
-When code changes, the agent walks a ladder and stops at the first rung that holds — the cheap, mechanical checks before the semantic one:
+When code changes, she stops at the first rung that catches:
 
 ```
-1. Did a doc-named path vanish?          → grep the repo, confirm the file
-2. Does a documented contract exist?     → grep for the flag / env / function / route
-3. Did a shown snippet or signature drift? → read both, compare
-4. Does the prose still tell the truth?  → reason, with the code in front of you
+1. A doc names a file that's gone?      → grep, confirm, flag
+2. A documented flag / env / route gone? → grep the code, flag
+3. A shown snippet drifted from source? → read both, compare
+4. Does the prose still tell the truth? → only then, reason
 ```
 
-Then one rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted.
-
-It is **language-agnostic** — it reads paths, contracts, and prose, not your AST, so it works in any repo. And it never auto-rewrites prose: derivable drift (a dead reference, an endpoint table, a snippet that should mirror its source) gets a proposed diff; a changed signature or the *why* behind a design gets flagged for a human.
+One rule above all: **prove it or drop it.** If she can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — she knows.
 
 ## Install
 
@@ -64,36 +59,38 @@ It is **language-agnostic** — it reads paths, contracts, and prose, not your A
 /plugin install evergreen@evergreen
 ```
 
-It then rides along every session: a SessionStart hook injects the reflex so it's active while you work, a UserPromptSubmit hook tracks the mode you set, and a non-blocking Stop hook is the post-turn safety net that asks for a freshness pass if you changed code-with-docs without one. Intensity is `off | light | strict` (default **light**), set per repo with `/evergreen off|light|strict` — evergreen flags, it never blocks the commit.
+She rides along every session: flags drift the moment a change leaves a doc lying, adds `/evergreen:audit`, and leaves a quiet nudge if you changed code and forgot to look. Intensity is `off | light | strict` (default **light**). She never blocks your commit — she flags, you decide.
 
 ### Any other agent
 
-Evergreen is a skill — the whole thing is [`skills/evergreen/SKILL.md`](skills/evergreen/SKILL.md). Drop that ruleset into any skill-capable agent (or paste it into your system prompt) and the reflex comes with it.
+The whole of her is [`skills/evergreen/SKILL.md`](skills/evergreen/SKILL.md). Drop it into any skill-capable agent, or paste it into your system prompt, and she comes with it.
+
+That's it. She's already reading your README. The code's open in the other window.
 
 ## Commands
 
 | Command | What it does |
-|---|---|
-| `/evergreen [off \| light \| strict]` | Set the freshness intensity for this repo (persists). |
-| `/evergreen:audit [base-ref]` | One-off full (strict) freshness pass over what changed since a ref. |
+|---------|--------------|
+| `/evergreen [off \| light \| strict]` | Set the intensity for this repo. No argument reports the current one. |
+| `/evergreen:audit [base-ref]` | One-off full pass over everything that changed since a ref. |
 
 ## FAQ
 
-**Is it a scanner / linter?**
-No. It's a skill — a prompt that makes the model check doc freshness with the tools it already has. There's no engine to install and nothing to run in CI; on a clean repo no audit runs (the session-start reflex is tiny — nothing scans your docs).
+**Will it rewrite my prose?**
+No. It points; you write. A dead flag or a moved path it'll hand you the diff for — the *why* behind a design it won't touch. She's a fact-checker, not your ghostwriter.
 
 **Won't it cry wolf?**
-It flags only what it can prove against the code. Third-party tool flags (`git …`, `docker …`), CSS custom properties, and design specs / ADRs / dated snapshots are left alone by default; the rest you tell it to ignore once and it stops.
+She flags only what she can prove against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not her business. Tell her to drop something once and it stays dropped.
 
-**Does it rewrite my docs?**
-Only the derivable parts, and only as a proposed diff you apply — a dead reference, a table, a snippet that should mirror its source. Prose, rationale, and changed signatures it flags for a human and never touches.
+**Does it scale?**
+She reads paths, contracts, and prose — not your AST. Any language, any repo, nothing to compile.
 
 **Why "evergreen"?**
-A doc that stays true as the code grows is evergreen. Most aren't.
+A doc that stays true as the code grows is evergreen. Yours aren't. Yet.
 
 ## Credits
 
-Synthesized from a survey of **309 GitHub repos** (164 directly related, 79 of them zero-star) — an idea mine, not an infrastructure blueprint. The heuristics, taxonomies, and mental models behind the skill are credited to their source repos in [`docs/DESIGN.md`](docs/DESIGN.md): kedge, docs-drift-check, interrogate, Jan-ARN/drift, doc-checks, axiom-graph, docfresh, and many more. Built to pair with [ponytail](https://github.com/DietrichGebert/ponytail).
+Distilled from a survey of 309 repos — an idea mine, not a blueprint. The taxonomies and instincts behind the skill are credited to their sources in [`docs/DESIGN.md`](docs/DESIGN.md). Built to pair with [ponytail](https://github.com/DietrichGebert/ponytail).
 
 ## License
 
