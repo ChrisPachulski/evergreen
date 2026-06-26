@@ -1,7 +1,7 @@
 {
   "name": "evergreen",
   "version": "0.1.0",
-  "description": "Documentation-freshness companion to ponytail — a ride-along reflex that catches doc drift the cheapest way that works, deterministically before spending a token.",
+  "description": "Documentation-freshness companion to ponytail — a skill that makes the agent ask 'does any doc still match the code?' whenever code changes, and prove it before flagging.",
   "author": { "name": "Chris Pachulski" },
   "license": "MIT",
   "keywords": ["documentation", "drift", "freshness", "staleness", "docs-as-code", "ponytail-companion"],

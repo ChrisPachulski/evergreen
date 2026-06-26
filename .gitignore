@@ -1,5 +1,1 @@
 .research/
-# Rust coverage helper is built out-of-tree (in $XDG_CACHE_HOME/evergreen); never commit
-# a stray in-repo build if someone runs cargo there directly.
-bin/helpers/rust-cov/target/
-bin/helpers/rust-cov/Cargo.lock

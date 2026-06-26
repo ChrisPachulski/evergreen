@@ -1,30 +1,35 @@
 ---
-description: Audit documentation freshness against the code — deterministic scan first, then triage findings.
+description: Audit documentation freshness against the code — walk the evergreen freshness ladder, prove-or-drop, never gate exempt docs.
 ---
 
-Run an evergreen documentation-freshness audit. Follow the freshness ladder from
-the evergreen skill — cheapest signal first, prove-or-drop, never gate exempt docs.
+Run an evergreen documentation-freshness audit using the **evergreen skill**. This is
+a reasoning pass, not a tool run — you do the checking with your own tools (read files,
+grep the repo, read the diff), and you cite the code for every finding.
 
-1. Run the deterministic engine and read its findings (add `--score` for a freshness
-   read):
-   `bash "${CLAUDE_PLUGIN_ROOT}/bin/evergreen-scan" --base ${1:-origin/main} --score`
-2. For each `in_docs_not_code` / `needs_reverify` finding, confirm it against the
-   code (cite the file/line that makes the doc wrong, or — for `needs_reverify` — read
-   the moved source and decide if the doc still holds). Drop anything you can't cite.
-3. The engine already catches doc-documented CLI flags and env/config keys that no
-   code contains, embed blocks that drifted from their source, and pinned manifest
-   sources that moved. Add only the drift it still can't see: a public signature, type,
-   or route that *exists but changed shape* (the doc shows the old parameters/return/
-   path), and semantic/prose drift (rung 4). Code is the source of truth; the doc is
-   the claim under test.
-4. Classify each surviving finding: category (`in_code_not_docs` / `in_docs_not_code`
-   / `name_mismatch` / `needs_reverify` / `UNVERIFIABLE`), severity, and **Auto-Fixable?**
-5. Report verdict-first, one line per finding:
-   `[sev] category  file:line — what's wrong (cited) → fix or flag`.
-   For the *mechanically* derivable subset the engine fixes itself — embed refresh,
-   manifest re-pin — run `evergreen-scan --fix`. For other auto-fixable items
-   (signatures, paths, endpoint/type/config tables) offer a diff. For prose/intent
-   drift, flag for review — never rewrite it.
+Scope: changes since `${1:-origin/main}` (diff against that ref); if it doesn't exist,
+audit the docs against the current tree.
 
-Do NOT flag: exempt docs (specs/ADRs/roadmaps/CHANGELOG history), `UNVERIFIABLE`
-claims about other systems, or anything you cannot cite code for.
+Walk the freshness ladder, cheapest rung first, and stop reporting at the first that holds:
+
+1. **Vanished paths** — every in-repo file path a doc names must still exist on disk
+   (or be tracked). Grep the docs for paths, confirm each. Renamed/deleted in the diff
+   but still cited = drift.
+2. **Dead contracts** — every CLI flag (`--word`), env/config key (`UPPER_SNAKE`),
+   function, route, or type a doc documents must still exist in the code. Grep for it.
+3. **Drifted snippets/signatures** — fenced code blocks, signatures, endpoint tables,
+   and config schemas that no longer match the source they describe. Read both, compare.
+4. **Semantic drift** — only now: does the prose still describe what the code does?
+   Reason with the code in front of you.
+
+For each surviving finding, classify: category (`in_code_not_docs` / `in_docs_not_code`
+/ `name_mismatch` / `UNVERIFIABLE`), severity, and whether it's a derivable fix or a
+human-judgment flag.
+
+Report verdict-first, one line per finding:
+`[sev] category  file:line — what's wrong (cited) → fix or flag`.
+For derivable drift (dead references, endpoint/type/config tables, a snippet that should
+mirror its source) propose a minimal diff. For prose/intent/signature drift, flag for
+review — never rewrite it.
+
+Do NOT flag: exempt docs (specs/ADRs/roadmaps/CHANGELOG history/dated snapshots),
+`UNVERIFIABLE` claims about other systems, or anything you cannot cite code for.

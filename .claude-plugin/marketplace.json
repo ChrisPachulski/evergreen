@@ -5,7 +5,7 @@
     {
       "name": "evergreen",
       "source": "./",
-      "description": "Documentation-freshness companion to ponytail. Detect cheap (git/grep/AST) → triage smart (model only on candidates) → fix safe (derivable docs only, never prose). Language-agnostic."
+      "description": "Documentation-freshness companion to ponytail. A skill, not a scanner: when code changes, the agent walks a freshness ladder (vanished paths → dead contracts → drifted snippets → semantic prose), proves each finding against the code, and proposes derivable fixes only — never rewriting prose. Language-agnostic."
     }
   ]
 }
