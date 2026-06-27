@@ -36,12 +36,13 @@ Evergreen never blocks a commit — it flags, you decide.
 
 ## The freshness ladder
 
-When code changes, walk the rungs in order. For each documented claim or surface, stop at the
-first rung that holds *for that claim* — not for the whole file. One file can have a vanished
-path (rung 1) AND a drifted snippet (rung 3); reporting the first must not suppress the second.
-Check the cheap, mechanical things before you reason about prose — but *you* do the checking,
-with the tools you already have (read the file, grep the repo, read the diff). Cite the code
-every time.
+Start from what changed: take the diff, and grep the docs for the touched file paths and the
+names of the symbols you edited — those mentions are your candidate set, not the whole tree.
+Then walk the rungs in order. For each documented claim or surface, stop at the first rung that
+holds *for that claim* — not for the whole file. One file can have a vanished path (rung 1) AND a
+drifted snippet (rung 3); reporting the first must not suppress the second. Check the cheap,
+mechanical things before you reason about prose — but *you* do the checking, with the tools you
+already have (read the file, grep the repo, read the diff). Cite the code every time.
 
 1. **Did a doc-named thing vanish?** Grep the doc for in-repo file paths, then confirm
    each exists. A path the doc names that is no longer on disk (or was just
@@ -52,13 +53,18 @@ every time.
    function, type, method, protocol, route, enum case, or constant. The *kind* varies by
    stack, the test does not — Swift `public func` / `enum` case, Go exported identifiers,
    Rust `pub`, TS `export`, a documented JSON field. A contract that lives only in the docs
-   is drift. Code is the source of truth; the doc is the claim under test.
+   is drift. Code is the source of truth; the doc is the claim under test. Before calling a
+   contract dead, scan the diff for a rename or the same definition moved elsewhere — a
+   renamed `--workers`→`--concurrency` is a reconcile ("did you mean `--concurrency`?"), not
+   a vanished contract.
 3. **Did a shown snippet or signature drift?** A fenced code block, function signature,
    endpoint table, or config schema in the doc that no longer matches the source it
    describes — read both and compare.
 4. **Does the prose still describe what the code does?** Only now, the semantic read:
    does this paragraph still tell the truth about the current behavior? Reason about it,
-   but only after rungs 1–3, and only with the code in front of you.
+   but only after rungs 1–3, and only with the code in front of you. A precise behavioral
+   claim you cannot settle by reading the code (ordering, timing, "returns empty on miss")
+   is not yours to pass silently or guess at — flag it `behavior-asserted — verify manually`.
 
 If rungs 1–3 are clean, most "stale doc" worries are already answered. Spend your
 attention on rung 4, where the real rot hides.
@@ -79,11 +85,15 @@ orphaned-comment`.
   to kill plausible-but-wrong flags.
 - **Rot lives in old comments, not new lines.** The dangerous drift is a *pre-existing*
   comment or doc whose code changed underneath it — read the changed file at HEAD, not
-  just the `+` lines of the diff.
+  just the `+` lines of the diff. Use the diff to attribute: code that moved under a stable
+  doc is live rot (report it); a doc that was wrong the day it was written is lower-urgency —
+  say which.
 - **Editing is not verification.** A doc touched for a typo is not fresh. It clears only
-  when its content is confirmed against the code — a file touch must not reset it.
+  when its content is confirmed against the code — and confirmed means you read both the doc
+  passage and the current code, not that it looked plausible. A file touch must not reset it.
 - **Code is the ground truth, the doc is the claim.** Documented-but-missing = failure;
-  existing-but-undocumented = informational.
+  existing-but-undocumented (code does *more* than the docs say) = informational. Only a doc
+  that over-promises or contradicts the code is a finding.
 - **Exempt what leads or freezes code.** Docs that *lead* (specs, ADRs, roadmaps, RFCs,
   proposals, plans) describe a future; docs that *freeze* (audit/readiness/archive/history
   snapshots, ISO-dated filenames like `AUDIT-2026-05-28`, CHANGELOG history) are a

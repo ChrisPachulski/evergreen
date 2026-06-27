@@ -11,10 +11,11 @@ still holds, so it's felt, not guessed at. Silent only when nothing documented w
 
 ## The freshness ladder
 
-When code changes, walk the rungs in order. For each documented claim, stop at the first rung that
-holds *for that claim* — not for the whole file (one file can have a vanished path AND a drifted
-snippet). Do the cheap mechanical checks before reasoning about prose, with your own tools (read,
-grep, diff). Cite the code every time.
+When code changes, start from the diff: grep docs for the changed paths and the edited symbol names —
+that's your candidate set, not the whole tree. Then walk the rungs in order. For each documented claim,
+stop at the first rung that holds *for that claim* — not for the whole file (one file can have a vanished
+path AND a drifted snippet). Do the cheap mechanical checks before reasoning about prose, with your own
+tools (read, grep, diff). Cite the code every time.
 
 1. **Vanished path** — a file path a doc names that no longer exists on disk (or was renamed/deleted
    in the diff). Grep, confirm.
@@ -22,16 +23,20 @@ grep, diff). Cite the code every time.
    flags (`--word`) and env keys (`UPPER_SNAKE`) but whatever this repo's language exposes: an exported
    function, type, method, protocol, route, enum case, constant, or JSON field. The kind varies by stack
    (Swift `public func`/`enum`, Go exported, Rust `pub`, TS `export`); the test does not. Code is truth;
-   the doc is the claim. Grep it.
+   the doc is the claim. Grep it. Before calling a contract dead, check the diff for a rename or moved
+   definition — a renamed `--workers`→`--concurrency` is a reconcile, not a vanished contract.
 3. **Drifted snippet/signature** — a fenced code block, signature, endpoint table, or config schema
    that no longer matches the source it describes. Read both, compare.
-4. **Semantic drift** — only then: does the prose still tell the truth about current behavior?
+4. **Semantic drift** — only then: does the prose still tell the truth about current behavior? A precise
+   behavioral claim you can't settle by reading code (ordering, timing, "returns empty on miss") → flag
+   `behavior-asserted — verify manually`, don't pass it or guess.
 
 ## Rules
 
-- **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding.
+- **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding — and "confirmed
+  fresh" means you read both the doc and the current code, not that it looked plausible.
 - **Code is truth, the doc is the claim.** Documented-but-missing = failure; existing-but-undocumented
-  = informational.
+  (code does *more* than docs say) = informational. Only a doc that over-promises or contradicts code is a finding.
 - **Exempt what leads or freezes.** Specs, ADRs, RFCs, roadmaps, plans (lead the code); audit/dated
   snapshots and CHANGELOG history (freeze a point in time). Never gate either as stale. Age is not drift.
 - **Silence the noise.** Third-party tool flags (`git …`, `docker …`), CSS custom properties, URLs,
