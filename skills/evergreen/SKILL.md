@@ -16,8 +16,12 @@ binary — this is a reflex, not a linter.
 
 ## Persistence
 
-ACTIVE EVERY RESPONSE that changes code which has docs, or that writes/reviews docs.
-Stays on if unsure. Turn off with "stop evergreen" or `/evergreen off`.
+ACTIVE EVERY RESPONSE — you are always reading along. Whenever a response changes code
+that has docs, or writes/reviews docs, you **surface a one-line evergreen verdict**: the
+finding(s), or — when the touched surface still matches its docs — a single
+`evergreen: docs still match` so the reflex is felt, not guessed at. Go silent only when
+nothing documented was touched. Stays on if unsure. Off with "stop evergreen" or
+`/evergreen off`.
 
 ## Intensity
 
@@ -42,10 +46,13 @@ every time.
 1. **Did a doc-named thing vanish?** Grep the doc for in-repo file paths, then confirm
    each exists. A path the doc names that is no longer on disk (or was just
    renamed/deleted in the diff) is drift.
-2. **Does a documented contract still exist?** For each CLI flag (`--word`), env/config
-   key (`UPPER_SNAKE`), function, route, or type the doc names, grep the code for it. A
-   contract that lives only in the docs is drift. Code is the source of truth; the doc
-   is the claim under test.
+2. **Does a documented contract still exist?** For every named contract a doc commits to,
+   grep the code for it. A contract is whatever this repo's language exposes — not just
+   CLI flags (`--word`) and env keys (`UPPER_SNAKE`), but any public surface: an exported
+   function, type, method, protocol, route, enum case, or constant. The *kind* varies by
+   stack, the test does not — Swift `public func` / `enum` case, Go exported identifiers,
+   Rust `pub`, TS `export`, a documented JSON field. A contract that lives only in the docs
+   is drift. Code is the source of truth; the doc is the claim under test.
 3. **Did a shown snippet or signature drift?** A fenced code block, function signature,
    endpoint table, or config schema in the doc that no longer matches the source it
    describes — read both and compare.
@@ -100,11 +107,26 @@ Auto-fixing prose hallucinates intent. Draw the line hard:
 
 ## Output
 
-Lead with the verdict. One line per finding:
-`[high|med|low] category  file:line — what's wrong (cite the code) → fix or flag`
-Exempt docs are **never** findings — if you want to show you considered one, put it in a trailing
-`left alone:` note, not as a severity line. End with a one-line freshness read. No essays — if
-the explanation outweighs the finding, the finding is weak; drop it.
+Plainspoken. You point at the line — you don't scold, pad, or rewrite. Open with a one-line
+read of what changed, then one line per finding, then a one-line freshness verdict. Exempt
+docs are **never** findings — a considered-but-exempt doc goes on a trailing `left alone:`
+line, never as a severity row.
+
+The shape, one line per finding:
+`[high|med|low] category  file:line — what's wrong (cite the code) → fix | flag`
+
+A worked example — match this format wherever evergreen runs:
+
+```
+evergreen: you renamed `--workers` to `--concurrency`.
+  [high] in_docs_not_code  README.md:42 — documents `--workers`; gone from cli.py:30 → fix
+  [med]  in_docs_not_code  docs/cli.md:8 — same dead flag → fix
+  left alone: docs/adr/0003.md names `--workers` — an ADR, frozen in time.
+docs otherwise match the code.
+```
+
+When the surface still matches, the whole output is one line: `evergreen: docs still match`.
+No essays — if the explanation outweighs the finding, the finding is weak; drop it.
 
 ## Working alongside ponytail
 
