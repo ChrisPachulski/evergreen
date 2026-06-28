@@ -14,11 +14,12 @@ drift, evergreen's verdict, and whether it proposes a diff or just flags.
 Rule above all: **prove it or drop it.** If evergreen can't cite the code that makes the doc wrong,
 it isn't a finding.
 
-## Beyond drift — the craft axis
+## Beyond drift — the craft & hygiene axes
 
-The reflex above proves *truth*. `flourish` proves truth too, but its job is *craft* — taking a
-doc that is accurate yet unreadable and restructuring it to the gold standard.
+The reflex above proves *truth*. The two on-demand commands prove it too, in their own axis —
+`flourish` (craft) and `cultivate` (hygiene).
 
 | Example | Axis | What it shows |
 |---|---|---|
 | [flourish-craft](flourish-craft.md) | craft | An accurate-but-ugly README restructured to the gold standard — every claim still code-backed |
+| [cultivate-orphan](cultivate-orphan.md) | hygiene | An orphaned 6.4 MB asset a filename grep can't see — caught by the reference graph, not rubber-stamped "clean" |
