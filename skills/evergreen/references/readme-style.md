@@ -1,14 +1,7 @@
 # readme-style — the gold standard `flourish` rewrites toward
 
-Distilled from a survey of 28 READMEs in 50K★+ repos (React, Vue, Svelte, Next.js, Tailwind,
-Vite, Bootstrap, Node, Deno, Rust, Go, VS Code, Electron, esbuild, TensorFlow, PyTorch,
-Transformers, LangChain, Ollama, FastAPI, Django, freeCodeCamp, awesome, free-programming-books,
-Oh My Zsh, Supabase, n8n, shadcn/ui). The convergence across all four batches was strong — this
-is the shared anatomy, not one project's taste.
-
-This is a *target*, not a checklist to bolt on. flourish rewrites an accurate-but-ugly doc
-toward this shape, then the verify pass proves every claim against the code. Beauty here, truth
-there.
+The shared anatomy of 28 READMEs from 50K★+ repos. A *target*, not a checklist: flourish rewrites an
+accurate-but-ugly doc toward this shape, then the verify pass proves every claim against the code.
 
 ## The spine (top-to-bottom section order)
 
