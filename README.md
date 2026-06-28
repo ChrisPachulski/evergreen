@@ -1,7 +1,7 @@
 <h1 align="center">🌲 Evergreen</h1>
 
 <p align="center">
-  <em>The docs said yes. The code said no. She believed the code.</em>
+  <em>The docs said yes. The code said no. Only one of them gets to be true.</em>
 </p>
 
 <p align="center">
@@ -18,9 +18,9 @@
 
 ---
 
-You know her. Reads the README with the source open in the other window, and trusts the source. You tell her the docs cover it; she's already on line 42, where the flag you documented stopped existing two sprints ago. She doesn't argue. She points.
+Your README was true the day you wrote it. Then a flag got renamed, a file moved, a function started returning something else — and the docs stayed exactly where they were. That's how documentation lies: not by being wrong when written, by being *left behind*. The gap opens quietly and nobody sees it until someone pastes a command that no longer exists.
 
-Evergreen puts her inside your AI agent.
+Evergreen is the reflex that closes the gap. The moment your agent touches code, it reads the affected docs back against the source and surfaces only what it can prove has gone false — pointing at the exact line. It rewrites nothing on its own. It just refuses to let the docs and the code disagree in silence.
 
 ## Before / after
 
@@ -35,13 +35,13 @@ evergreen: you renamed --workers to --concurrency.
 left alone: docs/adr/0003.md mentions --workers — an ADR, frozen in time.
 ```
 
-She cites the line or she says nothing. And she leaves the docs that are *meant* to describe the past — ADRs, specs, dated snapshots — alone. They lead the code; they don't lie about it.
+It cites the line or it says nothing. And it leaves the docs that are *meant* to describe the past — ADRs, specs, dated snapshots — alone. They lead the code; they don't lie about it.
 
-More of what she catches, one per rung, in [examples/](examples/).
+More of what it catches, one per rung, in [examples/](examples/).
 
 ## How it works
 
-When code changes, she stops at the first rung that catches:
+When code changes, it stops at the first rung that catches:
 
 ```
 1. A doc names a file that's gone?      → grep, confirm, flag
@@ -50,7 +50,7 @@ When code changes, she stops at the first rung that catches:
 4. Does the prose still tell the truth? → only then, reason
 ```
 
-One rule above all: **prove it or drop it.** If she can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — she knows.
+One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — so this one never does.
 
 ## Install
 
@@ -61,13 +61,13 @@ One rule above all: **prove it or drop it.** If she can't cite the code that mak
 /plugin install evergreen@evergreen
 ```
 
-She rides along every session: flags drift the moment a change leaves a doc lying, adds `/evergreen:winnow`, and leaves a quiet nudge if you changed code and forgot to look. Intensity is `off | light | strict` (default **light**). The truth reflex never blocks your commit — it flags, you decide. (The hygiene guard is the one exception, and it's the kind you want — see [Commands](#commands).)
+It rides along every session: flags drift the moment a change leaves a doc lying, adds `/evergreen:winnow`, and leaves a quiet nudge if you changed code and forgot to look. Intensity is `off | light | strict` (default **light**). The truth reflex never blocks your commit — it flags, you decide. (The hygiene guard is the one exception, and it's the kind you want — see [Commands](#commands).)
 
 ### Any other agent
 
-The whole of her is [`skills/evergreen/SKILL.md`](skills/evergreen/SKILL.md). Drop it into any skill-capable agent, or paste it into your system prompt, and she comes with it. For Codex, Copilot, Gemini, and anything that reads [`AGENTS.md`](AGENTS.md), the flat-prose ruleset already lives at the repo root.
+The whole skill is [`skills/evergreen/SKILL.md`](skills/evergreen/SKILL.md). Drop it into any skill-capable agent, or paste it into your system prompt. For Codex, Copilot, Gemini, and anything that reads [`AGENTS.md`](AGENTS.md), the flat-prose ruleset already lives at the repo root.
 
-That's it. She's already reading your README. The code's open in the other window.
+That's it. From the next change on, the docs answer to the code.
 
 ## Commands
 
@@ -86,10 +86,10 @@ Three axes — **truth · craft · hygiene** — one creed: prove it or drop it,
 Not unless you ask. The reflex points; you write — a dead flag or moved path it hands you a diff for, the *why* behind a design it won't touch. The one exception is `/evergreen:flourish`, invoked deliberately: it crafts a doc to the gold standard, then verifies its own rewrite against the code so it can't introduce a lie. Fact-checker by default; ghostwriter only on request — and one that cites its sources.
 
 **Won't it cry wolf?**
-She flags only what she can prove against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not her business. Tell her to drop something once and it stays dropped.
+It flags only what it can prove against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it stays dropped.
 
 **Does it scale?**
-She reads paths, contracts, and prose — not your AST. Any language, any repo, nothing to compile.
+It reads paths, contracts, and prose — not your AST. Any language, any repo, nothing to compile.
 
 **Why "evergreen"?**
 A doc that stays true as the code grows is evergreen. Yours aren't. Yet.
