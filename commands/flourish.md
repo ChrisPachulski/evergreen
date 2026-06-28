@@ -30,8 +30,9 @@ it is the default, not a punt. With `--manual`, never invent rationale — marke
    `docs/`, `static/` for `*.svg`/`*.png`/logo/screenshot). You cannot write a great hero or
    feature list from the old README alone.
 
-2. **Craft pass — impose the gold-standard skeleton** (`skills/evergreen/references/readme-style.md`).
-   This is restructuring, not light editing. The top of the result MUST be, in order:
+2. **Craft pass — impose the gold-standard skeleton** (`skills/evergreen/references/readme-style.md`;
+   see the worked before/after in `examples/flourish-craft.md`). This is restructuring, not light
+   editing. The top of the result MUST be, in order:
    - **Hero** — a centered logo/mark if the repo has one; otherwise a clean centered title block.
    - **One-line value proposition** as the first prose — a single sentence (`[Name] is a
      [category] that [benefit]`), *not* a paragraph. Pull it from the product/docs if buried.
