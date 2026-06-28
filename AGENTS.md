@@ -42,6 +42,17 @@ tools (read, grep, diff). Cite the code every time.
 - **Silence the noise.** Third-party tool flags (`git …`, `docker …`), CSS custom properties, URLs,
   cross-repo paths, generic symbols — not your contracts. Honor a repo-local `.evergreen-ignore` if present.
 
+## Two depths & the family
+
+The reflex above is the *light* pass — flag the drift you can cite, every turn. A **deep pass**
+(strict mode, or an explicit full review) is *affirmative*: walk every claim and leave each
+**certified** (cite it), **drift** (a finding), or **`unverified — <why>`** (a behavioral claim
+the code can't settle — reported, not passed). Silence after a deep pass means *every claim
+certified*, not merely *no lie found*. Two on-demand siblings share the creed: **flourish** crafts
+an accurate-but-ugly doc to a gold standard then verifies its own rewrite (the only sanctioned
+prose-rewrite — on explicit request); **cultivate** keeps the repo tidy (local-only leaks,
+gitignore gaps, AI-slop files), proposing untrack/ignore/delete, never auto.
+
 ## Fix vs flag
 
 - **Propose a diff** for what's 1:1 derivable from code: a renamed/removed path, flag, or env key; an
@@ -69,4 +80,5 @@ docs otherwise match the code.
 When the surface still matches, the whole output is one line: `evergreen: docs still match`.
 
 Categories: `in_code_not_docs · in_docs_not_code · name_mismatch · UNVERIFIABLE` (drop the last — it's a
-claim about another system you can't check).
+claim about another system you can't check). In a deep pass also report `unverified` — a claim about
+*this* code you couldn't settle (distinct from `UNVERIFIABLE`); surface it, don't drop it.

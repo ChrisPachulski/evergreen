@@ -69,6 +69,22 @@ already have (read the file, grep the repo, read the diff). Cite the code every 
 If rungs 1–3 are clean, most "stale doc" worries are already answered. Spend your
 attention on rung 4, where the real rot hides.
 
+## Two depths: flag vs winnow
+
+The ride-along reflex is *falsification-biased*: in `light` mode it flags the drift it can cite
+and moves on — cheap, every turn. The **deep pass** (`strict` mode, `/evergreen:winnow`, and
+flourish's verify pass) is *affirmative*: it walks **every** documented claim and leaves each in
+one of three states —
+
+- **certified** — you read the doc passage *and* the current code and they match; cite it.
+- **drift** — a finding (a taxonomy category below); cite the code that makes it wrong.
+- **`unverified — <why>`** — a precise behavioral claim you can't settle by reading the code
+  (ordering, timing, "returns empty on miss"). Surface it as `behavior-asserted — verify
+  manually`. Reported, never silently passed.
+
+After a winnow, silence means *every claim certified* — not merely *no lie found*. `unverified`
+is distinct from `UNVERIFIABLE` (a claim about *another* system, still dropped).
+
 ## What counts as drift (the taxonomy)
 
 Every finding is one of: `in_code_not_docs` · `in_docs_not_code` · `name_mismatch` ·
@@ -146,8 +162,29 @@ code). When both are active:
 
 - **You edit a doc** → evergreen checks it still matches the code; ponytail trims the wording.
 - **You edit code** → ponytail simplifies the code; evergreen checks whether any doc now lies.
-- **You run an audit** → evergreen owns the truth/finding decisions; ponytail may shape the report's
+- **You run a winnow** → evergreen owns the truth/finding decisions; ponytail may shape the report's
   brevity but never changes what counts as drift.
+
+## The evergreen family — truth, craft, hygiene
+
+The reflex is the *truth* axis. Two on-demand commands extend it, under the same prove-or-drop creed:
+
+- **`/evergreen:flourish <file>` — craft.** The reflex flags prose and *never rewrites* it.
+  `flourish` is the sanctioned exception, opened only by explicit request (the *"user insists on
+  the full version → build it"* clause): it crafts an accurate-but-ugly doc toward a gold-standard
+  style (`skills/evergreen/references/readme-style.md`), then runs the freshness ladder on its own
+  rewrite so nothing ships the code can't back. Crafts-then-verifies, on demand only — never a
+  reflex. The "why" is derived from code evidence by default (`--manual` to marker it instead); a
+  rationale with no trace in code is markered, never invented.
+- **`/evergreen:cultivate` — hygiene.** Repo tidiness, not docs: local-only files leaking into
+  git, gitignore gaps, and AI-slop files that have no business being tracked or public. Walks a
+  hygiene ladder (gitignore correctness → known-junk patterns → unreferenced-is-suspect → optional
+  `.evergreen-keep` allowlist), cites *why* each file is flagged, and proposes untrack/ignore/delete
+  — never auto. A commit-time guard hook backstops it.
+
+One creed across all three. The truth and craft axes only ever **flag or propose**; the hygiene
+axis alone may **hard-block a commit** — a leaked secret or slop dump is irreversible once pushed —
+always with an escape hatch. The human keeps the final call everywhere.
 
 ## When NOT to flag
 

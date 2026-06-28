@@ -5,7 +5,7 @@
     {
       "name": "evergreen",
       "source": "./",
-      "description": "Documentation-freshness companion to ponytail. A skill, not a scanner: when code changes, the agent walks a freshness ladder (vanished paths → dead contracts → drifted snippets → semantic prose), proves each finding against the code, and proposes derivable fixes only — never rewriting prose. Language-agnostic."
+      "description": "Documentation-freshness companion to ponytail. A skill, not a scanner: when code changes, the agent walks a freshness ladder (vanished paths → dead contracts → drifted snippets → semantic prose) and proves each finding against the code. Three axes — truth (flag / winnow), craft (flourish: rewrite ugly-but-true docs to a gold standard, then verify), hygiene (cultivate: clear slop and local-only leaks). The reflex rewrites nothing unasked. Language-agnostic."
     }
   ]
 }
