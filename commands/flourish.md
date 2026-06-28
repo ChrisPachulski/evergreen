@@ -40,10 +40,13 @@ it is the default, not a punt. With `--manual`, never invent rationale — marke
    - **Features** — scannable bullets, each with a **bold lead descriptor**. Never a wall of prose.
    - **Quick start** — install + one minimal runnable example, **near the top**, before deep
      architecture. Push long/optional setup into collapsible `<details>` to keep the main path clean.
-   - **Visual proof** — if the product has a UI and **no screenshot exists**, insert a clearly
-     marked placeholder with a `<!-- TODO(screenshot): ... -->` and tell the user it's the
-     highest-impact addition. Never silently skip it — a screenshotless visual product is the
-     single most common README failure.
+   - **Visual proof** — a screenshot is the highest-impact element for a UI product. If you can run
+     the app, capture one and embed it. Otherwise mark the spot with an **invisible HTML comment
+     only** (`<!-- screenshot: ... -->`) pointing at a **tracked** path — run `git check-ignore` on
+     it first: `docs/` is commonly gitignored, which would make the image a dead link, so prefer
+     `public/`/`assets/`/`.github/` when it is. **Never** a visible placeholder box or "screenshot
+     goes here" text — that renders as slop in the very README you're polishing. Raise the missing
+     screenshot in your summary to the human, not in the doc.
    Then: **demote** the deep technical detail (full architecture, exhaustive dev setup, API
    surface) *below* the visitor-facing top, and **cut** what great READMEs never carry — changelog
    dumps, roadmaps, planning notes, aspirational features, inline API reference. Move it out or
@@ -69,7 +72,8 @@ it is the default, not a punt. With `--manual`, never invent rationale — marke
 
 Hold the result against `readme-style.md`. If **any** of these is false, you haven't finished:
 the first screenful is hero → value prop → features → quick start (not architecture); a visual
-product shows a screenshot or a marked placeholder; features are bullets, not paragraphs; the
+product shows a screenshot or an invisible comment marker — never a visible "screenshot goes here"
+box; features are bullets, not paragraphs; the
 deep internals sit *below* the visitor top. A doc only "needs no change" if it already passes
 this test — almost none do. Open with a one-line read of what you restructured, the verify verdict
 (certified / cut / markered), then the diff.

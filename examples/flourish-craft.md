@@ -50,8 +50,8 @@ A maintainer wrote it for maintainers. A visitor bounces.
 ![license](https://img.shields.io/badge/license-MIT-111111?style=flat-square)
 </div>
 
-<!-- TODO(screenshot): capture the library view → docs/screenshot.png; highest-impact addition -->
-<div align="center"><sub>▢ screenshot of the web client goes here</sub></div>
+<!-- screenshot: capture the library view and add it here at a tracked path —
+     public/screenshot.png (docs/ is often gitignored → dead link). Invisible marker only. -->
 
 ## Features
 - **You own the box** — self-hosted; household signals never leave your hardware.
@@ -73,6 +73,7 @@ Four runtimes, one product: <!-- the SAME accurate detail — now below the fold
 Every claim is still code-backed — the verify pass proves the rewrite the same way the reflex
 proves a flag. What changed is **order and shape**: hero → value prop → badges → features → quick
 start *first*, architecture *after*; walls of prose become scannable bullets; a missing screenshot
-becomes a marked placeholder, never a silent gap. flourish is the one sanctioned prose-rewrite, and
+becomes an invisible marker at a tracked path — never a visible "screenshot goes here" box, never a
+dead link. flourish is the one sanctioned prose-rewrite, and
 **"already accurate" is never "already done"** — run it until the result passes the monstrosity
 test (first screenful is hero → value → features → quick start, not internals).
