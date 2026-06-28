@@ -1,7 +1,7 @@
 {
   "name": "evergreen",
-  "version": "0.1.0",
-  "description": "Documentation-freshness companion to ponytail — a skill that makes the agent ask 'does any doc still match the code?' whenever code changes, and prove it before flagging.",
+  "version": "0.2.0",
+  "description": "Documentation-freshness companion to ponytail. Three axes, one creed (prove it or drop it): the reflex asks 'does any doc still match the code?' and proves it before flagging; winnow certifies every claim in a deep pass; flourish crafts ugly-but-true docs to a gold standard then verifies them; cultivate keeps the repo clear of slop and leaked-local files.",
   "author": { "name": "Chris Pachulski", "url": "https://github.com/ChrisPachulski" },
   "homepage": "https://github.com/ChrisPachulski/evergreen",
   "repository": "https://github.com/ChrisPachulski/evergreen",

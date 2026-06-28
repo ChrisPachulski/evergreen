@@ -9,5 +9,5 @@ If an intensity was given (`off`, `light`, or `strict`): record it as this repo'
 
 If no argument was given: read `.evergreen-mode` at the project root (default light if absent) and report the current mode. Do not change it.
 
-For a one-off full audit regardless of mode, use `/evergreen:audit` (always strict).
+For a one-off full pass regardless of mode, use `/evergreen:winnow` (always strict).
 """

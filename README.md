@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <strong>Cites the line or says nothing &middot; never rewrites your prose &middot; any language</strong><br>
+  <strong>Cites the line or says nothing &middot; rewrites nothing unasked &middot; any language</strong><br>
   <sub>The documentation-freshness companion to <a href="https://github.com/DietrichGebert/ponytail">ponytail</a>.</sub>
 </p>
 
@@ -61,7 +61,7 @@ One rule above all: **prove it or drop it.** If she can't cite the code that mak
 /plugin install evergreen@evergreen
 ```
 
-She rides along every session: flags drift the moment a change leaves a doc lying, adds `/evergreen:audit`, and leaves a quiet nudge if you changed code and forgot to look. Intensity is `off | light | strict` (default **light**). She never blocks your commit — she flags, you decide.
+She rides along every session: flags drift the moment a change leaves a doc lying, adds `/evergreen:winnow`, and leaves a quiet nudge if you changed code and forgot to look. Intensity is `off | light | strict` (default **light**). The truth reflex never blocks your commit — it flags, you decide. (The hygiene guard is the one exception, and it's the kind you want — see [Commands](#commands).)
 
 ### Any other agent
 
@@ -71,15 +71,19 @@ That's it. She's already reading your README. The code's open in the other windo
 
 ## Commands
 
+Three axes — **truth · craft · hygiene** — one creed: prove it or drop it, you keep the final call.
+
 | Command | What it does |
 |---------|--------------|
 | `/evergreen [off \| light \| strict]` | Set the intensity for this repo. No argument reports the current one. |
-| `/evergreen:audit [base-ref]` | One-off full pass over everything that changed since a ref. |
+| `/evergreen:winnow [base-ref]` | **Truth, deep.** Walk every claim that changed since a ref and *certify it true or surface it* — silence means certified, not just "no lie found." Always strict. |
+| `/evergreen:flourish <file> [--all] [--manual]` | **Craft.** Rewrite an accurate-but-ugly doc to a gold standard (mined from 28 top READMEs), then prove every claim against the code. Emits a diff — never a silent overwrite. The only sanctioned prose-rewrite. |
+| `/evergreen:cultivate [path]` | **Hygiene.** Local-only files leaking into git, gitignore gaps, AI-slop that shouldn't be tracked or public. Proposes untrack/ignore/delete — never auto. A commit-time guard backstops it (the one thing that *blocks*). |
 
 ## FAQ
 
 **Will it rewrite my prose?**
-No. It points; you write. A dead flag or a moved path it'll hand you the diff for — the *why* behind a design it won't touch. She's a fact-checker, not your ghostwriter.
+Not unless you ask. The reflex points; you write — a dead flag or moved path it hands you a diff for, the *why* behind a design it won't touch. The one exception is `/evergreen:flourish`, invoked deliberately: it crafts a doc to the gold standard, then verifies its own rewrite against the code so it can't introduce a lie. Fact-checker by default; ghostwriter only on request — and one that cites its sources.
 
 **Won't it cry wolf?**
 She flags only what she can prove against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not her business. Tell her to drop something once and it stays dropped.
