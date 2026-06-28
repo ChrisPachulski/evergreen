@@ -176,11 +176,12 @@ The reflex is the *truth* axis. Two on-demand commands extend it, under the same
   rewrite so nothing ships the code can't back. Crafts-then-verifies, on demand only — never a
   reflex. The "why" is derived from code evidence by default (`--manual` to marker it instead); a
   rationale with no trace in code is markered, never invented.
-- **`/evergreen:cultivate` — hygiene.** Repo tidiness, not docs: local-only files leaking into
-  git, gitignore gaps, and AI-slop files that have no business being tracked or public. Walks a
-  hygiene ladder (gitignore correctness → known-junk patterns → unreferenced-is-suspect → optional
-  `.evergreen-keep` allowlist), cites *why* each file is flagged, and proposes untrack/ignore/delete
-  — never auto. A commit-time guard hook backstops it.
+- **`/evergreen:cultivate` — hygiene.** Repo tidiness, not docs: files nothing references,
+  local-only files leaked into git, gitignore gaps, misplaced cross-repo artifacts. **Reference
+  graph first** — what's committed (and on disk, not just the index) that nothing points to; the
+  filename-pattern scan is only a hint, and an empty grep is never "clean." Proves every verdict
+  both ways (a *keep* needs cited evidence as much as a *flag*), proposes untrack/ignore/delete —
+  never auto, never reports "clean." A commit-time guard hook backstops it.
 
 One creed across all three. The truth and craft axes only ever **flag or propose**; the hygiene
 axis alone may **hard-block a commit** — a leaked secret or slop dump is irreversible once pushed —
