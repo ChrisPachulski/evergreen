@@ -9,6 +9,12 @@ public when something in it assumes private.
 
 Argument: `{{args}}`. Scope: the whole repo; an optional path narrows it.
 
+**Acceptance bar (non-negotiable).** Before you report, satisfy *every* MUST in
+[`skills/evergreen/hard-goals/cultivate.md`](../skills/evergreen/hard-goals/cultivate.md). A run that
+fails one — the filesystem isn't inventoried against the index, a `keep` lacks its `git grep`, you
+output "clean", or exposure wasn't checked against real `gh` — is **not done**, however thorough it
+reads. Those checks are re-runnable by anyone; they are the bar, not your judgment.
+
 ## Forbidden shortcuts (take any one and you have NOT run cultivate)
 
 1. **Index-only.** `git ls-files` is often ~10% of a repo. Inventory the filesystem, not the index.

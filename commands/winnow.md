@@ -6,6 +6,12 @@ Run an evergreen **winnow** using the **evergreen skill** — the deep freshness
 pass, not a tool run: do the checking with your own tools (read, grep, diff) and cite the code for
 every finding.
 
+**Acceptance bar (non-negotiable).** Before you report, satisfy *every* MUST in
+[`skills/evergreen/hard-goals/winnow.md`](../skills/evergreen/hard-goals/winnow.md). A run that fails
+one — the claim count isn't enumerated from a shown command, a `certified` row lacks a code
+`file:line`, a `drift` isn't proven gone by grep, or the counts don't sum to N — is **not done**,
+however good it reads. Those checks are re-runnable by anyone; they are the bar, not your judgment.
+
 Where the reflex only flags lies it can cite, winnow is **affirmative**: walk *every* documented
 claim and either **certify** it (cite the code that makes it true) or **surface** it. Post-winnow
 silence = every claim certified, not "no lie found". Always runs at **strict** depth (all four rungs)
