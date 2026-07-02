@@ -1,0 +1,40 @@
+name: "Evergreen doc-drift"
+description: "Winnow the docs against the code on every PR and post findings as a comment. Never fails the build."
+branding:
+  icon: "book-open"
+  color: "green"
+
+inputs:
+  anthropic_api_key:
+    description: "Anthropic API key for the headless Claude run."
+    required: true
+  base_ref:
+    description: "Diff base. Empty resolves to the PR base (origin/$GITHUB_BASE_REF)."
+    required: false
+    default: ""
+  mode:
+    description: "Reserved for future depths; currently always the winnow (deep affirmative) pass."
+    required: false
+    default: "winnow"
+  post_comment:
+    description: "Upsert a PR comment with the findings ('true'/'false'). The step summary is always written."
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install the Claude CLI
+      shell: bash
+      run: npm install -g @anthropic-ai/claude-code
+    - name: Run evergreen winnow on the PR
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        GITHUB_TOKEN: ${{ github.token }}
+        EVERGREEN_BASE_REF: ${{ inputs.base_ref }}
+        EVERGREEN_MODE: ${{ inputs.mode }}
+        EVERGREEN_POST_COMMENT: ${{ inputs.post_comment }}
+        # Where SKILL.md and ci/ live, regardless of the consuming repo's checkout.
+        EVERGREEN_ACTION_PATH: ${{ github.action_path }}
+      run: bash "$GITHUB_ACTION_PATH/ci/evergreen-pr.sh"
