@@ -20,7 +20,10 @@ printf '%s' "$STDIN" | grep -Eq 'git[[:space:]]+(commit|add)([[:space:]]|")' || 
 ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$ROOT" 2>/dev/null || exit 0
 
-staged="$(git diff --cached --name-only 2>/dev/null)" || exit 0
+# --diff-filter=d EXCLUDES staged deletions: a commit that *removes* slop/secrets is the guard
+# doing its job, not a violation. Without this it blocks cleanup commits — the exact deletions it
+# exists to enforce. Adds/copies/modifies/renames still get inspected.
+staged="$(git diff --cached --name-only --diff-filter=d 2>/dev/null)" || exit 0
 [ -z "$staged" ] && exit 0
 
 # Escape hatch (b): .evergreen-keep declares legit paths (one glob/pattern per line, # comments).
