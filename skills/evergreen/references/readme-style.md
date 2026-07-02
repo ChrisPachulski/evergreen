@@ -30,7 +30,9 @@ projects (Node, VS Code) collapse the middle and link out, spending length on go
 - A **link out to full docs** — depth lives elsewhere; the README opens the door.
 - **Contributing + License** pointers at the foot.
 - A **badge row** under the title (when used — optional, never load-bearing).
-- A **logo/hero** as the first element (most; text-only is the minimalist exception).
+- A **logo/hero** as the first element. Text-only is a narrow exception — a bare CLI/dev-tool
+  whose demo is a code block. A config, product, library, or anything a human lands on gets a
+  centered hero + a voiced epigraph; do not invoke "minimalist" to skip the face.
 
 ## Never present (unanimous — these are what make a README a "monstrosity")
 
@@ -93,6 +95,9 @@ Voice is never a license to fabricate: every claim the voice makes still faces t
 - **Bullets for anything enumerable** (features, options, platforms) — with bolded lead
   descriptors. Paragraphs only for the value prop and section intros. Scannable, not narrative.
 - Confident, plain, jargon-light; occasional play is fine. Zero filler.
+- **The opener should carry voice** — an evocative epigraph or a problem-first hook, not just the
+  definitional sentence. "Accurate but toneless" is the ugliness flourish exists to remove; a
+  bland-but-correct opener is a finding, not a pass.
 
 ## Visuals (earned, never decorative)
 

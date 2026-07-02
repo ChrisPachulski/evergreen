@@ -47,6 +47,15 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
    runnable example). Write the "why" from code evidence (auto) or `<!-- evergreen: fill in -->`
    marker it (`--manual`). Restructuring is not fabrication — you rearrange claims the code already
    backs, not invent new ones.
+   - **Score the face, not just the spine.** Before any craft verdict, enumerate these
+     gold-standard face elements as present/absent: (a) centered visual hero (`<h1 align="center">`
+     or logo), (b) a one-line epigraph with voice under the title, (c) a badge row, (d) a
+     vivid/problem-first opener before the definitional line, (e) at least one earned visual
+     (ASCII "how it works", diagram, or screenshot). A doc with a correct spine but a dead face is
+     not at the gold standard — it is "accurate but ugly," which is exactly flourish's job.
+   - **Diff against a shipped exemplar.** Open one concrete gold-standard README (this plugin's
+     own, or one from the 28-repo survey) and compare the target's shape and voice to it — not
+     only the abstract style doc. The exemplar catches what the checklist misses.
 
 3. **Voice pass — make it sing** (the step that produces evergreen-ilk output, not just tidy output).
    The skeleton is now right; give it a voice against `readme-style.md`'s Voice section:
@@ -76,6 +85,11 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
 
 Hold the result against `readme-style.md`. Two floors — **structure and voice** — and failing either
 means you're not done.
+
+Only conclude "already at gold standard, no changes" after showing the face scorecard (the five
+elements from the craft pass, each present/absent) **and** the spine check — both must pass. "Spine
+present" alone never justifies changing nothing; a voiceless doc with correct sections still gets
+the craft pass.
 
 **Structure floor.** First screenful is hero → value prop → features → quick start (not
 architecture); a visual product shows a screenshot or an invisible comment marker (never a visible
