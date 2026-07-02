@@ -29,6 +29,9 @@ bash eval/run.sh
 EVAL_MODEL=claude-haiku-4-5-20251001 bash eval/run.sh
 ```
 
-Next: an external benchmark. CASCADE (FSE 2026, arXiv:2604.19400) publishes 885 labeled
-code/doc-inconsistency pairs; as of July 2026 no shipping doc-drift tool has published numbers
-against it.
+The per-pair companion benchmark, in the schema the research literature uses, lives in
+[`bench/`](bench/) — it sits evergreen's numbers next to DocPrism's published 0.62-precision
+baseline. CASCADE (FSE 2026, arXiv:2604.19400) and DocPrism (arXiv:2511.00215) publish labeled
+datasets, but neither is downloadable yet (DocPrism's artifact returns `repository_expired`); the
+harness reads their schema, so `run_bench.py --dataset <path>` produces a head-to-head the day
+either releases. As of July 2026 no shipping doc-drift tool has published accuracy numbers.
