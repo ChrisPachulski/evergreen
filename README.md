@@ -61,7 +61,7 @@ That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo wi
 | Opus 4.8 | 10/10 | 0/8 | 2/2 | 1.00 |
 | Haiku 4.5 | 9/10 | 1/8 | 2/2 | 0.89 |
 
-There's a second, per-pair [benchmark](eval/bench/) in the schema the research literature uses (consistent · direct-mismatch · over-promise · under-promise), so the numbers sit next to published baselines — on it evergreen scores **1.00 precision / 1.00 recall** over the core set (Opus 4.8) versus DocPrism's 0.62-precision baseline, and correctly leaves *under-promise* (code doing more than the doc says) unflagged, because that's informational, not drift. Method, caveats, and the answer keys: [eval/RESULTS.md](eval/RESULTS.md) · [eval/bench/RESULTS.md](eval/bench/RESULTS.md). Re-run either: `bash eval/run.sh` · `python3 eval/bench/run_bench.py`.
+There's a second, per-pair [benchmark](eval/bench/) in the schema the research literature uses, reported at a **natural 10/90 class split** (drift is rare in the wild; balanced sets flatter precision by the prevalence gap — CASCADE's own precision drops 0.88 → 0.39 moving balanced → natural). It runs on **CASCADE's released, execution-validated dataset** (885 wild Java pairs, arXiv:2604.19400) next to the published peer baseline, DocPrism's 0.62 precision (arXiv:2511.00215). The old headline 1.00/1.00 was a balanced sanity fixture (n=12, author-written) and is now labeled as exactly that. Numbers, method, caveats: [eval/bench/RESULTS.md](eval/bench/RESULTS.md) · [eval/RESULTS.md](eval/RESULTS.md). Re-run either: `bash eval/run.sh` · `python3 eval/bench/run_bench.py`.
 
 ## Install
 

@@ -4,22 +4,36 @@ The [`../`](../) eval seeds a whole fixture repo and runs a full winnow. This be
 other axis: **per-pair** code-vs-doc consistency, in the schema the research literature uses, so
 evergreen's numbers sit next to published baselines.
 
-## Why a stand-in dataset (read this first)
+## The datasets
 
-The obvious move is to run against DocPrism's or CASCADE's published sets. As of July 2026 **you
-can't** — neither is released. DocPrism's artifact is an anonymized peer-review link that has
-already expired (`{"error":"repository_expired"}`); CASCADE's says "distribute as open-source
-after acceptance." So `dataset.jsonl` here is **evergreen's own hand-labeled set in their exact
-schema** — 14 pairs, honestly small, author-written, every label double-checked (the CCISolver
-paper found 45.67% of a popular benchmark's positive labels were wrong; a noisy label is worse
-than no label). It is a stand-in that proves the harness and yields a real number today — not a
-claim to be DocPrism's data.
-
-The harness reads the DocPrism/CASCADE schema directly, so the day either releases, it's one flag:
+**CASCADE** ([github.com/TobiasKiecker/CASCADE](https://github.com/TobiasKiecker/CASCADE), MIT)
+is released and is the real test: 885 wild Java method/Javadoc pairs (70 inconsistent /
+815 consistent), labels validated by developers' own Javadoc-fix commits. Convert and run:
 
 ```sh
-python3 eval/bench/run_bench.py --dataset path/to/docprism.jsonl
-# or: EVAL_DATASET=path/to/set.jsonl python3 eval/bench/run_bench.py
+git clone https://github.com/TobiasKiecker/CASCADE
+unzip CASCADE/PaperEvaluation/dataset.zip -d cascade_dataset
+python3 eval/bench/cascade_to_jsonl.py cascade_dataset > cascade.jsonl
+EVAL_CONCURRENCY=8 python3 eval/bench/run_bench.py --dataset cascade.jsonl
+```
+
+**DocPrism's** set is still not runnable — its peer-review artifact link has expired
+(`{"error":"repository_expired"}`, re-checked 2026-07-02) — so its 0.62 precision is quoted as
+a published baseline, not re-measured.
+
+`dataset.jsonl` here is **evergreen's own hand-labeled sanity fixture in their exact schema** —
+14 pairs, honestly small, author-written, every label double-checked (the CCISolver paper found
+45.67% of a popular benchmark's positive labels were wrong; a noisy label is worse than no
+label). It proves the harness and catches regressions; it is not a comparable result.
+
+## Protocol
+
+Metrics are reported at a **natural 10/90 split** (headline) and a balanced 50/50 split, each as
+medians over 1000 resamples of the consistent class — CASCADE's own protocol, mirrored so the
+numbers line up. Rerun any committed transcript without API calls:
+
+```sh
+python3 eval/bench/run_bench.py --rescore out/bench-default.json
 ```
 
 ## Schema

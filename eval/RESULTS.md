@@ -30,8 +30,8 @@ EVAL_MODEL=claude-haiku-4-5-20251001 bash eval/run.sh
 ```
 
 The per-pair companion benchmark, in the schema the research literature uses, lives in
-[`bench/`](bench/) — it sits evergreen's numbers next to DocPrism's published 0.62-precision
-baseline. CASCADE (FSE 2026, arXiv:2604.19400) and DocPrism (arXiv:2511.00215) publish labeled
-datasets, but neither is downloadable yet (DocPrism's artifact returns `repository_expired`); the
-harness reads their schema, so `run_bench.py --dataset <path>` produces a head-to-head the day
-either releases. As of July 2026 no shipping doc-drift tool has published accuracy numbers.
+[`bench/`](bench/). Its headline numbers come from **CASCADE's released dataset** (885
+execution-validated wild Java pairs, arXiv:2604.19400) at a **natural 10/90 class split** —
+the author-written 12-pair fixture there is a labeled sanity check, not a comparable result —
+reported next to DocPrism's published 0.62-precision baseline (arXiv:2511.00215; its own
+dataset artifact is still `repository_expired`, so that number is context, not same-data).
