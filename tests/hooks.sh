@@ -118,6 +118,13 @@ empty "$(printf '{"tool_input":{"command":"ls -la"}}' | bash "$HOOKS/evergreen-g
   "guard: non-git command -> pass-through despite staged secret"
 git -C "$TMP" rm -q --cached .env; rm -f "$TMP/.env"
 
+# A commit that DELETES slop is the guard doing its job — must never be blocked (--diff-filter=d).
+printf 's\n' > "$TMP/AUDIT-2026-01-01.md"; git -C "$TMP" add -f AUDIT-2026-01-01.md
+git -C "$TMP" commit -qm "add slop to be removed"
+git -C "$TMP" rm -q AUDIT-2026-01-01.md   # stage a pure deletion of the slop file
+empty "$(guard)" "guard: deletion-only commit of slop -> allowed (cleanup enforced, not blocked)"
+git -C "$TMP" commit -qm "remove slop"
+
 # --- companion python selftests (comment renderer + benchmark scorer) ---
 python3 "$ROOT/ci/pr_comment.py" --selftest >/dev/null 2>&1 && ok "ci/pr_comment.py --selftest" || no "ci/pr_comment.py --selftest"
 python3 "$ROOT/eval/bench/run_bench.py" --selftest >/dev/null 2>&1 && ok "eval/bench/run_bench.py --selftest" || no "eval/bench/run_bench.py --selftest"
