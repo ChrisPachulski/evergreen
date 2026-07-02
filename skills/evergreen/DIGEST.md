@@ -15,8 +15,10 @@ not the whole tree. Walk the rungs in order per claim; cheap mechanical checks b
    code can't settle → `behavior-asserted — verify manually`; never pass or guess.
 
 Rules:
-- **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. Take an
-  adversarial second look to kill plausible-but-wrong flags.
+- **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. A rung-3/4
+  flag clears three gates before it ships — quote both sides, refute it (emit only if the defense
+  fails), then a three-pronged read for what execution can't settle. Prove by test is the default
+  where the code runs: a failing test the doc backs is drift; a test that won't run is inconclusive.
 - Read the changed file at HEAD, not just the diff's `+` lines — rot lives in old comments.
 - Code is truth; the doc is the claim. Documented-but-missing = finding; undocumented = informational.
 - Exempt what leads or freezes: specs/ADRs/RFCs/roadmaps/plans, CHANGELOG history, dated
