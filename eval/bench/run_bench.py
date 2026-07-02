@@ -337,12 +337,50 @@ def rows_from_transcript(transcript):
              "verdict": (t.get("got") or {}).get("verdict", "consistent")} for t in transcript]
 
 
+def verdict_at_depth(got, depth):
+    """Replay the funnel from a committed stage-trail, stopping at `depth`. Lets one full-funnel
+    transcript be ablated at every level (base | refute | prove | audit) without re-running."""
+    st = (got or {}).get("stages", {})
+    v = (st.get("base") or {}).get("verdict", "consistent")
+    if depth == "base" or v != "inconsistent":
+        return v
+    ref = st.get("refute")
+    if ref and ref.get("defensible") is True:
+        return "consistent"
+    if depth == "refute":
+        return "inconsistent"
+    pv = st.get("prove") or {}
+    if pv.get("outcome") == "pass":
+        return "consistent"
+    if pv.get("outcome") == "fail":
+        return "inconsistent"  # proven; audit is short-circuited
+    if depth == "prove":
+        return "inconsistent"
+    au = st.get("audit")
+    return au.get("verdict", "inconsistent") if au else "inconsistent"
+
+
+def ablate(transcript, label=""):
+    """Report precision/recall/F1 at each cumulative funnel depth from one full-funnel run."""
+    for depth in ("base", "refute", "prove", "audit"):
+        rows = [{"label": t["label"], "category": t["category"],
+                 "verdict": verdict_at_depth(t.get("got"), depth)} for t in transcript]
+        nat = split_metrics(rows, 0.10)
+        m = score(rows)
+        print(f"[{depth:6}] natural 10/90: precision {nat['precision']:.2f}  recall {nat['recall']:.2f}"
+              f"  F1 {nat['f1']:.2f}  specificity {nat['specificity']:.2f}"
+              f"  |  raw TP {m['tp']} FP {m['fp']} FN {m['fn']} TN {m['tn']}")
+
+
 def main():
     if "--selftest" in sys.argv:
         return selftest()
     if "--rescore" in sys.argv:
         path = Path(sys.argv[sys.argv.index("--rescore") + 1])
         return report(rows_from_transcript(json.loads(path.read_text())), f", rescored from {path.name}")
+    if "--ablate" in sys.argv:
+        path = Path(sys.argv[sys.argv.index("--ablate") + 1])
+        return ablate(json.loads(path.read_text()), path.name)
     ds = Path(sys.argv[sys.argv.index("--dataset") + 1]) if "--dataset" in sys.argv \
         else Path(os.environ.get("EVAL_DATASET", HERE / "dataset.jsonl"))
     # Stage funnel: default "base" reproduces the single-call judge exactly (back-compatible).
