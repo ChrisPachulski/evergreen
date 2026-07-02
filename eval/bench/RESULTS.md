@@ -80,12 +80,19 @@ resamples) and balanced splits:
 
 | judge | split | precision | recall | F1 | specificity | flag-rate |
 |---|---|---|---|---|---|---|
-| Haiku 4.5 | **natural 10/90** | 0.23 | 1.00 | 0.37 | 0.62 | 0.44 |
+| Opus 4.8 | **natural 10/90** | 0.54 | 0.78 | **0.64** | 0.93 | 0.14 |
+| Opus 4.8 | balanced 50/50 | 0.88 | 0.78 | 0.82 | 0.89 | 0.44 |
+| Haiku 4.5 | **natural 10/90** | 0.23 | **1.00** | 0.37 | 0.62 | 0.44 |
 | Haiku 4.5 | balanced 50/50 | 0.75 | 1.00 | 0.86 | 0.67 | 0.67 |
 
-Haiku catches every validated lagging-doc pair but flags 38% of validated-consistent wild Python
-(124/323) — the same trigger-happy pattern as its fixture false positive and its CASCADE
-precision. Small-positive-n caveat: 9 positives make recall coarse (each miss is 11 points).
+The Opus row is the closest thing to a DocPrism comparison this side of their dataset
+releasing: wild Python, natural split, and a 0.14 flag-rate against their 0.15 — **0.54
+precision vs their published 0.62**. Slightly below, honestly reported (different data, so
+context rather than a head-to-head; DocPrism also spans four languages). Haiku catches every
+validated lagging-doc pair but flags 38% of validated-consistent wild Python (124/323) — the
+same trigger-happy pattern as its fixture false positive and its CASCADE precision.
+Small-positive-n caveat: 9 positives make recall coarse (each Opus miss is 11 points; it
+missed 2).
 
 ## 3 · Sanity fixture (n=12 core, author-written — NOT a comparable result)
 

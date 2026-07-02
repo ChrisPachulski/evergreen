@@ -33,8 +33,8 @@ The per-pair companion benchmark, in the schema the research literature uses, li
 [`bench/`](bench/). Its headline numbers come from wild, label-validated data at a **natural
 10/90 class split**: on **CASCADE's released dataset** (885 execution-validated Java pairs,
 arXiv:2604.19400) evergreen scores F1 0.32 with Opus 4.8 (0.30 with Haiku) vs the Cascade
-tool's 0.28, and on a 332-pair CoDocBench-derived Python set it holds recall 1.00 at 0.23
-precision (Haiku). The author-written
+tool's 0.28, and on a 332-pair CoDocBench-derived Python set Opus holds 0.54 precision /
+0.78 recall at a 0.14 flag-rate — DocPrism's regime (0.62 @ 0.15), slightly below. The author-written
 12-pair fixture there is a labeled sanity check, not a comparable result. DocPrism's 0.62
 precision (arXiv:2511.00215) is quoted as the peer baseline; its own dataset artifact is still
 dead, so that number is context, not same-data.
