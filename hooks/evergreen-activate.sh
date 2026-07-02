@@ -26,9 +26,13 @@ esac
 
 printf 'EVERGREEN REFLEX ACTIVE — mode: %s\n\n%s\n\n' "$MODE" "$PREAMBLE"
 
-# Emit the operative ruleset = the SKILL body with YAML frontmatter stripped. Best-effort.
-SKILL="${CLAUDE_PLUGIN_ROOT:-$EG_ROOT}/skills/evergreen/SKILL.md"
-if [ -r "$SKILL" ]; then
-  awk 'NR==1 && /^---[[:space:]]*$/ {f=1; next} f && /^---[[:space:]]*$/ {f=0; next} !f' "$SKILL"
+# Emit the operative ruleset. The DIGEST (~⅓ the tokens of the full skill) is enough for the
+# ride-along reflex; the full SKILL.md stays loadable on demand via the Skill tool. Fall back to
+# the frontmatter-stripped SKILL body if the digest is missing. Best-effort.
+BASE="${CLAUDE_PLUGIN_ROOT:-$EG_ROOT}/skills/evergreen"
+if [ -r "$BASE/DIGEST.md" ]; then
+  cat "$BASE/DIGEST.md"
+elif [ -r "$BASE/SKILL.md" ]; then
+  awk 'NR==1 && /^---[[:space:]]*$/ {f=1; next} f && /^---[[:space:]]*$/ {f=0; next} !f' "$BASE/SKILL.md"
 fi
 exit 0

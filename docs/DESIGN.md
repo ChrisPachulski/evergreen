@@ -51,10 +51,12 @@ ones for semantic behavior drift. *(xiaolai/docs-guardian)*
 The intelligence is the skill (`skills/evergreen/SKILL.md`) — the ladder and rules live in the
 model's head. Three thin hooks make it ride along, and they never read or analyze doc *content*:
 
-- **`evergreen-activate.sh`** (SessionStart) injects the mode-filtered ruleset as session context.
+- **`evergreen-activate.sh`** (SessionStart) injects the mode preamble plus the condensed
+  `DIGEST.md` (~⅓ the tokens of the full skill, which stays loadable on demand).
 - **`evergreen-mode-tracker.sh`** (UserPromptSubmit) is the *sole writer* of the intensity state.
 - **`evergreen-stop.sh`** (Stop) is a post-turn audit request when code-with-docs changed; git/state
-  guards only, always non-blocking.
+  guards only, always non-blocking, deduped to fire once per distinct change state (a signature in
+  `.git/`, not on every turn while the tree sits dirty).
 
 State is a per-repo `.evergreen-mode` file (`off|light|strict`, default `light`, gitignored). An
 optional repo-local `.evergreen-ignore` lists patterns the *agent* honors when deciding what to
