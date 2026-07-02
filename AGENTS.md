@@ -1,6 +1,6 @@
 # Evergreen — keep the docs honest
 
-Documentation-freshness reflex (companion to ponytail). Keep docs true to the code *right now*. Flag
+Documentation-freshness reflex. Keep docs true to the code *right now*. Flag
 only what you can prove against the code — an uncited flag is not a finding. A reflex, not a linter:
 do the checking with your own tools (read, grep, diff).
 

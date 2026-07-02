@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Evergreen UserPromptSubmit — the SOLE writer of the mode state. Mirrors ponytail-mode-tracker.
+# Evergreen UserPromptSubmit — the SOLE writer of the mode state.
 # Detects a mode-change request in the prompt and persists off|light|strict to a per-repo flag.
 # Only fires when "evergreen" is named, ignores negated requests, never changes state on a bare
 # phrase, and matches against the prompt field (not the whole JSON payload). No doc analysis.

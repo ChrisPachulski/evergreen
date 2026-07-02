@@ -7,13 +7,13 @@
 <p align="center">
   <img src="https://img.shields.io/badge/a%20skill-not%20a%20scanner-111111?style=flat-square" alt="A skill, not a scanner">
   <img src="https://img.shields.io/badge/works%20in-any%20language-111111?style=flat-square" alt="Any language">
-  <img src="https://img.shields.io/badge/companion%20to-ponytail-111111?style=flat-square" alt="Companion to ponytail">
+  <img src="https://img.shields.io/badge/eval-10%2F10%20recall%20%C2%B7%200%20FP-111111?style=flat-square" alt="10/10 recall, 0 false positives on the eval">
   <img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT license">
 </p>
 
 <p align="center">
   <strong>Cites the line or says nothing &middot; rewrites nothing unasked &middot; any language</strong><br>
-  <sub>The documentation-freshness companion to <a href="https://github.com/DietrichGebert/ponytail">ponytail</a>.</sub>
+  <sub>A documentation-freshness reflex for AI coding agents.</sub>
 </p>
 
 ---
@@ -109,7 +109,7 @@ A doc that stays true as the code grows is evergreen. Yours aren't. Yet.
 
 ## Credits
 
-Distilled from a survey of 309 repos — an idea mine, not a blueprint. The taxonomies and instincts behind the skill are credited to their sources in [`docs/DESIGN.md`](docs/DESIGN.md). Built to pair with [ponytail](https://github.com/DietrichGebert/ponytail).
+Distilled from a survey of 309 repos — an idea mine, not a blueprint. The taxonomies and instincts behind the skill are credited to their sources in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## License
 

@@ -1,6 +1,6 @@
 ---
 name: evergreen
-description: Keeps documentation honest with the code it describes. The freshness companion to ponytail — a ride-along reflex that, whenever code changes, asks "does any doc now lie?" and proves the answer against the code before flagging. Use when editing code that has docs, writing/reviewing docs, on "is this doc still right", "doc drift", "stale docs", "keep docs fresh", or before committing changes that touch documented surfaces.
+description: Keeps documentation honest with the code it describes. A ride-along reflex that, whenever code changes, asks "does any doc now lie?" and proves the answer against the code before flagging. Use when editing code that has docs, writing/reviewing docs, on "is this doc still right", "doc drift", "stale docs", "keep docs fresh", or before committing changes that touch documented surfaces.
 ---
 
 # Evergreen
