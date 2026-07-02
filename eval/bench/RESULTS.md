@@ -19,6 +19,46 @@ and is **out of scope** — a prompt ruleset doesn't play in that regime, and we
 comparison. Off-the-shelf zero-shot GPT-4 (~0.50 accuracy, high recall / low precision) is the
 floor the discipline is supposed to beat.
 
+## 0 · Verification-funnel ablation (what actually raises precision)
+
+evergreen's weakness at natural distribution is precision (over-flagging), not recall. We built a
+staged funnel to attack false positives — a **calibrated base bar** (flag only when you can quote
+both the doc claim and the contradicting code token, else certify), then three verify stages that
+fire only on survivors: **refute** (argue the doc is consistent; drop the flag if that defense
+holds), **prove** (synthesize a test of the doc's claim and run it — [`prove.py`](prove.py)), and a
+three-pronged **audit** (alternative-reading / falsification / strongest-objection, majority
+rules). One full-funnel Opus run per dataset; every stage's verdict is committed, so `--ablate`
+reads out each cumulative depth with no re-run:
+
+| depth | CoDocBench (Python) P / R / F1 | CASCADE (Java) P / R / F1 |
+|---|---|---|
+| single-call base (pre-funnel, §2/§1 below) | 0.54 / 0.78 / 0.64 | 0.30 / 0.33 / 0.32 |
+| **base (calibrated bar)** | **0.78 / 0.78 / 0.78** | 0.36 / 0.07 / 0.12 |
+| + refute | 0.83 / 0.56 / 0.67 | 0.40 / 0.06 / 0.10 |
+| + prove | 0.83 / 0.56 / 0.67 | 0.40 / 0.06 / 0.10 |
+| + refute + prove + audit | 0.80 / 0.44 / 0.57 | 0.40 / 0.06 / 0.10 |
+
+**What the ablation settled, honestly:**
+
+- **The calibrated bar is the whole win — and it's one cheap call per pair.** On Python it lifts
+  precision 0.54 → 0.78 at flat recall, **clearing DocPrism's 0.62**. That is the entire
+  improvement worth shipping.
+- **The expensive stages don't pay.** refute/prove/audit trade recall away faster than they add
+  precision — F1 falls 0.78 → 0.57 on Python and is flat-to-down on Java. The multi-call funnel
+  is not worth its cost on either set.
+- **The same bar regresses Java.** "Quote both sides" is too strict for Javadoc's subtler drift:
+  CASCADE recall collapses 0.33 → 0.07 (F1 0.32 → 0.12). There is **no single config that wins
+  both languages** — the bar is a Python win and a Java loss. That is a prompt-calibration finding
+  to iterate on cheaply, not a result to brute-force with more full passes.
+- **prove barely fires:** it was reached by 10/332 CoDocBench pairs (7 fail, 3 skip) and 12/885
+  CASCADE pairs — so language coverage, while now complete (Python + Java both execute; see the
+  executor note in Caveats), cannot move the aggregate. The winning config (base-only) executes
+  nothing.
+
+Bottom line: **ship the calibrated bar for Python-ish prose; keep the old, looser bar where recall
+matters (Java/Javadoc); drop refute/prove/audit as default.** No further full-funnel pass is needed
+— these numbers are final via `--ablate`.
+
 ## 1 · CASCADE head-to-head (885 wild Java pairs, execution-validated labels)
 
 The first genuinely comparable number: same data, same splits, same metrics as a published
@@ -128,6 +168,16 @@ separately from recall rather than dragging it down.
 
 - **One run per judge per dataset.** Re-run with `EVAL_MODEL=` to see the spread. All numbers
   re-derivable from committed transcripts via `--rescore`, no API spend.
+- **Executor coverage (prove stage).** [`prove.py`](prove.py) runs a synthesized test in one
+  generic runner + a per-language table; 14 languages execute where their toolchain is installed
+  (bash, c, cpp, go, java, javascript, lua, perl, python, r, ruby, rust, swift, typescript).
+  Both dataset languages — Python and Java — execute. Java needed a local JDK; before it was
+  installed the 9 CASCADE pairs that reached prove logged `skip:no-executor` and fell through to
+  audit (visible in the committed transcript). This does not change any number: prove is reached
+  by ≤12 pairs per set and the ablation (§0) shows the stage doesn't move the aggregate — the
+  winning config (base-only) executes nothing. A language whose interpreter can't separate a
+  parse error from an assertion failure is deliberately left as audit-fallback, never given an
+  unsafe row that could manufacture drift.
 - **CASCADE is Java; the CoDocBench-derived set is Python.** Neither is multi-language;
   evergreen's README/prose territory is broader than both. Under-promise the generality.
 - **CoDocBench-derived labels are LLM-validated, not human-validated**, kappa 0.660 < 0.8, and
