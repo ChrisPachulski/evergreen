@@ -118,6 +118,10 @@ empty "$(printf '{"tool_input":{"command":"ls -la"}}' | bash "$HOOKS/evergreen-g
   "guard: non-git command -> pass-through despite staged secret"
 git -C "$TMP" rm -q --cached .env; rm -f "$TMP/.env"
 
+# --- companion python selftests (comment renderer + benchmark scorer) ---
+python3 "$ROOT/ci/pr_comment.py" --selftest >/dev/null 2>&1 && ok "ci/pr_comment.py --selftest" || no "ci/pr_comment.py --selftest"
+python3 "$ROOT/eval/bench/run_bench.py" --selftest >/dev/null 2>&1 && ok "eval/bench/run_bench.py --selftest" || no "eval/bench/run_bench.py --selftest"
+
 # --- registration ---
 hooks_json="$(cat "$ROOT/hooks/hooks.json")"
 has "$hooks_json" "SessionStart" "hooks.json registers SessionStart"

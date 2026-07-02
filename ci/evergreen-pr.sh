@@ -18,7 +18,9 @@ cd "$REPO_ROOT" 2>/dev/null || { echo "evergreen: cannot enter repo root, skippi
 MODE="${EVERGREEN_MODE:-winnow}"
 POST_COMMENT="${EVERGREEN_POST_COMMENT:-true}"
 
-emit_summary() { [ -n "${GITHUB_STEP_SUMMARY:-}" ] && cat >> "$GITHUB_STEP_SUMMARY" || cat; }
+emit_summary() {
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then cat >> "$GITHUB_STEP_SUMMARY"; else cat; fi
+}
 
 # --- resolve the diff base -----------------------------------------------------------------------
 BASE="${EVERGREEN_BASE_REF:-}"
