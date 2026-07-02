@@ -80,7 +80,8 @@ fix-or-flag call.
 - **Silence the noise.** Generic symbols (`run`, `build`), cross-repo paths, URL/endpoint strings,
   third-party flags (`git …`, `docker …`), CSS custom properties — not your contracts. Don't re-raise
   a flag rejected this session; honor a repo-local `.evergreen-ignore` (one glob/pattern per line —
-  the model reads and applies it; no hook).
+  the model reads and applies it; no hook). When the user rejects a flag, offer the one-line
+  `.evergreen-ignore` entry that keeps it dropped across sessions, not just this one.
 
 ## Fix vs flag
 

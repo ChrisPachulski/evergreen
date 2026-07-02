@@ -1,0 +1,21 @@
+id	kind	file	token	note
+D1	drift	README.md	scripts/bootstrap.sh	rung1 vanished path
+D2	drift	docs/usage.md	utils.py	rung1 renamed file
+D3	drift	README.md	--workers	rung2 dead flag (now --concurrency)
+D4	drift	docs/usage.md	SHIPIT_CACHE_DIR	rung2 dead env key
+D5	drift	README.md	parse_manifest	rung2 dead function
+D6	drift	README.md	strict=True	rung3 drifted snippet signature
+D7	drift	docs/usage.md	60	rung3 drifted value (code: 30)
+D8	drift	README.md	returns None	rung4 semantic (code raises KeyError)
+D9	drift	docs/usage.md	newest-first	rung4 semantic (code sorts by name)
+D10	drift	README.md	--format	rung2 dead flag (now --output)
+C1	decoy	README.md	--retries	true flag
+C2	decoy	README.md	config.py	true path
+C3	decoy	docs/usage.md	SHIPIT_TOKEN	true env key
+C4	decoy	README.md	--concurrency	true snippet
+C5	decoy	docs/usage.md	--verbose	true flag
+C6	decoy	README.md	3 attempts	true default
+C7	decoy	README.md	defaults to table	true prose
+C8	decoy	docs/usage.md	git push	third-party contract, not ours
+E1	exempt	docs/adr/0001-worker-pool.md	--workers	ADR, frozen in time
+E2	exempt	CHANGELOG.md	--workers	history, frozen in time

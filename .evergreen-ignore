@@ -1,0 +1,2 @@
+# The eval fixture's drift is seeded on purpose — the reflex must not "fix" the exam.
+eval/fixture/*

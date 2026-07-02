@@ -9,6 +9,12 @@ public when something in it assumes private.
 
 Argument: `{{args}}`. Scope: the whole repo; an optional path narrows it.
 
+**Acceptance bar (non-negotiable).** Before you report, satisfy *every* MUST in
+[`skills/evergreen/hard-goals/cultivate.md`](../skills/evergreen/hard-goals/cultivate.md). A run that
+fails one — the filesystem isn't inventoried against the index, a `keep` lacks its `git grep`, you
+output "clean", or exposure wasn't checked against real `gh` — is **not done**, however thorough it
+reads. Those checks are re-runnable by anyone; they are the bar, not your judgment.
+
 ## Forbidden shortcuts (take any one and you have NOT run cultivate)
 
 1. **Index-only.** `git ls-files` is often ~10% of a repo. Inventory the filesystem, not the index.
@@ -45,8 +51,9 @@ Zero references → orphan candidate. Reference checks miss lazy/dynamic/aliased
 against the code before flagging *source*; don't trust the grep alone.
 
 **C · Pattern hints (a checklist, not the test).** Scan for secrets (`.env*`, `*.pem`, keys), build
-artifacts, OS cruft, AI-slop names (`AUDIT-*`, `SUMMARY.md`, `SYNTHESIS.md`, `*-REVIEW*`, stray
-`.planning`/`.research`). Found ≠ done; not-found ≠ clean.
+artifacts, OS cruft, AI-slop names (`AUDIT-*`, `*_SUMMARY.md`/`*-SUMMARY.md`, `SYNTHESIS.md`,
+`*-REVIEW*`, stray `.planning`/`.research`). Bare `SUMMARY.md` is not a hint — mdBook mandates
+`src/SUMMARY.md` and GitBook uses a root `SUMMARY.md` as its TOC. Found ≠ done; not-found ≠ clean.
 
 **D · Misplaced.** A real file in the wrong tree (an Xcode `.xcprivacy` in a server repo). Right
 file, wrong place.

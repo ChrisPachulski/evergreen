@@ -2,7 +2,7 @@
 # Evergreen Stop-hook — a non-blocking, post-turn audit REQUEST (not drift detection).
 # Pattern credit: Jan-ARN/drift. Evergreen is a SKILL: this hook does NO doc analysis of its
 # own. It only notices "you changed code in a repo that has docs" and asks the agent to run the
-# freshness pass. Reads the persisted mode (silent when off). Three git guards inspect git STATE
+# freshness pass. Reads the persisted mode (silent when off). Four git guards inspect git STATE
 # and file EXTENSION only — never doc content. Exits 0 ALWAYS (never blocks).
 set -u
 
@@ -33,6 +33,20 @@ EOF
 [ "$code_changed" -eq 1 ] || exit 0
 # Guard 3: the repo actually has tracked docs that could now be wrong.
 g ls-files 2>/dev/null | grep -qiE '\.(md|markdown|rst)$' || exit 0
+
+# Guard 4: fire once per distinct change state — not on every turn while the tree stays dirty.
+# The tree being dirty means "changes exist", not "this turn changed something"; without this,
+# one uncommitted edit makes the nudge fire after every response until commit. Signature =
+# per-file diff stats + status; stored in .git/ (never tracked, gone on clone).
+# ponytail: untracked files sign by name only — content-only edits to an untracked file don't
+# re-fire; the turn that created it already did.
+GITDIR="$(g rev-parse --absolute-git-dir 2>/dev/null || true)"
+if [ -n "$GITDIR" ] && [ -d "$GITDIR" ]; then
+  sig="$( { g diff HEAD --stat; g status --porcelain; } 2>/dev/null | cksum )"
+  SIG_FILE="$GITDIR/evergreen-stop-sig"
+  [ -r "$SIG_FILE" ] && [ "$(cat "$SIG_FILE" 2>/dev/null)" = "$sig" ] && exit 0
+  printf '%s' "$sig" > "$SIG_FILE" 2>/dev/null || true
+fi
 
 printf '{"systemMessage":"evergreen: you changed code in a repo with docs — run the freshness pass on the changed surfaces (paths, contracts, snippets, then prose). Prove each finding against the code or drop it."}\n'
 exit 0
