@@ -30,26 +30,32 @@ discrepancy we report rather than hide). One run per judge, 2026-07-02, Claude C
 **Natural 10/90 split** (70 inconsistent + 630 resampled consistent, medians over 1000 resamples;
 CASCADE Table 2's imbalanced protocol):
 
-| tool | precision | recall | F1 | specificity |
-|---|---|---|---|---|
-| evergreen · Haiku 4.5 | 0.22 | **0.49** | **0.30** | 0.81 |
-| Cascade (full, their tool) | **0.39** | 0.21 | 0.28 | **0.96** |
-| their LLM baselines (best per metric) ¹ | 0.06–0.28 | 0.10–0.81 | 0.11–0.28 | — |
+| tool | precision | recall | F1 | specificity | flag-rate |
+|---|---|---|---|---|---|
+| evergreen · Opus 4.8 | 0.30 | 0.33 | **0.32** | 0.92 | 0.11 |
+| evergreen · Haiku 4.5 | 0.22 | **0.49** | 0.30 | 0.81 | 0.22 |
+| Cascade (full, their tool) | **0.39** | 0.21 | 0.28 | **0.96** | — |
+| their LLM baselines (best per metric) ¹ | 0.06–0.28 | 0.10–0.81 | 0.11–0.28 | — | — |
 
 **Balanced 50/50 split** (70+70, medians over 1000 resamples):
 
 | tool | precision | recall | F1 | specificity |
 |---|---|---|---|---|
-| evergreen · Haiku 4.5 | 0.72 | **0.49** | **0.58** | 0.81 |
+| evergreen · Opus 4.8 | 0.79 | 0.33 | **0.46** | 0.91 |
+| evergreen · Haiku 4.5 | 0.72 | **0.49** | 0.58 ² | 0.81 |
 | Cascade (full) | **0.88** | 0.21 | 0.35 | **0.97** |
 
-Reading it honestly: evergreen-with-Haiku trades precision for recall against Cascade — half the
-precision at 10/90, over twice the recall, marginally higher F1 (0.30 vs 0.28) and above every
-LLM-baseline row in their Table 2. Cascade generates and executes unit tests per finding;
-evergreen is a prompt ruleset. Domain-transfer caveat: CASCADE is Java/Javadoc; evergreen's
-ruleset was written against Python/prose examples.
+Reading it honestly: evergreen posts the highest F1 on the 10/90 table with either judge (Opus
+0.32, Haiku 0.30, Cascade-full 0.28, best LLM baseline 0.28), but Cascade keeps the precision
+crown (0.39 vs 0.30) — its per-finding test execution buys fewer false alarms at the cost of
+recall. Opus is the better-calibrated judge (0.92 specificity, 0.11 flag-rate — the same regime
+as DocPrism's 15%); Haiku trades precision for recall. Cascade generates and executes unit
+tests per finding; evergreen is a prompt ruleset. Domain-transfer caveat: CASCADE is
+Java/Javadoc; evergreen's ruleset was written against Python/prose examples.
 
 ¹ Table 2 of arXiv:2604.19400, rows LLM-S/LLM-A/Voting/DocChecker/C4RLLaMA at the 10/90 split.
+² Haiku's balanced F1 exceeds Opus's because balanced splits reward its high recall and forgive
+its false positives — exactly the distortion the natural split exists to correct.
 
 ## 2 · CoDocBench-derived wild Python set (n=332, label-validated)
 
