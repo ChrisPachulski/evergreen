@@ -21,8 +21,22 @@ from itertools import combinations
 from pathlib import Path
 
 ANNOTATORS = ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5"]
+BATCH = 10  # ponytail: CLI startup dominates per-call latency, so judge 10 pairs per call
 
-PROMPT = """Here is a {language} function and its documentation.
+HEADER = """You will judge {n} code/documentation pairs for consistency.
+
+For each pair, the question is: does the documentation make any claim that the code contradicts
+or fails to deliver? Judge only what the documentation asserts against what the code does. Code
+that does MORE than the documentation mentions is NOT an inconsistency by itself. Judge each
+pair independently.
+
+Reply with exactly one line of JSON PER PAIR, in order, and nothing else:
+{{"id": "<the pair's id>", "verdict": "consistent" | "inconsistent"}}
+"""
+
+PAIR_TMPL = """
+---
+# Pair id: {id}
 
 ## Code (`{func}`)
 ```{lang_lower}
@@ -31,34 +45,30 @@ PROMPT = """Here is a {language} function and its documentation.
 
 ## Documentation
 {doc}
-
-Question: does the documentation make any claim that the code contradicts or fails to deliver?
-Judge only what the documentation asserts against what the code does. Code that does MORE than
-the documentation mentions is NOT an inconsistency by itself.
-
-Reply with exactly one line of JSON and nothing else:
-{{"verdict": "consistent" | "inconsistent", "why": "<one line citing the code>"}}"""
+"""
 
 
-def ask(pair, model):
-    prompt = PROMPT.format(language=pair.get("language", "Python"),
-                           lang_lower=pair.get("language", "python").lower(),
-                           func=pair["func"], code=pair["code"], doc=pair["doc"])
+def ask_batch(batch, model):
+    """Judge a batch of pairs in one CLI call. Returns {id: verdict}."""
+    prompt = HEADER.format(n=len(batch)) + "".join(
+        PAIR_TMPL.format(id=p["id"], func=p["func"], code=p["code"], doc=p["doc"],
+                         lang_lower=p.get("language", "python").lower()) for p in batch)
     try:
         out = subprocess.run(["claude", "-p", prompt, "--model", model, "--allowedTools", ""],
-                             capture_output=True, text=True, timeout=300).stdout
+                             capture_output=True, text=True, timeout=1200).stdout
     except subprocess.TimeoutExpired:
-        return None
+        return {}
+    got = {}
     for line in out.splitlines():
         line = line.strip().strip("`")
         if line.startswith("{") and '"verdict"' in line:
             try:
-                v = json.loads(line)["verdict"]
-                if v in ("consistent", "inconsistent"):
-                    return v
+                v = json.loads(line)
+                if v.get("verdict") in ("consistent", "inconsistent"):
+                    got[v.get("id")] = v["verdict"]
             except (json.JSONDecodeError, KeyError):
                 pass
-    return None
+    return got
 
 
 def cohen_kappa(a, b):
@@ -95,16 +105,20 @@ def main():
     pairs = [json.loads(l) for l in open(a.derived_jsonl) if l.strip()]
     votes_path = Path(a.out).with_suffix(".votes.json")
     votes = json.loads(votes_path.read_text()) if votes_path.exists() else {}
-    todo = [(p, m) for p in pairs for m in ANNOTATORS if votes.get(p["id"], {}).get(m) is None]
+    todo = []
+    for m in ANNOTATORS:
+        need = [p for p in pairs if votes.get(p["id"], {}).get(m) is None]
+        todo += [(need[i:i + BATCH], m) for i in range(0, len(need), BATCH)]
     workers = int(os.environ.get("EVAL_CONCURRENCY", "1"))
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for (p, m), v in zip(todo, pool.map(lambda t: ask(*t), todo)):
-            votes.setdefault(p["id"], {})[m] = v
+        for (batch, m), got in zip(todo, pool.map(lambda t: ask_batch(*t), todo)):
+            for p in batch:
+                votes.setdefault(p["id"], {})[m] = got.get(p["id"])
             done = sum(1 for pv in votes.values() for x in pv.values() if x)
-            print(f"  [{done}/{len(pairs) * len(ANNOTATORS)}] {m:20} {p['id']:60} -> {v}", flush=True)
-            if done % 25 == 0:
-                votes_path.write_text(json.dumps(votes, indent=1))
+            print(f"  [{done}/{len(pairs) * len(ANNOTATORS)}] {m:20} batch of {len(batch)}: "
+                  f"{len([p for p in batch if got.get(p['id'])])} answered", flush=True)
+            votes_path.write_text(json.dumps(votes, indent=1))
     votes_path.write_text(json.dumps(votes, indent=1))
 
     kept, dropped = [], []
