@@ -20,6 +20,13 @@ regardless of the repo's ambient mode.
 Scope: changes since `${1:-origin/main}` (diff against that ref); if it doesn't exist, winnow the
 docs against the current tree.
 
+**`--prove-by-test`** (opt-in, executable code only): for behavioral claims that would otherwise be
+`behavior-asserted — verify manually`, settle them by execution instead of deferring — write the
+smallest test that encodes what the *doc* claims, run it against the current code, and certify (test
+passes) or flag as drift-proven-by-execution (test fails). Guard: if you can't write a test you trust
+expresses the doc, fall back to `verify manually` — never flag on a test you don't trust. The test is
+scratch; show it, don't commit it. See the skill's "Prove by test" section.
+
 Walk the ladder, cheapest rung first, stop reporting at the first that holds:
 
 1. **Vanished paths** — every in-repo path a doc names must still exist on disk (or be tracked).

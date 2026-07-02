@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Evergreen SessionStart activation — mirrors ponytail-activate.
+# Evergreen SessionStart activation.
 # Reads the persisted per-repo mode and injects the (mode-filtered) freshness reflex as
 # session context (stdout becomes SessionStart context in Claude Code). PURE INJECTION:
 # this hook never reads or analyzes documentation content. Exits 0 always.
@@ -15,7 +15,7 @@ if [ -r "$MODE_FILE" ]; then
   case "$m" in off|light|strict) MODE="$m" ;; esac
 fi
 
-# off — inject nothing operative (parity with ponytail skipping activation when off).
+# off — inject nothing operative.
 [ "$MODE" = "off" ] && exit 0
 
 PREAMBLE=""

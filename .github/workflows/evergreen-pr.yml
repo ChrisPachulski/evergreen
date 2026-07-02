@@ -1,0 +1,20 @@
+name: evergreen
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  doc-drift:
+    runs-on: ubuntu-latest
+    # Belt-and-suspenders: the action already exits 0, but never let doc-drift redden a PR.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need history for the diff base
+      - name: Evergreen doc-drift check
+        uses: ./
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}

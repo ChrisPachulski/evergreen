@@ -1,9 +1,8 @@
 # Evergreen — design & prior-art credits
 
-Evergreen is a **skill**, the documentation-freshness companion to **ponytail**. Where
-ponytail is a prompt that makes the agent *write* like a lazy senior dev, evergreen is a
-prompt that makes the agent *notice* when the docs and the code have drifted apart. No
-scanner, no service — the intelligence is the model, exactly as in ponytail.
+Evergreen is a **skill**: a prompt that makes the agent *notice* when the docs and the code
+have drifted apart, and prove it before flagging. No scanner, no service — the intelligence is
+the model, using the tools it already has (read, grep, diff).
 
 This design is synthesized from a survey of **309 repos** (164 directly related, 79 of
 them zero-star — the clever-but-unknown longtail). The repos were an **idea mine**: we
@@ -17,14 +16,11 @@ idea is credited to the repo it was mined from.
 > their *ideas* for the prompt. Evergreen is the skill; the heuristics below live in the
 > model's head, not in a binary.
 
-## Principles (the ponytail parallel)
+## Principles
 
-| ponytail | evergreen |
-|---|---|
-| laziest solution that works | **cheapest check that proves the drift** — mechanical before semantic |
-| `lite / full / ultra` | `off / light / strict` — light walks rungs 1–3, strict adds rung-4 |
-| anti-over-engineering reflex | anti-doc-staleness reflex |
-| a skill, injected as behavior | a skill, injected as behavior |
+- **Cheapest check that proves the drift** — mechanical rungs before semantic reasoning.
+- **Intensity `off / light / strict`** — light walks rungs 1–3, strict adds the rung-4 semantic pass.
+- **An anti-doc-staleness reflex**, injected as behavior — not a scanner you run, a habit the agent has.
 
 ## The freshness ladder (the core behavior)
 
@@ -86,7 +82,6 @@ Each finding carries a severity and an explicit **fix-or-flag** call. *(Zarl-pro
   failure; existing-but-undocumented is informational. *(MarekWadinger/doc-checks)*
 - **Exempt what leads or freezes code** — specs/ADRs/RFCs/roadmaps/plans lead; audit/
   readiness/archive/dated snapshots and CHANGELOG history freeze. Never gate either.
-  *(ponytail: specs lead code)*
 - **Noise blocklist + learnings ledger** — third-party tool flags, CSS custom properties,
   URLs, generic symbols are not your contracts; a rejected flag never returns.
   *(sachn1/readme-drift, drift)*

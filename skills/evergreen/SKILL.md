@@ -1,6 +1,6 @@
 ---
 name: evergreen
-description: Keeps documentation honest with the code it describes. The freshness companion to ponytail — a ride-along reflex that, whenever code changes, asks "does any doc now lie?" and proves the answer against the code before flagging. Use when editing code that has docs, writing/reviewing docs, on "is this doc still right", "doc drift", "stale docs", "keep docs fresh", or before committing changes that touch documented surfaces.
+description: Keeps documentation honest with the code it describes. A ride-along reflex that, whenever code changes, asks "does any doc now lie?" and proves the answer against the code before flagging. Use when editing code that has docs, writing/reviewing docs, on "is this doc still right", "doc drift", "stale docs", "keep docs fresh", or before committing changes that touch documented surfaces.
 ---
 
 # Evergreen
@@ -55,6 +55,22 @@ If rungs 1–3 are clean, most "stale doc" worry is answered. Spend attention on
   behavioral claim the code can't settle — reported, not passed). Post-winnow silence = every claim
   certified, not "no lie found". `unverified` (this code, can't settle) ≠ `UNVERIFIABLE` (another
   system, dropped).
+
+## Prove by test (opt-in — executable code only)
+
+Rung 4's behavioral claims normally end at `behavior-asserted — verify manually`: reading alone
+can't settle "retries 3 times" or "returns empty on miss". Invoked with
+`/evergreen:winnow --prove-by-test` (or when asked), settle them by execution, CASCADE-style:
+
+1. Write the smallest test that encodes what the *doc* claims — not what the code does.
+2. Run it against the current code. Fails → **drift, proven by execution** (cite the failure).
+   Passes → **certified by test** (cite the passing test).
+3. Guard against a bad test: if you can't write a test you trust expresses the doc, fall back to
+   `behavior-asserted — verify manually` — never flag on a test you don't trust. (This is CASCADE's
+   false-positive guard: an inconsistency counts only when the code fails a test the doc backs.)
+
+Only where code actually runs (a test command exists, deps resolve). The test is scratch — show it,
+don't commit it. This is the one rung that executes; every other rung only reads.
 
 ## Taxonomy
 

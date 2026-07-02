@@ -38,7 +38,7 @@ g ls-files 2>/dev/null | grep -qiE '\.(md|markdown|rst)$' || exit 0
 # The tree being dirty means "changes exist", not "this turn changed something"; without this,
 # one uncommitted edit makes the nudge fire after every response until commit. Signature =
 # per-file diff stats + status; stored in .git/ (never tracked, gone on clone).
-# ponytail: untracked files sign by name only — content-only edits to an untracked file don't
+# Note: untracked files sign by name only — content-only edits to an untracked file don't
 # re-fire; the turn that created it already did.
 GITDIR="$(g rev-parse --absolute-git-dir 2>/dev/null || true)"
 if [ -n "$GITDIR" ] && [ -d "$GITDIR" ]; then
