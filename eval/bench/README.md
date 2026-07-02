@@ -17,9 +17,23 @@ python3 eval/bench/cascade_to_jsonl.py cascade_dataset > cascade.jsonl
 EVAL_CONCURRENCY=8 python3 eval/bench/run_bench.py --dataset cascade.jsonl
 ```
 
-**DocPrism's** set is still not runnable — its peer-review artifact link has expired
-(`{"error":"repository_expired"}`, re-checked 2026-07-02) — so its 0.62 precision is quoted as
-a published baseline, not re-measured.
+**CoDocBench** ([github.com/kunpai/codocbench](https://github.com/kunpai/codocbench),
+arXiv:2502.00519) supplies the wild *Python* set — 4,573 coupled code+docstring changes with no
+drift labels, from which we derive candidates ((old doc, new code) = the doc that lagged;
+(new doc, new code) = control) and then **validate every label with a three-LLM majority vote**
+before scoring, reporting inter-annotator kappa:
+
+```sh
+git clone https://github.com/kunpai/codocbench
+python3 eval/bench/codocbench_to_jsonl.py codocbench/dataset/codocbench.jsonl \
+    --pos 40 --neg 360 --seed 0 > derived.jsonl
+EVAL_CONCURRENCY=6 python3 eval/bench/validate_labels.py derived.jsonl --out validated.jsonl
+EVAL_CONCURRENCY=8 python3 eval/bench/run_bench.py --dataset validated.jsonl
+```
+
+**DocPrism's** set is still not runnable — its `anonymous.4open.science/r/DocPrism-5746`
+artifact returns `{"error":"not_connected"}` (re-checked 2026-07-02) — so its 0.62 precision is
+quoted as a published baseline, not re-measured.
 
 `dataset.jsonl` here is **evergreen's own hand-labeled sanity fixture in their exact schema** —
 14 pairs, honestly small, author-written, every label double-checked (the CCISolver paper found
