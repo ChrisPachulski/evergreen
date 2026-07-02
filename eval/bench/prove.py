@@ -21,6 +21,7 @@ model-authored test doing something dumb in a temp dir. Upgrade path: set EVAL_P
 to route each run through `docker run --network none` once a daemon is present (table carries
 the image per language).
 """
+import glob
 import os
 import shutil
 import subprocess
@@ -28,31 +29,47 @@ import sys
 import tempfile
 from pathlib import Path
 
-# lang -> (source filename, needs-binary, [argv steps with {F}=file {X}=exe], docker image).
-# Multiple steps = check/compile then run; only the LAST step's exit code is the verdict. A
-# nonzero from any earlier step is a SKIP not a FAIL — a broken synthesized test must never be
-# read as drift. Interpreted langs get a syntax pre-check (py_compile / node --check / ruby -c /
-# bash -n) using the same binary; compiled langs separate build from run. {F} is the source
-# file, {X} a built binary in the same scratch dir.
+# Homebrew installs some toolchains "keg-only" (openjdk, etc.) — present on disk but not on the
+# default PATH. Fold their bin dirs in so `command -v` finds them without touching the user's
+# shell profile or needing sudo. ponytail: a glob over the two brew prefixes, not a config file.
+_EXTRA_BIN = [p for pat in ("/opt/homebrew/opt/*/bin", "/usr/local/opt/*/bin")
+              for p in glob.glob(pat)]
+# Extras FIRST: macOS ships stub /usr/bin/java(c) that error unless a JVM is registered — a real
+# Homebrew openjdk must win over the stub.
+RUN_PATH = os.pathsep.join([*_EXTRA_BIN, os.environ.get("PATH", "")])
+
+# lang -> (source filename, needs-binary, [argv steps with {F}=file {X}=exe {D}=scratch dir],
+# docker image). Multiple steps = check/compile then run; only the LAST step's exit code is the
+# verdict. A nonzero from any EARLIER step is a SKIP not a FAIL — a broken synthesized test must
+# never be read as drift. So every row separates "does this even build/parse" from "does the
+# assertion hold": interpreted langs get a syntax pre-check (py_compile / node --check / ruby -c /
+# bash -n / perl -c / luac -p), compiled langs separate build from run. A language whose
+# interpreter can't cleanly split parse-error from assert-failure is deliberately LEFT OUT (falls
+# through to the audit stage) rather than given an unsafe row that manufactures drift.
 LANGS = {
     "python":     ("t.py",    "python3", [["python3", "-I", "-m", "py_compile", "{F}"], ["python3", "-I", "{F}"]], "python:3-slim"),
     "javascript": ("t.mjs",   "node",    [["node", "--check", "{F}"], ["node", "{F}"]],  "node:20-slim"),
     "typescript": ("t.ts",    "node",    [["node", "--experimental-strip-types", "{F}"]], "node:22-slim"),
     "ruby":       ("t.rb",    "ruby",    [["ruby", "-c", "{F}"], ["ruby", "{F}"]],        "ruby:3-slim"),
     "bash":       ("t.sh",    "bash",    [["bash", "-n", "{F}"], ["bash", "{F}"]],        "bash:5"),
+    "perl":       ("t.pl",    "perl",    [["perl", "-c", "{F}"], ["perl", "{F}"]],        "perl:5"),
+    "lua":        ("t.lua",   "lua",     [["luac", "-p", "{F}"], ["lua", "{F}"]],         "nickblah/lua:5.4"),
     "r":          ("t.R",     "Rscript", [["Rscript", "{F}"]],                            "r-base"),
     "go":         ("main.go", "go",      [["go", "build", "-o", "{X}", "{F}"], ["{X}"]],  "golang:1"),
     "rust":       ("t.rs",    "rustc",   [["rustc", "-O", "{F}", "-o", "{X}"], ["{X}"]],  "rust:1-slim"),
     "c":          ("t.c",     "cc",      [["cc", "{F}", "-o", "{X}"], ["{X}"]],           "gcc:latest"),
     "cpp":        ("t.cpp",   "c++",     [["c++", "{F}", "-o", "{X}"], ["{X}"]],          "gcc:latest"),
-    "swift":      ("t.swift", "swift",   [["swift", "{F}"]],                              "swift:latest"),
+    "swift":      ("t.swift", "swiftc",  [["swiftc", "-o", "{X}", "{F}"], ["{X}"]],       "swift:latest"),
+    # javac only PARSES/compiles here (nonzero -> skip); `java {F}` single-file mode then runs it
+    # (nonzero -> fail). Two steps keep a compile error from masquerading as drift.
+    "java":       ("T.java",  "java",    [["javac", "-d", "{D}", "{F}"], ["java", "{F}"]], "openjdk:21-slim"),
 }
 
 # spellings that map onto a table key
 ALIASES = {
     "js": "javascript", "node": "javascript", "ts": "typescript",
     "c++": "cpp", "cxx": "cpp", "cc": "c", "golang": "go", "rs": "rust",
-    "rlang": "r", "sh": "bash", "shell": "bash", "py": "python",
+    "rlang": "r", "sh": "bash", "shell": "bash", "py": "python", "pl": "perl",
 }
 
 
@@ -61,8 +78,8 @@ def canon(language):
     return ALIASES.get(lang, lang)
 
 
-def _has(step0_binary):
-    return shutil.which(step0_binary) is not None
+def _has(binary):
+    return shutil.which(binary, path=RUN_PATH) is not None
 
 
 def available_langs():
@@ -84,10 +101,10 @@ def run_test(language, test_source, timeout=25):
         src = Path(d) / filename
         src.write_text(test_source)
         exe = Path(d) / "prog"
-        env = {"PATH": os.environ.get("PATH", ""), "HOME": d, "GOCACHE": d, "GOPATH": d,
-               "TMPDIR": d}
+        env = {"PATH": RUN_PATH, "HOME": d, "GOCACHE": d, "GOPATH": d, "TMPDIR": d}
         for i, step in enumerate(steps):
-            argv = [tok.replace("{F}", str(src)).replace("{X}", str(exe)) for tok in step]
+            argv = [tok.replace("{F}", str(src)).replace("{X}", str(exe)).replace("{D}", d)
+                    for tok in step]
             try:
                 r = subprocess.run(argv, cwd=d, env=env, capture_output=True, text=True,
                                    timeout=timeout)
