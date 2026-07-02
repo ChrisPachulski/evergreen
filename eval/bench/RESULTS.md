@@ -1,44 +1,141 @@
 # Benchmark results
 
-`run_bench.py` over `dataset.jsonl` (14 hand-labeled pairs in the DocPrism schema), 2026-07-02,
-Claude Code CLI 2.1.197, scored deterministically from the run transcripts (`out/*.json`) with no
-manual credit.
+Scored deterministically from committed run transcripts (`out/*.json`) with no manual credit —
+`python3 run_bench.py --rescore out/<file>.json` re-derives every number here without API calls.
 
-## Core set — evergreen's territory (consistent + direct-mismatch + over-promise, n=12)
+**Protocol.** Real doc-drift is rare (~8–10% of documented functions in wild corpora), so
+balanced 50/50 sets overstate precision by the prevalence gap — CASCADE itself drops 0.88 → 0.39
+precision moving balanced → 10/90 ([arXiv:2604.19400](https://arxiv.org/abs/2604.19400)). We
+therefore report **precision · recall · F1 at a natural 10/90 split as the headline**, taking
+medians over 1000 resamples of the consistent class (CASCADE's method, mirrored so numbers line
+up), with the balanced split and flag-rate as secondary lenses.
 
-| judge | precision | recall | accuracy | flag-rate | confusion | DocPrism baseline ¹ |
+**Baseline regime.** The peer is **DocPrism**
+([arXiv:2511.00215](https://arxiv.org/abs/2511.00215)): 0.62 precision at a 15% flag rate across
+Python/TypeScript/C++/Java, zero fine-tuning, LLM-proves-each-finding — the regime evergreen
+lives in. Fine-tuned single-language SOTA (CCISolver 89.54 F1, CARL-CCI ~0.88–0.94,
+[arXiv:2506.20558](https://arxiv.org/abs/2506.20558)) is trained on cleaned single-language data
+and is **out of scope** — a prompt ruleset doesn't play in that regime, and we don't invite the
+comparison. Off-the-shelf zero-shot GPT-4 (~0.50 accuracy, high recall / low precision) is the
+floor the discipline is supposed to beat.
+
+## 1 · CASCADE head-to-head (885 wild Java pairs, execution-validated labels)
+
+The first genuinely comparable number: same data, same splits, same metrics as a published
+tool. [CASCADE's released dataset](https://github.com/TobiasKiecker/CASCADE) (MIT), converted by
+`cascade_to_jsonl.py`; labels come from developers' own Javadoc-fix commits. The release
+contains 70 inconsistent / 815 consistent (the paper says 71/814 — a release-artifact
+discrepancy we report rather than hide). One run per judge, 2026-07-02, Claude Code CLI 2.1.197.
+
+**Natural 10/90 split** (70 inconsistent + 630 resampled consistent, medians over 1000 resamples;
+CASCADE Table 2's imbalanced protocol):
+
+| tool | precision | recall | F1 | specificity | flag-rate |
+|---|---|---|---|---|---|
+| evergreen · Opus 4.8 | 0.30 | 0.33 | **0.32** | 0.92 | 0.11 |
+| evergreen · Haiku 4.5 | 0.22 | **0.49** | 0.30 | 0.81 | 0.22 |
+| Cascade (full, their tool) | **0.39** | 0.21 | 0.28 | **0.96** | — |
+| their LLM baselines (best per metric) ¹ | 0.06–0.28 | 0.10–0.81 | 0.11–0.28 | — | — |
+
+**Balanced 50/50 split** (70+70, medians over 1000 resamples):
+
+| tool | precision | recall | F1 | specificity |
+|---|---|---|---|---|
+| evergreen · Opus 4.8 | 0.79 | 0.33 | **0.46** | 0.91 |
+| evergreen · Haiku 4.5 | 0.72 | **0.49** | 0.58 ² | 0.81 |
+| Cascade (full) | **0.88** | 0.21 | 0.35 | **0.97** |
+
+Reading it honestly: evergreen posts the highest F1 on the 10/90 table with either judge (Opus
+0.32, Haiku 0.30, Cascade-full 0.28, best LLM baseline 0.28), but Cascade keeps the precision
+crown (0.39 vs 0.30) — its per-finding test execution buys fewer false alarms at the cost of
+recall. Opus is the better-calibrated judge (0.92 specificity, 0.11 flag-rate — the same regime
+as DocPrism's 15%); Haiku trades precision for recall. Cascade generates and executes unit
+tests per finding; evergreen is a prompt ruleset. Domain-transfer caveat: CASCADE is
+Java/Javadoc; evergreen's ruleset was written against Python/prose examples.
+
+¹ Table 2 of arXiv:2604.19400, rows LLM-S/LLM-A/Voting/DocChecker/C4RLLaMA at the 10/90 split.
+² Haiku's balanced F1 exceeds Opus's because balanced splits reward its high recall and forgive
+its false positives — exactly the distortion the natural split exists to correct.
+
+## 2 · CoDocBench-derived wild Python set (n=332, label-validated)
+
+No downloadable labeled multi-language *doc*-drift corpus exists, so we mined one from
+[CoDocBench](https://github.com/kunpai/codocbench) (arXiv:2502.00519): 400 candidates derived
+from real coupled code+docstring changes in top PyPI projects — `(old docstring, new code)` =
+lagging-doc positive candidate, `(new docstring, new code)` = control from disjoint rows —
+then **every label validated by a three-LLM majority vote** (Fable 5, Opus 4.8, Sonnet 5;
+two-thirds keep rule, CCIBench's method; neutral prompt, not evergreen's ruleset).
+
+**The validation itself is a finding: 78% of heuristic positives were rejected** (9/40 kept vs
+323/360 controls) — the "a doc changed alongside code, so the old doc must be inconsistent"
+heuristic is mostly noise, worse than CCISolver's measured 45.67% on JITDATA. Kept set: 332
+pairs, natural prevalence 2.7%. Inter-annotator agreement: Fleiss' kappa **0.660**, pairwise
+Cohen's kappa 0.633–0.688 — *below* the >0.8 target and reported anyway. Annotator setup,
+honestly: three LLMs, no human pass, and all three are Claude-family — correlated errors are
+possible, and the judge below is same-family (circularity caveat). Votes are committed
+(`out/codocbench-validated.votes.json`) for audit.
+
+Scored at the protocol's 10/90 (9 inconsistent + 81 resampled consistent, medians over 1000
+resamples) and balanced splits:
+
+| judge | split | precision | recall | F1 | specificity | flag-rate |
 |---|---|---|---|---|---|---|
-| Opus 4.8 | **1.00** | **1.00** | **1.00** | 0.50 ² | TP 6 · FP 0 · FN 0 · TN 6 | 0.62 precision @ 0.15 |
-| Haiku 4.5 | 0.86 | **1.00** | 0.92 | 0.58 | TP 6 · FP 1 · FN 0 · TN 5 | — |
+| Opus 4.8 | **natural 10/90** | 0.54 | 0.78 | **0.64** | 0.93 | 0.14 |
+| Opus 4.8 | balanced 50/50 | 0.88 | 0.78 | 0.82 | 0.89 | 0.44 |
+| Haiku 4.5 | **natural 10/90** | 0.23 | **1.00** | 0.37 | 0.62 | 0.44 |
+| Haiku 4.5 | balanced 50/50 | 0.75 | 1.00 | 0.86 | 0.67 | 0.67 |
 
-Opus caught every inconsistent pair and left every consistent one alone — zero false positives.
-Haiku matched the recall but produced one false positive: it flagged `upload_retries`, a *consistent*
-pair whose doc ("retrying up to 3 times") matches a 3-iteration loop. That's the borderline pair in
-the set doing its job — separating a model that reads the loop from one that pattern-matches the
-prose.
+The Opus row is the closest thing to a DocPrism comparison this side of their dataset
+releasing: wild Python, natural split, and a 0.14 flag-rate against their 0.15 — **0.54
+precision vs their published 0.62**. Slightly below, honestly reported (different data, so
+context rather than a head-to-head; DocPrism also spans four languages). Haiku catches every
+validated lagging-doc pair but flags 38% of validated-consistent wild Python (124/323) — the
+same trigger-happy pattern as its fixture false positive and its CASCADE precision.
+Small-positive-n caveat: 9 positives make recall coarse (each Opus miss is 11 points; it
+missed 2).
 
-¹ DocPrism (arXiv:2511.00215): 0.62 precision at a 15% flag rate across Python/TypeScript/C++/Java,
-no fine-tuning. **Not the same dataset** — this is context, not a head-to-head (see caveats).
-² Flag-rate is ~0.5 because the set is deliberately balanced (6 of 12 core pairs are truly
-inconsistent); DocPrism's 0.15 is over a natural corpus that is mostly consistent, so the two
-flag-rates are not comparable.
+## 3 · Sanity fixture (n=12 core, author-written — NOT a comparable result)
 
-## Under-promise — the deliberate asymmetry (n=2)
+`dataset.jsonl`: 14 hand-labeled pairs (12 core + 2 under-promise). Author-written and balanced
+by construction, so it proves the harness and catches regressions; it compares to nothing.
+
+| judge | split | precision | recall | F1 | specificity | flag-rate |
+|---|---|---|---|---|---|---|
+| Opus 4.8 | **natural 10/90** ¹ | 1.00 | 1.00 | 1.00 | 1.00 | 0.10 |
+| Opus 4.8 | balanced 50/50 | 1.00 | 1.00 | 1.00 | 1.00 | 0.50 |
+| Haiku 4.5 | **natural 10/90** ¹ | **0.40** | 1.00 | 0.57 | 0.83 | 0.25 |
+| Haiku 4.5 | balanced 50/50 | 0.86 | 1.00 | 0.92 | 0.83 | 0.58 |
+
+¹ Only 6 consistent pairs exist, so the 10/90 split bootstraps them **with** replacement to 54.
+Haiku's one false positive is the whole story: harmless at 50/50 (0.86), it collapses precision
+to 0.40 at natural prevalence. That is why balanced numbers must not be headlines.
+
+Footnote for the record: this fixture's Opus row was previously reported as a headline
+"1.00 precision / 1.00 recall." **Balanced sanity fixture, n=12, author-written — not a
+comparable result.** Zero false positives across 6 consistent pairs bounds the fixture FPR; it
+does not claim 1.00 on a natural corpus — sections 1–2 above show what the same harness does on
+wild data.
+
+## Under-promise — the deliberate asymmetry (n=2, fixture only)
 
 **Both models flagged 0/2 — as designed.** `greet_extra` (an undocumented optional param) and
-`read_config_expand` (undocumented `~` expansion) are cases where the code does *more* than the doc
-says. DocPrism labels these `inconsistent`; evergreen holds "code is truth, the doc is the claim,"
-so undocumented extra behavior is informational, not drift. Both judges correctly called them
-`consistent`. The scorer reports this separately from recall rather than dragging it down — the
-asymmetry working, not a miss.
+`read_config_expand` (undocumented `~` expansion) are cases where the code does *more* than the
+doc says. DocPrism labels these `inconsistent`; evergreen holds "code is truth, the doc is the
+claim," so undocumented extra behavior is informational, not drift. The scorer reports this
+separately from recall rather than dragging it down.
 
 ## Honest caveats
 
-- **The external sets aren't runnable.** DocPrism's peer-review artifact has expired
-  (`repository_expired`); CASCADE's isn't released. So `dataset.jsonl` is evergreen's own labeled set
-  in their schema — real numbers, but n=14 and author-written. The moment either releases,
-  `run_bench.py --dataset <path>` produces a true head-to-head.
-- **Small n, balanced by hand.** 1.00 across 12 clean pairs says the ruleset handles unambiguous
-  drift with zero false positives on Opus; it does not claim 100% on a large natural corpus.
-- **One run per model.** Re-run with `EVAL_MODEL=` to see the spread. Numbers here are recomputed
-  from the committed transcripts, so anyone can re-derive them without spending API calls.
+- **One run per judge per dataset.** Re-run with `EVAL_MODEL=` to see the spread. All numbers
+  re-derivable from committed transcripts via `--rescore`, no API spend.
+- **CASCADE is Java; the CoDocBench-derived set is Python.** Neither is multi-language;
+  evergreen's README/prose territory is broader than both. Under-promise the generality.
+- **CoDocBench-derived labels are LLM-validated, not human-validated**, kappa 0.660 < 0.8, and
+  annotators/judges share a model family. A human-validated few-hundred subset is the next rung.
+- **DocPrism's own set is still unrunnable** (`anonymous.4open.science/r/DocPrism-5746` returns
+  `{"error":"not_connected"}`, re-checked 2026-07-02); its 0.62 is context from the paper, not a
+  same-data head-to-head. The harness reads its schema: `run_bench.py --dataset <path>` the day
+  it releases.
+- **All dataset links verified live 2026-07-02**: CASCADE repo, CoDocBench repo + Zenodo DOI,
+  CodeFuse-CommitEval, JITDATA (do not use raw — 45.67% positive-label noise), and all arXiv
+  IDs cited here.

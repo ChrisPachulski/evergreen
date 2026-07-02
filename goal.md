@@ -102,11 +102,11 @@ A minimal-but-credible 2026 result = **provenance + n + both splits + baseline +
 
 ## Definition of done
 
-- [ ] `eval/bench/` reports at natural distribution with resampling; 1.00/1.00 demoted to a labeled fixture footnote.
-- [ ] At least one number on **CASCADE** (real, execution-labeled, downloadable) reproducing its balanced+10/90 protocol.
-- [ ] A natural evergreen-native set of **≥200 label-validated pairs** (Kappa reported), scored at natural distribution.
-- [ ] `RESULTS.md` states the DocPrism-0.62 baseline as the peer and the fine-tuned band as out of scope.
-- [ ] Every dataset link in the writeup re-verified live at publish time.
+- [x] `eval/bench/` reports at natural distribution with resampling; 1.00/1.00 demoted to a labeled fixture footnote. (2026-07-02)
+- [x] At least one number on **CASCADE** (real, execution-labeled, downloadable) reproducing its balanced+10/90 protocol. (Opus 4.8: F1 0.32 at 10/90 vs Cascade 0.28; Haiku 0.30. Released set is 70/815 vs paper's 71/814 — noted.)
+- [x] A natural evergreen-native set of **≥200 label-validated pairs** (Kappa reported), scored at natural distribution. (n=332 from CoDocBench, Fleiss' kappa 0.660 — below the 0.8 target, reported honestly with the LLM-only-annotator caveat. Opus: 0.54 precision @ 0.14 flag-rate, F1 0.64 at 10/90.)
+- [x] `RESULTS.md` states the DocPrism-0.62 baseline as the peer and the fine-tuned band as out of scope.
+- [x] Every dataset link in the writeup re-verified live at publish time. (All HTTP 200 on 2026-07-02; DocPrism's 4open.science artifact confirmed still dead — `not_connected`.)
 
 ## Open questions (resolve while executing)
 
