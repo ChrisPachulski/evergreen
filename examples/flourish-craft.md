@@ -35,6 +35,8 @@ A maintainer wrote it for maintainers. A visitor bounces.
    for a logo/screenshot (`public/`, `assets/`, `.github/`). You can't write a hero or a feature
    list from the old README alone.
 2. **Impose the skeleton** — force the visitor-facing top, demote the engineering detail below it.
+3. **Find the voice** — a tagline with a point of view and a hook that makes you feel the pain,
+   distinct from the definitional value prop. Structure without this is only half the job.
 
 ## The after
 
@@ -43,7 +45,10 @@ A maintainer wrote it for maintainers. A visitor bounces.
 <img src="public/logo.svg" alt="My Streaming App" width="88" />
 
 # My Streaming App
-**A self-hosted streaming platform your household owns end to end.**
+<em>Your library. Your hardware. Nobody else's server to shut it down.</em>
+
+**A self-hosted streaming platform your household owns end to end** — live TV and an on-demand
+library, three ways to sign in, and nothing phoning home.
 
 ![web](https://img.shields.io/badge/web-React_19-61dafb?style=flat-square)
 ![api](https://img.shields.io/badge/api-Hono-f59e0b?style=flat-square)
@@ -71,9 +76,12 @@ Four runtimes, one product: <!-- the SAME accurate detail — now below the fold
 ## Why it matters
 
 Every claim is still code-backed — the verify pass proves the rewrite the same way the reflex
-proves a flag. What changed is **order and shape**: hero → value prop → badges → features → quick
-start *first*, architecture *after*; walls of prose become scannable bullets; a missing screenshot
-becomes an invisible marker at a tracked path — never a visible "screenshot goes here" box, never a
-dead link. flourish is the one sanctioned prose-rewrite, and
-**"already accurate" is never "already done"** — run it until the result passes the monstrosity
-test (first screenful is hero → value → features → quick start, not internals).
+proves a flag. What changed is **order, shape, and voice**: hero → value prop → badges → features →
+quick start *first*, architecture *after*; walls of prose become scannable bullets; a missing
+screenshot becomes an invisible marker at a tracked path — never a visible "screenshot goes here"
+box, never a dead link. And the flat definitional line grew a **tagline with a point of view** ("Your
+library. Your hardware. Nobody else's server to shut it down.") and concrete stakes — the difference
+between a README a visitor skims and one they remember. flourish is the one sanctioned prose-rewrite,
+and **"already accurate" is never "already done"** — nor is "already structured." Run it until the
+result passes both floors of the monstrosity test: structure (hero → value → features → quick start,
+not internals) **and voice** (does the opening make you feel the problem, or just define the tool?).

@@ -1,7 +1,13 @@
 # readme-style — the gold standard `flourish` rewrites toward
 
 The shared anatomy of 28 READMEs from 50K★+ repos. A *target*, not a checklist: flourish rewrites an
-accurate-but-ugly doc toward this shape, then the verify pass proves every claim against the code.
+accurate-but-ugly doc toward this shape **and voice**, then the verify pass proves every claim against
+the code. Structure gets a visitor oriented; **voice makes them care** — the two pillars, not one.
+
+**The living exemplar is this repo's own `README.md`.** When you flourish, the bar is "of that ilk":
+a hook that makes you feel the problem, a tagline with a point of view, concrete stakes, personality
+in the seams — all still code-backed. If your output reads more neutral than evergreen's README, you
+imposed the skeleton and stopped short of the voice pass. Go back.
 
 ## The spine (top-to-bottom section order)
 
@@ -38,17 +44,47 @@ feature-comparison matrices · benchmark dumps (a single purposeful chart is the
 
 ## The opening (the 1–3 lines that carry the file)
 
-Formula: **`[Name] is a [category] that [core benefit].`** — present tense, ~10–15 words, names
-the category in the first clause. Verbatim exemplars:
+Two registers, both gold — pick by product, and know which you're reaching for.
+
+**Definitional — the floor.** `[Name] is a [category] that [core benefit].` Present tense, ~10–15
+words, category in the first clause. Safe, clear, never wrong:
 
 - "React is a JavaScript library for building user interfaces."
 - "Go is an open source programming language that makes it easy to build simple, reliable, and efficient software."
 - "Supabase is the Postgres development platform."
 
-Sanctioned variations: **problem-first** (state the pain, then the goal — esbuild),
-**social-proof** ("Used by some of the world's largest companies, Next.js…"), or **personality
-right after** the definitional line (Supabase: "Sounds boring. Let's try again."). No
-throat-clearing — line one says what it is and who it's for.
+**Hook-first — the ceiling.** Make the reader *feel the problem* before you name the tool — a one-line
+sting, a metaphor, a stakes-raising scenario — then land the value prop. This is what separates a
+README people remember from one they skim, and it's what this repo's own README does: a tagline
+that's a dare ("The docs said yes. The code said no. Only one of them gets to be true."), then a
+paragraph that dramatizes the pain ("Your README was true the day you wrote it. Then a flag got
+renamed, a file moved… the docs stayed exactly where they were") *before* it ever says what evergreen
+is. A tool with a sharp point of view should reach for this, not the bare formula.
+
+The formula is the floor you must clear; the hook is the ceiling you should aim for when the product
+has a point of view. Never open with install steps, a TOC, or "Welcome to" — line one either says
+what it is or makes you feel why it matters.
+
+## Voice (substance, not garnish)
+
+Structure orients; voice makes them care and remember. A structurally-perfect, voiceless README is
+the *second* monstrosity — right after the architecture-first wall — and the one flourish is most
+likely to ship if it stops at the skeleton. Earn a voice:
+
+- **A tagline with a point of view** — not a restatement of the value prop. evergreen: "The docs said
+  yes. The code said no." A dare, a stakes line, or a crisp metaphor the product actually earns.
+- **Concrete over abstract** — "someone pastes a command that no longer exists" beats "documentation
+  can drift." Name the failure the reader has lived; specifics are what make prose land.
+- **Personality in the seams** — section intros and FAQ answers are where voice breathes. evergreen's
+  FAQ: "Why 'evergreen'? A doc that stays true as the code grows is evergreen. Yours aren't. Yet."
+- **A `show it working` beat** — for a dev tool with no screenshot, the demo *is* the proof: a
+  before/after or a real slice of the tool's own output (evergreen's rendered `evergreen:` finding
+  block) carries more than any prose claim. Show it doing the thing.
+- **Match and amplify the project's register** — read the existing voice; a playful project stays
+  playful, a serious one stays crisp. **Never sand an evocative doc down to neutral** to fit the
+  template (see flourish's don't-flatten guard).
+
+Voice is never a license to fabricate: every claim the voice makes still faces the verify pass.
 
 ## Prose discipline
 
