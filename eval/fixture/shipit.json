@@ -1,0 +1,7 @@
+{
+  "project": "demo",
+  "releases": [
+    {"name": "alpha", "date": "2026-01-05"},
+    {"name": "beta", "date": "2026-02-11"}
+  ]
+}
