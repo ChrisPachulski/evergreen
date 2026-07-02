@@ -61,7 +61,7 @@ That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo wi
 | Opus 4.8 | 10/10 | 0/8 | 2/2 | 1.00 |
 | Haiku 4.5 | 9/10 | 1/8 | 2/2 | 0.89 |
 
-Method, caveats, and the answer key: [eval/RESULTS.md](eval/RESULTS.md). Re-run it yourself: `bash eval/run.sh`.
+There's a second, per-pair [benchmark](eval/bench/) in the schema the research literature uses (consistent · direct-mismatch · over-promise · under-promise), so the numbers sit next to published baselines — on it evergreen scores **1.00 precision / 1.00 recall** over the core set (Opus 4.8) versus DocPrism's 0.62-precision baseline, and correctly leaves *under-promise* (code doing more than the doc says) unflagged, because that's informational, not drift. Method, caveats, and the answer keys: [eval/RESULTS.md](eval/RESULTS.md) · [eval/bench/RESULTS.md](eval/bench/RESULTS.md). Re-run either: `bash eval/run.sh` · `python3 eval/bench/run_bench.py`.
 
 ## Install
 
@@ -76,6 +76,25 @@ It rides along every session: flags drift the moment a change leaves a doc lying
 
 What it costs, since you count tokens: session start injects a ~35-line [digest](skills/evergreen/DIGEST.md), not the full ruleset (that loads on demand), and the post-turn nudge fires once per new change — not on every turn while the tree sits dirty.
 
+### On every pull request
+
+Want the check in CI too? Add the Action — it winnows the docs the PR's code touched and posts findings as a single comment. It never fails the build; it comments, you decide.
+
+```yaml
+# .github/workflows/evergreen.yml
+on: pull_request
+permissions: { contents: read, pull-requests: write }
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: ChrisPachulski/evergreen@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
 ### Any other agent
 
 The whole skill is [`skills/evergreen/SKILL.md`](skills/evergreen/SKILL.md). Drop it into any skill-capable agent, or paste it into your system prompt. For Codex, Copilot, Gemini, and anything that reads [`AGENTS.md`](AGENTS.md), the flat-prose ruleset already lives at the repo root.
@@ -89,7 +108,7 @@ Three axes — **truth · craft · hygiene** — one creed: prove it or drop it,
 | Command | What it does |
 |---------|--------------|
 | `/evergreen [off \| light \| strict]` | Set the intensity for this repo. No argument reports the current one. |
-| `/evergreen:winnow [base-ref]` | **Truth, deep.** Walk every claim that changed since a ref and *certify it true or surface it* — silence means certified, not just "no lie found." Always strict. |
+| `/evergreen:winnow [base-ref] [--prove-by-test]` | **Truth, deep.** Walk every claim that changed since a ref and *certify it true or surface it* — silence means certified, not just "no lie found." Always strict. With `--prove-by-test`, behavioral claims that reading can't settle are settled by execution (write the test the doc implies, run it): fails → drift proven, passes → certified by test. |
 | `/evergreen:flourish <file> [--all] [--manual]` | **Craft.** Rewrite an accurate-but-ugly doc to a gold standard (mined from 28 top READMEs), then prove every claim against the code. Emits a diff — never a silent overwrite. The only sanctioned prose-rewrite. |
 | `/evergreen:cultivate [path]` | **Hygiene.** Local-only files leaking into git, gitignore gaps, AI-slop that shouldn't be tracked or public. Proposes untrack/ignore/delete — never auto. A commit-time guard backstops it (the one thing that *blocks*). |
 

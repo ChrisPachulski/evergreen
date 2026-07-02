@@ -28,7 +28,7 @@ if [ -z "$BASE" ]; then
   if [ -n "${GITHUB_BASE_REF:-}" ]; then
     BASE="origin/$GITHUB_BASE_REF"
   else
-    # ponytail: no PR base (e.g. a push build) → diff against the previous commit; upgrade to a
+    # note: no PR base (e.g. a push build) → diff against the previous commit; upgrade to a
     # merge-base if branch-vs-branch precision ever matters.
     BASE="HEAD^"
   fi

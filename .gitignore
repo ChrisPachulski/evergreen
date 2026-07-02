@@ -5,3 +5,5 @@ PLAN.md
 PLAN-REVIEW-LOG.md
 eval/out/
 eval/bench/out/
+eval/bench/*.log
+__pycache__/
