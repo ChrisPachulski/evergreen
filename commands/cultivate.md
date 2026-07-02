@@ -51,8 +51,9 @@ Zero references → orphan candidate. Reference checks miss lazy/dynamic/aliased
 against the code before flagging *source*; don't trust the grep alone.
 
 **C · Pattern hints (a checklist, not the test).** Scan for secrets (`.env*`, `*.pem`, keys), build
-artifacts, OS cruft, AI-slop names (`AUDIT-*`, `SUMMARY.md`, `SYNTHESIS.md`, `*-REVIEW*`, stray
-`.planning`/`.research`). Found ≠ done; not-found ≠ clean.
+artifacts, OS cruft, AI-slop names (`AUDIT-*`, `*_SUMMARY.md`/`*-SUMMARY.md`, `SYNTHESIS.md`,
+`*-REVIEW*`, stray `.planning`/`.research`). Bare `SUMMARY.md` is not a hint — mdBook mandates
+`src/SUMMARY.md` and GitBook uses a root `SUMMARY.md` as its TOC. Found ≠ done; not-found ≠ clean.
 
 **D · Misplaced.** A real file in the wrong tree (an Xcode `.xcprivacy` in a server repo). Right
 file, wrong place.

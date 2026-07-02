@@ -43,7 +43,9 @@ is_slop() {
   case "$b" in
     .env|.env.*|*.pem|*.key|id_rsa|id_ed25519|*.p12|*.keystore) echo "secret/credential"; return 0 ;;
     .DS_Store|Thumbs.db) echo "OS cruft"; return 0 ;;
-    AUDIT-*.md|SUMMARY.md|SYNTHESIS.md|*-REVIEW.md|*-REVIEW-LOG.md) echo "AI-slop report"; return 0 ;;
+    # Bare SUMMARY.md is NOT here: mdBook mandates src/SUMMARY.md and GitBook uses a root
+    # SUMMARY.md as its TOC — a legit, sometimes mandatory file fails the high-signal bar.
+    AUDIT-*.md|*_SUMMARY.md|*-SUMMARY.md|SYNTHESIS.md|*-REVIEW.md|*-REVIEW-LOG.md) echo "AI-slop report"; return 0 ;;
   esac
   case "$f" in
     .planning/*|.research/*) echo "internal planning dump"; return 0 ;;
