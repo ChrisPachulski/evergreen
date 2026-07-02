@@ -52,6 +52,17 @@ When code changes, it stops at the first rung that catches:
 
 One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — so this one never does.
 
+## Receipts
+
+That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with 10 catalogued lies (two-plus per rung), 8 true claims that must not be flagged, and 2 exempt docs, then lets a headless agent winnow it blind:
+
+| judge | drift caught | decoy false positives | exempt docs honored | precision |
+|---|---|---|---|---|
+| Opus 4.8 | 10/10 | 0/8 | 2/2 | 1.00 |
+| Haiku 4.5 | 9/10 | 1/8 | 2/2 | 0.89 |
+
+Method, caveats, and the answer key: [eval/RESULTS.md](eval/RESULTS.md). Re-run it yourself: `bash eval/run.sh`.
+
 ## Install
 
 ### Claude Code
