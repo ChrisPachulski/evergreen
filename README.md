@@ -56,7 +56,7 @@ One rule above all: **prove it or drop it.** If it can't cite the code that make
 
 That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with catalogued lies, true claims that must not be flagged, and exempt docs, then lets a headless agent winnow it blind. The per-pair harness ([`eval/bench/`](eval/bench/)) runs the judge over labeled code/doc pairs.
 
-Benchmark numbers are being re-derived against the corrected judge (adversarial reasoning built into the single verdict rather than bolted on as downstream vetoes); the prior figures were pulled pending that re-run.
+Against that corrected judge, the Python calibration split (CoDocBench, wild code/doc pairs with three-LLM–validated labels) scores **recall 0.89, precision 0.57, F1 0.70 at the natural 10/90 split** (F1 0.89 at balanced 50/50, n=50); on a 282-pair held-out set of true claims it holds **95% specificity** — 13 false positives. The comparable peer, DocPrism, reports 0.62 precision at a 15% flag rate. The TypeScript, Rust, and Go re-runs against this judge are still in flight; their earlier figures came from the prior judge and were pulled.
 
 ## Install
 
@@ -69,7 +69,7 @@ Benchmark numbers are being re-derived against the corrected judge (adversarial 
 
 It rides along every session: flags drift the moment a change leaves a doc lying, adds `/evergreen:winnow`, and leaves a quiet nudge if you changed code and forgot to look. Intensity is `off | light | strict` (default **light**). The truth reflex never blocks your commit — it flags, you decide. (The hygiene guard is the one exception, and it's the kind you want — see [Commands](#commands).)
 
-What it costs, since you count tokens: session start injects a ~35-line [digest](skills/evergreen/DIGEST.md), not the full ruleset (that loads on demand), and the post-turn nudge fires once per new change — not on every turn while the tree sits dirty.
+What it costs, since you count tokens: session start injects a ~40-line [digest](skills/evergreen/DIGEST.md), not the full ruleset (that loads on demand), and the post-turn nudge fires once per new change — not on every turn while the tree sits dirty.
 
 ### On every pull request
 

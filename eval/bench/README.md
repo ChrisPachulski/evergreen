@@ -79,5 +79,7 @@ EVAL_MODEL=claude-haiku-4-5-20251001 python3 eval/bench/run_bench.py
 python3 eval/bench/run_bench.py --selftest # prove the scoring math, no API calls
 ```
 
-The run prints precision/recall/F1 at both splits. Published benchmark figures were pulled
-pending a re-run against the corrected judge.
+The run prints precision/recall/F1 at both splits. Latest against the corrected judge, Python
+(CoDocBench): natural 10/90 — precision 0.57, recall 0.89, F1 0.70; balanced 50/50 — F1 0.89;
+plus 0.95 specificity (13 FP / 282) on the held-out true-claim remainder. The TypeScript, Rust,
+and Go re-runs against this judge are still pending.

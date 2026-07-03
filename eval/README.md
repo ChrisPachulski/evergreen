@@ -25,5 +25,6 @@ bash eval/run.sh                      # default model
 EVAL_MODEL=claude-haiku-4-5-20251001 bash eval/run.sh   # or pin one
 ```
 
-The harness prints its own numbers on each run. Published benchmark figures were pulled pending a
-re-run against the corrected judge (adversarial reasoning built into the single verdict).
+The harness prints its own numbers on each run. Against the corrected judge, the per-pair
+benchmark ([`bench/`](bench/)) scores Python at recall 0.89 / precision 0.57 / F1 0.70 (natural
+10/90) with 95% specificity on held-out true claims; TypeScript, Rust, and Go re-runs are pending.
