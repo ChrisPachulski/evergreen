@@ -32,10 +32,11 @@ Walk the ladder, cheapest rung first, stop reporting at the first that holds:
    front of you.
 
 **Put the judgment on trial (rungs 3–4).** A judgment-call flag is not a finding until it survives
-the trial in the skill's "Put the judgment on trial": make the snap call and state it; challenge it
-in whichever direction it went and keep it only if it survives; when the challenge lands, take
-three *independent, blind* reads (defend / prove-wrong / hardest-broken) and weigh them — a concern
-all three miss is a shared blind spot, not a clearance; the verdict is what survives, not a veto.
+the skill's shared harness, "Put the verdict on trial". Winnow's parameters: the **claim** is the
+doc's assertion against the current code; the **verdict space** is drift / fine / `unverified`; the
+**prongs** are *defend* (the reading that makes it hold) / *prove-wrong* (the exact code token that
+breaks it) / *hardest-broken* (the airtight case for drift). Snap, challenge, three blind reads,
+blind-spot, weigh — a drift ships only if the accusation beat its strongest defense.
 Where the code runs, **prove by test is the default** for behavioral claims — write the smallest
 test that encodes what the *doc* claims and run it: passes → certified by test, fails →
 drift-proven-by-execution, won't run → inconclusive, fall back to `verify manually` (never flag on

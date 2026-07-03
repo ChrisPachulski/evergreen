@@ -15,11 +15,13 @@ not the whole tree. Walk the rungs in order per claim; cheap mechanical checks b
    code can't settle → `behavior-asserted — verify manually`; never pass or guess.
 
 Rules:
-- **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. A rung-3/4
-  flag goes on trial before it ships — a snap call, a challenge it must survive (in either
-  direction), then three independent blind reads (defend / prove-wrong / hardest-broken) weighed
-  into the verdict, never a veto. Prove by test is the default where the code runs: a failing test
-  the doc backs is drift; a test that won't run is inconclusive.
+- **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. Every
+  judgment-call verdict in the family — a rung-3/4 drift flag, cultivate's delete/block, flourish's
+  "done" — goes on the same trial before it ships: a snap call, a challenge it must survive (in
+  either direction), three independent blind reads (winnow's: defend / prove-wrong /
+  hardest-broken), a blind-spot pass, weighed into the verdict, never a veto. Mechanical facts
+  (a grep, a reference count) skip the trial. Prove by test is the default where the code runs: a
+  failing test the doc backs is drift; a test that won't run is inconclusive.
 - Read the changed file at HEAD, not just the diff's `+` lines — rot lives in old comments.
 - Code is truth; the doc is the claim. Documented-but-missing = finding; undocumented = informational.
 - Exempt what leads or freezes: specs/ADRs/RFCs/roadmaps/plans, CHANGELOG history, dated
