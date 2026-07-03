@@ -73,7 +73,11 @@ labels, medians over 1000 resamples (`--rescore out/bench-codoc-py-*-trial-*.jso
 |---|---|---|---|---|---|---|
 | natural 10/90 (headline) | 50 | 0.57 | 0.89 | 0.70 | 0.93 | 0.16 |
 | balanced 50/50 | 50 | 0.89 | 0.89 | 0.89 | 0.89 | 0.50 |
-| held-out true claims | 282 | — | — | — | 0.95 | 0.05 |
+| held-out true claims | 282 | n/a | n/a | n/a | 0.95 | 0.05 |
+
+The 282-pair held-out set is **all true claims — no seeded drift**, so precision/recall/F1 have no
+positives to score (they're `0/0`, undefined). It's a pure false-alarm test: the only meaningful
+numbers are specificity (269 correct silences / 282) and flag rate (13 false flags / 282 = 0.05).
 
 **Read it straight:** the only apples-to-apples number is precision at a matched flag rate, and there
 evergreen *trails* — 0.57 at a 0.16 flag rate vs DocPrism's 0.62 at ~0.15. DocPrism doesn't publish
