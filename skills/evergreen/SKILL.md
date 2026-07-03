@@ -96,13 +96,16 @@ prompts** — and runs the same shape:
 2. **Challenge — it must survive.** Argue the hardest case that the snap is *wrong*, whichever
    way it went: if it said drift/delete/done, find the reading under which it doesn't hold; if it
    said fine/keep/not-yet, hunt what breaks it. A cheap "looks fine" gets no free pass, and a
-   snap that can't beat its strongest counter does not stand on its own.
+   snap that can't beat its strongest counter does not stand on its own. The challenge *lands*
+   only when its case rests on evidence actually in front of it and would change the verdict —
+   most snaps survive a decent attack, and a speculative attack is not a crack.
 3. **Three independent reads (blind).** Three *separate* looks that never see the snap, the
    challenge, or each other — the command's prong set (winnow's: *defend* / *prove-wrong* /
    *hardest-broken*). Blindness is the point: a read that saw the snap can only rubber-stamp it.
 4. **Blind-spot.** One more look asking only "what did everyone miss?". It runs on *every* trial
    — a blind spot is by definition not predictable in advance — and it raises a concern, never
-   decides the verdict.
+   decides the verdict. The bar is high: only an angle that could *flip* the verdict counts; an
+   interesting nuance is not a blind spot, and the common honest answer is "nothing".
 5. **Decide by weighing, not by veto.** The verdict is what survives — snap, challenge, reads,
    and blind-spot weighed together. Unanimous evidence with nothing missed stands as-is; a
    contested claim is weighed on whether the accusation beat its strongest defense. A tie counts

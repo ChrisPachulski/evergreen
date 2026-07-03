@@ -103,6 +103,11 @@ def challenge_call(pair, snap_verdict, model):
     prompt = f"""A first reviewer judged this documentation "{snap_verdict}". Your job is the
 opposite: {attack} Make the hardest, best-cited case you can that the first reviewer was wrong.
 
+Then judge your own case honestly. "cracks" is a HIGH bar: true only if your case rests on code
+actually shown here and would change the verdict for a careful reviewer — not on unseen code, a
+speculative edge case, or a merely-arguable alternative reading. Building the attack is your job
+either way; most first verdicts survive a decent attack. When unsure, cracks=false.
+
 {_fence(pair)}
 
 Reply with exactly one line of JSON and nothing else:
@@ -143,13 +148,15 @@ def run_prongs(pair, model):
 def blindspot_call(pair, model):
     prompt = f"""Three reviewers just judged whether this documentation matches the code. Your
 only job: name ONE angle they could ALL have missed — a reading of the code, an edge case, a
-claim in the doc — that might flip the verdict. You are surfacing a candidate, not deciding.
-If nothing plausible is missing, say so.
+claim in the doc — strong enough to FLIP the verdict. The bar is HIGH: the angle must rest on
+code actually shown here and could change the outcome on its own. An interesting observation, a
+nuance, or anything resting on unseen code is NOT a missed angle. Most trials have none — the
+expected answer is null. You are surfacing a candidate, not deciding.
 
 {_fence(pair)}
 
 Reply with exactly one line of JSON and nothing else:
-{{"missed_angle": "<the overlooked angle, or null if none>"}}"""
+{{"missed_angle": "<the verdict-flipping angle, or null>"}}"""
     return claude_json(prompt, model)
 
 
