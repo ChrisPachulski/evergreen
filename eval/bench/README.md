@@ -50,6 +50,52 @@ numbers line up. Rerun any committed transcript without API calls:
 python3 eval/bench/run_bench.py --rescore out/bench-default.json
 ```
 
+## Results — how it compares
+
+The point of the schema above is that evergreen's numbers land next to published peers, so here
+they are. **DocPrism** (arXiv:2511.00215) is the honest comparison: zero-shot, multi-language, no
+fine-tuning — evergreen's exact regime. Fine-tuned single-language systems reach F1 0.88–0.94 but
+train on one language's labels; different regime, noted and out of scope.
+
+### The peers
+
+| System | Regime | Precision | Recall | F1 | Flag rate |
+|---|---|---|---|---|---|
+| Fine-tuned single-language SOTA | trained, 1 language | — | — | 0.88–0.94 | — |
+| **DocPrism** (arXiv:2511.00215) | zero-shot, multi-language | 0.62 | — | — | ~0.15 |
+
+### Evergreen — current judge (the trial rebuild)
+
+Only Python has been re-scored on the corrected judge so far. CoDocBench Python, three-LLM–validated
+labels, medians over 1000 resamples (`--rescore out/bench-codoc-py-*-trial-*.json`):
+
+| Split | n (core) | Precision | Recall | F1 | Specificity | Flag rate |
+|---|---|---|---|---|---|---|
+| natural 10/90 (headline) | 50 | 0.57 | 0.89 | 0.70 | 0.93 | 0.16 |
+| balanced 50/50 | 50 | 0.89 | 0.89 | 0.89 | 0.89 | 0.50 |
+| held-out true claims | 282 | — | — | — | 0.95 | 0.05 |
+
+**Read it straight:** the only apples-to-apples number is precision at a matched flag rate, and there
+evergreen *trails* — 0.57 at a 0.16 flag rate vs DocPrism's 0.62 at ~0.15. DocPrism doesn't publish
+recall, so evergreen's 0.89 recall has no peer number to beat; state it, don't spin it. The rebuild
+moved Python from the prior judge's 0.54 / 0.78 / 0.64 (natural, n=332) to 0.57 / 0.89 / 0.70 —
+recall was the target and it moved most; precision barely.
+
+### Pending re-run — prior judge, do NOT cite as current
+
+These ran on the *old* judge and are the reason for the rebuild. Re-runs against the trial judge
+aren't done; the numbers are here only so nothing is hidden:
+
+| Dataset | n | Split | Precision | Recall | F1 |
+|---|---|---|---|---|---|
+| CASCADE Java | 885 | natural 10/90 | 0.30 | 0.33 | 0.32 |
+| CASCADE Java | 885 | balanced 50/50 | 0.79 | 0.33 | 0.46 |
+| CoDocBench TS / Rust / Go | — | — | pending | pending | pending |
+
+The prior judge's Java recall (0.33) is the weakest result in the whole suite and precisely what the
+trial rebuild targets. Until CASCADE is re-scored, treat multi-language performance as **unproven on
+the current judge** — not as the ~0.8 the old transcripts once showed.
+
 ## Schema
 
 One JSON object per line:
@@ -79,7 +125,5 @@ EVAL_MODEL=claude-haiku-4-5-20251001 python3 eval/bench/run_bench.py
 python3 eval/bench/run_bench.py --selftest # prove the scoring math, no API calls
 ```
 
-The run prints precision/recall/F1 at both splits. Latest against the corrected judge, Python
-(CoDocBench): natural 10/90 — precision 0.57, recall 0.89, F1 0.70; balanced 50/50 — F1 0.89;
-plus 0.95 specificity (13 FP / 282) on the held-out true-claim remainder. The TypeScript, Rust,
-and Go re-runs against this judge are still pending.
+The run prints precision/recall/F1 at both splits. Current measured numbers and the peer
+comparison are in [Results](#results--how-it-compares) above.
