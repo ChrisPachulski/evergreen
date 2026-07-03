@@ -31,11 +31,11 @@ Walk the ladder, cheapest rung first, stop reporting at the first that holds:
 4. **Semantic drift** — does the prose still describe what the code does? Reason with the code in
    front of you.
 
-**Verify before you flag (rungs 3–4).** A judgment-call flag is not a finding until it clears the
-three gates in the skill's "Kill the false positive before it ships": (a) quote both the doc claim
-and the contradicting code token; (b) refute it — state the reading under which the doc is
-consistent and emit only if that defense fails; (c) for what execution can't settle, take the
-three-pronged audit (alternative-reading / falsification / strongest-objection, majority rules).
+**Put the judgment on trial (rungs 3–4).** A judgment-call flag is not a finding until it survives
+the trial in the skill's "Put the judgment on trial": make the snap call and state it; challenge it
+in whichever direction it went and keep it only if it survives; when the challenge lands, take
+three *independent, blind* reads (defend / prove-wrong / hardest-broken) and weigh them — a concern
+all three miss is a shared blind spot, not a clearance; the verdict is what survives, not a veto.
 Where the code runs, **prove by test is the default** for behavioral claims — write the smallest
 test that encodes what the *doc* claims and run it: passes → certified by test, fails →
 drift-proven-by-execution, won't run → inconclusive, fall back to `verify manually` (never flag on

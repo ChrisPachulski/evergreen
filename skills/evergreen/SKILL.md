@@ -23,10 +23,11 @@ holds. Silent only when nothing documented was touched. Off with "stop evergreen
 
 Never blocks a commit — flag, the human decides.
 
-**Model routing** (hosts that tier it): the mechanical rungs (1–2, grep) run on a cheap model; the
-verify gates that decide precision — refute and the three-pronged audit — want the strongest model
-available. A trigger-happy small model surfacing candidates a strong model then refutes is a valid
-two-tier setup; a small model doing its own refuting is where the false positives leak through.
+**Model routing** (hosts that tier it): spend the strong model where judgment happens — the **snap
+call** and the **synthesis** that decides a contested claim. The cheap model runs the mechanical
+grep rungs, the challenge, the three blind reads, and the blind-spot surfacer. Where a claim isn't
+contested, the agreed verdict stands without a synthesis pass. Never let a cheap model make the
+load-bearing snap call — that's where precision is won or lost.
 
 ## The freshness ladder
 
@@ -79,25 +80,29 @@ it automatically; `--prove-by-test` forces it; a bare CLI whose deps don't resol
 The test is scratch — show it, don't commit it. This is the one rung that executes; every other
 rung only reads.
 
-## Kill the false positive before it ships
+## Put the judgment on trial (rung 3–4 semantic calls)
 
-A checker that cries wolf gets muted, so a rung-3/4 flag clears three gates before it emits — cheap
-first, each only on what survives the last (most claims never leave the first):
+A snap judgment about whether prose still matches code is where false positives are born, so no
+single read is trusted — the claim goes on trial against the code. Mechanical rungs 1–2 (a grep
+for a vanished path or dead contract) are already high-precision and skip this.
 
-1. **Calibrated bar.** To flag a judgment call, quote **both** the exact doc claim and the exact
-   code token that breaks it. Can't cite both, or not certain → certify (or `unverified`), never
-   flag. Rungs 1–2 are mechanical greps and skip this.
-2. **Refute it (immune response).** Before emitting, argue the *opposite*: state the reading under
-   which the doc is consistent, cited to the code. Emit only if that defense fails. A pattern of
-   flags the defense keeps killing (a genre of over-reading) raises its own bar for the rest of the
-   pass — don't re-raise its kin.
-3. **Three-pronged audit.** For a flag that survives refute but execution can't settle, take three
-   independent reads — *alternative reading* (is there a consistent one?), *falsification* (what
-   single fact would prove it wrong — does the code show it?), *strongest objection* (is the drift
-   airtight?). Majority rules; a concern all three miss is a shared blind spot, not a clearance.
+1. **Snap call.** Make your first-instinct verdict — drift or fine — and *state it with its
+   reasoning*. It's a weighted vote, not the verdict; it never ships on its own word.
+2. **Challenge it — it must survive.** Argue the hardest case that the snap call is *wrong*,
+   whichever way it went: if you said fine, hunt the code that breaks it; if you said drift, find
+   the reading under which it holds. The snap only stands if it survives its own strongest
+   counter. This runs on *both* verdicts — a cheap "looks fine" gets no free pass.
+3. **Three independent reads (blind).** When the challenge lands, take three *separate* looks that
+   don't see each other or the snap — *defend* (the reading that makes it hold), *prove-wrong*
+   (the exact code token that breaks it), *hardest-broken* (the airtight case for drift). Weigh
+   them; a concern all three miss is a shared blind spot, not a clearance.
+4. **Decide by weighing, not by veto.** The verdict is what survives the trial — the snap vote,
+   the challenge, and the three reads weighed together. A drift finding ships only if the
+   accusation beat its strongest defense.
 
-Under-promise is exempt at every gate: code doing more than the doc says is informational, not a
-flag.
+Under-promise is exempt throughout: code doing more than the doc says is informational, not a flag.
+(This is a reasoning discipline for one pass, not a memory across runs — evergreen doesn't iterate,
+so there's no escalation ledger; each claim is tried on its own.)
 
 ## Taxonomy
 
@@ -109,8 +114,8 @@ fix-or-flag call.
 ## Rules
 
 - **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. A rung-3/4
-  flag then clears the three gates above (calibrated bar → refute → three-pronged audit) before it
-  ships; the whole point is to kill the plausible-but-wrong flag, not to catch more.
+  flag goes on trial (snap → challenge → three blind reads → weigh) before it ships; the whole point
+  is to kill the plausible-but-wrong flag, not to catch more.
 - **Rot lives in old comments, not new lines.** Read the changed file at HEAD, not just the diff's
   `+` lines. Code moved under a stable doc = live rot (report); a doc wrong the day it was written =
   lower urgency (say which).
