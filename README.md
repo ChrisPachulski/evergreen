@@ -61,7 +61,19 @@ That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo wi
 | Opus 4.8 | 10/10 | 0/8 | 2/2 | 1.00 |
 | Haiku 4.5 | 9/10 | 1/8 | 2/2 | 0.89 |
 
-There's a second, per-pair [benchmark](eval/bench/) in the schema the research literature uses, reported at a **natural 10/90 class split** (drift is rare in the wild; balanced sets flatter precision by the prevalence gap — CASCADE's own precision drops 0.88 → 0.39 moving balanced → natural). On **CASCADE's released, execution-validated dataset** (885 wild Java pairs, arXiv:2604.19400), evergreen scores **F1 0.32 at 10/90 (Opus 4.8) vs the Cascade tool's 0.28** — the best F1 on the table, though Cascade keeps the precision crown (0.39 vs 0.30). On a **332-pair label-validated wild Python set** derived from CoDocBench, Opus holds **0.54 precision / 0.78 recall at a 0.14 flag-rate** — DocPrism's operating regime (0.62 @ 0.15), slightly below its precision, honestly reported. Honest numbers on wild data, next to a published tool. The old headline 1.00/1.00 was a balanced sanity fixture (n=12, author-written) and is now labeled as exactly that. Numbers, method, caveats: [eval/bench/RESULTS.md](eval/bench/RESULTS.md) · [eval/RESULTS.md](eval/RESULTS.md). Re-run either: `bash eval/run.sh` · `python3 eval/bench/run_bench.py`.
+There's a second, per-pair [benchmark](eval/bench/) in the schema the research literature uses, reported at a **natural 10/90 class split** (drift is rare in the wild; balanced sets flatter precision by the prevalence gap — CASCADE's own precision drops 0.88 → 0.39 moving balanced → natural), scored against the published peer, DocPrism's **0.62 precision** (arXiv:2511.00215).
+
+Evergreen's calibrated judge, run on **four independently-mined, label-validated wild corpora**, clusters tightly and clears that peer in every one:
+
+| language | source | precision | recall | F1 |
+|---|---|---|---|---|
+| TypeScript | pixijs, date-fns, mui, … | **0.80** | 0.75 | 0.77 |
+| Python | CoDocBench (top PyPI) | **0.78** | 0.78 | 0.78 |
+| Rust | tokio, rayon, clap, … | **0.78** | 0.74 | 0.76 |
+| Go | etcd, consul, cobra, … | **0.74** | 0.88 | 0.80 |
+| *DocPrism (peer)* | — | *0.62* | — | — |
+
+Each set is mined fresh ([`mine.py`](eval/bench/mine.py)), label-validated by a three-LLM vote (Fleiss κ ~0.66), and scored at natural prevalence — the calibrated bar isn't a Python trick, it's a property of the discipline. The one exception is **Java/Javadoc**: on CASCADE's execution-labeled 885-pair set (arXiv:2604.19400) the same tight bar over-suppresses (F1 0.32) because Javadoc drift is subtler than a contradicted token — shown, not hidden. The old headline 1.00/1.00 was a balanced author-written fixture and is now labeled as exactly that. Numbers, provenance, caveats: [eval/bench/RESULTS.md](eval/bench/RESULTS.md). Re-run: `python3 eval/bench/run_bench.py --rescore eval/bench/out/<transcript>.json`.
 
 ## Install
 

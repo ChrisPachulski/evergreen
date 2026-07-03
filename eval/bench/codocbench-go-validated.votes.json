@@ -1,0 +1,1802 @@
+{
+ "hashicorp/consul/Monitor#0-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestServers_NotifyFailedServer#1-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/getSnap#2-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/TestSortedFlags#3-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/initKeyring#4-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/ClearHandoffState#5-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/WriteTxnRestore#6-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/monitorActiveSize#7-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gorilla/mux/Headers#8-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/Get#9-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "sirupsen/logrus/NewSentryHook#10-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/DenyAll#11-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/DefaultConfig#12-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/sanitizeCode#13-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/NewCounter#14-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Equal#15-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/ReadAll#16-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "prometheus/client_golang/Unregister#17-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/handleMigrating#18-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/SetNetConnAndInitConn#19-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/RecoverPort#20-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/DescribeMessage#21-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/ServiceToken#22-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/SortBy#23-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/getIndexHandler#24-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hashicorp/consul/SyncChanges#25-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/LabelsToSignature#26-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Start#27-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestManagerInternal_cycleServer#28-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "gin-gonic/gin/Err#29-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hashicorp/consul/DefaultIndexFunc#30-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/PrevIndex#31-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/GetACLPrefix#32-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/NewServerManager#33-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/IsProtectedHandlerError#34-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Get#35-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestRemoveNode#36-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/handleConn#37-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/joinByPeer#38-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Setup#39-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/send#40-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "gin-gonic/gin/TestContextRenderYAML#41-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "prometheus/client_golang/GetMetricWithLabelValues#42-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/RetryAuthClient#43-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/newRaftNode#44-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/IsUsable#45-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/reloadIfDue#46-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hashicorp/consul/initialize#47-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "spf13/cobra/SetOutput#48-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/GenZshCompletion#49-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/PeerURLs#50-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/getMachinesHttpHandler#51-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestStepConfig#52-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/loadMetadata#53-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hashicorp/consul/clustersFromSnapshot#54-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Commit#55-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "prometheus/client_golang/Describe#56-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "prometheus/client_golang/GetMetricWith#57-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/Abort#58-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/batchApplyUpdates#59-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "prometheus/client_golang/GetMetricWith#60-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/get#61-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/executeKeyringOp#62-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/CacheInfo#63-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/removeSubsetRangePerms#64-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/ForEachNode#65-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/acquire#66-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/getPropertiesLocked#67-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Txn#68-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/GenPowerShellCompletionFile#69-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestAddNode#70-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/CompareAndSwapUsed#71-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/getVersions#72-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/TestAddLearner#73-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/commonTLSConfig#74-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/NewUniversalClient#75-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gorilla/mux/newRequest#76-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/trimAnswers#77-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/NewSummaryVec#78-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/check#79-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/NewConfig#80-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/configTableSchema#81-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/aclListTxn#82-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/New#83-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/SetBindAddrFromAddr#84-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hashicorp/consul/KVSList#85-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/AddService#86-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestSignatureMismatches#87-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/maybeFirstIndex#88-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/testSerialNumber#89-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/maybeReset#90-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/UpdateDefaultClusterFromName#91-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/ExactValidArgs#92-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/SetupTestDatabaseAndFactory#93-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestServers_FindServer#94-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/LintMetricTypeInName#95-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/set#96-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/EnsureConfigEntry#97-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gorilla/mux/GetMethods#98-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestConnectCASign#99-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestCA#100-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/renewLockHandler#101-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/GenZshCompletionFile#102-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/ReadFixedMapLen#103-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/ReduceAs#104-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/NewRangeCommand#105-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestCancelUnsynced#106-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestModeSwitch#107-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "go-redis/redis/TxPipeline#108-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/SetLogger#109-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/aclApplyInternal#110-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/findCluster#111-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/activeHelpEnvVar#112-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/run#113-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "prometheus/client_golang/encodeComponent#114-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/assembleChain#115-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/notify#116-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/setupNodeID#117-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/Scan#118-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/Find#119-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Format#120-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/Use#121-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/getVersion#122-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/Exec#123-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/get#124-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/setFilePermissions#125-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/PoolStats#126-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestStepConfig#127-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/NewGauge#128-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/run#129-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/listenersFromSnapshotConnectProxy#130-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/compact#131-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/killChild#132-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/handleMigrated#133-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/Reduce#134-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Clone#135-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/setupCluster#136-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/ServicesByNodeMeta#137-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/getVersion#138-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/get#139-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/testKeyID#140-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Get#141-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hashicorp/consul/Set#142-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/CheckToken#143-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/Load#144-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/NewDesc#145-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/TxPipelined#146-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/IsVoidProcessorError#147-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/tombstone#148-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestManagerInternal_cycleServer#149-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/parseToken#150-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/New64#151-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/goRuntimeMemStats#152-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestServers_NotifyFailedServer#153-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/TestHelpFlagInHelp#154-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/GetMetricWith#155-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/ReadDir#156-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Stop#157-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/GetMetricWith#158-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TokenCreate#159-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/New#160-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/SetupTestDatabaseAndFactoryWithConfig#161-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestDecodeCatalogRegister#162-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/AddService#163-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/TestContextRenderJSON#164-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/invalidateSession#165-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/getLicense#166-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "sirupsen/logrus/IsTerminal#167-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/initializeSecondaryCA#168-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/add#169-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/Commands#170-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "go-redis/redis/Exec#171-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/GetMetricWith#172-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/GetMetricWith#173-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestAgent_RegisterService_UnmanagedConnectProxy#174-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/UpdateAgentToken#175-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Kill#176-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/AddProxy#177-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/MarkZshCompPositionalArgumentWords#178-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/GetMetricWith#179-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/internalGet#180-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/monitorActive#181-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/maxIndexForService#182-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/NotifyFailedServer#183-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/StartEtcd#184-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/ParseURL#185-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/NewGaugeVec#186-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/enforceFlagGroupsForCompletion#187-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/NewState#188-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/restore#189-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestLessorRevoke#190-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/NewConstMetric#191-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/delete#192-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/notify#193-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/ActiveRoot#194-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Create#195-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/SetMetricFamilyInjectionHook#196-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/DropPort#197-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/IsAborted#198-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/replayWAL#199-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/ClientIP#200-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/ValidateFlagGroups#201-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/newTestAgent#202-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestStoreWatchCreateWithHiddenKey#203-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestLeaf#204-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/waitForAPI#205-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/RemoteIP#206-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/initKeyring#207-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestServerManagerInternal_refreshServerRebalanceTimer#208-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/Snapshot#209-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/InstrumentRoundTripperDuration#210-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/OutgoingTLSConfig#211-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/IsHandlerExistsError#212-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestV3GetNonExistLease#213-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/ServerConfig#214-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Txn#215-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/Before#216-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/startProxy#217-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/ConvertEnvDatabaseConfigToFaultInjectorConfig#218-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/parseToken#219-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/Len#220-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestSnapshot#221-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/isSubset#222-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Get#223-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/syncWatchings#224-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/GetExtension#225-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/New#226-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/RebalanceServers#227-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Apply#228-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/publish#229-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/Handler#230-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/NewConstHistogram#231-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Init#232-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/endpointsFromSnapshot#233-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/ReceiveMessage#234-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/NewCommander#235-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/GeneratePrivateKey#236-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestCSR#237-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/syncWatchers#238-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/GetT#239-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/getCachedTimeNs#240-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/DecodeConfigEntry#241-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/NewReloadableTLSConfig#242-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/CanServersUnderstandProtocol#243-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/newNetwork#244-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hashicorp/consul/lookupACL#245-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/UsageString#246-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/newNetwork#247-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/bufApp#248-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestDecodeTxnConvertOps#249-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/findGeneration#250-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/GenerateIntermediate#251-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/list#252-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/TestLeasingPrevKey#253-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/CreateTestFaultInjector#254-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/UpdateAgentMasterToken#255-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/FindHealthyServer#256-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/batchApplyUpdates#257-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "prometheus/client_golang/addAndResetCounts#258-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/LabelValuesToSignature#259-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/LabelsToSignature#260-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Serve#261-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/SortByMax#262-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/NewDeleteRangeCommand#263-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/NodeInfo#264-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/MarkZshCompPositionalArgumentFile#265-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/RetryClusterClient#266-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/NodeDump#267-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Dial#268-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/getWriterBufSizeUnsafe#269-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/LabelsToSignature#270-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestLeaseKeepAliveCloseAfterDisconnectRevoke#271-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/New#272-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/observe#273-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/filterPreparedQueries#274-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/GetMetricWithLabelValues#275-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/NewStringsFlag#276-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/RemoveProxy#277-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/Exec#278-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hashicorp/consul/indexRRs#279-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Stop#280-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/keyToPath#281-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/LookupProxyIDForSidecar#282-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/tagFilter#283-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Free#284-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/parseTokenInternal#285-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/ReadAll#286-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/NewCounterVec#287-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/nextEnts#288-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/ClientIP#289-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/Last#290-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/SetNX#291-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/Register#292-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/FixedCompletions#293-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/verifyWatch#294-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestLeasingReconnectOwnerRevoke#295-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "sirupsen/logrus/prefixFieldClashes#296-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/New#297-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestRestore#298-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/setupNodeID#299-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "prometheus/client_golang/GetMetricWithLabelValues#300-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/ServerConfig#301-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Write#302-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestServerManager_FindServer#303-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/setupSegments#304-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/checkRequestDupKeys#305-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestRemoveLearner#306-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/SetClusterConfig#307-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/TestSync#308-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/TriggerClusterReshard#309-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestRemoveNode#310-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Close#311-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/GenZshCompletion#312-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/parseToken#313-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/acquireHandler#314-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/UpdateUserToken#315-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/GetMetricWithLabelValues#316-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/SetUsable#317-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/KeyringOperation#318-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestServers_AddServer#319-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Renew#320-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "gin-gonic/gin/New#321-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "sirupsen/logrus/IsTerminal#322-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/NewProjectFromPath#323-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/Kill#324-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/RangeEvents#325-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Delete#326-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/Dir#327-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/allEntries#328-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/Cut#329-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/syncChecks#330-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/ReadPath#331-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/NoMethod#332-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/NameHttpHandler#333-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/SetStatus#334-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestBcastBeat#335-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "go-redis/redis/FTSearchWithArgs#336-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/devTLSConfigFromFiles#337-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/NewBuilder#338-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/LinearBuckets#339-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "prometheus/client_golang/DoGetFallback#340-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "spf13/cobra/HelpFunc#341-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/waitForLeader#342-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/refresh#343-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/findCluster#344-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/clustersFromSnapshotTerminatingGateway#345-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestServers_FindServer#346-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "etcd-io/etcd/expire#347-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/cycleServer#348-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "gin-gonic/gin/Deadline#349-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/CancelWhenTimeout#350-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/AllowAll#351-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/deleteHandler#352-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/RetryKVClient#353-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/waitForLeader#354-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hashicorp/consul/TestDecodeAgentRegisterCheck#355-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "prometheus/client_golang/GetMetricWithLabelValues#356-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/newCertPool#357-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/TestStepIgnoreConfig#358-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "etcd-io/etcd/setMode#359-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ }
+}

@@ -37,7 +37,7 @@ def pair(row, i, which, label):
     doc = row["version_data"][0]["docstring"] if which == "old" else new["docstring"]
     return {"id": f"{row['owner']}/{row['project']}/{row['function']}#{i}-{which}",
             "func": row["function"], "code": new["code"], "doc": doc,
-            "label": label, "category": None, "language": "Python"}
+            "label": label, "category": None, "language": row.get("language", "Python")}
 
 
 def main():

@@ -1,0 +1,1802 @@
+{
+ "rust-itertools/itertools/unique_by#0-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "bitflags/bitflags/bits#1-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/value_of#2-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_from#3-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "clap-rs/clap/get_one#4-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/missing_field#5-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/current#6-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/into_parts#7-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/max_values#8-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/aggregate#9-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/max_values#10-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "serde-rs/serde/serialize_u8#11-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/mend_slices#12-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/duration_round#13-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_isoweek#14-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/recv#15-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "bitflags/bitflags/from_bits_retain#16-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/to_bytes#17-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/in_worker#18-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#19-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_from#20-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "chronotope/chrono/set_year#21-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "rayon-rs/rayon/par_quicksort#22-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/kill#23-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/sum#24-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "chronotope/chrono/deserialize#25-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "chronotope/chrono/set_ordinal#26-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "serde-rs/serde/serialize_u8#27-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#28-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "rayon-rs/rayon/max#29-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/checked_sub_months#30-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/deserialize_name_expr#31-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/flatten#32-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/reserve_get_tail_slice#33-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/add_prefix#34-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/new#35-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "rust-itertools/itertools/new#36-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_mdf#37-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_isoywd#38-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/framed#39-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "rayon-rs/rayon/execute_job#40-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "serde-rs/serde/is_number#41-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#42-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hyperium/hyper/serve_connection#43-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/send_request#44-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_from#45-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/enabled#46-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/get#47-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/push#48-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/serve_connection#49-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/pin#50-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/run#51-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/remove#52-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/handle#53-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/tee#54-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/unsplit#55-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/deserialize#56-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/copy#57-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/tee#58-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/interval_at#59-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#60-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/minmax#61-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/longs_and_visible_aliases#62-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/duration_round#63-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/forget#64-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_offset#65-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#66-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#67-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/min_by_key#68-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/wait#69-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/push_sleeper#70-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/into_parts#71-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/poll_write#72-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/new#73-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/with_ymd_and_hms#74-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/interleave#75-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/visit#76-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/build_scoped#77-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/fibonacci_split_iterative#78-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/new#79-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/min#80-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/current#81-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/exit_handler#82-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/max_by_key#83-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_yo_opt#84-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/ctrl_c#85-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/min_values#86-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/split_vec#87-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hyperium/hyper/get_raw#88-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/number_of_values#89-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/sub#90-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/unset_setting#91-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/poll_tick#92-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/remove_many#93-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/around_worker#94-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/start_seek#95-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_recv_from#96-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/need_read#97-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_isoyear#98-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/from_arg_matches#99-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "rayon-rs/rayon/partition_map#100-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/into_parts#101-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/to_long#102-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/new#103-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/is_present#104-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "rust-itertools/itertools/step#105-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/into_parts#106-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/print_help#107-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/build#108-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/minmax_by_key#109-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/framed#110-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_weekday#111-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/unset_setting#112-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/build_scoped#113-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/validator_os#114-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "chronotope/chrono/set_month#115-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/split_at#116-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/max_buf_size#117-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/is_short#118-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#119-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_acquire_owned#120-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/par_sort_by_key#121-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_isoywd#122-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/set_default#123-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/deserialize#124-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/increment_indices#125-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/to_pretty_writer#126-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_mdf#127-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/handle#128-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "clap-rs/clap/get_matches#129-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/possible_value#130-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/par_bridge#131-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#132-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/available_permits#133-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/duration_round#134-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/parse_shortflags#135-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/new#136-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/stop#137-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/recv#138-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/unzip#139-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_year_mod_100#140-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/value_name#141-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/spawn_in#142-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/par_sort_unstable_by_key#143-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/min_by#144-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/is_empty#145-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/default_value#146-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/new#147-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "rust-itertools/itertools/new#148-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/new#149-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/new#150-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/shutdown_now#151-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/num_milliseconds#152-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/minmax_by#153-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hyperium/hyper/serve_connection#154-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/is_present#155-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/poll_read#156-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/write#157-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/new#158-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "rust-itertools/itertools/new#159-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/serialize_u8#160-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_from#161-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/serve_connection#162-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/into_buffer#163-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#164-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/is_read_closed#165-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/serialize_u8#166-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/step#167-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/stack_size#168-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_timestamp#169-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/name_expr#170-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/core_threads#171-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/poll_read#172-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#173-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/file_name#174-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/execute#175-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/serialize_bool#176-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#177-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/current#178-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/into_inner#179-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#180-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#181-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/wait#182-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/build#183-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/get_many#184-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "clap-rs/clap/get_matches_from_safe_borrow#185-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/send_dgram#186-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/panic_handler#187-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/acquire#188-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#189-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/value_delimiter#190-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/walk_tree_prefix#191-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/group_by#192-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/par_sort_unstable_by_key#193-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/channel#194-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/need_write#195-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/get_raw#196-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/timezone_offset#197-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/spawn_future_async_in#198-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/shutdown_on_idle#199-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/in_place_scope#200-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/try_len#201-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_isoyear_mod_100#202-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/to_naive_datetime_with_offset#203-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/poll_seek#204-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#205-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/new#206-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#207-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/visit_unit#208-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/notify_handle#209-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_isoywd_opt#210-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": null,
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/new#211-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": null,
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/write_version#212-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": null,
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/serve_connection#213-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": null,
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/num_threads#214-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": null,
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/visit_unit#215-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": null,
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/num_threads#216-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": null,
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/is_writable#217-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": null,
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/initialize#218-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": null,
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#219-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": null,
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#220-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "bitflags/bitflags/iter#221-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_yo#222-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/remove#223-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/sort_by#224-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/new#225-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/min_values#226-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/duration_round#227-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/serialize#228-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_week_from_mon#229-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/graceful_shutdown#230-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/into_parts#231-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/min_values#232-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hyperium/hyper/send_data#233-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/release#234-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/is_write_closed#235-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/add#236-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/recv#237-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/wrap_stream#238-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#239-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/read#240-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/close#241-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/to_os_str#242-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/euclid_parallel_full#243-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/serialize_bool#244-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/get#245-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#246-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/complete#247-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/min#248-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/deserialize#249-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/flatten#250-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/new#251-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#252-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "hyperium/hyper/serve#253-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/wrap#254-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/value_hint#255-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#256-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/check_identifier#257-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/dedup#258-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_day#259-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/new#260-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/round_subsecs#261-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/send_data#262-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/block_on#263-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/enter#264-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/stack_size#265-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/current#266-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/new#267-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/validator#268-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/file_name#269-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/new#270-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/new#271-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/get_mut#272-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_yo#273-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/signal_enable#274-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/combinations#275-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_from#276-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/is_idle#277-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_yo#278-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/to_writer#279-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/num_threads#280-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/recv#281-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/flush_async#282-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_ymd#283-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/validator_os#284-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/notified#285-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_acquire_many#286-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/add#287-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_year#288-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/get_value_parser#289-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/id#290-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/to_naive_time#291-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/possible_values#292-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/in_worker#293-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/poll_metadata#294-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/http2_only#295-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/serialize_field#296-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/visit#297-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/to_std#298-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/spawn#299-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/need_read#300-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/bind_scheduler#301-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_hms_nano#302-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/custom_park#303-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/output#304-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/join#305-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/into_std#306-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_from#307-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/max_frame_size#308-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/local_addr#309-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/downgrade#310-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/occurrences_of#311-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "chronotope/chrono/from_ymwd#312-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_hms_nano_opt#313-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#314-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/round_subsecs#315-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/round_subsecs#316-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/from_arg_matches#317-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/canonical_reason#318-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/duration_round#319-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/handle#320-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "clap-rs/clap/to_bytes#321-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/new#322-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rust-itertools/itertools/all_equal_value#323-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/num_threads#324-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/get_ref#325-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_hour12#326-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_recv#327-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_send#328-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/into_parts#329-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/from_iter#330-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tokio-rs/tokio/poll_write_ready#331-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/notify_handle#332-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#333-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/get_arg_conflicts_with#334-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/from_isoywd#335-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/thread_name#336-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/serialize_bool#337-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/handshake#338-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/yield_now#339-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/unsplit#340-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/get_matches_from_safe#341-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/visit_tuple#342-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/unzip_into_vecs#343-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/get_external_subcommand_value_parser#344-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hyperium/hyper/local_addr#345-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/set_second#346-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "clap-rs/clap/write_help#347-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/fibonacci_split_recursive#348-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/new_write#349-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/status#350-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "serde-rs/serde/unit_variant#351-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/reset_at#352-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/timestamp_millis_opt#353-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "rayon-rs/rayon/new#354-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/euclid_parallel_outer#355-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/try_send_to#356-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "rayon-rs/rayon/new#357-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tokio-rs/tokio/is_readable#358-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chronotope/chrono/new#359-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ }
+}

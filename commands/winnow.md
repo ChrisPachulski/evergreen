@@ -20,13 +20,6 @@ regardless of the repo's ambient mode.
 Scope: changes since `${1:-origin/main}` (diff against that ref); if it doesn't exist, winnow the
 docs against the current tree.
 
-**`--prove-by-test`** (opt-in, executable code only): for behavioral claims that would otherwise be
-`behavior-asserted — verify manually`, settle them by execution instead of deferring — write the
-smallest test that encodes what the *doc* claims, run it against the current code, and certify (test
-passes) or flag as drift-proven-by-execution (test fails). Guard: if you can't write a test you trust
-expresses the doc, fall back to `verify manually` — never flag on a test you don't trust. The test is
-scratch; show it, don't commit it. See the skill's "Prove by test" section.
-
 Walk the ladder, cheapest rung first, stop reporting at the first that holds:
 
 1. **Vanished paths** — every in-repo path a doc names must still exist on disk (or be tracked).
@@ -37,6 +30,17 @@ Walk the ladder, cheapest rung first, stop reporting at the first that holds:
    no longer match the source. Read both, compare.
 4. **Semantic drift** — does the prose still describe what the code does? Reason with the code in
    front of you.
+
+**Verify before you flag (rungs 3–4).** A judgment-call flag is not a finding until it clears the
+three gates in the skill's "Kill the false positive before it ships": (a) quote both the doc claim
+and the contradicting code token; (b) refute it — state the reading under which the doc is
+consistent and emit only if that defense fails; (c) for what execution can't settle, take the
+three-pronged audit (alternative-reading / falsification / strongest-objection, majority rules).
+Where the code runs, **prove by test is the default** for behavioral claims — write the smallest
+test that encodes what the *doc* claims and run it: passes → certified by test, fails →
+drift-proven-by-execution, won't run → inconclusive, fall back to `verify manually` (never flag on
+a test you don't trust). `--prove-by-test` forces it on a bare CLI. The test is scratch; show it,
+don't commit it.
 
 **Affirmative verification** — every claim is left in one of three states, never silently passed:
 - **certified** — you read the doc passage and the current code and they match; cite the code.

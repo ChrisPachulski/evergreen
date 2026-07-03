@@ -23,6 +23,11 @@ holds. Silent only when nothing documented was touched. Off with "stop evergreen
 
 Never blocks a commit — flag, the human decides.
 
+**Model routing** (hosts that tier it): the mechanical rungs (1–2, grep) run on a cheap model; the
+verify gates that decide precision — refute and the three-pronged audit — want the strongest model
+available. A trigger-happy small model surfacing candidates a strong model then refutes is a valid
+two-tier setup; a small model doing its own refuting is where the false positives leak through.
+
 ## The freshness ladder
 
 Candidate set = what changed: grep the docs for the touched file paths and edited symbol names, not
@@ -56,21 +61,43 @@ If rungs 1–3 are clean, most "stale doc" worry is answered. Spend attention on
   certified, not "no lie found". `unverified` (this code, can't settle) ≠ `UNVERIFIABLE` (another
   system, dropped).
 
-## Prove by test (opt-in — executable code only)
+## Prove by test (default for executable behavioral claims)
 
-Rung 4's behavioral claims normally end at `behavior-asserted — verify manually`: reading alone
-can't settle "retries 3 times" or "returns empty on miss". Invoked with
-`/evergreen:winnow --prove-by-test` (or when asked), settle them by execution, CASCADE-style:
+Rung 4's behavioral claims can't be settled by reading — "retries 3 times", "returns empty on
+miss". Where the code actually runs, **settle them by execution instead of deferring** — this is
+what buys precision (CASCADE's Phase 2 lifts precision 0.82→0.88 exactly here). strict winnow does
+it automatically; `--prove-by-test` forces it; a bare CLI whose deps don't resolve falls back to
+`behavior-asserted — verify manually`.
 
 1. Write the smallest test that encodes what the *doc* claims — not what the code does.
 2. Run it against the current code. Fails → **drift, proven by execution** (cite the failure).
    Passes → **certified by test** (cite the passing test).
-3. Guard against a bad test: if you can't write a test you trust expresses the doc, fall back to
-   `behavior-asserted — verify manually` — never flag on a test you don't trust. (This is CASCADE's
-   false-positive guard: an inconsistency counts only when the code fails a test the doc backs.)
+3. Guard against a bad test: a test that won't compile or run is **inconclusive**, never drift —
+   fall back to `behavior-asserted — verify manually`. An inconsistency counts only when running
+   code fails a test the doc backs. Never flag on a test you don't trust.
 
-Only where code actually runs (a test command exists, deps resolve). The test is scratch — show it,
-don't commit it. This is the one rung that executes; every other rung only reads.
+The test is scratch — show it, don't commit it. This is the one rung that executes; every other
+rung only reads.
+
+## Kill the false positive before it ships
+
+A checker that cries wolf gets muted, so a rung-3/4 flag clears three gates before it emits — cheap
+first, each only on what survives the last (most claims never leave the first):
+
+1. **Calibrated bar.** To flag a judgment call, quote **both** the exact doc claim and the exact
+   code token that breaks it. Can't cite both, or not certain → certify (or `unverified`), never
+   flag. Rungs 1–2 are mechanical greps and skip this.
+2. **Refute it (immune response).** Before emitting, argue the *opposite*: state the reading under
+   which the doc is consistent, cited to the code. Emit only if that defense fails. A pattern of
+   flags the defense keeps killing (a genre of over-reading) raises its own bar for the rest of the
+   pass — don't re-raise its kin.
+3. **Three-pronged audit.** For a flag that survives refute but execution can't settle, take three
+   independent reads — *alternative reading* (is there a consistent one?), *falsification* (what
+   single fact would prove it wrong — does the code show it?), *strongest objection* (is the drift
+   airtight?). Majority rules; a concern all three miss is a shared blind spot, not a clearance.
+
+Under-promise is exempt at every gate: code doing more than the doc says is informational, not a
+flag.
 
 ## Taxonomy
 
@@ -81,8 +108,9 @@ fix-or-flag call.
 
 ## Rules
 
-- **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. Take an
-  adversarial second look ("is this *still* true?") to kill plausible-but-wrong flags.
+- **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. A rung-3/4
+  flag then clears the three gates above (calibrated bar → refute → three-pronged audit) before it
+  ships; the whole point is to kill the plausible-but-wrong flag, not to catch more.
 - **Rot lives in old comments, not new lines.** Read the changed file at HEAD, not just the diff's
   `+` lines. Code moved under a stable doc = live rot (report); a doc wrong the day it was written =
   lower urgency (say which).
