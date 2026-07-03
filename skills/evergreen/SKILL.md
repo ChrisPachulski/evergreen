@@ -23,10 +23,12 @@ holds. Silent only when nothing documented was touched. Off with "stop evergreen
 
 Never blocks a commit — flag, the human decides.
 
-**Model routing** (hosts that tier it): the mechanical rungs (1–2, grep) run on a cheap model; the
-verify gates that decide precision — refute and the three-pronged audit — want the strongest model
-available. A trigger-happy small model surfacing candidates a strong model then refutes is a valid
-two-tier setup; a small model doing its own refuting is where the false positives leak through.
+**Model routing** (hosts that tier it): spend the strong model where judgment happens — the **snap
+call** and the **synthesis** that decides a contested claim. The cheap model runs the mechanical
+grep rungs, the challenge, the three blind reads, and the blind-spot surfacer — except when the
+snap fails its challenge, which escalates the three reads to the strong model. Where a claim isn't
+contested, the agreed verdict stands without a synthesis pass. Never let a cheap model make the
+load-bearing snap call — that's where precision is won or lost.
 
 ## The freshness ladder
 
@@ -79,25 +81,40 @@ it automatically; `--prove-by-test` forces it; a bare CLI whose deps don't resol
 The test is scratch — show it, don't commit it. This is the one rung that executes; every other
 rung only reads.
 
-## Kill the false positive before it ships
+## Put the verdict on trial (the shared harness)
 
-A checker that cries wolf gets muted, so a rung-3/4 flag clears three gates before it emits — cheap
-first, each only on what survives the last (most claims never leave the first):
+A verdict goes on trial when it (a) costs something real if it's wrong and (b) is a *judgment*,
+not a grep fact — winnow's rung-3/4 "this prose drifted", cultivate's "this file is slop, delete
+it", flourish's "this rewrite is done, ship it". Mechanical facts never stand trial: a
+vanished-path grep, a zero-reference count, `gh`'s visibility answer are evidence; only the
+*conclusion drawn from them* is tried. Each command supplies three things — the **claim** on
+trial, the **verdict space** (drift/fine, delete/keep, done/not-done), and its **three prong
+prompts** — and runs the same shape:
 
-1. **Calibrated bar.** To flag a judgment call, quote **both** the exact doc claim and the exact
-   code token that breaks it. Can't cite both, or not certain → certify (or `unverified`), never
-   flag. Rungs 1–2 are mechanical greps and skip this.
-2. **Refute it (immune response).** Before emitting, argue the *opposite*: state the reading under
-   which the doc is consistent, cited to the code. Emit only if that defense fails. A pattern of
-   flags the defense keeps killing (a genre of over-reading) raises its own bar for the rest of the
-   pass — don't re-raise its kin.
-3. **Three-pronged audit.** For a flag that survives refute but execution can't settle, take three
-   independent reads — *alternative reading* (is there a consistent one?), *falsification* (what
-   single fact would prove it wrong — does the code show it?), *strongest objection* (is the drift
-   airtight?). Majority rules; a concern all three miss is a shared blind spot, not a clearance.
+1. **Snap call.** Make the first-instinct verdict and *state it with its reasoning*. It's a
+   weighted vote, not the verdict; it never ships on its own word.
+2. **Challenge — it must survive.** Argue the hardest case that the snap is *wrong*, whichever
+   way it went: if it said drift/delete/done, find the reading under which it doesn't hold; if it
+   said fine/keep/not-yet, hunt what breaks it. A cheap "looks fine" gets no free pass, and a
+   snap that can't beat its strongest counter does not stand on its own. The challenge *lands*
+   only when its case rests on evidence actually in front of it and would change the verdict —
+   most snaps survive a decent attack, and a speculative attack is not a crack.
+3. **Three independent reads (blind).** Three *separate* looks that never see the snap, the
+   challenge, or each other — the command's prong set (winnow's: *defend* / *prove-wrong* /
+   *hardest-broken*). Blindness is the point: a read that saw the snap can only rubber-stamp it.
+4. **Blind-spot.** One more look asking only "what did everyone miss?". It runs on *every* trial
+   — a blind spot is by definition not predictable in advance — and it raises a concern, never
+   decides the verdict. The bar is high: only an angle that could *flip* the verdict counts; an
+   interesting nuance is not a blind spot, and the common honest answer is "nothing".
+5. **Decide by weighing, not by veto.** The verdict is what survives — snap, challenge, reads,
+   and blind-spot weighed together. Unanimous evidence with nothing missed stands as-is; a
+   contested claim is weighed on whether the accusation beat its strongest defense. A tie counts
+   against the snap.
 
-Under-promise is exempt at every gate: code doing more than the doc says is informational, not a
-flag.
+Winnow's under-promise exemption holds throughout: code doing more than the doc says is
+informational, never tried. (This is a reasoning discipline for one pass, not a memory across
+runs — evergreen doesn't iterate, so there's no escalation ledger; each claim is tried on its
+own, once.)
 
 ## Taxonomy
 
@@ -109,8 +126,8 @@ fix-or-flag call.
 ## Rules
 
 - **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. A rung-3/4
-  flag then clears the three gates above (calibrated bar → refute → three-pronged audit) before it
-  ships; the whole point is to kill the plausible-but-wrong flag, not to catch more.
+  flag goes on trial (snap → challenge → three blind reads → blind-spot → weigh) before it ships;
+  the whole point is to kill the plausible-but-wrong flag, not to catch more.
 - **Rot lives in old comments, not new lines.** Read the changed file at HEAD, not just the diff's
   `+` lines. Code moved under a stable doc = live rot (report); a doc wrong the day it was written =
   lower urgency (say which).
@@ -168,8 +185,10 @@ The reflex is the *truth* axis. Two on-demand commands, same prove-or-drop creed
   and recall are not proof. Proposes untrack/ignore/delete, never auto, never "clean". A commit-time
   guard hook backstops it.
 
-One creed. Truth and craft only flag or propose; hygiene alone may block a commit (a leaked secret
-or slop dump is irreversible once pushed), always with an escape hatch. The human keeps the final call.
+One creed, one trial: each command runs its judgment-call verdicts through "Put the verdict on
+trial" above. Truth and craft only flag or propose; hygiene alone may block a commit (a leaked
+secret or slop dump is irreversible once pushed), always with an escape hatch. The human keeps the
+final call.
 
 ## When NOT to flag
 

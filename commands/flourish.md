@@ -74,10 +74,13 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
    Voice is not fabrication: every line it adds still faces step 4. This is prose-shaping of claims the
    code backs, plus a marker for any rationale it can't.
 
-4. **Verify pass** — run the freshness ladder (winnow depth) on the *rewritten* doc. Every factual
-   claim and auto-written "why" must cite the code (rungs 1–4); new badges and feature bullets are
-   claims too. A claim the code can't back is **cut**; an ungrounded rationale is reduced to a marker.
-   A "why" with no trace in code (pure business/regulatory/external intent) is markered, never invented.
+4. **Verify pass — the truth trial** — run the freshness ladder (winnow depth) on the *rewritten*
+   doc. Every factual claim and auto-written "why" must cite the code (rungs 1–4); new badges and
+   feature bullets are claims too. Judgment-call verdicts here go through the winnow trial
+   **verbatim** — same claim, verdict space, and prongs as `/evergreen:winnow`, per the skill's
+   "Put the verdict on trial". A claim the code can't back is **cut**; an ungrounded rationale is
+   reduced to a marker. A "why" with no trace in code (pure business/regulatory/external intent)
+   is markered, never invented.
 
 5. **Emit the rewrite for approval.** Show it; never write silently. With `--all`, one per doc.
 
@@ -102,6 +105,25 @@ from the value prop? Do section intros / FAQ carry personality, or are they gene
 a voice, is the rewrite at least as evocative — or did you flatten it to the template? A README that
 passes structure but reads neutral **fails this test**. The bar is this repo's own README; if yours is
 plainer than that, run the voice pass again.
+
+**Put "done" on trial — the craft trial.** The two floors are the evidence; the verdict that you've
+cleared them is a judgment, and it runs the skill's shared harness, "Put the verdict on trial",
+with flourish's craft parameters. A scorecard read once is a checklist; a scorecard that survives
+an attack is a verdict — this is what stops the structurally-correct-but-voiceless doc that has
+sailed through before.
+
+- **claim / snap:** "this rewrite is at the gold standard — ship it."
+- **challenge (must survive):** "no — it's still flat: here's the definitional opener with no hook,
+  the missing centered hero, the toneless section intro." A "looks done" that can't beat "it's
+  still ugly" does not ship.
+- **three blind reads:** *defend* it's done / *attack the prose* (voice, hook, tagline,
+  personality in the seams) / *attack the structure* (hero, spine, badges, earned visual).
+- **blind-spot:** "did everyone miss that a badge or feature bullet claims something the code
+  can't back?" — a hit here routes back to the truth trial (step 4), because a beautiful lie is
+  still a lie.
+
+The craft verdict is fuzzier than the truth one — "survives the attack that it's ugly" is a
+discipline against an over-confident "done", not a precision metric. Don't dress it up as one.
 
 Open with a one-line read of what you restructured *and how you sharpened the voice*, the verify
 verdict (certified / cut / markered), then the diff.

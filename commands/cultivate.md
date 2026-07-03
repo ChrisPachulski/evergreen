@@ -82,6 +82,27 @@ are not "looking". Every verdict points at an executed command's actual output:
 - **Surface** — cite zero references **and** the change that orphaned it (the deleted consumer), or
   the leak / misplacement. Read the file and its history before proposing deletion.
 
+## Put the judgment on trial (before any delete, untrack, or block)
+
+The mechanical evidence never stands trial — a zero-reference grep, the untracked inventory, `gh`'s
+`isPrivate` are facts. The **conclusion drawn from them** does: "therefore slop, delete it",
+"therefore a leak, untrack it", "therefore exposed". Run every such judgment-call finding through
+the skill's shared harness, "Put the verdict on trial", with cultivate's parameters:
+
+- **claim / snap:** "this file is unreferenced slop" / "this is a local-only leak that shouldn't be
+  tracked" / "this repo is public while something in it assumes private."
+- **challenge (must survive):** "no — here's where it's reached (a dynamic import, a config glob, a
+  CI path, a build step), or why it's a legitimate fixture / intentionally public." A "delete this"
+  that can't survive its challenge does not emit.
+- **three blind reads:** *defend* the file's right to exist / *prove-orphaned* (nothing reaches it,
+  shown) / *hardest-dangerous* (the airtight case it's harmful to keep).
+- **blind-spot (the money one here):** "did all three miss that this file *is* reached, just not by
+  a static grep?" — the exact failure that makes a hygiene tool delete something load-bearing.
+
+Few findings per run are judgment calls, so the trial's cost stays bounded; everything mechanical
+skips it. The trial lowers false deletes and false blocks — it does **not** earn the right to remove
+the escape hatch. The blocking path keeps its human override regardless.
+
 ## Fix categories
 
 - **Leaked-local** (env, artifacts, local config) → `git rm --cached` + `.gitignore`. File stays on

@@ -7,7 +7,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/a%20skill-not%20a%20scanner-111111?style=flat-square" alt="A skill, not a scanner">
   <img src="https://img.shields.io/badge/works%20in-any%20language-111111?style=flat-square" alt="Any language">
-  <img src="https://img.shields.io/badge/eval-10%2F10%20recall%20%C2%B7%200%20FP-111111?style=flat-square" alt="10/10 recall, 0 false positives on the eval">
+  <img src="https://img.shields.io/badge/checked-against%20the%20code-111111?style=flat-square" alt="Checked against the code">
   <img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT license">
 </p>
 
@@ -52,28 +52,11 @@ When code changes, it stops at the first rung that catches:
 
 One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — so this one never does.
 
-## Receipts
+## How it's checked
 
-That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with 10 catalogued lies (two-plus per rung), 8 true claims that must not be flagged, and 2 exempt docs, then lets a headless agent winnow it blind:
+That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with catalogued lies, true claims that must not be flagged, and exempt docs, then lets a headless agent winnow it blind. The per-pair harness ([`eval/bench/`](eval/bench/)) runs the judge over labeled code/doc pairs.
 
-| judge | drift caught | decoy false positives | exempt docs honored | precision |
-|---|---|---|---|---|
-| Opus 4.8 | 10/10 | 0/8 | 2/2 | 1.00 |
-| Haiku 4.5 | 9/10 | 1/8 | 2/2 | 0.89 |
-
-There's a second, per-pair [benchmark](eval/bench/) in the schema the research literature uses, reported at a **natural 10/90 class split** (drift is rare in the wild; balanced sets flatter precision by the prevalence gap — CASCADE's own precision drops 0.88 → 0.39 moving balanced → natural), scored against the published peer, DocPrism's **0.62 precision** (arXiv:2511.00215).
-
-Evergreen's calibrated judge, run on **four independently-mined, label-validated wild corpora**, clusters tightly and clears that peer in every one:
-
-| language | source | precision | recall | F1 |
-|---|---|---|---|---|
-| TypeScript | pixijs, date-fns, mui, … | **0.80** | 0.75 | 0.77 |
-| Python | CoDocBench (top PyPI) | **0.78** | 0.78 | 0.78 |
-| Rust | tokio, rayon, clap, … | **0.78** | 0.74 | 0.76 |
-| Go | etcd, consul, cobra, … | **0.74** | 0.88 | 0.80 |
-| *DocPrism (peer)* | — | *0.62* | — | — |
-
-Each set is mined fresh ([`mine.py`](eval/bench/mine.py)), label-validated by a three-LLM vote (Fleiss κ ~0.66), and scored at natural prevalence — the calibrated bar isn't a Python trick, it's a property of the discipline. The one exception is **Java/Javadoc**: on CASCADE's execution-labeled 885-pair set (arXiv:2604.19400) the same tight bar over-suppresses (F1 0.32) because Javadoc drift is subtler than a contradicted token — shown, not hidden. The old headline 1.00/1.00 was a balanced author-written fixture and is now labeled as exactly that. Numbers, provenance, caveats: [eval/bench/RESULTS.md](eval/bench/RESULTS.md). Re-run: `python3 eval/bench/run_bench.py --rescore eval/bench/out/<transcript>.json`.
+Benchmark numbers are being re-derived against the corrected judge (adversarial reasoning built into the single verdict rather than bolted on as downstream vetoes); the prior figures were pulled pending that re-run.
 
 ## Install
 

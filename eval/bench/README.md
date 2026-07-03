@@ -32,8 +32,8 @@ EVAL_CONCURRENCY=8 python3 eval/bench/run_bench.py --dataset validated.jsonl
 ```
 
 **DocPrism's** set is still not runnable — its `anonymous.4open.science/r/DocPrism-5746`
-artifact returns `{"error":"not_connected"}` (re-checked 2026-07-02) — so its 0.62 precision is
-quoted as a published baseline, not re-measured.
+artifact returns `{"error":"not_connected"}` — so its published precision can't be re-measured
+on the same data.
 
 `dataset.jsonl` here is **evergreen's own hand-labeled sanity fixture in their exact schema** —
 14 pairs, honestly small, author-written, every label double-checked (the CCISolver paper found
@@ -79,4 +79,5 @@ EVAL_MODEL=claude-haiku-4-5-20251001 python3 eval/bench/run_bench.py
 python3 eval/bench/run_bench.py --selftest # prove the scoring math, no API calls
 ```
 
-Numbers, with the DocPrism baseline for context, live in [`RESULTS.md`](RESULTS.md).
+The run prints precision/recall/F1 at both splits. Published benchmark figures were pulled
+pending a re-run against the corrected judge.
