@@ -25,6 +25,20 @@ bash eval/run.sh                      # default model
 EVAL_MODEL=claude-haiku-4-5-20251001 bash eval/run.sh   # or pin one
 ```
 
-The harness prints its own numbers on each run. Against the corrected judge, the per-pair
-benchmark ([`bench/`](bench/)) scores Python at recall 0.89 / precision 0.57 / F1 0.70 (natural
-10/90) with 95% specificity on held-out true claims; TypeScript, Rust, and Go re-runs are pending.
+The harness prints its own numbers on each run.
+
+## How it compares
+
+The per-pair benchmark ([`bench/`](bench/)) sets evergreen next to the published peer in the same
+regime — **DocPrism** (zero-shot, multi-language, no fine-tuning). Current judge, CoDocBench Python:
+
+| System | Precision | Recall | F1 | Flag rate |
+|---|---|---|---|---|
+| **DocPrism** (arXiv:2511.00215) | 0.62 | — | — | ~0.15 |
+| **evergreen** — natural 10/90 | 0.57 | 0.89 | 0.70 | 0.16 |
+| **evergreen** — balanced 50/50 | 0.89 | 0.89 | 0.89 | 0.50 |
+
+Precision *trails* the peer at a matched flag rate (0.57 vs 0.62); recall (0.89) is the strength —
+DocPrism doesn't publish recall, so it's stated, not spun. Fine-tuned single-language SOTA reaches
+F1 0.88–0.94, a different regime and out of scope. Java (CASCADE) and TypeScript/Rust/Go re-runs
+against this judge are pending — [`bench/`](bench/) holds the full breakdown and prior-judge numbers.
