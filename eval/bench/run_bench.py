@@ -4,22 +4,24 @@
 Each dataset line: {"id", "func", "code", "doc", "label": "consistent"|"inconsistent",
                     "category": null|"direct-mismatch"|"over-promise"|"under-promise"}
 
-For each pair we hand the model the code + doc and the shipped SKILL ruleset, ask for a
-consistent/inconsistent verdict, and score against the label. Positive class = inconsistent.
+For each pair we hand the model the code + doc and the shipped SKILL ruleset and ask for one
+consistent/inconsistent verdict. The verdict is a SINGLE call whose reasoning argues both sides
+(alternative-reading / falsification / strongest-objection) before deciding — the adversarial
+checks are how it judges, not downstream vetoes. `EVAL_STAGES=prove` optionally runs a
+synthesized test AFTER a flag: pass kills a false positive, fail confirms the drift; execution
+is the only thing that adds precision without costing recall.
 
   python3 eval/bench/run_bench.py                 # run the shipped dataset
   EVAL_MODEL=claude-haiku-4-5-20251001 python3 eval/bench/run_bench.py
   python3 eval/bench/run_bench.py --dataset path/to/cascade.jsonl
+  EVAL_STAGES=prove python3 eval/bench/run_bench.py   # add the execution confirm step
   python3 eval/bench/run_bench.py --rescore out/bench-default.json   # recompute, no API calls
   python3 eval/bench/run_bench.py --selftest      # prove the scoring math, no API calls
 
 Metrics are reported at BOTH a balanced (50/50) and a natural (10/90) class split, as medians
-over ≥1000 resamples of the consistent class — CASCADE's protocol (arXiv:2604.19400), mirrored
-so the numbers line up. Real doc-drift is rare, so the natural split is the headline; balanced
-numbers overstate precision by the prevalence gap.
-
-evergreen deliberately treats under-promise (code does more than the doc says) as
-informational, not drift — so under-promise pairs are scored SEPARATELY, not as misses.
+over ≥1000 resamples of the consistent class (CASCADE's protocol, arXiv:2604.19400). Real
+doc-drift is rare, so the natural split is the headline. Under-promise (code does more than the
+doc says) is treated as informational, not drift, and scored SEPARATELY.
 """
 import json
 import os
@@ -47,23 +49,33 @@ def _fence(pair):
 
 
 def judge_prompt(pair):
-    # Calibrated bar (stage 1): to flag, quote BOTH the doc claim and the contradicting code
-    # token; under uncertainty, certify. This is where evergreen's false positives are born.
+    # The adversarial checks (research-loop's alternative-reading / falsification /
+    # strongest-objection lenses) are the REASONING that produces the verdict — not downstream
+    # vetoes. The judge argues both sides against each other in one pass, then decides once, so
+    # the pressure can push the verdict either way instead of only subtracting flags.
     return f"""{skill_body()}
 
 # Task
-Judge whether this documentation is consistent with the code it describes, per the ruleset
+Decide whether this documentation is consistent with the code it describes, per the ruleset
 above. "Consistent" means the doc makes no claim the code contradicts or fails to deliver;
 extra undocumented behavior is NOT an inconsistency.
 
-Answer "inconsistent" ONLY if you can quote, in "why", BOTH the exact words of the doc claim
-AND the exact code token that breaks it. If you cannot cite both, or you are not certain,
-answer "consistent". Prove it or drop it.
+Reason through all three lenses BEFORE you answer — this is how you judge, not a checklist:
+1. Alternative reading — build the strongest case that the doc IS consistent. What reading of
+   the code makes the doc true? Cite the specific code.
+2. Falsification — name the single fact that would make the doc wrong, then check whether the
+   code actually exhibits it.
+3. Strongest objection — make the hardest case that the doc genuinely misrepresents the code.
+
+Then weigh the three and give ONE verdict. Call it "inconsistent" only if the objection
+survives your own strongest defense AND you can quote both the doc claim and the contradicting
+code token. Anything short of that — uncertainty, a defensible consistent reading, a claim the
+code can't settle — is "consistent". Prove it or drop it.
 
 {_fence(pair)}
 
 Reply with exactly one line of JSON and nothing else:
-{{"id": "{pair['id']}", "verdict": "consistent" | "inconsistent", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "why": "<doc claim quote + contradicting code token>"}}"""
+{{"id": "{pair['id']}", "verdict": "consistent" | "inconsistent", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "why": "<doc claim quote + contradicting code token, after weighing the three lenses>"}}"""
 
 
 def claude_json(prompt, model, tools="", timeout=300):
@@ -97,30 +109,9 @@ def claude_text(prompt, model, timeout=300):
         return ""
 
 
-def stage_base(pair, model):
+def stage_judge(pair, model):
+    """The single verdict — adversarial reasoning is baked into judge_prompt, not bolted on after."""
     return claude_json(judge_prompt(pair), model)
-
-
-def stage_refute(pair, base, model):
-    """Immune response: mount a defense of the doc. A valid consistent reading downgrades the
-    flag (false positive killed). Escalation/immune-memory is tracked by the caller."""
-    why = (base or {}).get("why", "")
-    prompt = f"""A first reviewer flagged this documentation as INCONSISTENT with the code:
-  "{why}"
-
-You are the defense. Read the code and doc below and state the strongest reading under which
-the documentation IS consistent with the code — cite the specific code that supports it. Then
-decide honestly: does a reasonable reader have a defensible consistent interpretation?
-
-Remember evergreen's rule: code doing MORE than the doc says is not an inconsistency, and a
-claim you cannot settle from the code is not drift. Only a doc that provably over-promises or
-contradicts the code is real drift.
-
-{_fence(pair)}
-
-Reply with exactly one line of JSON and nothing else:
-{{"defensible": true | false, "why": "<the consistent reading, or why none exists>"}}"""
-    return claude_json(prompt, model)
 
 
 def synth_test_prompt(pair):
@@ -150,60 +141,23 @@ def stage_prove(pair, model, run_test=None):
     return {"outcome": outcome, "log": log[:200]}
 
 
-def _lens(pair, name, angle, model):
-    prompt = f"""You are one of three independent reviewers judging whether a piece of
-documentation is consistent with its code. Your assigned lens: {angle}
-
-{_fence(pair)}
-
-Judge strictly from the code. Code doing more than the doc says is consistent (informational,
-not drift). Only a provable over-promise or contradiction is inconsistent.
-
-Reply with exactly one line of JSON and nothing else:
-{{"lens": "{name}", "verdict": "consistent" | "inconsistent", "why": "<cite the code>"}}"""
-    return claude_json(prompt, model)
-
-
-def stage_audit(pair, model):
-    """Three-pronged audit (research-loop's parallel gate): alternative-reading / falsification /
-    strongest-objection lenses vote; majority decides. Shared blind spot logged."""
-    lenses = [
-        ("alternative-reading", "Find the reading under which the doc is CONSISTENT with the code. If a reasonable one exists, verdict is consistent."),
-        ("falsification", "Name the single fact that would prove the doc wrong, then check whether the code actually exhibits it. Verdict inconsistent only if that fact holds."),
-        ("strongest-objection", "Make the strongest case that the doc genuinely misrepresents what the code does. Verdict inconsistent only if that case is airtight."),
-    ]
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        votes = list(pool.map(lambda l: _lens(pair, l[0], l[1], model), lenses))
-    inc = sum((v or {}).get("verdict") == "inconsistent" for v in votes)
-    return {"verdict": "inconsistent" if inc >= 2 else "consistent",
-            "votes": [(v or {}).get("verdict") for v in votes], "detail": votes}
-
-
 def judge(pair, models, stages, run_test=None):
-    """Run the enabled stages as a funnel; return the got-dict (final verdict + stage trail)."""
-    base = stage_base(pair, models["base"])
-    verdict = (base or {}).get("verdict", "consistent")
-    trail = {"base": base}
-    proven = False
-    if verdict == "inconsistent" and "refute" in stages:
-        ref = stage_refute(pair, base, models["verify"])
-        trail["refute"] = ref
-        if ref and ref.get("defensible") is True:
-            verdict = "consistent"
+    """One integrated verdict (adversarial reasoning is inside stage_judge). Execution is the only
+    thing that runs AFTER, and only for a flagged, executable claim — it adds precision without
+    costing recall (a test passes → false positive killed; fails → drift confirmed). There are no
+    downstream reasoning vetoes: those only ever subtracted flags, which is what killed recall."""
+    verdict_obj = stage_judge(pair, models["base"])
+    verdict = (verdict_obj or {}).get("verdict", "consistent")
+    trail = {"judge": verdict_obj}
     if verdict == "inconsistent" and "prove" in stages:
         pv = stage_prove(pair, models["verify"], run_test=run_test)
         trail["prove"] = pv
         if pv["outcome"] == "pass":
             verdict = "consistent"
         elif pv["outcome"] == "fail":
-            proven = True  # confirmed by execution; skip the audit
-    if verdict == "inconsistent" and "audit" in stages and not proven:
-        au = stage_audit(pair, models["verify"])
-        trail["audit"] = au
-        verdict = au["verdict"]
-    return {"verdict": verdict, "category": (base or {}).get("category"),
-            "why": (base or {}).get("why"), "stages": trail}
+            verdict = "inconsistent"
+    return {"verdict": verdict, "category": (verdict_obj or {}).get("category"),
+            "why": (verdict_obj or {}).get("why"), "stages": trail}
 
 
 def score(rows):
@@ -303,30 +257,26 @@ def selftest():
     bal = split_metrics(noisy, 0.50, resamples=500)
     assert bal["precision"] > nat["precision"], (bal, nat)
 
-    # Funnel composition: stub the CLI + executor so no API/toolchain is touched.
+    # Judge composition: stub the CLI + executor so no API/toolchain is touched. The one judge
+    # call flags; the optional execution step confirms or kills the flag.
     global claude_json, claude_text
     real_json, real_text = claude_json, claude_text
-    # base always flags inconsistent; refute is not defensible; audit votes consistent 2/3.
-    def fake_json(prompt, model, tools="", timeout=300):
-        if '"defensible"' in prompt:
-            return {"defensible": False}
-        if '"lens"' in prompt:
-            return {"lens": "x", "verdict": "consistent"}  # audit exonerates
-        return {"id": "x", "verdict": "inconsistent", "category": "direct-mismatch", "why": "q"}
-    claude_json = fake_json
+    claude_json = lambda prompt, model, tools="", timeout=300: {
+        "id": "x", "verdict": "inconsistent", "category": "direct-mismatch", "why": "q"}
     claude_text = lambda prompt, model, timeout=300: "assert True\n"  # synthesized test source
     pair = {"id": "x", "func": "f", "code": "def f(): pass", "doc": "d", "language": "python"}
-    stub_pass = lambda lang, src: ("pass", "")
-    stub_skip = lambda lang, src: ("skip:no-test", "")
     try:
-        # base only → flags
-        assert judge(pair, {"base": "", "verify": ""}, {"base"})["verdict"] == "inconsistent"
-        # +prove passes → downgraded to consistent (false positive killed by execution)
-        g = judge(pair, {"base": "", "verify": ""}, {"base", "prove"}, run_test=stub_pass)
+        # judge alone → flags
+        assert judge(pair, {"base": "", "verify": ""}, set())["verdict"] == "inconsistent"
+        # + prove passes → execution kills the false positive
+        g = judge(pair, {"base": "", "verify": ""}, {"prove"}, run_test=lambda l, s: ("pass", ""))
         assert g["verdict"] == "consistent" and g["stages"]["prove"]["outcome"] == "pass", g
-        # +audit (prove skips) → 2/3 consistent votes exonerate
-        g = judge(pair, {"base": "", "verify": ""}, {"base", "prove", "audit"}, run_test=stub_skip)
-        assert g["verdict"] == "consistent" and g["stages"]["audit"]["verdict"] == "consistent", g
+        # + prove fails → execution confirms the drift
+        g = judge(pair, {"base": "", "verify": ""}, {"prove"}, run_test=lambda l, s: ("fail", ""))
+        assert g["verdict"] == "inconsistent", g
+        # + prove can't run → verdict stands (execution never manufactures or drops on a skip)
+        g = judge(pair, {"base": "", "verify": ""}, {"prove"}, run_test=lambda l, s: ("skip:x", ""))
+        assert g["verdict"] == "inconsistent", g
     finally:
         claude_json, claude_text = real_json, real_text
     print("selftest ok")
@@ -337,58 +287,20 @@ def rows_from_transcript(transcript):
              "verdict": (t.get("got") or {}).get("verdict", "consistent")} for t in transcript]
 
 
-def verdict_at_depth(got, depth):
-    """Replay the funnel from a committed stage-trail, stopping at `depth`. Lets one full-funnel
-    transcript be ablated at every level (base | refute | prove | audit) without re-running."""
-    st = (got or {}).get("stages", {})
-    v = (st.get("base") or {}).get("verdict", "consistent")
-    if depth == "base" or v != "inconsistent":
-        return v
-    ref = st.get("refute")
-    if ref and ref.get("defensible") is True:
-        return "consistent"
-    if depth == "refute":
-        return "inconsistent"
-    pv = st.get("prove") or {}
-    if pv.get("outcome") == "pass":
-        return "consistent"
-    if pv.get("outcome") == "fail":
-        return "inconsistent"  # proven; audit is short-circuited
-    if depth == "prove":
-        return "inconsistent"
-    au = st.get("audit")
-    return au.get("verdict", "inconsistent") if au else "inconsistent"
-
-
-def ablate(transcript, label=""):
-    """Report precision/recall/F1 at each cumulative funnel depth from one full-funnel run."""
-    for depth in ("base", "refute", "prove", "audit"):
-        rows = [{"label": t["label"], "category": t["category"],
-                 "verdict": verdict_at_depth(t.get("got"), depth)} for t in transcript]
-        nat = split_metrics(rows, 0.10)
-        m = score(rows)
-        print(f"[{depth:6}] natural 10/90: precision {nat['precision']:.2f}  recall {nat['recall']:.2f}"
-              f"  F1 {nat['f1']:.2f}  specificity {nat['specificity']:.2f}"
-              f"  |  raw TP {m['tp']} FP {m['fp']} FN {m['fn']} TN {m['tn']}")
-
-
 def main():
     if "--selftest" in sys.argv:
         return selftest()
     if "--rescore" in sys.argv:
         path = Path(sys.argv[sys.argv.index("--rescore") + 1])
         return report(rows_from_transcript(json.loads(path.read_text())), f", rescored from {path.name}")
-    if "--ablate" in sys.argv:
-        path = Path(sys.argv[sys.argv.index("--ablate") + 1])
-        return ablate(json.loads(path.read_text()), path.name)
     ds = Path(sys.argv[sys.argv.index("--dataset") + 1]) if "--dataset" in sys.argv \
         else Path(os.environ.get("EVAL_DATASET", HERE / "dataset.jsonl"))
-    # Stage funnel: default "base" reproduces the single-call judge exactly (back-compatible).
-    stages = set(os.environ.get("EVAL_STAGES", "base").split(","))
+    # The judge always runs; "prove" (execution confirm) is the one optional add-on.
+    stages = set(s for s in os.environ.get("EVAL_STAGES", "").split(",") if s)
     base_model = os.environ.get("EVAL_MODEL_BASE") or os.environ.get("EVAL_MODEL", "")
     verify_model = os.environ.get("EVAL_MODEL_VERIFY") or os.environ.get("EVAL_MODEL", "")
     models = {"base": base_model, "verify": verify_model}
-    tag = "-".join(sorted(stages))
+    tag = "-".join(sorted({"judge", *stages}))
     pairs = [json.loads(l) for l in ds.read_text().splitlines() if l.strip()]
     out_dir = HERE / "out"; out_dir.mkdir(exist_ok=True)
     out_path = out_dir / f"bench-{ds.stem}-{verify_model or base_model or 'default'}-{tag}.json"
@@ -400,7 +312,7 @@ def main():
         for p, v in zip(todo, pool.map(lambda p: judge(p, models, stages), todo)):
             done[p["id"]] = {**p, "got": v}
             verdict = (v or {}).get("verdict", "consistent")
-            trail = "→".join(k for k in ("base", "refute", "prove", "audit")
+            trail = "→".join(k for k in ("judge", "prove")
                              if k in (v or {}).get("stages", {}))
             mark = "✓" if (verdict == "inconsistent") == (p["label"] == "inconsistent") else "✗"
             print(f"  {mark} [{len(done)}/{len(pairs)}] {p['id']:40} label={p['label']:12} "

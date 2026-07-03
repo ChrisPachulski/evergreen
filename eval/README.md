@@ -25,4 +25,5 @@ bash eval/run.sh                      # default model
 EVAL_MODEL=claude-haiku-4-5-20251001 bash eval/run.sh   # or pin one
 ```
 
-Measured results live in [`RESULTS.md`](RESULTS.md) — model, date, and numbers, or nothing.
+The harness prints its own numbers on each run. Published benchmark figures were pulled pending a
+re-run against the corrected judge (adversarial reasoning built into the single verdict).
