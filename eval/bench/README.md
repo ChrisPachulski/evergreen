@@ -42,9 +42,11 @@ label). It proves the harness and catches regressions; it is not a comparable re
 
 ## Protocol
 
-Metrics are reported at a **natural 10/90 split** (headline) and a balanced 50/50 split, each as
-medians over 1000 resamples of the consistent class — CASCADE's own protocol, mirrored so the
-numbers line up. Rerun any committed transcript without API calls:
+The raw result is a **confusion matrix** (see [Results](#results--how-it-compares)). Recall and
+specificity read straight off it; precision doesn't, because it moves with the drift base rate — so
+precision is also reported reweighted to a **natural 10/90** and a **balanced 50/50** split, medians
+over 1000 resamples of the consistent class (CASCADE's protocol), so it lines up with published
+baselines. Rerun any committed transcript without API calls:
 
 ```sh
 python3 eval/bench/run_bench.py --rescore out/bench-default.json
@@ -66,39 +68,48 @@ train on one language's labels; different regime, noted and out of scope.
 
 ### Evergreen — current judge (the trial rebuild)
 
-Only Python has been re-scored on the corrected judge so far. CoDocBench Python, three-LLM–validated
-labels, medians over 1000 resamples (`--rescore out/bench-codoc-py-*-trial-*.json`):
+Only Python has been re-scored on the corrected judge so far. Every reported rate comes from **one
+confusion matrix** over the 332 validated CoDocBench Python pairs — 9 real drifts, 323 true claims
+(`--rescore out/bench-codoc-py-*-trial-*.json`):
 
-| Split | n (core) | Precision | Recall | F1 | Specificity | Flag rate |
-|---|---|---|---|---|---|---|
-| natural 10/90 (headline) | 50 | 0.57 | 0.89 | 0.70 | 0.93 | 0.16 |
-| balanced 50/50 | 50 | 0.89 | 0.89 | 0.89 | 0.89 | 0.50 |
-| held-out true claims | 282 | n/a | n/a | n/a | 0.95 | 0.05 |
+|                      | flagged | silent  |
+|----------------------|---------|---------|
+| **actual drift** (9)   | TP 8  | FN 1    |
+| **actual true** (323)  | FP 16 | TN 307  |
 
-The 282-pair held-out set is **all true claims — no seeded drift**, so precision/recall/F1 have no
-positives to score (they're `0/0`, undefined). It's a pure false-alarm test: the only meaningful
-numbers are specificity (269 correct silences / 282) and flag rate (13 false flags / 282 = 0.05).
+Two rates fall straight out and **don't depend on how common drift is**:
 
-**Read it straight:** the only apples-to-apples number is precision at a matched flag rate, and there
-evergreen *trails* — 0.57 at a 0.16 flag rate vs DocPrism's 0.62 at ~0.15. DocPrism doesn't publish
-recall, so evergreen's 0.89 recall has no peer number to beat; state it, don't spin it. The rebuild
-moved Python from the prior judge's 0.54 / 0.78 / 0.64 (natural, n=332) to 0.57 / 0.89 / 0.70 —
-recall was the target and it moved most; precision barely.
+- **Recall** = 8/9 = **0.89** — of the real drifts, it caught 8
+- **Specificity** = 307/323 = **0.95** — of the true claims, it wrongly flagged 16 (the cry-wolf rate)
+
+**Precision does depend on the drift base rate**, so it's reported at three priors rather than
+cherry-picked — same 8 correct flags, different assumed mix of the class it's diluted against:
+
+| Prior (drift : true) | Precision | F1 | what it is |
+|---|---|---|---|
+| raw corpus (~3 : 97) | 0.33 | 0.48 | this dataset's actual mix |
+| 10 : 90 | 0.57 | 0.70 | CASCADE reporting convention |
+| 50 : 50 | 0.89 | 0.89 | balanced |
+
+**vs the peer:** DocPrism reports 0.62 precision @ ~15% flag rate. At a matched flag rate (the 10/90
+line) evergreen trails at 0.57. DocPrism publishes no recall, so the 0.89 has nothing to beat — state
+it, don't spin it. And precision here rests on just **9 positives**, so it's the soft, noisy axis;
+recall and specificity are the solid ground.
 
 ### Pending re-run — prior judge, do NOT cite as current
 
-These ran on the *old* judge and are the reason for the rebuild. Re-runs against the trial judge
-aren't done; the numbers are here only so nothing is hidden:
+CASCADE (885 Java pairs — 70 drift, 815 true) ran only on the *old* judge. Its matrix is here so
+nothing is hidden, not as a current number:
 
-| Dataset | n | Split | Precision | Recall | F1 |
-|---|---|---|---|---|---|
-| CASCADE Java | 885 | natural 10/90 | 0.30 | 0.33 | 0.32 |
-| CASCADE Java | 885 | balanced 50/50 | 0.79 | 0.33 | 0.46 |
-| CoDocBench TS / Rust / Go | — | — | pending | pending | pending |
+|                       | flagged | silent  |
+|-----------------------|---------|---------|
+| **actual drift** (70)   | TP 23 | FN 47   |
+| **actual true** (815)   | FP 69 | TN 746  |
 
-The prior judge's Java recall (0.33) is the weakest result in the whole suite and precisely what the
-trial rebuild targets. Until CASCADE is re-scored, treat multi-language performance as **unproven on
-the current judge** — not as the ~0.8 the old transcripts once showed.
+Recall 23/70 = **0.33** — the weakest result in the whole suite, and precisely what the trial rebuild
+targets (specificity 0.92, raw precision 0.25). TypeScript/Rust/Go re-runs against the current judge
+aren't done. Treat multi-language as **unproven on the current judge** — not the ~0.8 the old
+transcripts once showed.
 
 ## Schema
 

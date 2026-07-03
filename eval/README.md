@@ -29,16 +29,17 @@ The harness prints its own numbers on each run.
 
 ## How it compares
 
-The per-pair benchmark ([`bench/`](bench/)) sets evergreen next to the published peer in the same
-regime — **DocPrism** (zero-shot, multi-language, no fine-tuning). Current judge, CoDocBench Python:
+The per-pair benchmark ([`bench/`](bench/)) reduces to one confusion matrix. Current judge,
+CoDocBench Python — 332 pairs, 9 real drifts, 323 true claims:
 
-| System | Precision | Recall | F1 | Flag rate |
-|---|---|---|---|---|
-| **DocPrism** (arXiv:2511.00215) | 0.62 | — | — | ~0.15 |
-| **evergreen** — natural 10/90 | 0.57 | 0.89 | 0.70 | 0.16 |
-| **evergreen** — balanced 50/50 | 0.89 | 0.89 | 0.89 | 0.50 |
+|                      | flagged | silent  |
+|----------------------|---------|---------|
+| **actual drift** (9)   | TP 8  | FN 1    |
+| **actual true** (323)  | FP 16 | TN 307  |
 
-Precision *trails* the peer at a matched flag rate (0.57 vs 0.62); recall (0.89) is the strength —
-DocPrism doesn't publish recall, so it's stated, not spun. Fine-tuned single-language SOTA reaches
-F1 0.88–0.94, a different regime and out of scope. Java (CASCADE) and TypeScript/Rust/Go re-runs
-against this judge are pending — [`bench/`](bench/) holds the full breakdown and prior-judge numbers.
+**Recall 0.89** (8/9) and **specificity 0.95** (307/323) read straight off it, base-rate independent.
+Precision depends on how common drift is: **0.33** at this corpus's raw ~3/97 mix, **0.57** reweighted
+to 10/90, **0.89** at 50/50. The peer, **DocPrism** (arXiv:2511.00215), reports 0.62 precision @ ~15%
+flag rate — at a matched flag rate evergreen trails on precision and has no peer number to beat on
+recall. Precision rests on just 9 positives, so it's the soft axis. Java (CASCADE, recall 0.33 on the
+old judge) and TS/Rust/Go on the current judge are pending — [`bench/`](bench/) has the full breakdown.

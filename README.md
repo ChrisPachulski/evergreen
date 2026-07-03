@@ -56,7 +56,14 @@ One rule above all: **prove it or drop it.** If it can't cite the code that make
 
 That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with catalogued lies, true claims that must not be flagged, and exempt docs, then lets a headless agent winnow it blind. The per-pair harness ([`eval/bench/`](eval/bench/)) runs the judge over labeled code/doc pairs.
 
-Against that corrected judge, the Python calibration split (CoDocBench, wild code/doc pairs with three-LLM–validated labels) scores **recall 0.89, precision 0.57, F1 0.70 at the natural 10/90 split** (F1 0.89 at balanced 50/50, n=50); on a 282-pair held-out set of true claims it holds **95% specificity** — 13 false positives. The comparable peer, DocPrism, reports 0.62 precision at a 15% flag rate. The TypeScript, Rust, and Go re-runs against this judge are still in flight; their earlier figures came from the prior judge and were pulled.
+Against that corrected judge, the Python set (CoDocBench, three-LLM–validated labels) reduces to one confusion matrix over 332 pairs — 9 real drifts, 323 true claims:
+
+|                     | flagged | silent  |
+|---------------------|---------|---------|
+| **drift** (9)       | 8       | 1       |
+| **true** (323)      | 16      | 307     |
+
+That's **recall 0.89** (8/9) and **specificity 0.95** (307/323) — it catches the drift and rarely cries wolf. Precision depends on how common drift is: 0.57 at a 10/90 mix, where the peer DocPrism reports 0.62. It rests on only 9 positives, so precision is the soft number — and the Java, TypeScript, Rust, and Go re-runs against this judge are still in flight. Full breakdown in [`eval/bench/`](eval/bench/).
 
 ## Install
 
