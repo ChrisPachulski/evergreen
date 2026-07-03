@@ -1,0 +1,1802 @@
+{
+ "pixijs/pixijs/constructor#0-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/parseJSON#1-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get rootContext#2-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "mui/material-ui/CardContent#3-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "apollographql/apollo-client/constructor#4-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get useContextAlpha#5-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/uploadGraphics#6-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/skipHello#7-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/constructor#8-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "apollographql/apollo-client/writeFragmentToStore#9-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "mui/material-ui/createMaterialTemplate#10-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/setContextTransform#11-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/constructor#12-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#13-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/setISOWeek#14-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#15-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/bindAndClear#16-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#17-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/lineTextureStyle#18-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/fit#19-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/areIntervalsOverlapping#20-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/correctBlendMode#21-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/nextPow2#22-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/createJoyTemplate#23-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/constructor#24-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#25-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#26-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/clear#27-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/_onTextureUpdate#28-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/resize#29-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/hex2string#30-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#31-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/setBlendMode#32-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/constructor#33-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#34-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/hex2string#35-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/subSeconds#36-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/yearsToQuarters#37-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/get colorTexture#38-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "date-fns/date-fns/secondsToHours#39-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "date-fns/date-fns/isValid#40-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isEqual#41-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/findGraphics#42-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/endOfTomorrow#43-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/isPow2#44-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/compileShader#45-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/constructor#46-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#47-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isSameSecond#48-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/tintWithMultiply#49-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/uploadBaseTextures#50-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/setResolution#51-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/enlarge#52-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#53-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/tzOffset#54-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/getBaseUrl#55-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/add#56-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/createColoredCanvas#57-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/from#58-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/bind#59-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/millisecondsToSeconds#60-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#61-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/setBlendMode#62-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/formatMuiErrorMessage#63-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/build#64-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/minutesToMilliseconds#65-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/apply#66-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "reduxjs/redux/isPlainObject#67-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/setContextTransform#68-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/subYears#69-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/findBaseTexture#70-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#71-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/findTexture#72-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isBefore#73-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#74-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "date-fns/date-fns/areIntervalsOverlapping#75-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/format#76-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/setISOWeekYear#77-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/add#78-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#79-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/removeAll#80-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/destroy#81-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/startOfYesterday#82-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/parse#83-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/getTintedCanvas#84-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/update#85-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/secondsToMinutes#86-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/setHours#87-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/update#88-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/constructor#89-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/constructor#90-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#91-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/findText#92-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get preserveDrawingBuffer#93-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get mask#94-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/getLocalBounds#95-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#96-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#97-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "apollographql/apollo-client/stop#98-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/quartersToYears#99-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/load#100-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "reduxjs/redux/observable#101-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/Button#102-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#103-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/formatRelative#104-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/useInput#105-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isSameQuarter#106-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#107-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/sub#108-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mrdoob/three.js/copyFramebufferToTexture#109-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get _tempDisplayObjectParent#110-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get maskManager#111-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/constructor#112-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#113-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/correctBlendMode#114-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#115-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/findMultipleBaseTextures#116-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/extractEventHandlers#117-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "apollographql/apollo-client/addPreviousResultToIdValues#118-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#119-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/remove#120-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/getColor#121-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "mui/material-ui/internal_mutateStyles#122-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#123-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/millisecondsToMinutes#124-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/daysToWeeks#125-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/setMilliseconds#126-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/writeToIndex#127-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/doRuntimeReplacement#128-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/premultiplyRgba#129-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/buildNativeLine#130-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/getJsFilesInFolder#131-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/createColoredCanvas#132-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/destroy#133-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#134-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#135-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/setYear#136-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/build#137-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/yearsToMonths#138-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/pad#139-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/mapCanvasBlendModesToPixi#140-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/minutesToSeconds#141-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/subMonths#142-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/sortContainerQueries#143-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#144-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/uploadBaseTextures#145-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/getPt#146-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "reduxjs/redux/getState#147-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/premultiplyRgba#148-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#149-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/constructor#150-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/ordinalNumber#151-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#152-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get pivot#153-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#154-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/parseISO#155-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/from#156-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/resize#157-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get smoothProperty#158-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/createMuiTheme#159-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/endOfYesterday#160-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/formatDuration#161-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#162-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "mui/material-ui/IconButton#163-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/_determineCrossOrigin#164-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "date-fns/date-fns/parseISO#165-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#166-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/add#167-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/from#168-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/eachMinuteOfInterval#169-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "date-fns/date-fns/isExists#170-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isExists#171-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#172-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/get tint#173-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/getMuiPackageVersion#174-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/ceil#175-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#176-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/Typography#177-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/findGraphics#178-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#179-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#180-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#181-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isValid#182-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/nextPow2#183-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/jsFilePathToUrl#184-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#185-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get preserveDrawingBuffer#186-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "apollographql/apollo-client/readQueryFromStore#187-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/emit#188-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/intervalToDuration#189-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/findBaseTexture#190-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#191-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/getTintedCanvas#192-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isSameISOWeek#193-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/createReactApp#194-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/addSystem#195-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/doEvaltimeReplacement#196-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/update#197-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#198-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/fromURL#199-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/uploadBaseTextures#200-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/logPrettyShaderError#201-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#202-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isMatch#203-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/string2hex#204-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#205-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "apollographql/apollo-client/readQuery#206-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/isVertical#207-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/hoursToSeconds#208-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/addHours#209-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#210-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/fromUnixTime#211-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "apollographql/apollo-client/getFragmentQueryDocument#212-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/initBuffers#213-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/get context#214-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/setDate#215-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/render#216-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "date-fns/date-fns/setMonth#217-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get refresh#218-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#219-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "apollographql/apollo-client/constructor#220-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/drawText#221-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/test#222-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/getInheritance#223-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/eachDayOfInterval#224-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "date-fns/date-fns/isSameISOWeekYear#225-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/uploadGraphics#226-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/drawPolygon#227-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#228-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get backgroundAlpha#229-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/render#230-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#231-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isAfter#232-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/rotate180#233-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#234-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#235-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/getUnstyledFilename#236-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/generateCanvasTexture#237-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/setISODay#238-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isSameDay#239-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#240-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get repeatEdgePixels#241-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get EMPTY#242-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/daysToWeeks#243-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#244-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#245-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "date-fns/date-fns/millisecondsToHours#246-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#247-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/setMinutes#248-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/secondsToMilliseconds#249-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#250-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/addDays#251-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/monthsToQuarters#252-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/getPageLinks#253-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/_boundLoadResource#254-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#255-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/findTextStyle#256-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/minutesToHours#257-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/string2hex#258-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/areIntervalsOverlapping#259-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#260-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#261-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/constructor#262-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#263-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/constructor#264-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/_onTextureUpdate#265-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/isPow2#266-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/create#267-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#268-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/upload#269-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isSameMinute#270-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/formatISODuration#271-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/quartersToMonths#272-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/formatISODuration#273-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/subQuarters#274-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/sub#275-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/createDescribeableProp#276-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isSameHour#277-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/onChildrenChange#278-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get position#279-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/mapPremultipliedBlendModes#280-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/drawFilletRect#281-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/render#282-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#283-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "reduxjs/redux/warning#284-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/test#285-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#286-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/drawChamferRect#287-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/get clearBeforeRender#288-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/getColumnExceptFirst#289-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/generateTexture#290-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#291-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/getInheritance#292-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "date-fns/date-fns/monthsToYears#293-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/disposeAll#294-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/InputUnstyled#295-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/enableTempParent#296-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/milliseconds#297-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/findTexture#298-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/string2hex#299-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#300-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/roundToNearestMinutes#301-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "date-fns/date-fns/fromUnixTime#302-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#303-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/registerPlugin#304-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/weeksToDays#305-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/canBreakChars#306-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#307-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/invalidateBlendMode#308-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get scale#309-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/setSeconds#310-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/findTextStyle#311-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/bind#312-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/drawText#313-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/calculateTextStyle#314-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#315-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/startOfTomorrow#316-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#317-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/hoursToMilliseconds#318-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isDate#319-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get blendModes#320-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/setQuarter#321-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/drawTorus#322-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/destroyTextureCache#323-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#324-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "apollographql/apollo-client/readFragment#325-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get backgroundColor#326-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/dispose#327-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "mui/material-ui/getLimitTagsText?#328-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/string2hex#329-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/getOptimalTexture#330-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#331-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/getSingleColor#332-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isDate#333-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get useContextAlpha#334-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/square#335-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/calculateTextStyle#336-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/subWeeks#337-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/intlFormatDistance#338-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#339-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/parseISO#340-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#341-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pixijs/pixijs/invalidateBlendMode#342-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/string2hex#343-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/contextChange#344-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/hoursToMinutes#345-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mui/material-ui/propsToClassKey#346-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get texture#347-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/setDefaultOptions#348-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/skipHello#349-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/getSingleColor#350-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/get view#351-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#352-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/isVertical#353-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#354-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/constructor#355-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/findText#356-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/mapPremultipliedBlendModes#357-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pixijs/pixijs/getLocalBounds#358-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "date-fns/date-fns/isSameMonth#359-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ }
+}
