@@ -4,19 +4,17 @@
 Each dataset line: {"id", "func", "code", "doc", "label": "consistent"|"inconsistent",
                     "category": null|"direct-mismatch"|"over-promise"|"under-promise"}
 
-For each pair we hand the model the code + doc and the shipped SKILL ruleset and ask for one
-consistent/inconsistent verdict. The verdict is a SINGLE call whose reasoning argues both sides
-(alternative-reading / falsification / strongest-objection) before deciding — the adversarial
-checks are how it judges, not downstream vetoes. `EVAL_STAGES=prove` optionally runs a
-synthesized test AFTER a flag: pass kills a false positive, fail confirms the drift; execution
-is the only thing that adds precision without costing recall.
+Each claim is put on TRIAL against the code (see the `judge` function). No single call is
+trusted: a strong-model snap verdict, a cheap challenge that must fail to break it, three BLIND
+independent prongs (defend / prove-wrong / hardest-broken), a cheap blind-spot surfacer, and —
+only when the evidence isn't unanimous — a strong-model synthesis that decides. Fable is banned
+from every role; strong defaults to Opus, cheap to Sonnet (EVAL_MODEL_STRONG / EVAL_MODEL_CHEAP).
 
-  python3 eval/bench/run_bench.py                 # run the shipped dataset
-  EVAL_MODEL=claude-haiku-4-5-20251001 python3 eval/bench/run_bench.py
+  python3 eval/bench/run_bench.py                 # run the shipped dataset (trial, Opus+Sonnet)
+  EVAL_MODEL_CHEAP=claude-haiku-4-5-20251001 python3 eval/bench/run_bench.py
   python3 eval/bench/run_bench.py --dataset path/to/cascade.jsonl
-  EVAL_STAGES=prove python3 eval/bench/run_bench.py   # add the execution confirm step
   python3 eval/bench/run_bench.py --rescore out/bench-default.json   # recompute, no API calls
-  python3 eval/bench/run_bench.py --selftest      # prove the scoring math, no API calls
+  python3 eval/bench/run_bench.py --selftest      # exercise scoring + the trial flow, no API
 
 Metrics are reported at BOTH a balanced (50/50) and a natural (10/90) class split, as medians
 over ≥1000 resamples of the consistent class (CASCADE's protocol, arXiv:2604.19400). Real
@@ -48,36 +46,6 @@ def _fence(pair):
     return f"## Code (`{pair['func']}`)\n```{pair.get('language', 'python').lower()}\n{pair['code']}\n```\n\n## Documentation\n{pair['doc']}"
 
 
-def judge_prompt(pair):
-    # The adversarial checks (research-loop's alternative-reading / falsification /
-    # strongest-objection lenses) are the REASONING that produces the verdict — not downstream
-    # vetoes. The judge argues both sides against each other in one pass, then decides once, so
-    # the pressure can push the verdict either way instead of only subtracting flags.
-    return f"""{skill_body()}
-
-# Task
-Decide whether this documentation is consistent with the code it describes, per the ruleset
-above. "Consistent" means the doc makes no claim the code contradicts or fails to deliver;
-extra undocumented behavior is NOT an inconsistency.
-
-Reason through all three lenses BEFORE you answer — this is how you judge, not a checklist:
-1. Alternative reading — build the strongest case that the doc IS consistent. What reading of
-   the code makes the doc true? Cite the specific code.
-2. Falsification — name the single fact that would make the doc wrong, then check whether the
-   code actually exhibits it.
-3. Strongest objection — make the hardest case that the doc genuinely misrepresents the code.
-
-Then weigh the three and give ONE verdict. Call it "inconsistent" only if the objection
-survives your own strongest defense AND you can quote both the doc claim and the contradicting
-code token. Anything short of that — uncertainty, a defensible consistent reading, a claim the
-code can't settle — is "consistent". Prove it or drop it.
-
-{_fence(pair)}
-
-Reply with exactly one line of JSON and nothing else:
-{{"id": "{pair['id']}", "verdict": "consistent" | "inconsistent", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "why": "<doc claim quote + contradicting code token, after weighing the three lenses>"}}"""
-
-
 def claude_json(prompt, model, tools="", timeout=300):
     """Run one headless CLI call; return the first parsed JSON object printed, or None."""
     cmd = ["claude", "-p", prompt, "--allowedTools", tools]
@@ -98,66 +66,156 @@ def claude_json(prompt, model, tools="", timeout=300):
     return got
 
 
-def claude_text(prompt, model, timeout=300):
-    """Run one headless CLI call; return raw stdout (for non-JSON output like synthesized code)."""
-    cmd = ["claude", "-p", prompt, "--allowedTools", ""]
-    if model:
-        cmd += ["--model", model]
-    try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
-    except subprocess.TimeoutExpired:
-        return ""
+# ── The trial ────────────────────────────────────────────────────────────────
+# A documentation claim is put on trial against the real code. No single call is trusted:
+#   1. snap    (strong)  — first-instinct verdict, logged; a weighted vote, never the last word.
+#   2. challenge(cheap)  — hardest case the snap is WRONG (direction flips); it must survive.
+#   3. prongs   (blind)  — three independent fresh reads (defend / prove-wrong / hardest-broken);
+#                          they are told NOTHING of the snap, challenge, or their own tier, so a
+#                          "confirming" prong can't rubber-stamp. Cheap if snap survived, strong
+#                          if cracked. On the survived path a 2-2 tie of {snap+3 prongs} = the
+#                          snap failed → escalate to the strong prongs.
+#   4. blindspot(cheap)  — surfaces an angle everyone missed; it only RAISES, never decides.
+#   5. synthesis(strong) — weighs it all into the verdict, but only when the evidence isn't
+#                          unanimous. This is where "did the accusation beat its defense?" is
+#                          judged — there is no separate immune rule (needs iterations we lack).
 
+def snap_call(pair, model):
+    prompt = f"""{skill_body()}
 
-def stage_judge(pair, model):
-    """The single verdict — adversarial reasoning is baked into judge_prompt, not bolted on after."""
-    return claude_json(judge_prompt(pair), model)
-
-
-def synth_test_prompt(pair):
-    lang = pair.get("language", "python")
-    return f"""Write ONE self-contained {lang} program that includes the code below and asserts
-ONLY what the DOCUMENTATION claims about it. The program must exit 0 if the documented claim
-holds and exit non-zero (assertion failure) if it does not. Test only documented behavior, not
-undocumented extras. If the doc makes no executable/checkable behavioral claim, output exactly
-NO-TEST.
+# Task
+Read this documentation claim against the code and give your first-instinct verdict: is the doc
+consistent with the code, or has it drifted? "Consistent" means the doc makes no claim the code
+contradicts or fails to deliver; extra undocumented behavior is NOT an inconsistency.
 
 {_fence(pair)}
 
-Output only the program source (or the token NO-TEST), no explanation, no markdown fences."""
+Reply with exactly one line of JSON and nothing else:
+{{"id": "{pair['id']}", "verdict": "consistent" | "inconsistent", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "why": "<cite the code>"}}"""
+    return claude_json(prompt, model)
 
 
-def stage_prove(pair, model, run_test=None):
-    """Dynamic proof: synthesize a test of the doc's claim and run it. pass -> consistent,
-    fail -> inconsistent (proven), skip/no-test -> inconclusive (fall through)."""
-    if run_test is None:
-        from prove import run_test as run_test
-    src = (claude_text(synth_test_prompt(pair), model) or "").strip().strip("`")
-    if src.startswith("```"):                     # strip a fenced block if the model added one
-        src = "\n".join(src.splitlines()[1:]).rsplit("```", 1)[0].strip()
-    if not src or src.splitlines()[0].strip().upper().startswith("NO-TEST"):
-        return {"outcome": "skip:no-test"}
-    outcome, log = run_test(pair.get("language", "python"), src)
-    return {"outcome": outcome, "log": log[:200]}
+def challenge_call(pair, snap_verdict, model):
+    attack = ("Argue the documentation is actually INCONSISTENT — find the specific code that "
+              "breaks its claim." if snap_verdict == "consistent" else
+              "Argue the documentation is actually CONSISTENT — give the reading of the code "
+              "under which it holds.")
+    prompt = f"""A first reviewer judged this documentation "{snap_verdict}". Your job is the
+opposite: {attack} Make the hardest, best-cited case you can that the first reviewer was wrong.
+
+{_fence(pair)}
+
+Reply with exactly one line of JSON and nothing else:
+{{"cracks": true | false, "why": "<your strongest case, citing the code>"}}"""
+    # cracks=true  → the first verdict does NOT survive the challenge (it was contestable)
+    return claude_json(prompt, model)
 
 
-def judge(pair, models, stages, run_test=None):
-    """One integrated verdict (adversarial reasoning is inside stage_judge). Execution is the only
-    thing that runs AFTER, and only for a flagged, executable claim — it adds precision without
-    costing recall (a test passes → false positive killed; fails → drift confirmed). There are no
-    downstream reasoning vetoes: those only ever subtracted flags, which is what killed recall."""
-    verdict_obj = stage_judge(pair, models["base"])
-    verdict = (verdict_obj or {}).get("verdict", "consistent")
-    trail = {"judge": verdict_obj}
-    if verdict == "inconsistent" and "prove" in stages:
-        pv = stage_prove(pair, models["verify"], run_test=run_test)
-        trail["prove"] = pv
-        if pv["outcome"] == "pass":
-            verdict = "consistent"
-        elif pv["outcome"] == "fail":
-            verdict = "inconsistent"
-    return {"verdict": verdict, "category": (verdict_obj or {}).get("category"),
-            "why": (verdict_obj or {}).get("why"), "stages": trail}
+PRONGS = {
+    "defend": "Make the strongest case the documentation is STILL TRUE for this code. What reading makes it hold? Cite the code.",
+    "prove-wrong": "Try to PROVE the documentation wrong: find the exact code token or behavior that breaks its claim. If none exists, say so.",
+    "hardest-broken": "Make the hardest case the documentation genuinely MISREPRESENTS what the code does.",
+}
+
+
+def prong_call(pair, role, model):
+    # BLIND: the prong sees only the claim + code + its assigned angle — never the snap, the
+    # challenge, or its tier. That blindness is what stops a "confirming" prong rubber-stamping.
+    prompt = f"""{skill_body()}
+
+# Task ({role})
+{PRONGS[role]} Then, judging strictly from the code, give your honest verdict: is the doc
+consistent with the code? Code doing MORE than the doc says is consistent (informational).
+
+{_fence(pair)}
+
+Reply with exactly one line of JSON and nothing else:
+{{"role": "{role}", "verdict": "consistent" | "inconsistent", "why": "<cite the code>"}}"""
+    return claude_json(prompt, model)
+
+
+def run_prongs(pair, model):
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        return list(pool.map(lambda r: prong_call(pair, r, model), PRONGS))
+
+
+def blindspot_call(pair, model):
+    prompt = f"""Three reviewers just judged whether this documentation matches the code. Your
+only job: name ONE angle they could ALL have missed — a reading of the code, an edge case, a
+claim in the doc — that might flip the verdict. You are surfacing a candidate, not deciding.
+If nothing plausible is missing, say so.
+
+{_fence(pair)}
+
+Reply with exactly one line of JSON and nothing else:
+{{"missed_angle": "<the overlooked angle, or null if none>"}}"""
+    return claude_json(prompt, model)
+
+
+def synthesis_call(pair, snap, challenge, prongs, blindspot, model):
+    ev = {"snap": snap, "challenge": challenge, "prongs": prongs, "blindspot": blindspot}
+    prompt = f"""{skill_body()}
+
+# Task
+You are the final judge. Below is the full record of a trial over one documentation claim: a
+first-instinct snap verdict (a weighted vote, not binding), a challenge that tried to break it,
+three independent reviewers, and a blind-spot candidate. Weigh them and give the verdict.
+
+A "drift" finding stands only if the accusation beat its strongest defense — do not flag on an
+objection a reasonable consistent reading survives. If the blind-spot angle genuinely changes
+the picture, account for it. Code doing more than the doc says is consistent, not drift.
+
+{_fence(pair)}
+
+## Trial record
+{json.dumps(ev, indent=1)}
+
+Reply with exactly one line of JSON and nothing else:
+{{"verdict": "consistent" | "inconsistent", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "why": "<the deciding reasoning, citing the code>"}}"""
+    return claude_json(prompt, model)
+
+
+def judge(pair, models, stages=(), run_test=None):
+    """Put one claim on trial (the 5-step process). models: {strong, cheap}."""
+    strong, cheap = models["strong"], models["cheap"]
+    trail = {}
+
+    snap = snap_call(pair, strong)                                    # 1. snap (strong)
+    snap_v = (snap or {}).get("verdict", "consistent")
+    trail["snap"] = snap
+
+    ch = challenge_call(pair, snap_v, cheap)                          # 2. challenge (cheap)
+    trail["challenge"] = ch
+    cracked = bool(ch and ch.get("cracks"))
+
+    prongs = run_prongs(pair, strong if cracked else cheap)           # 3. blind prongs
+    trail["prongs"] = prongs
+    pv = [(p or {}).get("verdict") for p in prongs]
+
+    if not cracked:  # survived path: tally snap + 3 prongs; a 2-2 tie means the snap failed
+        votes = [snap_v] + pv
+        if votes.count("inconsistent") == votes.count("consistent"):
+            cracked = True
+            prongs = run_prongs(pair, strong)                         # escalate to strong prongs
+            trail["prongs_escalated"] = prongs
+            pv = [(p or {}).get("verdict") for p in prongs]
+
+    bs = blindspot_call(pair, cheap)                                  # 4. blind-spot (cheap)
+    trail["blindspot"] = bs
+    missed = bool(bs and bs.get("missed_angle"))
+
+    all_votes = [snap_v] + pv
+    if not missed and len(set(all_votes)) == 1:      # everyone agrees, nothing missed → done
+        verdict, category, why = snap_v, (snap or {}).get("category"), (snap or {}).get("why")
+    else:                                            # 5. synthesis (strong), only when contested
+        syn = synthesis_call(pair, snap, ch, prongs, bs, strong)
+        trail["synthesis"] = syn
+        verdict = (syn or {}).get("verdict", snap_v)
+        category, why = (syn or {}).get("category"), (syn or {}).get("why")
+
+    return {"verdict": verdict, "category": category, "why": why, "contested": cracked or missed,
+            "stages": trail}
 
 
 def score(rows):
@@ -257,28 +315,48 @@ def selftest():
     bal = split_metrics(noisy, 0.50, resamples=500)
     assert bal["precision"] > nat["precision"], (bal, nat)
 
-    # Judge composition: stub the CLI + executor so no API/toolchain is touched. The one judge
-    # call flags; the optional execution step confirms or kills the flag.
-    global claude_json, claude_text
-    real_json, real_text = claude_json, claude_text
-    claude_json = lambda prompt, model, tools="", timeout=300: {
-        "id": "x", "verdict": "inconsistent", "category": "direct-mismatch", "why": "q"}
-    claude_text = lambda prompt, model, timeout=300: "assert True\n"  # synthesized test source
+    # The trial: stub the CLI so no API is touched. `scripted` feeds each stage a canned reply
+    # keyed by what the prompt is asking, so we can drive the flow deterministically.
+    global claude_json
+    real_json = claude_json
+    def scripted(replies):
+        def fake(prompt, model, tools="", timeout=300):
+            if "final judge" in prompt:    return replies["synthesis"]   # embeds the record; check first
+            if '"cracks"' in prompt:       return replies["challenge"]
+            if '"role"' in prompt:         return replies["prong"](prompt)
+            if '"missed_angle"' in prompt: return replies["blindspot"]
+            return replies["snap"]         # the snap call
+        return fake
     pair = {"id": "x", "func": "f", "code": "def f(): pass", "doc": "d", "language": "python"}
+    M = {"strong": "", "cheap": ""}
+    con = lambda: {"verdict": "consistent"}
+    inc = lambda: {"verdict": "inconsistent", "category": "direct-mismatch", "why": "q"}
     try:
-        # judge alone → flags
-        assert judge(pair, {"base": "", "verify": ""}, set())["verdict"] == "inconsistent"
-        # + prove passes → execution kills the false positive
-        g = judge(pair, {"base": "", "verify": ""}, {"prove"}, run_test=lambda l, s: ("pass", ""))
-        assert g["verdict"] == "consistent" and g["stages"]["prove"]["outcome"] == "pass", g
-        # + prove fails → execution confirms the drift
-        g = judge(pair, {"base": "", "verify": ""}, {"prove"}, run_test=lambda l, s: ("fail", ""))
-        assert g["verdict"] == "inconsistent", g
-        # + prove can't run → verdict stands (execution never manufactures or drops on a skip)
-        g = judge(pair, {"base": "", "verify": ""}, {"prove"}, run_test=lambda l, s: ("skip:x", ""))
-        assert g["verdict"] == "inconsistent", g
+        # snap=drift, challenge can't crack it, all prongs agree drift, no blind spot → unanimous
+        # drift with NO synthesis call.
+        claude_json = scripted({"snap": inc(), "challenge": {"cracks": False},
+                                "prong": lambda p: inc(), "blindspot": {"missed_angle": None},
+                                "synthesis": con()})
+        g = judge(pair, M)
+        assert g["verdict"] == "inconsistent" and "synthesis" not in g["stages"], g
+        # snap=drift survives challenge, but prongs split 2 consistent / 1 inconsistent →
+        # with the snap that's a 2-2 tie → escalate + synthesis decides (here: consistent).
+        flips = iter(["consistent", "consistent", "inconsistent",     # cheap prongs (tie)
+                      "consistent", "consistent", "inconsistent"])    # escalated strong prongs
+        claude_json = scripted({"snap": inc(), "challenge": {"cracks": False},
+                                "prong": lambda p: {"verdict": next(flips)},
+                                "blindspot": {"missed_angle": None}, "synthesis": con()})
+        g = judge(pair, M)
+        assert g["stages"].get("prongs_escalated") and g["contested"], g
+        assert g["verdict"] == "consistent", g          # synthesis had the last word
+        # a surfaced blind spot forces synthesis even when everyone agreed
+        claude_json = scripted({"snap": con(), "challenge": {"cracks": False},
+                                "prong": lambda p: con(),
+                                "blindspot": {"missed_angle": "edge case"}, "synthesis": inc()})
+        g = judge(pair, M)
+        assert "synthesis" in g["stages"] and g["verdict"] == "inconsistent", g
     finally:
-        claude_json, claude_text = real_json, real_text
+        claude_json = real_json
     print("selftest ok")
 
 
@@ -295,33 +373,33 @@ def main():
         return report(rows_from_transcript(json.loads(path.read_text())), f", rescored from {path.name}")
     ds = Path(sys.argv[sys.argv.index("--dataset") + 1]) if "--dataset" in sys.argv \
         else Path(os.environ.get("EVAL_DATASET", HERE / "dataset.jsonl"))
-    # The judge always runs; "prove" (execution confirm) is the one optional add-on.
-    stages = set(s for s in os.environ.get("EVAL_STAGES", "").split(",") if s)
-    base_model = os.environ.get("EVAL_MODEL_BASE") or os.environ.get("EVAL_MODEL", "")
-    verify_model = os.environ.get("EVAL_MODEL_VERIFY") or os.environ.get("EVAL_MODEL", "")
-    models = {"base": base_model, "verify": verify_model}
-    tag = "-".join(sorted({"judge", *stages}))
+    # Two tiers: strong (snap + escalated prongs + synthesis) and cheap (challenge, prongs,
+    # blind-spot). Fable is banned from every role in this project.
+    strong = os.environ.get("EVAL_MODEL_STRONG", "claude-opus-4-8")
+    cheap = os.environ.get("EVAL_MODEL_CHEAP", "claude-sonnet-5")
+    for role, m in (("strong", strong), ("cheap", cheap)):
+        assert "fable" not in m.lower(), f"Fable is banned from this project ({role}={m})"
+    models = {"strong": strong, "cheap": cheap}
     pairs = [json.loads(l) for l in ds.read_text().splitlines() if l.strip()]
     out_dir = HERE / "out"; out_dir.mkdir(exist_ok=True)
-    out_path = out_dir / f"bench-{ds.stem}-{verify_model or base_model or 'default'}-{tag}.json"
+    out_path = out_dir / f"bench-{ds.stem}-trial-{strong}.json"
     done = {t["id"]: t for t in json.loads(out_path.read_text())} if out_path.exists() else {}
     todo = [p for p in pairs if p["id"] not in done]  # resumable: crash loses nothing scored
     workers = int(os.environ.get("EVAL_CONCURRENCY", "1"))
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for p, v in zip(todo, pool.map(lambda p: judge(p, models, stages), todo)):
+        for p, v in zip(todo, pool.map(lambda p: judge(p, models), todo)):
             done[p["id"]] = {**p, "got": v}
             verdict = (v or {}).get("verdict", "consistent")
-            trail = "→".join(k for k in ("judge", "prove")
-                             if k in (v or {}).get("stages", {}))
+            path = "contested" if (v or {}).get("contested") else "clear"
             mark = "✓" if (verdict == "inconsistent") == (p["label"] == "inconsistent") else "✗"
             print(f"  {mark} [{len(done)}/{len(pairs)}] {p['id']:40} label={p['label']:12} "
-                  f"verdict={verdict:12} [{trail}]", flush=True)
+                  f"verdict={verdict:12} [{path}]", flush=True)
             if len(done) % 25 == 0:
                 out_path.write_text(json.dumps(list(done.values()), indent=2))
     transcript = [done[p["id"]] for p in pairs]
     out_path.write_text(json.dumps(transcript, indent=2))
-    report(rows_from_transcript(transcript), f", stages={tag}, verify={verify_model or 'CLI default'}")
+    report(rows_from_transcript(transcript), f", trial, strong={strong} cheap={cheap}")
 
 
 if __name__ == "__main__":
