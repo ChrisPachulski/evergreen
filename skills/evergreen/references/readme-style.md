@@ -44,6 +44,13 @@ feature-comparison matrices · benchmark dumps (a single purposeful chart is the
 > README stuffed with changelog/planning, it *cuts* — moving that content out, not prettying it
 > up in place.
 
+**One scope caveat that outranks the list:** it describes what the *visitor-facing top* never
+carries. "Full API reference inline" is banished to a docs site **when the project has one**. The
+28 surveyed repos all do; internal tools and monorepo packages usually don't — there, the README
+*is* the documentation, and the reference moves into `<details>` below the fold instead of leaving
+the file. Deleting it because the survey repos don't carry one is cargo-culting the shape while
+destroying the substance.
+
 ## The opening (the 1–3 lines that carry the file)
 
 Two registers, both gold — pick by product, and know which you're reaching for.
@@ -129,6 +136,10 @@ Bimodal — pick the archetype, don't split the difference:
   offloaded to docs. The modern default; reach for this unless the project genuinely needs more.
 - **Onboarding / governed (~1,200–2,500 words)** — adds inline quick-start, governance, team.
   Justified only when the project demands it; still tight, never sprawling.
+
+`<details>` content is rent-free: the budgets above measure the open page, not the collapsed
+reference beneath it. A gateway top over a deep collapsible reference is the correct shape for a
+README that is its project's only documentation — not a budget violation to fix by deletion.
 
 ## Skeleton (a flourish target, fill from the code)
 

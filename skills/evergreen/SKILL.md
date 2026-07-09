@@ -177,7 +177,10 @@ The reflex is the *truth* axis. Two on-demand commands, same prove-or-drop creed
   only): restructure an accurate-but-ugly doc toward `skills/evergreen/references/readme-style.md`,
   then run the freshness ladder on the rewrite so nothing ships the code can't back. "Why" derived
   from code by default; `--manual` markers it; a rationale with no code trace is markered, never
-  invented.
+  invented. Flourish is **content-conserving**: it rearranges and rehomes, it never shrinks the
+  truth — demote means move verbatim into `<details>` or a linked file, every cut is named on a
+  ledger with its destination, and sole-copy reference material is never deleted
+  (`hard-goals/flourish.md` makes each of those binary).
 - **`/evergreen:cultivate` — hygiene.** Repo tidiness: files nothing references, local-only leaks,
   gitignore gaps, misplaced cross-repo artifacts, and the repo's own exposure (public when something
   in it assumes private — checked against `gh`, never the prose). Reference graph first (on disk, not

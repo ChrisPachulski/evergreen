@@ -41,8 +41,13 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
      placeholder box or "screenshot goes here" text. Raise a missing screenshot in your summary, not
      the doc.
    Then **demote** deep technical detail (full architecture, exhaustive dev setup, API surface) below
-   the visitor-facing top, and **cut** what great READMEs never carry (changelog dumps, roadmaps,
-   planning notes, aspirational features, inline API reference) — move it out or link it. Fill
+   the visitor-facing top — and demote means **move, verbatim, into `<details>` or a linked doc
+   file**, never compress-to-summary. A 200-line API reference that comes back as a ten-line "module
+   map" wasn't demoted; it was destroyed with better manners. **Cut** is reserved for the
+   never-present set (changelog dumps, roadmaps, planning notes, aspirational features), and even a
+   cut runs a destination check first: content whose only home is this README — no docs site, no
+   linked file, the norm in internal repos — gets rehomed or collapsed, never deleted. Deleting the
+   sole copy of true reference material is not craft; it is data loss wearing a hero image. Fill
    *derivable* gaps from the code (install from the manifest, usage from the CLI/exported API, a
    runnable example). Write the "why" from code evidence (auto) or `<!-- evergreen: fill in -->`
    marker it (`--manual`). Restructuring is not fabrication — you rearrange claims the code already
@@ -97,7 +102,15 @@ the craft pass.
 **Structure floor.** First screenful is hero → value prop → features → quick start (not
 architecture); a visual product shows a screenshot or an invisible comment marker (never a visible
 "screenshot goes here" box); features are bullets, not paragraphs; deep internals sit below the
-visitor top; the never-present set (changelog/roadmap/aspirational/inline API) is cut, not prettied.
+visitor top; the never-present set (changelog/roadmap/aspirational) is cut, not prettied — and an
+inline API reference is *rehomed* (linked docs or `<details>`), never deleted.
+
+**Conservation floor** (the floor this test exists to never skip again). Flourish rearranges the
+truth; it does not shrink it. Check mechanically, not by feel: every `##`/`###` section of the
+source doc is either (a) present in the result, (b) moved verbatim into a `<details>` block or a
+file the result links to, or (c) named in your summary as an explicit cut with its reason. Diff the
+heading sets. A result that passes face and spine but fails this is the *third* monstrosity — the
+beautiful gutting — and it is a failed flourish even if every surviving line is true.
 
 **Voice floor** (the one flourish keeps skipping). Read the first three lines aloud: do they make you
 *feel the problem*, or do they only define the tool? Is there a tagline with a point of view, distinct
@@ -116,14 +129,18 @@ sailed through before.
 - **challenge (must survive):** "no — it's still flat: here's the definitional opener with no hook,
   the missing centered hero, the toneless section intro." A "looks done" that can't beat "it's
   still ugly" does not ship.
-- **three blind reads:** *defend* it's done / *attack the prose* (voice, hook, tagline,
-  personality in the seams) / *attack the structure* (hero, spine, badges, earned visual).
+- **blind reads:** *defend* it's done / *attack the prose* (voice, hook, tagline, personality in
+  the seams) / *attack the structure* (hero, spine, badges, earned visual) / *attack the loss*
+  (which section, table, formula, or gotcha from the source doc has no home in the result? name
+  one and the verdict flips).
 - **blind-spot:** "did everyone miss that a badge or feature bullet claims something the code
   can't back?" — a hit here routes back to the truth trial (step 4), because a beautiful lie is
-  still a lie.
+  still a lie. A beautiful gutting is too — a loss hit routes back to the conservation floor.
 
 The craft verdict is fuzzier than the truth one — "survives the attack that it's ugly" is a
 discipline against an over-confident "done", not a precision metric. Don't dress it up as one.
 
 Open with a one-line read of what you restructured *and how you sharpened the voice*, the verify
-verdict (certified / cut / markered), then the diff.
+verdict (certified / cut / markered), the conservation ledger (sections kept / demoted / rehomed /
+cut-with-reason — the hard goals in `skills/evergreen/hard-goals/flourish.md` make this binary),
+then the diff.
