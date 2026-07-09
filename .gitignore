@@ -7,3 +7,7 @@ eval/out/
 eval/bench/out/
 eval/bench/*.log
 __pycache__/
+# >>> autoloop managed (ephemeral runtime dirs) >>>
+.autoloop-self/
+.claude/worktrees/
+# <<< autoloop managed <<<
