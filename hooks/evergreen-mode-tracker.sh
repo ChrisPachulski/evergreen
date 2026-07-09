@@ -30,12 +30,14 @@ if printf '%s' "$p" | grep -qE "(don'?t|do not|never|won'?t|would ?n'?t|should ?
   exit 0
 fi
 
-# Precedence: strict > light > off. "off" needs evergreen named — a bare "normal mode" never fires.
-if   printf '%s' "$p" | grep -qE '([/@$]?evergreen[: ]+strict\b|set evergreen to strict)'; then
+# Precedence: strict > light > off. Terse forms REQUIRE a sigil (/evergreen strict, @evergreen: light)
+# so descriptive prose that merely mentions a mode ("the evergreen strict mode is documented...")
+# can never flip persistent state; imperative verb forms ("set evergreen to X", "stop evergreen") stay.
+if   printf '%s' "$p" | grep -qE '([/@$]evergreen[: ]+strict\b|set evergreen to strict)'; then
   set_mode strict
-elif printf '%s' "$p" | grep -qE '([/@$]?evergreen[: ]+light\b|set evergreen to light)'; then
+elif printf '%s' "$p" | grep -qE '([/@$]evergreen[: ]+light\b|set evergreen to light)'; then
   set_mode light
-elif printf '%s' "$p" | grep -qE '([/@$]?evergreen[: ]+off\b|set evergreen to off|stop evergreen|evergreen[: ]+normal\b|normal mode for evergreen)'; then
+elif printf '%s' "$p" | grep -qE '([/@$]evergreen[: ]+off\b|set evergreen to off|stop evergreen|[/@$]evergreen[: ]+normal\b|normal mode for evergreen)'; then
   set_mode off
 fi
 exit 0

@@ -67,6 +67,13 @@ printf '{"prompt":"do not stop evergreen"}' | bash "$HOOKS/evergreen-mode-tracke
 [ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: negated request does not flip state" || no "tracker: negation wrote $(cat "$TMP/.evergreen-mode")"
 printf '{"prompt":"hi","context":"set evergreen to strict"}' | bash "$HOOKS/evergreen-mode-tracker.sh" >/dev/null
 [ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: non-prompt JSON field does not flip state" || no "tracker: non-prompt field wrote $(cat "$TMP/.evergreen-mode")"
+printf '{"prompt":"The evergreen strict mode is documented in the README"}' | bash "$HOOKS/evergreen-mode-tracker.sh" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: prose mentioning 'evergreen strict' does not flip state" || no "tracker: prose mention wrote $(cat "$TMP/.evergreen-mode")"
+printf '{"prompt":"I read a post comparing evergreen: light docs approaches"}' | bash "$HOOKS/evergreen-mode-tracker.sh" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: prose mentioning 'evergreen: light' does not flip state" || no "tracker: prose mention wrote $(cat "$TMP/.evergreen-mode")"
+printf '{"prompt":"@evergreen: off"}' | bash "$HOOKS/evergreen-mode-tracker.sh" >/dev/null
+eq "$(cat "$TMP/.evergreen-mode" 2>/dev/null)" "off" "tracker: sigiled @evergreen: off -> off"
+rm -f "$TMP/.evergreen-mode"
 
 # --- stop hook (post-turn audit request; guards + mode gate) ---
 rm -f "$TMP/.evergreen-mode"
