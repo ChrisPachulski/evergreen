@@ -213,6 +213,15 @@ has "$(printf '%s' "$joined_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/
 escaped_payload="$(guard_payload "g\\it a\\dd . && g\\it com\\mit -m x")"
 has "$(printf '%s' "$escaped_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
   "separate" "guard: unavailable Python joins backslash-split Git words"
+continued_git_payload="$(guard_payload $'g\\\nit add . && git commit -m x')"
+has "$(printf '%s' "$continued_git_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "separate" "guard: unavailable Python joins continued git word"
+continued_add_payload="$(guard_payload $'git a\\\ndd . && git commit -m x')"
+has "$(printf '%s' "$continued_add_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "separate" "guard: unavailable Python joins continued add word"
+continued_commit_payload="$(guard_payload $'git add . && git com\\\nmit -m x')"
+has "$(printf '%s' "$continued_commit_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "separate" "guard: unavailable Python joins continued commit word"
 git -C "$TMP" add -f .env
 commit_payload="$(guard_payload "git commit -m x")"
 has "$(printf '%s' "$commit_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
