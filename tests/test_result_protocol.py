@@ -3,7 +3,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
+from ci import result_protocol
 from ci.result_protocol import load_validated_result, parse_result, validate_result
 
 
@@ -147,6 +149,7 @@ class ResultProtocolTests(unittest.TestCase):
 
     def test_rejects_boolean_schema_and_non_string_status_without_raising(self):
         self.assert_invalid(self.result(schema_version=True), "schema_version")
+        self.assert_invalid(self.result(schema_version=1.0), "schema_version")
         self.assert_invalid(self.result(status=["complete"]), "status")
 
     def test_rejects_missing_or_extra_envelope_fields(self):
@@ -179,6 +182,16 @@ class ResultProtocolTests(unittest.TestCase):
                 )
                 self.assert_invalid(result, "doc_path")
 
+    def test_rejects_nul_and_lone_surrogate_paths_without_raising(self):
+        for path in ["docs/\0usage.md", "docs/\ud800.md"]:
+            with self.subTest(path=repr(path)):
+                finding = self.finding(doc_path=path)
+                result = self.result(
+                    claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                    findings=[finding],
+                )
+                self.assert_invalid(result, "doc_path")
+
     def test_rejects_symlink_escape(self):
         outside = self.repo.parent / "outside-result-protocol.md"
         outside.write_text("Run `shipit --workers 4`.\n", encoding="utf-8")
@@ -193,9 +206,54 @@ class ResultProtocolTests(unittest.TestCase):
                 claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
                 findings=[finding],
             )
-            self.assert_invalid(result, "escapes repository")
+            self.assert_invalid(result, "symlink")
         finally:
             outside.unlink(missing_ok=True)
+
+    def test_rejects_git_tree_symlink_even_if_worktree_is_regular(self):
+        link = self.repo / "linked.md"
+        link.symlink_to("docs/usage.md")
+        self.git("add", "linked.md")
+        self.head = self.commit("tree symlink")
+        link.unlink()
+        link.write_text("Run `shipit --workers 4`.\n", encoding="utf-8")
+
+        finding = self.finding(doc_path="linked.md", doc_line=1)
+        result = self.result(
+            head=self.head,
+            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            findings=[finding],
+        )
+        self.assert_invalid(result, "symlink")
+
+    def test_uses_expected_tree_when_worktree_file_becomes_escape_symlink(self):
+        outside = self.repo.parent / "outside-mutable-worktree.md"
+        outside.write_text("untrusted mutable content\n", encoding="utf-8")
+        doc = self.repo / "docs/usage.md"
+        doc.unlink()
+        doc.symlink_to(outside)
+        try:
+            finding = self.finding()
+            result = self.result(
+                claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                findings=[finding],
+            )
+            self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
+        finally:
+            outside.unlink(missing_ok=True)
+
+    def test_rejects_symlink_loop_without_raising(self):
+        loop = self.repo / "loop.md"
+        loop.symlink_to("loop.md")
+        self.git("add", "loop.md")
+        self.head = self.commit("symlink loop")
+        finding = self.finding(doc_path="loop.md", doc_line=1)
+        result = self.result(
+            head=self.head,
+            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            findings=[finding],
+        )
+        self.assert_invalid(result, "symlink")
 
     def test_rejects_invalid_or_missing_citation_lines(self):
         for updates in [{"doc_line": 0}, {"doc_line": 99}, {"code_line": -1}, {"code_line": 99}]:
@@ -228,6 +286,20 @@ class ResultProtocolTests(unittest.TestCase):
                     findings=[finding],
                 )
                 self.assert_invalid(result, "claim")
+
+    def test_rejects_whitespace_only_claim_and_why(self):
+        for updates, phrase in [({"claim": " \t"}, "claim"), ({"why": " \t"}, "why")]:
+            with self.subTest(updates=updates):
+                finding = self.finding(**updates)
+                result = self.result(
+                    claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                    findings=[finding],
+                )
+                errors = validate_result(result, self.repo, self.base, self.head)
+                self.assertTrue(
+                    any(phrase in error and "non-whitespace" in error for error in errors),
+                    errors,
+                )
 
     def test_rejects_invalid_finding_enums(self):
         cases = [
@@ -278,6 +350,39 @@ class ResultProtocolTests(unittest.TestCase):
         self.assert_invalid(result, "why")
 
         self.assert_invalid(self.result(errors=["x"] * 101), "errors")
+
+    def test_bounds_head_blob_reads(self):
+        self.write(
+            "docs/huge.md",
+            "Documented claim\n" + "x" * (result_protocol.MAX_CITATION_BYTES + 1),
+        )
+        self.head = self.commit("huge citation")
+        finding = self.finding(
+            doc_path="docs/huge.md",
+            doc_line=1,
+            claim="Documented claim",
+        )
+        result = self.result(
+            head=self.head,
+            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            findings=[finding],
+        )
+        self.assert_invalid(result, "citation exceeds")
+
+    def test_caches_head_blob_reads_by_path(self):
+        findings = [self.finding(), self.finding()]
+        result = self.result(
+            claims={"total": 2, "certified": 0, "drift": 2, "unverified": 0},
+            findings=findings,
+        )
+        real_popen = subprocess.Popen
+        with mock.patch.object(result_protocol.subprocess, "Popen", wraps=real_popen) as popen:
+            self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
+        cat_file_calls = [
+            call for call in popen.call_args_list
+            if "cat-file" in call.args[0]
+        ]
+        self.assertEqual(len(cat_file_calls), 2)
 
 
 if __name__ == "__main__":

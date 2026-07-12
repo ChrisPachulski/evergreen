@@ -12,6 +12,7 @@ MAX_ITEMS = 100
 MAX_PATH = 1024
 MAX_TEXT = 4096
 MAX_RUNTIME_TEXT = 256
+MAX_CITATION_BYTES = 1_048_576
 
 RESULT_FIELDS = {
     "schema_version", "status", "base", "head", "claims", "findings",
@@ -72,7 +73,10 @@ def _text(
     limit: int = MAX_TEXT,
     single_line: bool = False,
 ) -> bool:
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value.strip():
+        errors.append(f"{label} must contain non-whitespace text")
+        return False
+    if "\x00" in value or any("\ud800" <= char <= "\udfff" for char in value):
         errors.append(f"{label} must be a non-empty string")
         return False
     if len(value) > limit:
@@ -116,28 +120,72 @@ def _repo_path(value: object, label: str, repo: Path, errors: list[str]) -> str 
     ):
         errors.append(f"{label} must be a normalized repository-relative path")
         return None
-    resolved = (repo / path).resolve()
-    if not resolved.is_relative_to(repo):
-        errors.append(f"{label} escapes repository: {path}")
-        return None
     return path
 
 
-def _head_lines(repo: Path, head: str, path: str, label: str, errors: list[str]) -> list[str] | None:
-    result = subprocess.run(
-        ["git", "-C", str(repo), "show", f"{head}:{path}"],
+def _head_blob(
+    repo: Path,
+    head: str,
+    path: str,
+) -> tuple[list[str] | None, str | None]:
+    entry = subprocess.run(
+        ["git", "-C", str(repo), "ls-tree", "-z", head, "--", f":(literal){path}"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
-    if result.returncode:
-        errors.append(f"{label} does not exist at head: {path}")
-        return None
+    if entry.returncode or not entry.stdout:
+        return None, f"does not exist at head: {path}"
     try:
-        return result.stdout.decode("utf-8").splitlines()
+        record = entry.stdout.rstrip(b"\0")
+        metadata, raw_path = record.split(b"\t", 1)
+        mode, kind, object_id = metadata.decode("ascii").split()
+        tree_path = raw_path.decode("utf-8")
+    except (UnicodeDecodeError, ValueError):
+        return None, f"has invalid Git tree metadata at head: {path}"
+    if tree_path != path:
+        return None, f"does not identify one exact Git tree object at head: {path}"
+    if mode == "120000":
+        return None, f"is a symlink at head: {path}"
+    if kind != "blob":
+        return None, f"is not a file blob at head: {path}"
+
+    process = subprocess.Popen(
+        ["git", "-C", str(repo), "cat-file", "blob", object_id],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    assert process.stdout is not None
+    content = process.stdout.read(MAX_CITATION_BYTES + 1)
+    oversized = len(content) > MAX_CITATION_BYTES
+    if oversized:
+        process.terminate()
+    process.stdout.close()
+    returncode = process.wait()
+    if oversized:
+        return None, f"citation exceeds {MAX_CITATION_BYTES} bytes at head: {path}"
+    if returncode:
+        return None, f"could not read file blob at head: {path}"
+    try:
+        return content.decode("utf-8").splitlines(), None
     except UnicodeDecodeError:
-        errors.append(f"{label} is not UTF-8 text at head: {path}")
-        return None
+        return None, f"is not UTF-8 text at head: {path}"
+
+
+def _head_lines(
+    repo: Path,
+    head: str,
+    path: str,
+    label: str,
+    errors: list[str],
+    cache: dict[str, tuple[list[str] | None, str | None]],
+) -> list[str] | None:
+    if path not in cache:
+        cache[path] = _head_blob(repo, head, path)
+    lines, failure = cache[path]
+    if failure:
+        errors.append(f"{label} {failure}")
+    return lines
 
 
 def _citation(
@@ -146,6 +194,7 @@ def _citation(
     repo: Path,
     head: str,
     errors: list[str],
+    cache: dict[str, tuple[list[str] | None, str | None]],
     *,
     verify_claim: bool,
 ) -> None:
@@ -155,7 +204,7 @@ def _citation(
     line_ok = _integer(item.get(line_key), line_key, errors, positive=True)
     if path is None or not line_ok:
         return
-    lines = _head_lines(repo, head, path, path_key, errors)
+    lines = _head_lines(repo, head, path, path_key, errors, cache)
     line = item[line_key]
     if lines is None:
         return
@@ -166,7 +215,14 @@ def _citation(
         errors.append(f"claim does not occur on cited documentation line {path}:{line}")
 
 
-def _validate_finding(item: object, index: int, repo: Path, head: str, errors: list[str]) -> None:
+def _validate_finding(
+    item: object,
+    index: int,
+    repo: Path,
+    head: str,
+    errors: list[str],
+    cache: dict[str, tuple[list[str] | None, str | None]],
+) -> None:
     label = f"findings[{index}]"
     if not _shape(item, FINDING_FIELDS, label, errors):
         return
@@ -176,18 +232,25 @@ def _validate_finding(item: object, index: int, repo: Path, head: str, errors: l
     _enum(item["fix_or_flag"], FIX_OR_FLAG, f"{label}.fix_or_flag", errors)
     _text(item["claim"], f"{label}.claim", errors, single_line=True)
     _text(item["why"], f"{label}.why", errors)
-    _citation(item, "doc", repo, head, errors, verify_claim=True)
-    _citation(item, "code", repo, head, errors, verify_claim=False)
+    _citation(item, "doc", repo, head, errors, cache, verify_claim=True)
+    _citation(item, "code", repo, head, errors, cache, verify_claim=False)
 
 
-def _validate_unverified(item: object, index: int, repo: Path, head: str, errors: list[str]) -> None:
+def _validate_unverified(
+    item: object,
+    index: int,
+    repo: Path,
+    head: str,
+    errors: list[str],
+    cache: dict[str, tuple[list[str] | None, str | None]],
+) -> None:
     label = f"unverified[{index}]"
     if not _shape(item, UNVERIFIED_FIELDS, label, errors):
         return
     assert isinstance(item, dict)
     _text(item["claim"], f"{label}.claim", errors, single_line=True)
     _text(item["reason"], f"{label}.reason", errors)
-    _citation(item, "doc", repo, head, errors, verify_claim=True)
+    _citation(item, "doc", repo, head, errors, cache, verify_claim=True)
 
 
 def validate_result(
@@ -198,11 +261,12 @@ def validate_result(
 ) -> list[str]:
     """Return every protocol or HEAD-citation error in a result envelope."""
     errors: list[str] = []
+    citation_cache: dict[str, tuple[list[str] | None, str | None]] = {}
     repo = Path(repo).resolve()
     if not _shape(result, RESULT_FIELDS, "result", errors):
         return errors
 
-    if isinstance(result["schema_version"], bool) or result["schema_version"] != SCHEMA_VERSION:
+    if type(result["schema_version"]) is not int or result["schema_version"] != SCHEMA_VERSION:
         errors.append(f"schema_version must be {SCHEMA_VERSION}")
     _enum(result["status"], STATUSES, "status", errors)
     if result["base"] != expected_base:
@@ -235,10 +299,10 @@ def validate_result(
 
     if isinstance(result["findings"], list) and len(result["findings"]) <= MAX_ITEMS:
         for index, item in enumerate(result["findings"]):
-            _validate_finding(item, index, repo, expected_head, errors)
+            _validate_finding(item, index, repo, expected_head, errors, citation_cache)
     if isinstance(result["unverified"], list) and len(result["unverified"]) <= MAX_ITEMS:
         for index, item in enumerate(result["unverified"]):
-            _validate_unverified(item, index, repo, expected_head, errors)
+            _validate_unverified(item, index, repo, expected_head, errors, citation_cache)
     if isinstance(result["errors"], list) and len(result["errors"]) <= MAX_ITEMS:
         for index, item in enumerate(result["errors"]):
             _text(item, f"errors[{index}]", errors)
