@@ -1,11 +1,11 @@
 """Reversible Claude and Codex host integration."""
 
+import ast
 from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
 import stat
-import subprocess
 import time
 import uuid
 
@@ -16,7 +16,7 @@ OWNERSHIP_FILE = ".evergreen-owned.json"
 MAX_STATE_BYTES = 4096
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_INSTRUCTION_BYTES = 1024 * 1024
-COMMAND_SMOKE_TIMEOUT_SECONDS = 5
+MAX_COMMAND_BYTES = 1024 * 1024
 # Elapsed-time detection only: regular-file syscalls are not portably interruptible.
 READ_ELAPSED_LIMIT_SECONDS = 3
 
@@ -57,6 +57,7 @@ class PathSnapshot:
     mode: int | None = None
     dev: int | None = None
     ino: int | None = None
+    nlink: int | None = None
 
 
 @dataclass(frozen=True)
@@ -158,12 +159,12 @@ def doctor(home: Path, plugin_root: Path, host: str = "all") -> OperationResult:
     expected_skill = canonical[1] if canonical else root / "skills" / "evergreen"
     expected_block = _block(root)
     if canonical:
-        smoke_error = _smoke_command(root / "bin" / "evergreen")
-        if smoke_error:
+        command_error = _validate_python_command(root / "bin" / "evergreen")
+        if command_error:
             healthy = False
-            messages.append(f"error command smoke test failed: {smoke_error}")
+            messages.append(f"error command static validation failed: {command_error}")
         else:
-            messages.append("ok command smoke test")
+            messages.append("ok command static validation")
     for status in selected:
         state, state_error = _load_ownership(status)
         if state_error:
@@ -494,6 +495,10 @@ def _apply(plans, dry_run, captured):
         return OperationResult(False, tuple(messages + [f"error: transaction preflight failed: {error}"]))
     if dry_run:
         return OperationResult(True, tuple(messages))
+    messages.append(
+        "note: host operations require exclusive access; conflict checks are not "
+        "portable compare-and-swap"
+    )
     rollback_entries = []
     conflicts = []
     try:
@@ -504,7 +509,7 @@ def _apply(plans, dry_run, captured):
             try:
                 _verify_snapshot_at(captured[path], parent_fd)
                 try:
-                    _perform_action(
+                    postimage = _perform_action(
                         action, path, value, parent_fd=parent_fd,
                         expected=captured[path],
                     )
@@ -519,7 +524,7 @@ def _apply(plans, dry_run, captured):
                         raise
                     if current == captured[path]:
                         pass
-                    elif _matches_postimage(action, value, current):
+                    elif _matches_postimage(action, value, current, captured[path]):
                         rollback_entries.append(RollbackEntry(
                             captured[path], current, captured[path.parent]
                         ))
@@ -534,11 +539,11 @@ def _apply(plans, dry_run, captured):
                         f"{snapshot_error}"
                     )
                     raise
-                if not _matches_postimage(action, value, current):
+                if current != postimage:
                     conflicts.append(f"{path}: preserved concurrent state")
                     raise OSError(f"transaction postimage mismatch: {path}")
                 rollback_entries.append(RollbackEntry(
-                    captured[path], current, captured[path.parent]
+                    captured[path], postimage, captured[path.parent]
                 ))
                 _verify_open_directory_path(path.parent, parent_fd)
             finally:
@@ -553,11 +558,13 @@ def _apply(plans, dry_run, captured):
         recovery = conflicts + rollback_errors
         if recovery:
             return OperationResult(False, tuple(messages + [
-                f"error: apply failed: {error}; rollback failed; manual recovery required: "
+                f"error: apply failed: {error}; verified rollback incomplete; "
+                "manual recovery required: "
                 + "; ".join(recovery)
             ]))
         return OperationResult(False, tuple(messages + [
-            f"error: apply failed: {error}; all changes rolled back"
+            f"error: apply failed: {error}; ordinary recovery completed under the "
+            "exclusive-access requirement"
         ]))
     return OperationResult(True, tuple(messages))
 
@@ -603,24 +610,24 @@ def _snapshot(path, allow_directory=False):
             raise OSError(f"refusing changed transaction path: {path}")
         return PathSnapshot(
             path, kind, data=data, mode=stat.S_IMODE(metadata.st_mode),
-            dev=metadata.st_dev, ino=metadata.st_ino,
+            dev=metadata.st_dev, ino=metadata.st_ino, nlink=metadata.st_nlink,
         )
     if kind == "symlink":
         before = path.lstat()
         target = os.readlink(path)
         after = path.lstat()
-        if (before.st_dev, before.st_ino, before.st_mode) != (
-                after.st_dev, after.st_ino, after.st_mode):
+        if (before.st_dev, before.st_ino, before.st_mode, before.st_nlink) != (
+                after.st_dev, after.st_ino, after.st_mode, after.st_nlink):
             raise OSError(f"refusing changed transaction symlink: {path}")
         return PathSnapshot(
             path, kind, target=target, mode=stat.S_IMODE(after.st_mode),
-            dev=after.st_dev, ino=after.st_ino,
+            dev=after.st_dev, ino=after.st_ino, nlink=after.st_nlink,
         )
     if kind == "directory" and allow_directory:
         metadata = path.lstat()
         return PathSnapshot(
             path, kind, mode=stat.S_IMODE(metadata.st_mode),
-            dev=metadata.st_dev, ino=metadata.st_ino,
+            dev=metadata.st_dev, ino=metadata.st_ino, nlink=metadata.st_nlink,
         )
     raise OSError(f"refusing unsafe transaction path ({kind}): {path}")
 
@@ -630,12 +637,15 @@ def _open_directory(snapshot):
         raise OSError(f"transaction parent is {snapshot.kind}: {snapshot.path}")
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(snapshot.path, flags)
-    metadata = os.fstat(descriptor)
-    if (not stat.S_ISDIR(metadata.st_mode) or
-            (metadata.st_dev, metadata.st_ino) != (snapshot.dev, snapshot.ino) or
-            stat.S_IMODE(metadata.st_mode) != snapshot.mode):
+    try:
+        metadata = os.fstat(descriptor)
+        if (not stat.S_ISDIR(metadata.st_mode) or
+                (metadata.st_dev, metadata.st_ino) != (snapshot.dev, snapshot.ino) or
+                stat.S_IMODE(metadata.st_mode) != snapshot.mode):
+            raise OSError(f"transaction directory changed: {snapshot.path}")
+    except BaseException:
         os.close(descriptor)
-        raise OSError(f"transaction directory changed: {snapshot.path}")
+        raise
     return descriptor
 
 
@@ -651,20 +661,18 @@ def _prepare_parent(path, captured, rollback_entries, conflicts):
     try:
         _verify_snapshot_at(snapshot, descriptor)
         os.mkdir(path.name, mode=0o755, dir_fd=descriptor)
-        os.fsync(descriptor)
         created = _snapshot_at(path, descriptor)
         if created.kind != "directory":
             raise OSError(f"transaction directory postimage mismatch: {path}")
         rollback_entries.append(RollbackEntry(snapshot, created, grandparent))
+        os.fsync(descriptor)
     except Exception as error:
         if created is None:
             try:
                 current = _snapshot_at(path, descriptor)
             except Exception:
                 current = None
-            if current is not None and current.kind == "directory":
-                rollback_entries.append(RollbackEntry(snapshot, current, grandparent))
-            elif current != snapshot:
+            if current != snapshot:
                 conflicts.append(f"{path}: preserved concurrent state")
         raise error
     finally:
@@ -690,7 +698,10 @@ def _snapshot_at(path, parent_fd):
         return PathSnapshot(path, "absent")
     kind = _kind_from_mode(metadata.st_mode)
     mode = stat.S_IMODE(metadata.st_mode)
-    common = {"mode": mode, "dev": metadata.st_dev, "ino": metadata.st_ino}
+    common = {
+        "mode": mode, "dev": metadata.st_dev, "ino": metadata.st_ino,
+        "nlink": metadata.st_nlink,
+    }
     if kind == "regular":
         limit = MAX_STATE_BYTES if path.name == OWNERSHIP_FILE else MAX_INSTRUCTION_BYTES
         flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0)
@@ -724,8 +735,8 @@ def _snapshot_at(path, parent_fd):
     if kind == "symlink":
         target = os.readlink(path.name, dir_fd=parent_fd)
         after = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
-        if (after.st_dev, after.st_ino, after.st_mode) != (
-                metadata.st_dev, metadata.st_ino, metadata.st_mode):
+        if (after.st_dev, after.st_ino, after.st_mode, after.st_nlink) != (
+                metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_nlink):
             raise OSError(f"transaction symlink changed: {path}")
         return PathSnapshot(path, kind, target=target, **common)
     if kind == "directory":
@@ -742,15 +753,23 @@ def _verify_snapshot_at(expected, parent_fd):
 def _verify_open_directory_path(path, descriptor):
     expected = os.fstat(descriptor)
     actual = path.lstat()
-    if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
+    identity = lambda item: (
+        item.st_dev, item.st_ino, item.st_mode, item.st_nlink,
+    )
+    if identity(actual) != identity(expected):
         raise OSError(f"transaction directory changed during mutation: {path}")
 
 
-def _matches_postimage(action, value, snapshot):
+def _matches_postimage(action, value, snapshot, expected):
     if action == "write":
-        return snapshot.kind == "regular" and snapshot.data == value
+        mode = expected.mode if expected.kind == "regular" else (
+            0o600 if expected.path.name == OWNERSHIP_FILE else 0o644
+        )
+        return (snapshot.kind == "regular" and snapshot.data == value and
+                snapshot.mode == mode and snapshot.nlink == 1)
     if action == "link":
         return (snapshot.kind == "symlink" and
+                snapshot.nlink == 1 and
                 _normalized_snapshot_target(snapshot) == _normalized_lexical_path(value))
     if action == "delete":
         return snapshot.kind == "absent"
@@ -758,30 +777,34 @@ def _matches_postimage(action, value, snapshot):
 
 
 def _perform_action(action, path, value, *, parent_fd, expected):
+    _verify_snapshot_at(expected, parent_fd)
     if action == "write":
         if expected.kind == "absent":
             mode = 0o600 if path.name == OWNERSHIP_FILE else 0o644
             _create_write_at(parent_fd, path.name, value, mode)
         else:
-            metadata = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
-            _atomic_write_at(parent_fd, path.name, value, stat.S_IMODE(metadata.st_mode))
+            _atomic_write_at(parent_fd, path.name, value, expected.mode, expected)
     elif action == "link":
         if expected.kind == "absent":
             os.symlink(value, path.name, target_is_directory=True, dir_fd=parent_fd)
             os.fsync(parent_fd)
         else:
-            _atomic_link_at(parent_fd, path.name, value)
+            _atomic_link_at(parent_fd, path.name, value, expected)
     elif action == "delete":
         if expected.kind == "absent":
-            return
+            return expected
         try:
             os.unlink(path.name, dir_fd=parent_fd)
         except FileNotFoundError:
             pass
         os.fsync(parent_fd)
+    postimage = _snapshot_at(path, parent_fd)
+    if not _matches_postimage(action, value, postimage, expected):
+        raise OSError(f"transaction postimage mismatch: {path}")
+    return postimage
 
 
-def _atomic_write_at(parent_fd, name, data, mode):
+def _atomic_write_at(parent_fd, name, data, mode, expected):
     temporary = f".{name}.evergreen-{uuid.uuid4().hex}"
     descriptor = os.open(
         temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode, dir_fd=parent_fd,
@@ -793,6 +816,7 @@ def _atomic_write_at(parent_fd, name, data, mode):
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
+        _verify_snapshot_at(expected, parent_fd)
         os.replace(temporary, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
         os.fsync(parent_fd)
     finally:
@@ -831,10 +855,11 @@ def _create_write_at(parent_fd, name, data, mode):
             pass
 
 
-def _atomic_link_at(parent_fd, name, target):
+def _atomic_link_at(parent_fd, name, target, expected):
     temporary = f".{name}.evergreen-{uuid.uuid4().hex}"
     try:
         os.symlink(target, temporary, target_is_directory=True, dir_fd=parent_fd)
+        _verify_snapshot_at(expected, parent_fd)
         os.replace(temporary, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
         os.fsync(parent_fd)
     finally:
@@ -856,6 +881,7 @@ def _restore_entry(entry):
         if before.kind == "absent":
             if entry.after.kind == "directory":
                 try:
+                    _verify_snapshot_at(entry.after, parent_fd)
                     os.rmdir(entry.after.path.name, dir_fd=parent_fd)
                 except OSError as error:
                     raise OSError(
@@ -864,16 +890,21 @@ def _restore_entry(entry):
                     ) from error
                 os.fsync(parent_fd)
             else:
+                _verify_snapshot_at(entry.after, parent_fd)
                 os.unlink(entry.after.path.name, dir_fd=parent_fd)
                 os.fsync(parent_fd)
         elif before.kind == "regular":
-            _atomic_write_at(parent_fd, before.path.name, before.data, before.mode)
+            _atomic_write_at(
+                parent_fd, before.path.name, before.data, before.mode, entry.after
+            )
         elif before.kind == "symlink":
-            _atomic_link_at(parent_fd, before.path.name, before.target)
+            _atomic_link_at(parent_fd, before.path.name, before.target, entry.after)
         else:
             raise OSError(f"unsupported rollback preimage: {before.path}")
     finally:
         os.close(parent_fd)
+
+
 def _instruction_state(path):
     if _kind(path) == "absent":
         return "missing", None
@@ -1002,40 +1033,18 @@ def _read_regular_bounded(path, limit, label):
         os.close(descriptor)
 
 
-def _smoke_command(command):
-    env = {
-        "LC_ALL": "C",
-        "PATH": os.environ.get("PATH", os.defpath),
-        "PYTHONDONTWRITEBYTECODE": "1",
-    }
-    process = None
-    error = None
+def _validate_python_command(command):
     try:
-        process = subprocess.Popen(
-            [str(command), "--help"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=env,
-            cwd=str(command.parent.resolve()),
-            start_new_session=True,
-        )
-        process.wait(timeout=COMMAND_SMOKE_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        error = f"timed out after {COMMAND_SMOKE_TIMEOUT_SECONDS} seconds"
-    except OSError as caught:
-        error = str(caught)
-    finally:
-        if process is not None:
-            try:
-                os.killpg(process.pid, 9)
-            except (OSError, TypeError):
-                pass
-            process.wait()
-    if error is not None:
-        return error
-    if process.returncode != 0:
-        return f"exit status {process.returncode}"
+        payload = _read_regular_bounded(command, MAX_COMMAND_BYTES, "canonical command")
+        source = payload.decode("utf-8")
+        first_line = source.splitlines()[0] if source else ""
+        if not first_line.startswith("#!") or "python" not in first_line.lower():
+            return "canonical command requires a Python shebang"
+        ast.parse(source, filename=str(command))
+    except UnicodeDecodeError as error:
+        return f"canonical command is not UTF-8: {error}"
+    except (OSError, SyntaxError, ValueError) as error:
+        return str(error)
     return None
 
 

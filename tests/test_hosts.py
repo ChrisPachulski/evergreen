@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
-import time
 import unittest
 from unittest import mock
 
@@ -204,7 +203,7 @@ class HostTests(unittest.TestCase):
         self.assertFalse(install(skills_link_home, ROOT, "codex").ok)
         self.assertEqual(self.snapshot(include_directories=True), before)
 
-    def test_all_host_preflight_is_atomic_when_second_host_is_unsafe(self):
+    def test_all_host_preflight_rejects_unsafe_second_host_before_mutation(self):
         from evergreen.hosts import install
 
         (self.home / ".claude").mkdir()
@@ -219,7 +218,7 @@ class HostTests(unittest.TestCase):
         self.assertEqual(self.snapshot(include_directories=True), before)
         self.assertFalse((self.home / ".claude" / "CLAUDE.md").exists())
 
-    def test_install_aborts_atomically_when_instructions_change_after_planning(self):
+    def test_install_aborts_before_mutation_when_planned_instructions_change(self):
         from evergreen import hosts
 
         for directory, filename in ((".claude", "CLAUDE.md"), (".codex", "AGENTS.md")):
@@ -300,7 +299,50 @@ class HostTests(unittest.TestCase):
         self.assertFalse((skills / "evergreen").exists())
         self.assertFalse((replaced / "evergreen").exists())
 
-    def test_uninstall_aborts_atomically_when_owned_link_is_replaced_after_planning(self):
+    def test_inner_mutation_recheck_preserves_edit_after_outer_verification(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        real_action = hosts._perform_action
+
+        def edit_then_act(action, path, value, *args, **kwargs):
+            if path.name == instructions.name:
+                instructions.write_bytes(b"concurrent edit")
+            return real_action(action, path, value, *args, **kwargs)
+
+        with mock.patch.object(hosts, "_perform_action", side_effect=edit_then_act):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(instructions.read_bytes(), b"concurrent edit")
+        rendered = " ".join(result.messages).lower()
+        self.assertIn("manual recovery", rendered)
+        self.assertIn("exclusive access", rendered)
+
+    def test_mkdir_eexist_never_adopts_or_rolls_back_concurrent_directory(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        skills = codex / "skills"
+        real_mkdir = hosts.os.mkdir
+
+        def concurrent_mkdir(path, mode=0o777, *, dir_fd=None):
+            real_mkdir(path, mode, dir_fd=dir_fd)
+            real_mkdir(path, mode, dir_fd=dir_fd)
+
+        with mock.patch.object(hosts.os, "mkdir", side_effect=concurrent_mkdir):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertTrue(skills.is_dir())
+        self.assertFalse((skills / "evergreen").exists())
+        self.assertIn("manual recovery", " ".join(result.messages).lower())
+
+    def test_uninstall_aborts_before_mutation_when_owned_link_is_replaced(self):
         from evergreen import hosts
 
         (self.home / ".claude").mkdir()
@@ -343,9 +385,10 @@ class HostTests(unittest.TestCase):
         def replace_future_target(action, path, value, *args, **kwargs):
             nonlocal calls
             calls += 1
-            real_action(action, path, value, *args, **kwargs)
+            postimage = real_action(action, path, value, *args, **kwargs)
             if calls == 1:
                 changed.write_bytes(b"concurrent replacement")
+            return postimage
 
         with mock.patch.object(hosts, "_perform_action", side_effect=replace_future_target):
             result = hosts.install(self.home, ROOT, "all")
@@ -370,12 +413,13 @@ class HostTests(unittest.TestCase):
         def edit_prior_and_block_future(action, path, value, *args, **kwargs):
             nonlocal calls
             calls += 1
-            real_action(action, path, value, *args, **kwargs)
+            postimage = real_action(action, path, value, *args, **kwargs)
             if calls == 1:
                 instructions.write_bytes(b"concurrent edit")
                 skills = codex / "skills"
                 skills.mkdir(exist_ok=True)
                 (skills / "evergreen").symlink_to(self.home / "replacement")
+            return postimage
 
         with mock.patch.object(hosts, "_perform_action", side_effect=edit_prior_and_block_future):
             result = hosts.install(self.home, ROOT, "codex")
@@ -384,6 +428,79 @@ class HostTests(unittest.TestCase):
         self.assertIn("manual recovery", " ".join(result.messages))
         self.assertIn("preserved concurrent state", " ".join(result.messages))
         self.assertEqual(instructions.read_bytes(), b"concurrent edit")
+
+    def test_rollback_preserves_postimage_metadata_and_inode_changes(self):
+        from evergreen import hosts
+
+        for case in ("chmod", "hardlink", "inode"):
+            with self.subTest(case=case):
+                home = self.home / case
+                codex = home / ".codex"
+                codex.mkdir(parents=True)
+                instructions = codex / "AGENTS.md"
+                instructions.write_bytes(b"original")
+                real_action = hosts._perform_action
+                calls = 0
+                concurrent_inode = None
+
+                def mutate_then_fail(action, path, value, *args, **kwargs):
+                    nonlocal calls, concurrent_inode
+                    calls += 1
+                    if calls == 2:
+                        raise OSError("stop after concurrent mutation")
+                    postimage = real_action(action, path, value, *args, **kwargs)
+                    if case == "chmod":
+                        instructions.chmod(0o600)
+                    elif case == "hardlink":
+                        os.link(instructions, codex / "concurrent-link")
+                    else:
+                        content = instructions.read_bytes()
+                        instructions.unlink()
+                        instructions.write_bytes(content)
+                        concurrent_inode = instructions.stat().st_ino
+                    return postimage
+
+                with mock.patch.object(
+                    hosts, "_perform_action", side_effect=mutate_then_fail
+                ):
+                    result = hosts.install(home, ROOT, "codex")
+
+                self.assertFalse(result.ok)
+                self.assertIn("manual recovery", " ".join(result.messages).lower())
+                self.assertIn(hosts.BEGIN_MARKER.encode(), instructions.read_bytes())
+                if case == "chmod":
+                    self.assertEqual(instructions.stat().st_mode & 0o777, 0o600)
+                elif case == "hardlink":
+                    linked = codex / "concurrent-link"
+                    self.assertEqual(instructions.stat().st_ino, linked.stat().st_ino)
+                    self.assertEqual(instructions.stat().st_nlink, 2)
+                else:
+                    self.assertEqual(instructions.stat().st_ino, concurrent_inode)
+
+    def test_path_snapshot_records_link_count(self):
+        from evergreen import hosts
+
+        path = self.home / "snapshot"
+        path.write_bytes(b"value")
+
+        snapshot = hosts._snapshot(path)
+
+        self.assertEqual(snapshot.nlink, 1)
+
+    def test_open_directory_closes_descriptor_when_fstat_fails(self):
+        from evergreen import hosts
+
+        directory = self.home / "directory"
+        directory.mkdir()
+        snapshot = hosts._snapshot(directory, allow_directory=True)
+        real_close = hosts.os.close
+
+        with mock.patch.object(hosts.os, "fstat", side_effect=OSError("injected")), \
+             mock.patch.object(hosts.os, "close", wraps=real_close) as close:
+            with self.assertRaisesRegex(OSError, "injected"):
+                hosts._open_directory(snapshot)
+
+        close.assert_called_once()
 
     def test_invalid_canonical_plugin_refuses_real_and_dry_run_before_home_planning(self):
         from evergreen.hosts import install
@@ -462,7 +579,7 @@ class HostTests(unittest.TestCase):
                 self.assertEqual(self.snapshot(include_directories=True), before)
                 self.assertEqual(outside.read_bytes(), b"outside bytes")
 
-    def test_failure_at_every_action_boundary_rolls_back_both_hosts_exactly(self):
+    def test_failure_at_every_action_boundary_runs_ordinary_recovery(self):
         from evergreen import hosts
 
         cases = [("before-first", 1, False)] + [
@@ -484,15 +601,16 @@ class HostTests(unittest.TestCase):
                     calls += 1
                     if calls == boundary and not after:
                         raise OSError(f"injected before action {calls}")
-                    real_action(action, path, value, *args, **kwargs)
+                    postimage = real_action(action, path, value, *args, **kwargs)
                     if calls == boundary and after:
                         raise OSError(f"injected after action {calls}")
+                    return postimage
 
                 with mock.patch.object(hosts, "_perform_action", side_effect=fail_at_boundary):
                     result = hosts.install(home, ROOT, "all")
 
                 self.assertFalse(result.ok)
-                self.assertIn("rolled back", " ".join(result.messages))
+                self.assertIn("ordinary recovery completed", " ".join(result.messages))
                 self.assertEqual(self.snapshot(include_directories=True), before)
 
     def test_rollback_failure_reports_manual_recovery_and_never_success(self):
@@ -513,7 +631,7 @@ class HostTests(unittest.TestCase):
         self.assertFalse(result.ok)
         rendered = " ".join(result.messages).lower()
         self.assertIn("manual recovery", rendered)
-        self.assertIn("rollback failed", rendered)
+        self.assertIn("rollback incomplete", rendered)
         self.assertNotIn("healthy", rendered)
 
     def test_uninstall_failure_at_every_action_boundary_restores_installed_state(self):
@@ -534,15 +652,16 @@ class HostTests(unittest.TestCase):
                 def fail_after_action(action, path, value, *args, **kwargs):
                     nonlocal calls
                     calls += 1
-                    real_action(action, path, value, *args, **kwargs)
+                    postimage = real_action(action, path, value, *args, **kwargs)
                     if calls == boundary:
                         raise OSError(f"injected after uninstall action {calls}")
+                    return postimage
 
                 with mock.patch.object(hosts, "_perform_action", side_effect=fail_after_action):
                     result = hosts.uninstall(home, "all")
 
                 self.assertFalse(result.ok)
-                self.assertIn("rolled back", " ".join(result.messages))
+                self.assertIn("ordinary recovery completed", " ".join(result.messages))
                 self.assertEqual(self.snapshot(include_directories=True), before)
 
     def test_dry_run_describes_changes_without_touching_home_with_spaces(self):
@@ -708,7 +827,7 @@ class HostTests(unittest.TestCase):
         state = json.loads((self.home / ".codex" / ".evergreen-owned.json").read_text())
         self.assertEqual(state["plugin_root"], str(plugin.resolve()))
 
-    def test_doctor_smoke_tests_command_with_time_and_output_bounds(self):
+    def test_doctor_static_validation_rejects_invalid_python(self):
         from evergreen import hosts
 
         plugin = Path(self.temporary.name) / "broken plugin"
@@ -719,18 +838,10 @@ class HostTests(unittest.TestCase):
         (self.home / ".codex").mkdir()
         self.assertTrue(hosts.install(self.home, plugin, "codex").ok)
 
-        with mock.patch("evergreen.hosts.subprocess.Popen", wraps=hosts.subprocess.Popen) as popen:
-            result = hosts.doctor(self.home, plugin, "codex")
+        result = hosts.doctor(self.home, plugin, "codex")
 
         self.assertFalse(result.ok)
-        self.assertTrue(any("smoke test failed" in message for message in result.messages))
-        self.assertTrue(popen.call_args.kwargs["start_new_session"])
-        self.assertEqual(popen.call_args.kwargs["cwd"], str(command.parent.resolve()))
-        self.assertIs(popen.call_args.kwargs["stdout"], hosts.subprocess.DEVNULL)
-        self.assertIs(popen.call_args.kwargs["stderr"], hosts.subprocess.DEVNULL)
-        self.assertEqual(set(popen.call_args.kwargs["env"]), {
-            "LC_ALL", "PATH", "PYTHONDONTWRITEBYTECODE",
-        })
+        self.assertTrue(any("static validation failed" in message for message in result.messages))
 
     def test_regular_reader_requires_nonblocking_open_and_post_open_identity(self):
         from evergreen import hosts
@@ -741,72 +852,42 @@ class HostTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "nonblocking"):
                 hosts._read_regular_bounded(path, 10, "test file")
 
-    def test_doctor_smoke_uses_isolated_process_group_and_canonical_cwd(self):
+    def test_doctor_static_validation_never_executes_command_code(self):
         from evergreen import hosts
 
-        process = mock.Mock(returncode=0)
-        process.wait.return_value = 0
-        command = ROOT / "bin" / "evergreen"
-        with mock.patch("evergreen.hosts.subprocess.Popen", return_value=process) as popen:
-            error = hosts._smoke_command(command)
-
-        self.assertIsNone(error)
-        kwargs = popen.call_args.kwargs
-        self.assertTrue(kwargs["start_new_session"])
-        self.assertEqual(kwargs["cwd"], str(command.parent.resolve()))
-        self.assertIs(kwargs["stdin"], hosts.subprocess.DEVNULL)
-        self.assertEqual(process.wait.call_args_list[0].kwargs["timeout"],
-                         hosts.COMMAND_SMOKE_TIMEOUT_SECONDS)
-
-    def test_doctor_timeout_kills_spawned_descendants(self):
-        from evergreen import hosts
-
-        directory = self.home / "command"
-        directory.mkdir()
-        marker = directory / "descendant-survived"
-        command = directory / "evergreen"
-        child = (
-            "import pathlib,time; time.sleep(.3); "
-            f"pathlib.Path({str(marker)!r}).write_text('alive')"
-        )
+        plugin = Path(self.temporary.name) / "static plugin"
+        shutil.copytree(ROOT, plugin, symlinks=True)
+        marker = plugin / "command-ran"
+        command = plugin / "bin" / "evergreen"
         command.write_text(
             "#!/usr/bin/env python3\n"
-            "import subprocess, sys, time\n"
-            f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
-            "time.sleep(10)\n"
+            "from pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text('ran')\n"
         )
         command.chmod(0o755)
+        (self.home / ".codex").mkdir()
+        self.assertTrue(hosts.install(self.home, plugin, "codex").ok)
 
-        with mock.patch.object(hosts, "COMMAND_SMOKE_TIMEOUT_SECONDS", 0.1):
-            error = hosts._smoke_command(command)
-        time.sleep(0.4)
+        result = hosts.doctor(self.home, plugin, "codex")
 
-        self.assertIn("timed out", error)
+        self.assertTrue(result.ok, result.messages)
         self.assertFalse(marker.exists())
 
-    def test_doctor_success_also_reaps_spawned_descendants(self):
+    def test_static_command_validation_requires_utf8_python_shebang(self):
         from evergreen import hosts
 
-        directory = self.home / "successful-command"
-        directory.mkdir()
-        marker = directory / "descendant-survived"
-        command = directory / "evergreen"
-        child = (
-            "import pathlib,time; time.sleep(.3); "
-            f"pathlib.Path({str(marker)!r}).write_text('alive')"
-        )
-        command.write_text(
-            "#!/usr/bin/env python3\n"
-            "import subprocess, sys\n"
-            f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
-        )
-        command.chmod(0o755)
-
-        error = hosts._smoke_command(command)
-        time.sleep(0.4)
-
-        self.assertIsNone(error)
-        self.assertFalse(marker.exists())
+        command = self.home / "evergreen"
+        for content, expected in (
+            (b"print('missing shebang')\n", "Python shebang"),
+            (b"#!/usr/bin/env python3\n\xff\n", "UTF-8"),
+            (
+                b"#!/usr/bin/env python3\n" + b"#" * hosts.MAX_COMMAND_BYTES,
+                "byte limit",
+            ),
+        ):
+            with self.subTest(expected=expected):
+                command.write_bytes(content)
+                self.assertIn(expected, hosts._validate_python_command(command))
 
     def test_readme_documents_runtime_platform_and_host_safety_bounds(self):
         from evergreen.hosts import MAX_INSTRUCTION_BYTES
@@ -817,8 +898,6 @@ class HostTests(unittest.TestCase):
         self.assertIn("macOS and Linux", readme)
         self.assertIn("POSIX", readme)
         self.assertIn(f"{MAX_INSTRUCTION_BYTES // (1024 * 1024)} MiB", readme)
-        self.assertIn("five-second", readme)
-        self.assertIn("isolated stdio", readme)
 
     def snapshot(self, include_directories=False):
         values = {}
