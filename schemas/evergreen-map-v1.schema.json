@@ -30,7 +30,8 @@
               "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*[\\u0000-\\u001F\\u007F])(?!.*(?:^|/)[^/]+\\*\\*)(?!.*\\*\\*[^/]+(?:/|$))[^/]+(?:/[^/]+)*$",
               "description": "Normalized repository-relative segment-aware glob. *, ?, and character classes match within one path segment; ** as a complete segment matches across zero or more segments.",
               "x-maxUtf8Bytes": 4096,
-              "x-globSemantics": "segment-aware"
+              "x-globSemantics": "segment-aware",
+              "x-runtimeConstraints": {"balancedBracketClasses": true}
             }
           },
           "docs": {

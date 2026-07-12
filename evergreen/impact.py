@@ -119,6 +119,8 @@ def _pattern(value):
     value, _pure = _lexical(value, "source pattern")
     index = 0
     while index < len(value):
+        if value[index] == "]":
+            raise ValueError("source pattern has invalid brackets")
         if value[index] != "[":
             index += 1
             continue
@@ -129,7 +131,8 @@ def _pattern(value):
         if index < len(value) and value[index] == "]":
             index += 1
         end = value.find("]", index)
-        if end < 0 or end == start + 1:
+        slash = value.find("/", index)
+        if end < 0 or end == start + 1 or 0 <= slash < end:
             raise ValueError("source pattern has invalid brackets")
         index = end + 1
     if any("**" in part and part != "**" for part in value.split("/")):
@@ -368,8 +371,18 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
     mappings, map_warnings = load_map(repo)
     warnings = _WarningCollector(map_warnings)
     candidates = {}
+    baseline_paths = set()
     reasons_truncated = False
     candidates_truncated = False
+
+    def candidate_limit():
+        if MAX_REASONS_PER_CANDIDATE <= 0:
+            return 0
+        return max(min(MAX_CANDIDATES, MAX_TOTAL_REASONS), 0)
+
+    def selection_key(path):
+        rank = candidates[path][0]
+        return (path not in baseline_paths, -rank, path.lower(), path)
 
     def add(path, rank, reason):
         nonlocal candidates, candidates_truncated, reasons_truncated
@@ -381,59 +394,49 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
             reasons_truncated = True
         candidates[path] = (max(current_rank, rank), reasons)
         # Bound discovery memory while retaining the same candidates that final ordering selects.
-        threshold = max(MAX_CANDIDATES * 2, 1)
+        limit = candidate_limit()
+        threshold = max(limit * 2, 1)
         if len(candidates) > threshold:
-            retained = sorted(
-                candidates, key=lambda item: (
-                    -candidates[item][0], item.lower(), item
-                )
-            )[:MAX_CANDIDATES]
+            retained = sorted(candidates, key=selection_key)[:limit]
             candidates = {item: candidates[item] for item in retained}
             candidates_truncated = True
 
+    if type(paths) not in (list, tuple):
+        warnings.add("changed paths must be a concrete list or tuple")
+        paths = ()
+    changed_truncated = len(paths) > MAX_CHANGED_PATHS
+    bounded_paths = paths[:max(MAX_CHANGED_PATHS, 0)]
     changed_paths = set()
-    changed_truncated = False
-    for raw_path in paths:
+    for raw_path in bounded_paths:
         try:
             path = _path(raw_path, repo, "changed path")
         except (TypeError, ValueError, UnicodeError) as error:
             warnings.add(f"changed path: {error}")
             continue
-        if path in changed_paths:
-            continue
-        if len(changed_paths) < MAX_CHANGED_PATHS:
-            changed_paths.add(path)
-            continue
-        changed_truncated = True
-        if MAX_CHANGED_PATHS > 0 and path < max(changed_paths):
-            changed_paths.remove(max(changed_paths))
-            changed_paths.add(path)
+        changed_paths.add(path)
     changed_paths = sorted(changed_paths)
     if changed_truncated:
         warnings.add(f"changed paths truncated (maximum {MAX_CHANGED_PATHS})")
 
+    if type(evidence) not in (list, tuple):
+        warnings.add("evidence must be a concrete list or tuple")
+        evidence = ()
+    evidence_truncated = len(evidence) > MAX_EVIDENCE_ITEMS
+    bounded_evidence = evidence[:max(MAX_EVIDENCE_ITEMS, 0)]
     accepted_evidence = {}
-    evidence_truncated = False
-    for item in evidence:
+    for item in bounded_evidence:
         try:
             key, path, rank, reason = _validated_evidence(item, repo)
         except (Exception, RecursionError) as error:
             warnings.add(f"evidence: {error}")
             continue
-        if key in accepted_evidence:
-            continue
-        if len(accepted_evidence) < MAX_EVIDENCE_ITEMS:
-            accepted_evidence[key] = (path, rank, reason)
-            continue
-        evidence_truncated = True
-        if MAX_EVIDENCE_ITEMS > 0 and key < max(accepted_evidence):
-            del accepted_evidence[max(accepted_evidence)]
-            accepted_evidence[key] = (path, rank, reason)
+        accepted_evidence[key] = (path, rank, reason)
     evidence_keys = sorted(accepted_evidence)
     if evidence_truncated:
         warnings.add(f"evidence items truncated (maximum {MAX_EVIDENCE_ITEMS})")
 
     sources = set(changed_paths)
+    baseline_paths.update(changed_paths)
     for path in changed_paths:
         add(path, 10, f"changed path {path}")
     for key in evidence_keys:
@@ -443,43 +446,60 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
 
     work = 0
     work_truncated = False
+
+    def spend_work():
+        nonlocal work, work_truncated
+        if work >= MAX_MATCH_WORK:
+            work_truncated = True
+            return False
+        work += 1
+        return True
+
     for source in sorted(sources):
         for mapping in mappings:
             for pattern in mapping.sources:
-                if work >= MAX_MATCH_WORK:
-                    work_truncated = True
+                if not spend_work():
                     break
-                work += 1
                 if _glob_match(pattern, source):
                     reason = f"map {pattern} matched {source}"
                     for doc in mapping.docs:
+                        if not spend_work():
+                            break
                         add(doc, 100, reason)
+                if work_truncated:
+                    break
             if work_truncated:
                 break
         if work_truncated:
             break
     if work_truncated:
-        warnings.add(f"matching work truncated (maximum {MAX_MATCH_WORK} comparisons)")
+        warnings.add(f"matching work truncated (maximum {MAX_MATCH_WORK} operations)")
 
-    ordered_paths = sorted(
-        candidates, key=lambda item: (-candidates[item][0], item.lower(), item)
-    )
-    if len(ordered_paths) > MAX_CANDIDATES:
-        ordered_paths = ordered_paths[:MAX_CANDIDATES]
+    retained_paths = sorted(candidates, key=selection_key)
+    limit = candidate_limit()
+    if len(retained_paths) > limit:
+        retained_paths = retained_paths[:limit]
         candidates_truncated = True
+    ordered_paths = sorted(
+        retained_paths, key=lambda item: (-candidates[item][0], item.lower(), item)
+    )
     if candidates_truncated:
-        warnings.add(f"candidates truncated (maximum {MAX_CANDIDATES})")
+        warnings.add(f"candidates truncated (maximum {limit})")
 
-    remaining_reasons = MAX_TOTAL_REASONS
+    reason_lists = {path: sorted(candidates[path][1]) for path in ordered_paths}
+    allocated = {path: reasons[:1] for path, reasons in reason_lists.items()}
+    remaining_reasons = MAX_TOTAL_REASONS - len(ordered_paths)
+    for path in ordered_paths:
+        extras = reason_lists[path][1:]
+        accepted = extras[:max(remaining_reasons, 0)]
+        allocated[path].extend(accepted)
+        remaining_reasons -= len(accepted)
+        if len(accepted) < len(extras):
+            reasons_truncated = True
     result_items = []
     for path in ordered_paths:
-        rank, reasons = candidates[path]
-        ordered_reasons = sorted(reasons)
-        if len(ordered_reasons) > remaining_reasons:
-            ordered_reasons = ordered_reasons[:max(remaining_reasons, 0)]
-            reasons_truncated = True
-        remaining_reasons -= len(ordered_reasons)
-        result_items.append(ImpactCandidate(path, rank, tuple(ordered_reasons)))
+        rank, _reasons = candidates[path]
+        result_items.append(ImpactCandidate(path, rank, tuple(allocated[path])))
     if reasons_truncated:
         warnings.add("reasons truncated for one or more candidates")
 

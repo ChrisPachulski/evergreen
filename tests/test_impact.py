@@ -103,6 +103,22 @@ class ImpactTests(unittest.TestCase):
         self.assertEqual(len(maps), 2)
         self.assertEqual(warnings, [])
 
+    def test_unbalanced_closing_bracket_rejects_only_its_map(self):
+        from evergreen.impact import load_map
+
+        self.write_map([
+            self.mapping(["src/file].py"], ["docs/bad.md"]),
+            self.mapping(["src/[a/file].py"], ["docs/cross-segment.md"]),
+            self.mapping(["src/file.py"], ["docs/good.md"]),
+        ])
+        maps, warnings = load_map(self.repo)
+
+        self.assertEqual([mapping.docs for mapping in maps], [("docs/good.md",)])
+        self.assertEqual(warnings, [
+            "map 1: source pattern has invalid brackets",
+            "map 2: source pattern has invalid brackets",
+        ])
+
     def test_segment_aware_globs_keep_star_shallow_and_globstar_recursive(self):
         from evergreen.impact import impact
 
@@ -207,7 +223,7 @@ class ImpactTests(unittest.TestCase):
              mock.patch.object(module, "MAX_REASONS_PER_CANDIDATE", 1):
             first = module.impact(self.repo, ["src/z.py", "src/a.py", "src/m.py"], evidence)
             second = module.impact(
-                self.repo, ["src/m.py", "src/z.py", "src/a.py"], list(reversed(evidence))
+                self.repo, ["src/z.py", "src/a.py", "src/ignored.py"], evidence
             )
 
         self.assertEqual(first, second)
@@ -216,11 +232,83 @@ class ImpactTests(unittest.TestCase):
         self.assertTrue(any("changed paths truncated" in warning for warning in first.warnings))
         self.assertTrue(any("evidence items truncated" in warning for warning in first.warnings))
         self.assertTrue(any("candidates truncated" in warning for warning in first.warnings))
-        self.assertTrue(any("reasons truncated" in warning for warning in first.warnings))
 
         with mock.patch.object(module, "MAX_MATCH_WORK", 1):
             bounded = module.impact(self.repo, ["src/a.py", "src/b.py"], [])
         self.assertTrue(any("matching work truncated" in warning for warning in bounded.warnings))
+
+    def test_candidate_cap_reserves_changed_path_before_additive_candidates(self):
+        from evergreen import impact as module
+
+        self.write_map([self.mapping(["src/**"], ["docs/a.md"])])
+        with mock.patch.object(module, "MAX_CANDIDATES", 1):
+            report = module.impact(
+                self.repo, ["src/changed.py"], [self.evidence(path="src/evidence.py")]
+            )
+
+        self.assertEqual([candidate.path for candidate in report.candidates], [
+            "src/changed.py",
+        ])
+        self.assertTrue(any("candidates truncated" in warning for warning in report.warnings))
+
+    def test_impact_rejects_non_concrete_inputs_and_slices_before_validation(self):
+        from evergreen import impact as module
+
+        class HostileIterable:
+            def __iter__(self):
+                raise AssertionError("must not consume hostile iterable")
+
+        class HostileList(list):
+            def __len__(self):
+                raise AssertionError("must not inspect hostile sequence subclass")
+
+        rejected = module.impact(self.repo, HostileIterable(), HostileIterable())
+        self.assertEqual(rejected.candidates, ())
+        self.assertTrue(any("changed paths must be" in warning for warning in rejected.warnings))
+        self.assertTrue(any("evidence must be" in warning for warning in rejected.warnings))
+
+        subclassed = module.impact(self.repo, HostileList(), HostileList())
+        self.assertEqual(subclassed.candidates, ())
+
+        with mock.patch.object(module, "MAX_CHANGED_PATHS", 1), \
+             mock.patch.object(module, "MAX_EVIDENCE_ITEMS", 1):
+            bounded = module.impact(
+                self.repo,
+                ["kept.py", object()],
+                [self.evidence(path="evidence.py"), object()],
+            )
+        self.assertEqual([candidate.path for candidate in bounded.candidates], [
+            "evidence.py", "kept.py",
+        ])
+        self.assertFalse(any("invalid type" in warning for warning in bounded.warnings))
+        self.assertTrue(any("changed paths truncated" in warning for warning in bounded.warnings))
+        self.assertTrue(any("evidence items truncated" in warning for warning in bounded.warnings))
+
+    def test_mapped_doc_additions_consume_matching_work_budget(self):
+        from evergreen import impact as module
+
+        self.write_map([self.mapping(["src/**"], ["docs/a.md", "docs/b.md", "docs/c.md"])])
+        with mock.patch.object(module, "MAX_MATCH_WORK", 2):
+            report = module.impact(self.repo, ["src/a.py"], [])
+
+        self.assertEqual([candidate.path for candidate in report.candidates], [
+            "docs/a.md", "src/a.py",
+        ])
+        self.assertTrue(any("matching work truncated" in warning for warning in report.warnings))
+
+    def test_total_reason_budget_gives_each_retained_candidate_one_first(self):
+        from evergreen import impact as module
+
+        self.write_map([
+            self.mapping(["src/**", "src/*.py"], ["docs/a.md", "docs/b.md"]),
+        ])
+        with mock.patch.object(module, "MAX_CANDIDATES", 3), \
+             mock.patch.object(module, "MAX_TOTAL_REASONS", 3):
+            report = module.impact(self.repo, ["src/a.py"], [])
+
+        self.assertEqual(len(report.candidates), 3)
+        self.assertTrue(all(len(candidate.reasons) == 1 for candidate in report.candidates))
+        self.assertTrue(any("reasons truncated" in warning for warning in report.warnings))
 
     def test_duplicate_keys_reject_only_the_containing_map(self):
         from evergreen.impact import load_map
@@ -263,6 +351,7 @@ class ImpactTests(unittest.TestCase):
         self.assertEqual(schema["x-duplicateKeyBehavior"], "reject-file")
         source = schema["properties"]["maps"]["items"]["properties"]["sources"]["items"]
         self.assertEqual(source["x-globSemantics"], "segment-aware")
+        self.assertTrue(source["x-runtimeConstraints"]["balancedBracketClasses"])
         self.assertIn("**", source["description"])
         self.assertIn("pattern", source)
         docs = schema["properties"]["maps"]["items"]["properties"]["docs"]["items"]
