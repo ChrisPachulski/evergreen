@@ -1,4 +1,6 @@
 import hashlib
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -8,6 +10,7 @@ import sys
 import tempfile
 import tomllib
 import unittest
+import runpy
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -146,6 +149,26 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertNotIn("finding", result.stdout.lower())
         self.assertNotIn("verdict", result.stdout.lower())
         self.assertEqual(self.snapshot(), before)
+
+    def test_human_output_escapes_terminal_controls_from_untrusted_values(self):
+        namespace = runpy.run_path(str(SCRIPT), run_name="evergreen_cli_test")
+        output = io.StringIO()
+        payload = {
+            "candidates": [{
+                "path": "hostile\npath\x1b[31m.py",
+                "rank": 10,
+                "reasons": ["reason\rwith\x7f controls"],
+            }],
+            "warnings": ["warning\nwith\x1b[2J controls"],
+        }
+        with contextlib.redirect_stdout(output):
+            namespace["print_human"](payload)
+
+        rendered = output.getvalue()
+        self.assertNotIn("\x1b", rendered)
+        self.assertNotIn("\x7f", rendered)
+        for escaped in (r"\n", r"\r", r"\x1b", r"\x7f"):
+            self.assertIn(escaped, rendered)
 
     def test_fresh_self_repo_query_creates_no_bytecode_or_other_files(self):
         fresh = Path(self.temporary.name) / "fresh-plugin"

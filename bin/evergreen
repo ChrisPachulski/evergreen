@@ -22,6 +22,21 @@ def error_display(value):
     return rendered if len(rendered) <= 512 else rendered[:508] + "...'"
 
 
+def terminal_display(value, limit=4096):
+    pieces = []
+    used = 0
+    for character in str(value):
+        piece = character if character.isprintable() else character.encode(
+            "unicode_escape", errors="backslashreplace"
+        ).decode("ascii")
+        if used + len(piece) > limit:
+            pieces.append("...")
+            break
+        pieces.append(piece)
+        used += len(piece)
+    return "".join(pieces)
+
+
 def parser():
     root = argparse.ArgumentParser(
         prog="evergreen",
@@ -70,7 +85,7 @@ def run_doctor(args):
 def _print_operation(result, failure_code):
     stream = sys.stdout if result.ok else sys.stderr
     for message in result.messages:
-        print(message, file=stream)
+        print(terminal_display(message), file=stream)
     return 0 if result.ok else failure_code
 
 
@@ -110,14 +125,14 @@ def print_human(payload):
     if not candidates:
         print("- none")
     for candidate in candidates:
-        print(f"- [{candidate['rank']}] {candidate['path']}")
+        print(f"- [{candidate['rank']}] {terminal_display(candidate['path'])}")
         for reason in candidate["reasons"]:
-            print(f"  reason: {reason}")
+            print(f"  reason: {terminal_display(reason)}")
     warnings = payload["warnings"]
     if warnings:
         print(f"Warnings ({len(warnings)}):")
         for warning in warnings:
-            print(f"- {warning}")
+            print(f"- {terminal_display(warning)}")
 
 
 def main(argv=None):
