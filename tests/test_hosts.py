@@ -2,11 +2,14 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest import mock
+
+from evergreen import host_transaction
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -255,13 +258,13 @@ class HostTests(unittest.TestCase):
             root.mkdir()
             (root / filename).write_bytes(directory.encode())
         changed = self.home / ".codex" / "AGENTS.md"
-        real_verify = hosts._verify_preflight
+        real_verify = host_transaction._verify_preflight
 
         def change_then_verify(captured):
             changed.write_bytes(b"concurrent replacement")
             return real_verify(captured)
 
-        with mock.patch.object(hosts, "_verify_preflight", side_effect=change_then_verify):
+        with mock.patch.object(host_transaction, "_verify_preflight", side_effect=change_then_verify):
             result = hosts.install(self.home, ROOT, "all")
 
         self.assertFalse(result.ok)
@@ -277,7 +280,7 @@ class HostTests(unittest.TestCase):
         instructions = codex / "AGENTS.md"
         instructions.write_bytes(b"same bytes")
         original_inode = instructions.lstat().st_ino
-        real_verify = hosts._verify_preflight
+        real_verify = host_transaction._verify_preflight
 
         def replace_then_verify(captured):
             instructions.unlink()
@@ -285,7 +288,7 @@ class HostTests(unittest.TestCase):
             self.assertNotEqual(instructions.lstat().st_ino, original_inode)
             return real_verify(captured)
 
-        with mock.patch.object(hosts, "_verify_preflight", side_effect=replace_then_verify):
+        with mock.patch.object(host_transaction, "_verify_preflight", side_effect=replace_then_verify):
             result = hosts.install(self.home, ROOT, "codex")
 
         self.assertFalse(result.ok)
@@ -314,14 +317,14 @@ class HostTests(unittest.TestCase):
         skills = codex / "skills"
         skills.mkdir(parents=True)
         replaced = codex / "skills-replaced"
-        real_verify = hosts._verify_preflight
+        real_verify = host_transaction._verify_preflight
 
         def replace_then_verify(captured):
             skills.rename(replaced)
             skills.mkdir(mode=0o755)
             return real_verify(captured)
 
-        with mock.patch.object(hosts, "_verify_preflight", side_effect=replace_then_verify):
+        with mock.patch.object(host_transaction, "_verify_preflight", side_effect=replace_then_verify):
             result = hosts.install(self.home, ROOT, "codex")
 
         self.assertFalse(result.ok)
@@ -335,14 +338,14 @@ class HostTests(unittest.TestCase):
         codex.mkdir()
         instructions = codex / "AGENTS.md"
         instructions.write_bytes(b"original")
-        real_action = hosts._perform_action
+        real_action = host_transaction._perform_action
 
         def edit_then_act(action, path, value, *args, **kwargs):
             if path.name == instructions.name:
                 instructions.write_bytes(b"concurrent edit")
             return real_action(action, path, value, *args, **kwargs)
 
-        with mock.patch.object(hosts, "_perform_action", side_effect=edit_then_act):
+        with mock.patch.object(host_transaction, "_perform_action", side_effect=edit_then_act):
             result = hosts.install(self.home, ROOT, "codex")
 
         self.assertFalse(result.ok)
@@ -360,8 +363,8 @@ class HostTests(unittest.TestCase):
         real_mkdir = hosts.os.mkdir
 
         def concurrent_mkdir(path, mode=0o777, *, dir_fd=None):
-            real_mkdir(path, mode, dir_fd=dir_fd)
-            real_mkdir(path, mode, dir_fd=dir_fd)
+            real_mkdir("skills", mode, dir_fd=dir_fd)
+            raise FileExistsError("concurrent directory won")
 
         with mock.patch.object(hosts.os, "mkdir", side_effect=concurrent_mkdir):
             result = hosts.install(self.home, ROOT, "codex")
@@ -380,7 +383,7 @@ class HostTests(unittest.TestCase):
         link = self.home / ".codex" / "skills" / "evergreen"
         replacement = self.home / "replacement"
         replacement.mkdir()
-        real_verify = hosts._verify_preflight
+        real_verify = host_transaction._verify_preflight
 
         def replace_then_verify(captured):
             link.unlink()
@@ -388,7 +391,7 @@ class HostTests(unittest.TestCase):
             return real_verify(captured)
 
         before_claude = self.snapshot(include_directories=True)
-        with mock.patch.object(hosts, "_verify_preflight", side_effect=replace_then_verify):
+        with mock.patch.object(host_transaction, "_verify_preflight", side_effect=replace_then_verify):
             result = hosts.uninstall(self.home, "all")
 
         self.assertFalse(result.ok)
@@ -408,7 +411,7 @@ class HostTests(unittest.TestCase):
             (root / filename).write_bytes(directory.encode())
         before = self.snapshot(include_directories=True)
         changed = self.home / ".codex" / "AGENTS.md"
-        real_action = hosts._perform_action
+        real_action = host_transaction._perform_action
         calls = 0
 
         def replace_future_target(action, path, value, *args, **kwargs):
@@ -419,7 +422,7 @@ class HostTests(unittest.TestCase):
                 changed.write_bytes(b"concurrent replacement")
             return postimage
 
-        with mock.patch.object(hosts, "_perform_action", side_effect=replace_future_target):
+        with mock.patch.object(host_transaction, "_perform_action", side_effect=replace_future_target):
             result = hosts.install(self.home, ROOT, "all")
 
         self.assertFalse(result.ok)
@@ -436,7 +439,7 @@ class HostTests(unittest.TestCase):
         codex.mkdir()
         instructions = codex / "AGENTS.md"
         instructions.write_bytes(b"original")
-        real_action = hosts._perform_action
+        real_action = host_transaction._perform_action
         calls = 0
 
         def edit_prior_and_block_future(action, path, value, *args, **kwargs):
@@ -450,7 +453,7 @@ class HostTests(unittest.TestCase):
                 (skills / "evergreen").symlink_to(self.home / "replacement")
             return postimage
 
-        with mock.patch.object(hosts, "_perform_action", side_effect=edit_prior_and_block_future):
+        with mock.patch.object(host_transaction, "_perform_action", side_effect=edit_prior_and_block_future):
             result = hosts.install(self.home, ROOT, "codex")
 
         self.assertFalse(result.ok)
@@ -468,7 +471,7 @@ class HostTests(unittest.TestCase):
                 codex.mkdir(parents=True)
                 instructions = codex / "AGENTS.md"
                 instructions.write_bytes(b"original")
-                real_action = hosts._perform_action
+                real_action = host_transaction._perform_action
                 calls = 0
                 concurrent_inode = None
 
@@ -490,7 +493,7 @@ class HostTests(unittest.TestCase):
                     return postimage
 
                 with mock.patch.object(
-                    hosts, "_perform_action", side_effect=mutate_then_fail
+                    host_transaction, "_perform_action", side_effect=mutate_then_fail
                 ):
                     result = hosts.install(home, ROOT, "codex")
 
@@ -519,7 +522,7 @@ class HostTests(unittest.TestCase):
         timestamp = 1_700_000_000_123_456_789
         os.utime(instructions, ns=(timestamp, timestamp))
         before = instructions.stat()
-        real_action = hosts._perform_action
+        real_action = host_transaction._perform_action
         forward = None
 
         def fail_after_instruction(action, path, value, *args, **kwargs):
@@ -535,7 +538,7 @@ class HostTests(unittest.TestCase):
             return postimage
 
         with mock.patch.object(
-            hosts, "_perform_action", side_effect=fail_after_instruction
+            host_transaction, "_perform_action", side_effect=fail_after_instruction
         ):
             result = hosts.install(self.home, ROOT, "codex")
 
@@ -590,7 +593,7 @@ class HostTests(unittest.TestCase):
         timestamp = 1_700_000_100_987_654_321
         os.utime(instructions, ns=(timestamp, timestamp))
         before = instructions.stat()
-        real_action = hosts._perform_action
+        real_action = host_transaction._perform_action
 
         def fail_after_instruction_delete(action, path, value, *args, **kwargs):
             postimage = real_action(action, path, value, *args, **kwargs)
@@ -600,7 +603,7 @@ class HostTests(unittest.TestCase):
             return postimage
 
         with mock.patch.object(
-            hosts, "_perform_action", side_effect=fail_after_instruction_delete
+            host_transaction, "_perform_action", side_effect=fail_after_instruction_delete
         ):
             result = hosts.uninstall(self.home, "codex")
 
@@ -679,7 +682,7 @@ class HostTests(unittest.TestCase):
         codex.mkdir()
         instructions = codex / "AGENTS.md"
         instructions.write_bytes(b"original")
-        real_action = hosts._perform_action
+        real_action = host_transaction._perform_action
         real_replace = hosts.os.replace
 
         def fail_after_instruction(action, path, value, *args, **kwargs):
@@ -694,7 +697,7 @@ class HostTests(unittest.TestCase):
             return real_replace(source, destination, *args, **kwargs)
 
         with mock.patch.object(
-            hosts, "_perform_action", side_effect=fail_after_instruction
+            host_transaction, "_perform_action", side_effect=fail_after_instruction
         ), mock.patch.object(hosts.os, "replace", side_effect=fail_backup_restore):
             result = hosts.install(self.home, ROOT, "codex")
 
@@ -775,13 +778,14 @@ class HostTests(unittest.TestCase):
         script = f"""
 import os
 from pathlib import Path
-from evergreen import hosts
-real_write_journal = hosts._write_journal_at
-def crash_after_backup_link(parent_fd, name, journal, *, create):
-    if name.startswith('.AGENTS.md.evergreen-journal-') and not create:
+from evergreen import host_transaction, hosts
+real_link = host_transaction.os.link
+def crash_after_backup_link(source, destination, *args, **kwargs):
+    result = real_link(source, destination, *args, **kwargs)
+    if destination.startswith('.AGENTS.md.evergreen-backup-'):
         os._exit(91)
-    return real_write_journal(parent_fd, name, journal, create=create)
-hosts._write_journal_at = crash_after_backup_link
+    return result
+host_transaction.os.link = crash_after_backup_link
 hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
 """
 
@@ -819,6 +823,98 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
             path.name.startswith(".AGENTS.md.evergreen-") for path in codex.iterdir()
         ))
 
+    def test_crash_after_initial_regular_create_is_journaled_and_recovered(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        script = f"""
+import os
+from pathlib import Path
+from evergreen import host_transaction, hosts
+real_replace = host_transaction.os.replace
+def crash_after_publication(source, destination, *args, **kwargs):
+    result = real_replace(source, destination, *args, **kwargs)
+    if destination == 'AGENTS.md':
+        os._exit(92)
+    return result
+host_transaction.os.replace = crash_after_publication
+hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
+"""
+
+        crashed = subprocess.run(
+            [sys.executable, "-c", script], cwd=ROOT,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+
+        self.assertEqual(crashed.returncode, 92, crashed.stderr)
+        self.assertTrue(any("evergreen-journal" in item.name for item in codex.iterdir()))
+        recovered = hosts.install(self.home, ROOT, "codex")
+        self.assertTrue(recovered.ok, recovered.messages)
+        self.assertIn(hosts.BEGIN_MARKER.encode(), (codex / "AGENTS.md").read_bytes())
+        self.assertFalse(any("evergreen-journal" in item.name for item in codex.iterdir()))
+
+    def test_crash_after_initial_directory_create_is_journaled_and_recovered(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        script = f"""
+import os
+from pathlib import Path
+from evergreen import host_transaction, hosts
+real_replace = host_transaction.os.replace
+def crash_after_publication(source, destination, *args, **kwargs):
+    result = real_replace(source, destination, *args, **kwargs)
+    if destination == 'skills':
+        os._exit(93)
+    return result
+host_transaction.os.replace = crash_after_publication
+hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
+"""
+        crashed = subprocess.run(
+            [sys.executable, "-c", script], cwd=ROOT,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+
+        self.assertEqual(crashed.returncode, 93, crashed.stderr)
+        self.assertTrue(any("skills.evergreen-journal" in item.name for item in codex.iterdir()))
+        recovered = hosts.install(self.home, ROOT, "codex")
+        self.assertTrue(recovered.ok, recovered.messages)
+        self.assertTrue((codex / "skills" / "evergreen").is_symlink())
+        self.assertFalse(any("skills.evergreen-journal" in item.name for item in codex.iterdir()))
+
+    def test_crash_after_initial_symlink_create_is_journaled_and_recovered(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        script = f"""
+import os
+from pathlib import Path
+from evergreen import host_transaction, hosts
+real_replace = host_transaction.os.replace
+def crash_after_publication(source, destination, *args, **kwargs):
+    result = real_replace(source, destination, *args, **kwargs)
+    if destination == 'evergreen':
+        os._exit(94)
+    return result
+host_transaction.os.replace = crash_after_publication
+hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
+"""
+        crashed = subprocess.run(
+            [sys.executable, "-c", script], cwd=ROOT,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+
+        self.assertEqual(crashed.returncode, 94, crashed.stderr)
+        skills = codex / "skills"
+        self.assertTrue(any("evergreen-journal" in item.name for item in skills.iterdir()))
+        recovered = hosts.install(self.home, ROOT, "codex")
+        self.assertTrue(recovered.ok, recovered.messages)
+        self.assertTrue((skills / "evergreen").is_symlink())
+        self.assertFalse(any("evergreen-journal" in item.name for item in skills.iterdir()))
+
     def test_unmatched_transaction_artifact_refuses_with_manual_path(self):
         from evergreen import hosts
 
@@ -835,6 +931,74 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
         self.assertIn("manual", rendered.lower())
         self.assertTrue(artifact.exists())
 
+    def test_transaction_artifact_scan_is_bounded_and_never_raises(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        for index in range(129):
+            transaction_id = f"{index:032x}"
+            (codex / f".AGENTS.md.evergreen-journal-{transaction_id}").write_bytes(b"{}")
+
+        result = hosts.install(self.home, ROOT, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertIn("artifact scan limit", " ".join(result.messages).lower())
+        self.assertEqual(len(list(codex.glob(".AGENTS.md.evergreen-journal-*"))), 129)
+
+    def test_oversized_transaction_journal_is_bounded_and_retained(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        transaction_id = "a" * 32
+        journal = codex / f".AGENTS.md.evergreen-journal-{transaction_id}"
+        journal.write_bytes(b"x" * (hosts.MAX_STATE_BYTES + 1))
+
+        result = hosts.install(self.home, ROOT, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertIn(str(journal), " ".join(result.messages))
+        self.assertTrue(journal.exists())
+
+    def test_transaction_artifact_deadline_returns_bounded_diagnostic(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        artifact = codex / (".AGENTS.md.evergreen-journal-" + "b" * 32)
+        artifact.write_bytes(b"{}")
+
+        descriptor = os.open(codex, os.O_RDONLY)
+        try:
+            with mock.patch.object(
+                host_transaction.time, "monotonic", side_effect=[0, 10]
+            ):
+                error = host_transaction._recover_target_artifacts(
+                    descriptor, codex / "AGENTS.md",
+                )
+        finally:
+            os.close(descriptor)
+
+        self.assertIn("artifact scan limit", error.lower())
+        self.assertTrue(artifact.exists())
+
+    def test_recovery_oserror_returns_operation_result_and_releases_lock(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        with mock.patch.object(
+            host_transaction.TransactionEngine, "recover",
+            side_effect=OSError("injected recovery failure"),
+        ):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertIn("recovery failed", " ".join(result.messages).lower())
+        retried = hosts.install(self.home, ROOT, "codex")
+        self.assertTrue(retried.ok, retried.messages)
+
     def test_corrupt_backup_is_retained_and_never_restored(self):
         from evergreen import hosts
 
@@ -842,7 +1006,7 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
         codex.mkdir()
         instructions = codex / "AGENTS.md"
         instructions.write_bytes(b"original")
-        real_action = hosts._perform_action
+        real_action = host_transaction._perform_action
 
         def corrupt_backup_then_fail(action, path, value, *args, **kwargs):
             postimage = real_action(action, path, value, *args, **kwargs)
@@ -855,7 +1019,7 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
             return postimage
 
         with mock.patch.object(
-            hosts, "_perform_action", side_effect=corrupt_backup_then_fail
+            host_transaction, "_perform_action", side_effect=corrupt_backup_then_fail
         ):
             result = hosts.install(self.home, ROOT, "codex")
 
@@ -868,6 +1032,134 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
         self.assertIn(str(backups[0]), rendered)
         self.assertIn("manual recovery", rendered.lower())
         self.assertNotIn("ordinary recovery completed", rendered)
+
+    def test_xattr_corrupt_backup_is_retained_and_never_restored(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        attribute = self.set_test_xattr(instructions, "backup-integrity", b"original")
+        if attribute is None:
+            self.skipTest("extended attributes unavailable")
+        real_action = host_transaction._perform_action
+
+        def corrupt_backup_then_fail(action, path, value, *args, **kwargs):
+            postimage = real_action(action, path, value, *args, **kwargs)
+            if path.name == instructions.name:
+                backup = next(
+                    item for item in codex.iterdir() if "evergreen-backup" in item.name
+                )
+                changed = self.set_test_xattr(backup, "backup-integrity", b"corrupt")
+                self.assertEqual(changed, attribute)
+                raise OSError("force rollback with corrupt backup metadata")
+            return postimage
+
+        with mock.patch.object(
+            host_transaction, "_perform_action", side_effect=corrupt_backup_then_fail
+        ):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        backups = [item for item in codex.iterdir() if "evergreen-backup" in item.name]
+        self.assertFalse(result.ok)
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(self.get_test_xattr(backups[0], attribute), b"corrupt")
+        self.assertIn(hosts.BEGIN_MARKER.encode(), instructions.read_bytes())
+
+    def test_real_unlink_then_raise_is_resolved_during_backup_cleanup(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        installed = hosts.install(self.home, ROOT, "codex")
+        self.assertTrue(installed.ok, installed.messages)
+        ownership = codex / hosts.OWNERSHIP_FILE
+        real_unlink = hosts.os.unlink
+        raised = False
+
+        def unlink_then_raise(path, *args, **kwargs):
+            nonlocal raised
+            result = real_unlink(path, *args, **kwargs)
+            if ownership.name in os.fspath(path) and "evergreen-backup" in os.fspath(path) and not raised:
+                raised = True
+                raise OSError("ambiguous unlink result")
+            return result
+
+        with mock.patch.object(hosts.os, "unlink", side_effect=unlink_then_raise):
+            result = hosts.uninstall(self.home, "codex")
+
+        self.assertTrue(result.ok, result.messages)
+        self.assertFalse(ownership.exists())
+        self.assertFalse(any("evergreen-backup" in item.name for item in codex.iterdir()))
+
+    def test_backup_unlink_fsync_failure_never_claims_backup_is_retained(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        (codex / "AGENTS.md").write_bytes(b"original")
+        real_unlink = hosts.os.unlink
+        real_fsync = hosts.os.fsync
+        backup_removed = False
+        failed = False
+
+        def observe_unlink(path, *args, **kwargs):
+            nonlocal backup_removed
+            result = real_unlink(path, *args, **kwargs)
+            if "evergreen-backup" in os.fspath(path):
+                backup_removed = True
+            return result
+
+        def fail_directory_fsync(descriptor):
+            nonlocal failed
+            if backup_removed and not failed and stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                failed = True
+                raise OSError("injected directory durability failure")
+            return real_fsync(descriptor)
+
+        with (
+            mock.patch.object(hosts.os, "unlink", side_effect=observe_unlink),
+            mock.patch.object(hosts.os, "fsync", side_effect=fail_directory_fsync),
+        ):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        rendered = " ".join(result.messages).lower()
+        self.assertFalse(result.ok)
+        self.assertIn("removal succeeded", rendered)
+        self.assertNotIn("backup retained", rendered)
+        self.assertFalse(any("evergreen-backup" in item.name for item in codex.iterdir()))
+
+    def test_transaction_engine_deletes_and_commits_empty_directory(self):
+        directory = self.home / "empty"
+        directory.mkdir()
+        before = host_transaction._snapshot(directory, allow_directory=True)
+        parent = host_transaction._snapshot(self.home, allow_directory=True)
+        rollback = []
+        conflicts = []
+        parent_fd = host_transaction._open_directory(parent)
+        try:
+            after = host_transaction._perform_action(
+                "delete", directory, None, parent_fd=parent_fd, expected=before,
+                parent_snapshot=parent, rollback_entries=rollback,
+                conflicts=conflicts,
+            )
+        finally:
+            os.close(parent_fd)
+
+        self.assertEqual(after.kind, "absent")
+        self.assertEqual(len(rollback), 1)
+        host_transaction._commit_entry(rollback[0])
+        self.assertFalse(directory.exists())
+        self.assertFalse(any("evergreen-" in item.name for item in self.home.iterdir()))
+
+    def test_host_modules_stay_within_maintainability_budgets(self):
+        hosts_lines = (ROOT / "evergreen" / "hosts.py").read_text().splitlines()
+        transaction = ROOT / "evergreen" / "host_transaction.py"
+
+        self.assertLess(len(hosts_lines), 700)
+        self.assertTrue(transaction.exists())
+        self.assertLess(len(transaction.read_text().splitlines()), 1000)
 
     def test_replace_success_then_exception_keeps_backup_registered_for_rollback(self):
         from evergreen import hosts
@@ -903,7 +1195,7 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
         instructions = codex / "AGENTS.md"
         instructions.write_bytes(b"original")
         real_replace = hosts.os.replace
-        real_snapshot_at = hosts._snapshot_at
+        real_snapshot_at = host_transaction._snapshot_at
         publication_attempted = False
 
         def replace_then_raise(source, destination, *args, **kwargs):
@@ -921,7 +1213,7 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
 
         with (
             mock.patch.object(hosts.os, "replace", side_effect=replace_then_raise),
-            mock.patch.object(hosts, "_snapshot_at", side_effect=fail_destination_inspection),
+            mock.patch.object(host_transaction, "_snapshot_at", side_effect=fail_destination_inspection),
         ):
             result = hosts.install(self.home, ROOT, "codex")
 
@@ -1086,7 +1378,7 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
                 (home / ".claude" / "CLAUDE.md").write_bytes(b"claude bytes")
                 (home / ".codex" / "AGENTS.md").write_bytes(b"codex\r\nbytes\r\n")
                 before = self.snapshot(include_directories=True)
-                real_action = hosts._perform_action
+                real_action = host_transaction._perform_action
                 calls = 0
 
                 def fail_at_boundary(action, path, value, *args, **kwargs):
@@ -1099,7 +1391,7 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
                         raise OSError(f"injected after action {calls}")
                     return postimage
 
-                with mock.patch.object(hosts, "_perform_action", side_effect=fail_at_boundary):
+                with mock.patch.object(host_transaction, "_perform_action", side_effect=fail_at_boundary):
                     result = hosts.install(home, ROOT, "all")
 
                 self.assertFalse(result.ok)
@@ -1111,14 +1403,14 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
 
         home = self.home / "rollback failure"
         (home / ".claude").mkdir(parents=True)
-        real_action = hosts._perform_action
+        real_action = host_transaction._perform_action
 
         def mutate_then_fail(action, path, value, *args, **kwargs):
             real_action(action, path, value, *args, **kwargs)
             raise OSError("injected action failure")
 
-        with mock.patch.object(hosts, "_perform_action", side_effect=mutate_then_fail), \
-             mock.patch.object(hosts, "_restore_entry", side_effect=OSError("rollback failed")):
+        with mock.patch.object(host_transaction, "_perform_action", side_effect=mutate_then_fail), \
+             mock.patch.object(host_transaction, "_restore_entry", side_effect=OSError("rollback failed")):
             result = hosts.install(home, ROOT, "claude")
 
         self.assertFalse(result.ok)
@@ -1139,7 +1431,7 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
                 (home / ".codex" / "AGENTS.md").write_bytes(b"codex")
                 self.assertTrue(hosts.install(home, ROOT, "all").ok)
                 before = self.snapshot(include_directories=True)
-                real_action = hosts._perform_action
+                real_action = host_transaction._perform_action
                 calls = 0
 
                 def fail_after_action(action, path, value, *args, **kwargs):
@@ -1150,7 +1442,7 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
                         raise OSError(f"injected after uninstall action {calls}")
                     return postimage
 
-                with mock.patch.object(hosts, "_perform_action", side_effect=fail_after_action):
+                with mock.patch.object(host_transaction, "_perform_action", side_effect=fail_after_action):
                     result = hosts.uninstall(home, "all")
 
                 self.assertFalse(result.ok)
