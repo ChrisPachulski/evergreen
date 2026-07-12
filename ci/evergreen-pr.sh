@@ -131,20 +131,34 @@ if [ -z "$HEAD_SHA" ]; then
   finish_fallback "the head commit could not be resolved."
 fi
 
-changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" 2>/dev/null || true)"
+changed_file="$(mktemp 2>/dev/null)" || \
+  finish_inconclusive "Secure temporary file creation failed during change detection."
+if ! git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" >"$changed_file" 2>/dev/null; then
+  rm -f "$changed_file" 2>/dev/null || true
+  finish_inconclusive "Git change detection failed."
+fi
 code_changed=0
-while IFS= read -r file; do
+while IFS= read -r -d '' file; do
   [ -z "$file" ] && continue
   lower="$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')"
   case "$lower" in *.md|*.markdown|*.rst) continue ;; esac
   code_changed=1
   break
-done <<EOF
-$changed
-EOF
+done <"$changed_file"
+rm -f "$changed_file" 2>/dev/null || true
 
 has_docs=0
-git ls-files 2>/dev/null | grep -qiE '\.(md|markdown|rst)$' && has_docs=1
+docs_file="$(mktemp 2>/dev/null)" || \
+  finish_inconclusive "Secure temporary file creation failed during documentation detection."
+if ! git ls-tree -r -z --name-only "$HEAD_SHA" >"$docs_file" 2>/dev/null; then
+  rm -f "$docs_file" 2>/dev/null || true
+  finish_inconclusive "Git documentation detection failed."
+fi
+while IFS= read -r -d '' file; do
+  lower="$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')"
+  case "$lower" in *.md|*.markdown|*.rst) has_docs=1; break ;; esac
+done <"$docs_file"
+rm -f "$docs_file" 2>/dev/null || true
 if [ "$code_changed" -eq 0 ] || [ "$has_docs" -eq 0 ]; then
   printf '### 🌲 evergreen\n\nNo code-with-docs changes in this PR — nothing to check.\n' | emit_summary
   exit 0

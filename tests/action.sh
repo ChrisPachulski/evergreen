@@ -12,6 +12,7 @@ not_contains() { ! grep -Fq -- "$2" "$1" || fail "$3"; }
 
 STUB_BIN="$TMP_ROOT/bin"
 PYTHON_BIN="$(dirname "$(command -v python3)")"
+REAL_GIT_BIN="$(command -v git)"
 mkdir -p "$STUB_BIN"
 
 cat > "$STUB_BIN/claude" <<'EOF'
@@ -66,6 +67,21 @@ printf 'ANTHROPIC_API_KEY=%s GITHUB_TOKEN=%s\n' \
 exit "${NPM_EXIT:-0}"
 EOF
 chmod +x "$STUB_BIN/claude" "$STUB_BIN/gh" "$STUB_BIN/npm"
+
+FAIL_GIT_BIN="$TMP_ROOT/failing-git-bin"
+mkdir -p "$FAIL_GIT_BIN"
+cat > "$FAIL_GIT_BIN/git" <<'EOF'
+#!/usr/bin/env bash
+set -u
+case "${TEST_GIT_FAIL_MODE:-}:$*" in
+  diff:'diff --name-only'*|tree:'ls-tree -r -z --name-only'*) exit 70 ;;
+esac
+exec "$REAL_GIT_BIN" "$@"
+EOF
+ln -s "$STUB_BIN/claude" "$FAIL_GIT_BIN/claude"
+ln -s "$STUB_BIN/gh" "$FAIL_GIT_BIN/gh"
+ln -s "$STUB_BIN/npm" "$FAIL_GIT_BIN/npm"
+chmod +x "$FAIL_GIT_BIN/git"
 
 make_repo() {
   local name="$1" hostile="${2:-false}"
@@ -166,6 +182,8 @@ run_driver() {
     ANTHROPIC_API_KEY="${TEST_API_KEY-test-key}" \
     UNRELATED_SECRET=must-not-reach-claude \
     HOME="$CASE_DIR" \
+    REAL_GIT_BIN="$REAL_GIT_BIN" \
+    TEST_GIT_FAIL_MODE="${TEST_GIT_FAIL_MODE:-}" \
     GH_LOG="$GH_LOG_FILE" \
     NPM_LOG="$NPM_LOG_FILE" \
     NPM_ENV_LOG="$NPM_ENV_LOG_FILE" \
@@ -231,6 +249,24 @@ contains "$CLAUDE_ENV_FILE_PATH" 'ANTHROPIC_API_KEY=set GITHUB_TOKEN=' "Claude c
 not_contains "$CLAUDE_ENV_FILE_PATH" 'GITHUB_TOKEN=set' "Claude child inherited the GitHub token"
 not_contains "$CLAUDE_ENV_FILE_PATH" 'UNRELATED_SECRET=set' "Claude child inherited an unrelated runner secret"
 pass "hostile docs are delimited as evidence"
+
+make_repo diff-prefilter-failure
+TEST_GIT_FAIL_MODE=diff run_driver diff-prefilter-failure '' true "$FAIL_GIT_BIN"
+[ "$STATUS" -ne 0 ] || fail "git diff prefilter failure must be inconclusive"
+contains "$SUMMARY_FILE" 'inconclusive' "git diff prefilter failure was reported as a clean skip"
+
+make_repo tree-prefilter-failure
+TEST_GIT_FAIL_MODE=tree run_driver tree-prefilter-failure '' true "$FAIL_GIT_BIN"
+[ "$STATUS" -ne 0 ] || fail "git tree prefilter failure must be inconclusive"
+contains "$SUMMARY_FILE" 'inconclusive' "git tree prefilter failure was reported as a clean skip"
+pass "prefilter failures fail closed"
+
+make_repo dirty-index
+git -C "$REPO" rm --cached -q README.md
+run_driver dirty-index "$(clean_result)"
+[ "$STATUS" -eq 0 ] || fail "dirty index must not alter commit-bound eligibility"
+contains "$SUMMARY_FILE" 'docs still match the code' "dirty index caused an incorrect nothing-to-check skip"
+pass "prefilter is bound to the head commit"
 
 make_repo concrete-model
 TEST_MODEL=claude-opus-4-8 run_driver concrete-model "$(clean_result | sed 's/test-model/claude-opus-4-8/')"
