@@ -167,9 +167,15 @@ def _head_blob(
     if returncode:
         return None, f"could not read file blob at head: {path}"
     try:
-        return content.decode("utf-8").splitlines(), None
+        text = content.decode("utf-8")
     except UnicodeDecodeError:
         return None, f"is not UTF-8 text at head: {path}"
+    if not text:
+        return [], None
+    lines = text.split("\n")
+    if text.endswith("\n"):
+        lines.pop()
+    return [line[:-1] if line.endswith("\r") else line for line in lines], None
 
 
 def _head_lines(

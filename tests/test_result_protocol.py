@@ -273,6 +273,26 @@ class ResultProtocolTests(unittest.TestCase):
         )
         self.assert_invalid(result, "claim does not occur")
 
+    def test_counts_only_lf_as_a_repository_citation_line(self):
+        separators = ["\v", "\f", "\x85", "\u2028", "\u2029"]
+        for index, separator in enumerate(separators):
+            self.write(f"docs/separator-{index}.md", f"prefix{separator}Claim\n")
+        self.head = self.commit("non-LF separators")
+
+        for index, separator in enumerate(separators):
+            with self.subTest(separator=repr(separator)):
+                finding = self.finding(
+                    doc_path=f"docs/separator-{index}.md",
+                    doc_line=2,
+                    claim="Claim",
+                )
+                result = self.result(
+                    head=self.head,
+                    claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                    findings=[finding],
+                )
+                self.assert_invalid(result, "line")
+
     def test_rejects_missing_empty_or_multiline_claims(self):
         for claim in [None, "", "Run `shipit`\nsecond line"]:
             with self.subTest(claim=claim):
