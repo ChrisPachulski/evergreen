@@ -59,6 +59,8 @@ def claude_json(prompt, model, tools="", timeout=300, max_retries=2, runner=None
         except subprocess.TimeoutExpired:
             reason = "timeout"
             continue
+        except OSError as error:
+            return {"status": "abstain", "reason": str(error)}
         if getattr(completed, "returncode", 0):
             reason = f"CLI exited {completed.returncode}"
             continue
@@ -271,7 +273,10 @@ def judge(pair, models, stages=(), run_test=None):
             pv = [p["verdict"] for p in prongs]
 
     blindspot_result, bs = _checked_stage(
-        blindspot_call(pair, cheap), "blindspot", lambda value: "missed_angle" in value
+        blindspot_call(pair, cheap),
+        "blindspot",
+        lambda value: "missed_angle" in value and
+        (value["missed_angle"] is None or isinstance(value["missed_angle"], str)),
     )                                                                 # 4. blind-spot (cheap)
     trail["blindspot"] = blindspot_result
     if bs is None:
@@ -299,6 +304,10 @@ def judge(pair, models, stages=(), run_test=None):
 
 def score(rows):
     """Return completed-row metrics, abstention coverage, and the under-promise tally."""
+    languages = {row.get("language", "unknown") for row in rows}
+    if len(languages) > 1:
+        raise ValueError("score accepts one language at a time")
+
     def completed(row):
         status = row.get("final_status")
         verdict = row.get("final_verdict") if status is not None else row.get("verdict")
@@ -311,6 +320,7 @@ def score(rows):
     completed_rows = [r for r in rows if completed(r)]
     core = [r for r in completed_rows if r["category"] in CORE_CATEGORIES]
     under = [r for r in rows if r["category"] == "under-promise"]
+    under_completed = [r for r in under if completed(r)]
     tp = sum(r["label"] == "inconsistent" and verdict(r) == "inconsistent" for r in core)
     fp = sum(r["label"] == "consistent" and verdict(r) == "inconsistent" for r in core)
     fn = sum(r["label"] == "inconsistent" and verdict(r) == "consistent" for r in core)
@@ -330,8 +340,12 @@ def score(rows):
         "completed": len(completed_rows),
         "abstained": attempted - len(completed_rows),
         "completion_rate": len(completed_rows) / attempted if attempted else 0.0,
-        "under_flagged": sum(completed(r) and verdict(r) == "inconsistent" for r in under),
+        "under_flagged": sum(verdict(r) == "inconsistent" for r in under_completed),
         "under_total": len(under),
+        "under_attempted": len(under),
+        "under_completed": len(under_completed),
+        "under_abstained": len(under) - len(under_completed),
+        "under_completion_rate": len(under_completed) / len(under) if under else 0.0,
     }
 
 
@@ -353,7 +367,7 @@ def split_metrics(rows, pos_frac, resamples=1000, seed=0):
             **{k: med(k) for k in ("precision", "recall", "f1", "specificity", "flag_rate")}}
 
 
-def report(rows, label=""):
+def _report_language(rows, label):
     m = score(rows)
     n = m["tp"] + m["fp"] + m["fn"] + m["tn"]
     nat = split_metrics(rows, 0.10)
@@ -373,10 +387,19 @@ def report(rows, label=""):
           f"  accuracy {m['accuracy']:.2f}  flag-rate {m['flag_rate']:.2f}"
           f"  |  TP {m['tp']}  FP {m['fp']}  FN {m['fn']}  TN {m['tn']}")
     print(f"under-promise (informational by design, not scored as drift): "
-          f"flagged {m['under_flagged']}/{m['under_total']}")
+          f"flagged {m['under_flagged']}/{m['under_completed']} completed; completion "
+          f"{m['under_completed']}/{m['under_attempted']}, {m['under_abstained']} abstained "
+          f"({m['under_completion_rate']:.1%})")
     print("baseline regime: the peer is DocPrism (arXiv:2511.00215) — 0.62 precision @ 15% flag"
           " rate, multi-language, no fine-tuning. Fine-tuned single-language SOTA (F1 0.88-0.94)"
           " is a different regime and out of scope.")
+
+
+def report(rows, label=""):
+    languages = sorted({row.get("language", "unknown") for row in rows})
+    for language in languages or ["unknown"]:
+        language_rows = [row for row in rows if row.get("language", "unknown") == language]
+        _report_language(language_rows, f"{label}, language={language}")
 
 
 def selftest():
@@ -468,7 +491,8 @@ def rows_from_transcript(transcript):
             status, verdict = "complete", got["verdict"]  # legacy completed artifact
         else:
             status, verdict = "abstain", None
-        rows.append({"label": item["label"], "category": item["category"],
+        rows.append({"language": item.get("language", "unknown"),
+                     "label": item["label"], "category": item["category"],
                      "final_status": status, "final_verdict": verdict})
     return rows
 
