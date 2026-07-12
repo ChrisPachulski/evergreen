@@ -477,6 +477,81 @@ class HostTests(unittest.TestCase):
                 else:
                     self.assertEqual(instructions.stat().st_ino, concurrent_inode)
 
+    def test_existing_instruction_write_and_rollback_preserve_inode_metadata(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        instructions.chmod(0o640)
+        before = instructions.stat()
+        attribute = "user.evergreen-test"
+        xattr_supported = hasattr(os, "setxattr")
+        if xattr_supported:
+            try:
+                os.setxattr(instructions, attribute, b"preserve")
+            except OSError:
+                xattr_supported = False
+        real_action = hosts._perform_action
+        forward = None
+
+        def fail_after_instruction(action, path, value, *args, **kwargs):
+            nonlocal forward
+            postimage = real_action(action, path, value, *args, **kwargs)
+            if path.name == instructions.name:
+                forward = instructions.stat()
+                if xattr_supported:
+                    self.assertEqual(os.getxattr(instructions, attribute), b"preserve")
+                raise OSError("force rollback after instruction write")
+            return postimage
+
+        with mock.patch.object(
+            hosts, "_perform_action", side_effect=fail_after_instruction
+        ):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        after = instructions.stat()
+        self.assertFalse(result.ok)
+        self.assertEqual(instructions.read_bytes(), b"original")
+        for metadata in (forward, after):
+            self.assertEqual((metadata.st_dev, metadata.st_ino), (before.st_dev, before.st_ino))
+            self.assertEqual((metadata.st_uid, metadata.st_gid), (before.st_uid, before.st_gid))
+            self.assertEqual(metadata.st_mode, before.st_mode)
+        if xattr_supported:
+            self.assertEqual(os.getxattr(instructions, attribute), b"preserve")
+
+    def test_partial_in_place_write_restores_same_inode_preimage(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        before = instructions.stat()
+        real_write = hosts.os.write
+        calls = 0
+
+        def partial_then_fail(descriptor, data):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return real_write(descriptor, bytes(data[:4]))
+            if calls == 2:
+                raise OSError("injected partial write")
+            return real_write(descriptor, data)
+
+        with mock.patch.object(hosts.os, "write", side_effect=partial_then_fail):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        after = instructions.stat()
+        self.assertFalse(result.ok)
+        self.assertEqual(instructions.read_bytes(), b"original")
+        self.assertEqual((after.st_dev, after.st_ino), (before.st_dev, before.st_ino))
+        self.assertEqual((after.st_uid, after.st_gid, after.st_mode), (
+            before.st_uid, before.st_gid, before.st_mode,
+        ))
+
     def test_path_snapshot_records_link_count(self):
         from evergreen import hosts
 
@@ -888,6 +963,40 @@ class HostTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 command.write_bytes(content)
                 self.assertIn(expected, hosts._validate_python_command(command))
+
+    def test_static_command_shebang_accepts_only_exact_python_interpreters(self):
+        from evergreen import hosts
+
+        command = self.home / "evergreen"
+        accepted = (
+            "/usr/bin/env python",
+            "/usr/bin/env python3",
+            "/usr/bin/env python3.12.1",
+            "/usr/bin/python",
+            "/usr/local/bin/python3",
+            "/opt/python3.12",
+        )
+        rejected = (
+            "/usr/bin/notpython",
+            "/usr/bin/pythonista",
+            "/usr/bin/python2",
+            "/bin/env python3",
+            "/usr/bin/env notpython3",
+            "/usr/bin/env python3-evil",
+            "/usr/bin/env -S python3 -I",
+            "python3",
+        )
+
+        for interpreter in accepted:
+            with self.subTest(accepted=interpreter):
+                command.write_text(f"#!{interpreter}\npass\n")
+                self.assertIsNone(hosts._validate_python_command(command))
+        for interpreter in rejected:
+            with self.subTest(rejected=interpreter):
+                command.write_text(f"#!{interpreter}\npass\n")
+                error = hosts._validate_python_command(command)
+                self.assertIsNotNone(error)
+                self.assertIn("Python shebang", error)
 
     def test_readme_documents_runtime_platform_and_host_safety_bounds(self):
         from evergreen.hosts import MAX_INSTRUCTION_BYTES

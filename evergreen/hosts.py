@@ -783,7 +783,7 @@ def _perform_action(action, path, value, *, parent_fd, expected):
             mode = 0o600 if path.name == OWNERSHIP_FILE else 0o644
             _create_write_at(parent_fd, path.name, value, mode)
         else:
-            _atomic_write_at(parent_fd, path.name, value, expected.mode, expected)
+            _write_existing_at(parent_fd, path.name, value, expected)
     elif action == "link":
         if expected.kind == "absent":
             os.symlink(value, path.name, target_is_directory=True, dir_fd=parent_fd)
@@ -804,28 +804,48 @@ def _perform_action(action, path, value, *, parent_fd, expected):
     return postimage
 
 
-def _atomic_write_at(parent_fd, name, data, mode, expected):
-    temporary = f".{name}.evergreen-{uuid.uuid4().hex}"
-    descriptor = os.open(
-        temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode, dir_fd=parent_fd,
-    )
+def _write_existing_at(parent_fd, name, data, expected):
+    flags = os.O_RDWR | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(name, flags, dir_fd=parent_fd)
     try:
-        os.fchmod(descriptor, mode)
-        with os.fdopen(descriptor, "wb") as stream:
-            descriptor = -1
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
         _verify_snapshot_at(expected, parent_fd)
-        os.replace(temporary, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        opened = os.fstat(descriptor)
+        current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        identity = lambda item: (
+            _kind_from_mode(item.st_mode), item.st_dev, item.st_ino,
+            stat.S_IMODE(item.st_mode), item.st_nlink,
+        )
+        expected_identity = (
+            expected.kind, expected.dev, expected.ino, expected.mode, expected.nlink,
+        )
+        if identity(opened) != expected_identity or identity(current) != expected_identity:
+            raise OSError(f"transaction path changed before in-place write: {expected.path}")
+        try:
+            _replace_descriptor_bytes(descriptor, data, expected.path)
+        except BaseException as error:
+            try:
+                _replace_descriptor_bytes(descriptor, expected.data, expected.path)
+            except BaseException as recovery_error:
+                raise OSError(
+                    f"in-place write and preimage recovery failed: {expected.path}: "
+                    f"{recovery_error}"
+                ) from error
+            raise
         os.fsync(parent_fd)
     finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-        try:
-            os.unlink(temporary, dir_fd=parent_fd)
-        except FileNotFoundError:
-            pass
+        os.close(descriptor)
+
+
+def _replace_descriptor_bytes(descriptor, data, path):
+    os.ftruncate(descriptor, 0)
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    remaining = memoryview(data)
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if written <= 0:
+            raise OSError(f"short in-place write: {path}")
+        remaining = remaining[written:]
+    os.fsync(descriptor)
 
 
 def _create_write_at(parent_fd, name, data, mode):
@@ -894,9 +914,15 @@ def _restore_entry(entry):
                 os.unlink(entry.after.path.name, dir_fd=parent_fd)
                 os.fsync(parent_fd)
         elif before.kind == "regular":
-            _atomic_write_at(
-                parent_fd, before.path.name, before.data, before.mode, entry.after
-            )
+            if entry.after.kind == "regular":
+                _write_existing_at(
+                    parent_fd, before.path.name, before.data, entry.after
+                )
+            elif entry.after.kind == "absent":
+                _verify_snapshot_at(entry.after, parent_fd)
+                _create_write_at(parent_fd, before.path.name, before.data, before.mode)
+            else:
+                raise OSError(f"unsupported regular rollback postimage: {before.path}")
         elif before.kind == "symlink":
             _atomic_link_at(parent_fd, before.path.name, before.target, entry.after)
         else:
@@ -1038,7 +1064,7 @@ def _validate_python_command(command):
         payload = _read_regular_bounded(command, MAX_COMMAND_BYTES, "canonical command")
         source = payload.decode("utf-8")
         first_line = source.splitlines()[0] if source else ""
-        if not first_line.startswith("#!") or "python" not in first_line.lower():
+        if not _is_python_shebang(first_line):
             return "canonical command requires a Python shebang"
         ast.parse(source, filename=str(command))
     except UnicodeDecodeError as error:
@@ -1046,6 +1072,28 @@ def _validate_python_command(command):
     except (OSError, SyntaxError, ValueError) as error:
         return str(error)
     return None
+
+
+def _is_python_shebang(line):
+    if not line.startswith("#!"):
+        return False
+    fields = line[2:].strip().split()
+    if len(fields) == 1:
+        interpreter = fields[0]
+        return interpreter.startswith("/") and _is_python_name(Path(interpreter).name)
+    return (
+        len(fields) == 2 and fields[0] == "/usr/bin/env" and
+        _is_python_name(fields[1])
+    )
+
+
+def _is_python_name(name):
+    if name in ("python", "python3"):
+        return True
+    return (
+        name.startswith("python3.") and
+        all(part and part.isdigit() for part in name.removeprefix("python3.").split("."))
+    )
 
 
 def _kind(path):
