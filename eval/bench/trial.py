@@ -324,7 +324,7 @@ def judge(pair, models, run_test=None):
     }
 
     def invoke(stage, *args):
-        return run_test(stage, *args) if run_test else calls[stage](*args)
+        return run_test(stage, *args) if run_test is not None else calls[stage](*args)
 
     snap_result, snap = _checked_stage(
         invoke("snap", pair, strong), "snap", lambda value: value.get("verdict") in VERDICTS

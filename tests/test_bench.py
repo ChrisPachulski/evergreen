@@ -256,6 +256,26 @@ class JudgeAbstentionTests(unittest.TestCase):
         self.assertEqual(decided["final_verdict"], "inconsistent")
         self.assertIn("synthesis", decided["stages"])
 
+    def test_falsey_callable_stage_stub_never_falls_through_to_paid_cli(self):
+        consistent = ok(self.consistent)
+
+        class FalseyStub:
+            def __bool__(self):
+                return False
+
+            def __call__(self, stage, *_args):
+                return {
+                    "snap": consistent,
+                    "challenge": ok({"cracks": False}),
+                    "prongs": [consistent] * 3,
+                    "blindspot": ok({"missed_angle": None}),
+                }[stage]
+
+        with mock.patch.object(trial, "snap_call", side_effect=AssertionError("paid CLI path")):
+            result = trial.judge(self.pair, self.models, run_test=FalseyStub())
+
+        self.assertEqual(result["final_verdict"], "consistent")
+
     def test_missing_snap_verdict_abstains_instead_of_defaulting_consistent(self):
         with mock.patch.object(trial, "snap_call", return_value=ok({"why": "missing"})), \
              mock.patch.object(trial, "challenge_call", return_value=ok({"cracks": False})), \
