@@ -17,6 +17,7 @@ MAX_CLI_VERSION_BYTES = 64 * 1024
 MAX_UNTRACKED_BYTES = 1024 * 1024 * 1024
 MAX_UNTRACKED_FILES = 100_000
 MAX_UNTRACKED_SECONDS = 30
+MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 VALID_CATEGORIES = {None, "direct-mismatch", "over-promise", "under-promise"}
 
 
@@ -351,13 +352,23 @@ def merge_usage(previous, current):
     raise ValueError("provider usage fields changed type or value while resuming")
 
 
-def atomic_write(path, text):
-    """Durably replace an artifact without exposing partial JSON."""
+def atomic_write_json(path, document, max_bytes=MAX_ARTIFACT_BYTES):
+    """Stream bounded canonical JSON and atomically expose only the complete artifact."""
     path = Path(path)
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    total = 0
+    encoder = json.JSONEncoder(indent=2, sort_keys=True, allow_nan=False)
     try:
-        with os.fdopen(descriptor, "w") as output:
-            output.write(text)
+        with os.fdopen(descriptor, "wb") as output:
+            for text in encoder.iterencode(document):
+                chunk = text.encode("utf-8")
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError(f"generated artifact exceeds {max_bytes} bytes")
+                output.write(chunk)
+            if total + 1 > max_bytes:
+                raise ValueError(f"generated artifact exceeds {max_bytes} bytes")
+            output.write(b"\n")
             output.flush()
             os.fsync(output.fileno())
         os.replace(temporary, path)

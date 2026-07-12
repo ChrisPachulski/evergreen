@@ -269,11 +269,23 @@ class ArtifactMetadataTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "artifact.json"
-            path.write_text("old")
+            path.write_text('{"old":true}')
             with mock.patch("eval.bench.artifact.os.replace", side_effect=OSError("interrupted")):
                 with self.assertRaisesRegex(OSError, "interrupted"):
-                    artifact.atomic_write(path, "new")
-            self.assertEqual(path.read_text(), "old")
+                    artifact.atomic_write_json(path, {"new": True})
+            self.assertEqual(json.loads(path.read_text()), {"old": True})
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_oversized_streamed_json_preserves_previous_artifact(self):
+        from eval.bench import artifact
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifact.json"
+            path.write_text('{"old":true}')
+            with mock.patch("eval.bench.artifact.json.dumps", side_effect=AssertionError("eager")):
+                with self.assertRaisesRegex(ValueError, "generated artifact exceeds"):
+                    artifact.atomic_write_json(path, {"payload": "x" * 100}, max_bytes=32)
+            self.assertEqual(json.loads(path.read_text()), {"old": True})
             self.assertEqual(list(Path(directory).iterdir()), [path])
 
 
@@ -568,6 +580,54 @@ class RunBenchArtifactIntegrationTests(unittest.TestCase):
             with mock.patch.object(run_bench, "MAX_RESCORE_BYTES", 4):
                 with self.assertRaisesRegex(ValueError, "artifact too large"):
                     run_bench.load_rescore(legacy)
+
+    def test_legacy_rescore_allows_missing_or_null_got_as_abstention(self):
+        rows = [
+            {"id": "missing", "label": "consistent", "category": None},
+            {"id": "null", "label": "inconsistent", "category": "direct-mismatch", "got": None},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.json"
+            path.write_text(json.dumps(rows))
+            loaded = run_bench.load_rescore(path)
+
+        rescored = run_bench.rows_from_transcript(loaded)
+        self.assertEqual([row["final_status"] for row in rescored], ["abstain", "abstain"])
+
+    def test_model_cli_capture_bounds_noisy_stdout_and_stderr(self):
+        with mock.patch.object(run_bench, "MAX_MODEL_STDOUT_BYTES", 32), \
+             mock.patch.object(run_bench, "MAX_MODEL_STDERR_BYTES", 32):
+            with self.assertRaisesRegex(OSError, "output limit"):
+                run_bench.bounded_cli_run([
+                    sys.executable, "-c",
+                    "import sys; print('x'*100); print('e'*100, file=sys.stderr)",
+                ], capture_output=True, text=True, timeout=2)
+
+    def test_scheduling_never_exceeds_bounded_in_flight_window(self):
+        class Future:
+            def __init__(self, owner, value):
+                self.owner = owner
+                self.value = value
+
+            def result(self):
+                self.owner.outstanding -= 1
+                return self.value
+
+        class Executor:
+            def __init__(self):
+                self.outstanding = 0
+                self.maximum = 0
+
+            def submit(self, function, item):
+                self.outstanding += 1
+                self.maximum = max(self.maximum, self.outstanding)
+                return Future(self, function(item))
+
+        executor = Executor()
+        results = list(run_bench.bounded_results(executor, lambda value: value * 2, range(20), 3))
+
+        self.assertEqual(results, [(value, value * 2) for value in range(20)])
+        self.assertEqual(executor.maximum, 3)
 
 
 if __name__ == "__main__":

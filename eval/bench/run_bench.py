@@ -25,21 +25,24 @@ import json
 import hashlib
 import os
 import random
+import selectors
 import statistics
 import subprocess
 import sys
 import time
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 try:
     from .artifact import (
-        artifact_document, artifact_metadata, atomic_write, dumps, load_json, merge_usage,
+        artifact_document, artifact_metadata, atomic_write_json, load_json, merge_usage,
         read_bytes, resume_state, validate_benchmark_row, validate_input_hashes, validate_usage,
     )
 except ImportError:  # Direct script execution.
     from artifact import (
-        artifact_document, artifact_metadata, atomic_write, dumps, load_json, merge_usage,
+        artifact_document, artifact_metadata, atomic_write_json, load_json, merge_usage,
         read_bytes, resume_state, validate_benchmark_row, validate_input_hashes, validate_usage,
     )
 
@@ -54,6 +57,8 @@ MAX_DATASET_ROWS = 100_000
 MAX_SKILL_BYTES = 1024 * 1024
 MAX_RESCORE_BYTES = 64 * 1024 * 1024
 MAX_RESCORE_ROWS = 100_000
+MAX_MODEL_STDOUT_BYTES = 1024 * 1024
+MAX_MODEL_STDERR_BYTES = 256 * 1024
 _FROZEN_SKILL_BODY = None
 
 
@@ -75,12 +80,54 @@ def _fence(pair):
     return f"## Code (`{pair['func']}`)\n```{pair.get('language', 'python').lower()}\n{pair['code']}\n```\n\n## Documentation\n{pair['doc']}"
 
 
+def bounded_cli_run(command, capture_output=True, text=True, timeout=300):
+    """Capture model CLI output with independent stdout/stderr byte ceilings."""
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    selector = selectors.DefaultSelector()
+    streams = {
+        process.stdout: (bytearray(), MAX_MODEL_STDOUT_BYTES),
+        process.stderr: (bytearray(), MAX_MODEL_STDERR_BYTES),
+    }
+    for stream in streams:
+        selector.register(stream, selectors.EVENT_READ)
+    deadline = time.monotonic() + timeout
+    try:
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            events = selector.select(max(0, remaining))
+            if remaining <= 0 or not events:
+                raise subprocess.TimeoutExpired(command, timeout)
+            for key, _mask in events:
+                stream = key.fileobj
+                output, limit = streams[stream]
+                chunk = os.read(stream.fileno(), min(64 * 1024, limit + 1 - len(output)))
+                if not chunk:
+                    selector.unregister(stream)
+                    continue
+                output.extend(chunk)
+                if len(output) > limit:
+                    raise OSError("model CLI output limit exceeded")
+        return_code = process.wait(timeout=max(0, deadline - time.monotonic()))
+    except Exception:
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+        raise
+    finally:
+        selector.close()
+        process.stdout.close()
+        process.stderr.close()
+    stdout = bytes(streams[process.stdout][0]).decode("utf-8", "replace")
+    stderr = bytes(streams[process.stderr][0]).decode("utf-8", "replace")
+    return SimpleNamespace(returncode=return_code, stdout=stdout, stderr=stderr)
+
+
 def claude_json(prompt, model, tools="", timeout=300, max_retries=2, runner=None):
     """Run one headless CLI call with bounded retries and return an explicit result status."""
     cmd = ["claude", "-p", prompt, "--allowedTools", tools]
     if model:
         cmd += ["--model", model]
-    runner = runner or subprocess.run
+    runner = runner or bounded_cli_run
     reason = "malformed response"
     for _ in range(max_retries + 1):
         try:
@@ -90,6 +137,9 @@ def claude_json(prompt, model, tools="", timeout=300, max_retries=2, runner=None
             continue
         except OSError as error:
             return {"status": "abstain", "reason": str(error)}
+        if (len(getattr(completed, "stdout", "").encode()) > MAX_MODEL_STDOUT_BYTES or
+                len(getattr(completed, "stderr", "").encode()) > MAX_MODEL_STDERR_BYTES):
+            return {"status": "abstain", "reason": "model CLI output limit exceeded"}
         if getattr(completed, "returncode", 0):
             reason = f"CLI exited {completed.returncode}"
             continue
@@ -601,12 +651,37 @@ def load_dataset(path):
 
 def load_rescore(path):
     document = load_json(path, MAX_RESCORE_BYTES)
+    legacy = isinstance(document, list)
     rows = artifact_rows(document)
     if len(rows) > MAX_RESCORE_ROWS:
         raise ValueError("rescore artifact has too many rows")
     for row in rows:
-        validate_benchmark_row(row, require_result=True)
+        validate_benchmark_row(row, require_result=not legacy)
+        if legacy and row.get("got") is not None and not isinstance(row["got"], dict):
+            raise ValueError("legacy benchmark row result must be an object or null")
     return rows
+
+
+def bounded_results(executor, function, items, max_in_flight):
+    """Yield ordered results while keeping at most max_in_flight submitted futures."""
+    if max_in_flight < 1:
+        raise ValueError("max_in_flight must be positive")
+    iterator = iter(items)
+    pending = deque()
+    for _ in range(max_in_flight):
+        try:
+            item = next(iterator)
+        except StopIteration:
+            break
+        pending.append((item, executor.submit(function, item)))
+    while pending:
+        item, future = pending.popleft()
+        yield item, future.result()
+        try:
+            next_item = next(iterator)
+        except StopIteration:
+            continue
+        pending.append((next_item, executor.submit(function, next_item)))
 
 
 def main():
@@ -663,11 +738,11 @@ def main():
                 state["provider_usage"], current_usage, evaluated_rows
             ),
         )
-        atomic_write(out_path, dumps(document))
+        atomic_write_json(out_path, document)
 
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for p, v in zip(todo, pool.map(lambda p: judge(p, models), todo)):
+        for p, v in bounded_results(pool, lambda pair: judge(pair, models), todo, workers):
             evaluated_rows += 1
             done[p["id"]] = {**p, "got": v}
             verdict = v["final_verdict"]
