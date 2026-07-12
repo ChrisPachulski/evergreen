@@ -46,24 +46,33 @@ def _fence(pair):
     return f"## Code (`{pair['func']}`)\n```{pair.get('language', 'python').lower()}\n{pair['code']}\n```\n\n## Documentation\n{pair['doc']}"
 
 
-def claude_json(prompt, model, tools="", timeout=300):
-    """Run one headless CLI call; return the first parsed JSON object printed, or None."""
+def claude_json(prompt, model, tools="", timeout=300, max_retries=2, runner=None):
+    """Run one headless CLI call with bounded retries and return an explicit result status."""
     cmd = ["claude", "-p", prompt, "--allowedTools", tools]
     if model:
         cmd += ["--model", model]
-    try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
-    except subprocess.TimeoutExpired:
-        return None
-    got = None
-    for line in out.splitlines():
-        line = line.strip().strip("`")
-        if line.startswith("{") and (got is None):
-            try:
-                got = json.loads(line)
-            except json.JSONDecodeError:
-                pass
-    return got
+    runner = runner or subprocess.run
+    reason = "malformed response"
+    for _ in range(max_retries + 1):
+        try:
+            completed = runner(cmd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            reason = "timeout"
+            continue
+        if getattr(completed, "returncode", 0):
+            reason = f"CLI exited {completed.returncode}"
+            continue
+        for line in completed.stdout.splitlines():
+            line = line.strip().strip("`")
+            if line.startswith("{"):
+                try:
+                    value = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(value, dict):
+                    return {"status": "ok", "value": value}
+        reason = "malformed response"
+    return {"status": "abstain", "reason": reason}
 
 
 # ── The trial ────────────────────────────────────────────────────────────────
@@ -183,56 +192,129 @@ Reply with exactly one line of JSON and nothing else:
     return claude_json(prompt, model)
 
 
+VERDICTS = {"consistent", "inconsistent"}
+
+
+def _checked_stage(result, name, required):
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        if isinstance(result, dict) and result.get("status") == "abstain":
+            return result, None
+        return {"status": "abstain", "reason": f"{name} returned no result"}, None
+    value = result.get("value")
+    if not isinstance(value, dict) or not required(value):
+        return {"status": "abstain", "reason": f"{name} response is missing required fields"}, None
+    return result, value
+
+
+def _abstained(trail, reason):
+    return {
+        "final_status": "abstain",
+        "final_verdict": None,
+        "verdict": None,
+        "category": None,
+        "why": reason,
+        "contested": False,
+        "stages": trail,
+    }
+
+
 def judge(pair, models, stages=(), run_test=None):
     """Put one claim on trial (the 5-step process). models: {strong, cheap}."""
     strong, cheap = models["strong"], models["cheap"]
     trail = {}
 
-    snap = snap_call(pair, strong)                                    # 1. snap (strong)
-    snap_v = (snap or {}).get("verdict", "consistent")
-    trail["snap"] = snap
+    snap_result, snap = _checked_stage(
+        snap_call(pair, strong), "snap", lambda value: value.get("verdict") in VERDICTS
+    )                                                                 # 1. snap (strong)
+    trail["snap"] = snap_result
+    if snap is None:
+        return _abstained(trail, snap_result["reason"])
+    snap_v = snap["verdict"]
 
-    ch = challenge_call(pair, snap_v, cheap)                          # 2. challenge (cheap)
-    trail["challenge"] = ch
-    cracked = bool(ch and ch.get("cracks"))
+    challenge_result, ch = _checked_stage(
+        challenge_call(pair, snap_v, cheap),
+        "challenge",
+        lambda value: type(value.get("cracks")) is bool,
+    )                                                                 # 2. challenge (cheap)
+    trail["challenge"] = challenge_result
+    if ch is None:
+        return _abstained(trail, challenge_result["reason"])
+    cracked = ch["cracks"]
 
-    prongs = run_prongs(pair, strong if cracked else cheap)           # 3. blind prongs
-    trail["prongs"] = prongs
-    pv = [(p or {}).get("verdict") for p in prongs]
+    prong_results = run_prongs(pair, strong if cracked else cheap)     # 3. blind prongs
+    checked_prongs = [
+        _checked_stage(result, "prong", lambda value: value.get("verdict") in VERDICTS)
+        for result in prong_results
+    ]
+    trail["prongs"] = [result for result, _ in checked_prongs]
+    if len(checked_prongs) != len(PRONGS) or any(value is None for _, value in checked_prongs):
+        return _abstained(trail, "one or more prong responses are missing required fields")
+    prongs = [value for _, value in checked_prongs]
+    pv = [p["verdict"] for p in prongs]
 
     if not cracked:  # survived path: tally snap + 3 prongs; a 2-2 tie means the snap failed
         votes = [snap_v] + pv
         if votes.count("inconsistent") == votes.count("consistent"):
             cracked = True
-            prongs = run_prongs(pair, strong)                         # escalate to strong prongs
-            trail["prongs_escalated"] = prongs
-            pv = [(p or {}).get("verdict") for p in prongs]
+            escalated = [
+                _checked_stage(
+                    result, "escalated prong", lambda value: value.get("verdict") in VERDICTS
+                )
+                for result in run_prongs(pair, strong)
+            ]                                                         # escalate to strong prongs
+            trail["prongs_escalated"] = [result for result, _ in escalated]
+            if len(escalated) != len(PRONGS) or any(value is None for _, value in escalated):
+                return _abstained(
+                    trail, "one or more escalated prong responses are missing required fields"
+                )
+            prongs = [value for _, value in escalated]
+            pv = [p["verdict"] for p in prongs]
 
-    bs = blindspot_call(pair, cheap)                                  # 4. blind-spot (cheap)
-    trail["blindspot"] = bs
-    missed = bool(bs and bs.get("missed_angle"))
+    blindspot_result, bs = _checked_stage(
+        blindspot_call(pair, cheap), "blindspot", lambda value: "missed_angle" in value
+    )                                                                 # 4. blind-spot (cheap)
+    trail["blindspot"] = blindspot_result
+    if bs is None:
+        return _abstained(trail, blindspot_result["reason"])
+    missed = bool(bs["missed_angle"])
 
     all_votes = [snap_v] + pv
     if not missed and len(set(all_votes)) == 1:      # everyone agrees, nothing missed → done
         verdict, category, why = snap_v, (snap or {}).get("category"), (snap or {}).get("why")
     else:                                            # 5. synthesis (strong), only when contested
-        syn = synthesis_call(pair, snap, ch, prongs, bs, strong)
-        trail["synthesis"] = syn
-        verdict = (syn or {}).get("verdict", snap_v)
-        category, why = (syn or {}).get("category"), (syn or {}).get("why")
+        synthesis_result, syn = _checked_stage(
+            synthesis_call(pair, snap, ch, prongs, bs, strong),
+            "synthesis",
+            lambda value: value.get("verdict") in VERDICTS,
+        )
+        trail["synthesis"] = synthesis_result
+        if syn is None:
+            return _abstained(trail, synthesis_result["reason"])
+        verdict = syn["verdict"]
+        category, why = syn.get("category"), syn.get("why")
 
-    return {"verdict": verdict, "category": category, "why": why, "contested": cracked or missed,
-            "stages": trail}
+    return {"final_status": "complete", "final_verdict": verdict, "verdict": verdict,
+            "category": category, "why": why, "contested": cracked or missed, "stages": trail}
 
 
 def score(rows):
-    """rows: list of {label, category, verdict}. Returns core metrics + under-promise tally."""
-    core = [r for r in rows if r["category"] in CORE_CATEGORIES]
+    """Return completed-row metrics, abstention coverage, and the under-promise tally."""
+    def completed(row):
+        status = row.get("final_status")
+        verdict = row.get("final_verdict") if status is not None else row.get("verdict")
+        return (status in (None, "complete")) and verdict in VERDICTS
+
+    def verdict(row):
+        return row.get("final_verdict") if row.get("final_status") is not None else row.get("verdict")
+
+    attempted = len(rows)
+    completed_rows = [r for r in rows if completed(r)]
+    core = [r for r in completed_rows if r["category"] in CORE_CATEGORIES]
     under = [r for r in rows if r["category"] == "under-promise"]
-    tp = sum(r["label"] == "inconsistent" and r["verdict"] == "inconsistent" for r in core)
-    fp = sum(r["label"] == "consistent" and r["verdict"] == "inconsistent" for r in core)
-    fn = sum(r["label"] == "inconsistent" and r["verdict"] == "consistent" for r in core)
-    tn = sum(r["label"] == "consistent" and r["verdict"] == "consistent" for r in core)
+    tp = sum(r["label"] == "inconsistent" and verdict(r) == "inconsistent" for r in core)
+    fp = sum(r["label"] == "consistent" and verdict(r) == "inconsistent" for r in core)
+    fn = sum(r["label"] == "inconsistent" and verdict(r) == "consistent" for r in core)
+    tn = sum(r["label"] == "consistent" and verdict(r) == "consistent" for r in core)
     n = len(core) or 1
     precision = tp / (tp + fp) if (tp + fp) else 1.0
     recall = tp / (tp + fn) if (tp + fn) else 1.0
@@ -244,7 +326,11 @@ def score(rows):
         "specificity": tn / (tn + fp) if (tn + fp) else 1.0,
         "accuracy": (tp + tn) / n,
         "flag_rate": (tp + fp) / n,
-        "under_flagged": sum(r["verdict"] == "inconsistent" for r in under),
+        "attempted": attempted,
+        "completed": len(completed_rows),
+        "abstained": attempted - len(completed_rows),
+        "completion_rate": len(completed_rows) / attempted if attempted else 0.0,
+        "under_flagged": sum(completed(r) and verdict(r) == "inconsistent" for r in under),
         "under_total": len(under),
     }
 
@@ -252,7 +338,9 @@ def score(rows):
 def split_metrics(rows, pos_frac, resamples=1000, seed=0):
     """Median metrics at a fixed prevalence: keep every inconsistent core pair, resample the
     consistent class to the target ratio (CASCADE's protocol, arXiv:2604.19400)."""
-    core = [r for r in rows if r["category"] in CORE_CATEGORIES]
+    core = [r for r in rows if r["category"] in CORE_CATEGORIES and
+            ((r.get("final_status") is None and r.get("verdict") in VERDICTS) or
+             (r.get("final_status") == "complete" and r.get("final_verdict") in VERDICTS))]
     pos = [r for r in core if r["label"] == "inconsistent"]
     neg = [r for r in core if r["label"] == "consistent"]
     n_neg = round(len(pos) * (1 - pos_frac) / pos_frac)
@@ -270,6 +358,8 @@ def report(rows, label=""):
     n = m["tp"] + m["fp"] + m["fn"] + m["tn"]
     nat = split_metrics(rows, 0.10)
     bal = split_metrics(rows, 0.50)
+    print(f"\ncompletion: {m['completed']}/{m['attempted']} completed, {m['abstained']} abstained"
+          f" ({m['completion_rate']:.1%})")
     print(f"\ncore set (consistent + direct-mismatch + over-promise), n={n}{label}")
     print(f"  NATURAL 10/90 split (headline; {nat['n_pos']} inconsistent + {nat['n_neg']} consistent"
           f"{', consistent bootstrapped WITH replacement' if nat['with_replacement'] else ''},"
@@ -328,11 +418,12 @@ def selftest():
     real_json = claude_json
     def scripted(replies):
         def fake(prompt, model, tools="", timeout=300):
-            if "final judge" in prompt:    return replies["synthesis"]   # embeds the record; check first
-            if '"cracks"' in prompt:       return replies["challenge"]
-            if '"role"' in prompt:         return replies["prong"](prompt)
-            if '"missed_angle"' in prompt: return replies["blindspot"]
-            return replies["snap"]         # the snap call
+            if "final judge" in prompt:    value = replies["synthesis"]   # embeds the record; check first
+            elif '"cracks"' in prompt:     value = replies["challenge"]
+            elif '"role"' in prompt:       value = replies["prong"](prompt)
+            elif '"missed_angle"' in prompt: value = replies["blindspot"]
+            else:                          value = replies["snap"]         # the snap call
+            return {"status": "ok", "value": value}
         return fake
     pair = {"id": "x", "func": "f", "code": "def f(): pass", "doc": "d", "language": "python"}
     M = {"strong": "", "cheap": ""}
@@ -368,8 +459,18 @@ def selftest():
 
 
 def rows_from_transcript(transcript):
-    return [{"label": t["label"], "category": t["category"],
-             "verdict": (t.get("got") or {}).get("verdict", "consistent")} for t in transcript]
+    rows = []
+    for item in transcript:
+        got = item.get("got") or {}
+        if got.get("final_status") == "complete" and got.get("final_verdict") in VERDICTS:
+            status, verdict = "complete", got["final_verdict"]
+        elif "final_status" not in got and got.get("verdict") in VERDICTS:
+            status, verdict = "complete", got["verdict"]  # legacy completed artifact
+        else:
+            status, verdict = "abstain", None
+        rows.append({"label": item["label"], "category": item["category"],
+                     "final_status": status, "final_verdict": verdict})
+    return rows
 
 
 def main():
@@ -397,11 +498,14 @@ def main():
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for p, v in zip(todo, pool.map(lambda p: judge(p, models), todo)):
             done[p["id"]] = {**p, "got": v}
-            verdict = (v or {}).get("verdict", "consistent")
-            path = "contested" if (v or {}).get("contested") else "clear"
-            mark = "✓" if (verdict == "inconsistent") == (p["label"] == "inconsistent") else "✗"
+            verdict = v["final_verdict"]
+            status = v["final_status"]
+            path = "abstain" if status == "abstain" else \
+                ("contested" if v.get("contested") else "clear")
+            mark = "-" if status == "abstain" else \
+                ("✓" if (verdict == "inconsistent") == (p["label"] == "inconsistent") else "✗")
             print(f"  {mark} [{len(done)}/{len(pairs)}] {p['id']:40} label={p['label']:12} "
-                  f"verdict={verdict:12} [{path}]", flush=True)
+                  f"verdict={(verdict or 'abstain'):12} [{path}]", flush=True)
             if len(done) % 25 == 0:
                 out_path.write_text(json.dumps(list(done.values()), indent=2))
     transcript = [done[p["id"]] for p in pairs]
