@@ -17,6 +17,8 @@ except ImportError:  # Direct script execution.
 
 MAX_ARTIFACTS = 64
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
+# Keep aggregate ingestion well below the 64-artifact theoretical maximum (4 GiB).
+MAX_TOTAL_ARTIFACT_BYTES = 128 * 1024 * 1024
 MAX_ROWS = 100_000
 MAX_LANGUAGE_CHARS = 128
 REQUIRED_METADATA = ("dataset", "skill", "judge", "git", "cli_version", "settings")
@@ -82,11 +84,19 @@ def _compatibility_identity(metadata):
 def _load_artifacts(paths):
     if len(paths) > MAX_ARTIFACTS:
         raise ValueError(f"too many artifacts (maximum {MAX_ARTIFACTS})")
+    paths = sorted((Path(path) for path in paths), key=lambda item: str(item.resolve()))
+    sizes = [path.stat().st_size for path in paths]
+    if any(size > MAX_ARTIFACT_BYTES for size in sizes):
+        raise ValueError(f"artifact too large (maximum {MAX_ARTIFACT_BYTES} bytes)")
+    if sum(sizes) > MAX_TOTAL_ARTIFACT_BYTES:
+        raise ValueError(
+            f"total artifact bytes exceed {MAX_TOTAL_ARTIFACT_BYTES} byte publication limit"
+        )
     artifacts = []
     row_count = 0
     seen_ids = set()
     compatibility = None
-    for path in sorted((Path(path) for path in paths), key=lambda item: str(item.resolve())):
+    for path in paths:
         document = load_json(path, MAX_ARTIFACT_BYTES)
         if isinstance(document, list):
             raise ValueError("legacy artifact provenance is unknown; publication refused")
@@ -236,6 +246,12 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         markdown, passed = _build_report(args.artifacts, args.coverage_threshold)
+    except RecursionError:
+        markdown = (
+            "# Evergreen benchmark report\n\nPublication status: **FAIL**.\n\n"
+            "Reason: artifact nesting exceeds safe limit.\n"
+        )
+        passed = False
     except (OSError, ValueError, json.JSONDecodeError) as error:
         markdown = (
             "# Evergreen benchmark report\n\nPublication status: **FAIL**.\n\n"

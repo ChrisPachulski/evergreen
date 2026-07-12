@@ -468,6 +468,54 @@ class ArtifactReportTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "too many rows"):
                     report.render_markdown([path])
 
+    def test_report_rejects_cumulative_bytes_before_loading_any_artifact(self):
+        from eval.bench import report
+
+        rows = [completed("p1", "python", "consistent", None, "consistent")]
+        with tempfile.TemporaryDirectory() as directory:
+            first = self.write_artifact(directory, "one.json", rows)
+            second = self.write_artifact(directory, "two.json", [
+                completed("p2", "go", "consistent", None, "consistent")
+            ])
+            budget = first.stat().st_size + second.stat().st_size - 1
+            with mock.patch.object(report, "MAX_TOTAL_ARTIFACT_BYTES", budget), \
+                 mock.patch.object(report, "load_json") as loader:
+                with self.assertRaisesRegex(ValueError, "total artifact bytes"):
+                    report.render_markdown([first, second])
+            loader.assert_not_called()
+
+    def test_deep_json_and_provider_metadata_fail_publication_deterministically(self):
+        from eval.bench import report
+
+        with tempfile.TemporaryDirectory() as directory:
+            deep = Path(directory) / "deep.json"
+            deep.write_text("{}")
+            markdown = Path(directory) / "report.md"
+            with mock.patch.object(report, "load_json", side_effect=RecursionError):
+                self.assertEqual(report.main([str(deep), "--markdown", str(markdown)]), 2)
+            self.assertIn("artifact nesting exceeds safe limit", markdown.read_text())
+
+            holder = leaf = {}
+            for _ in range(2000):
+                child = {}
+                leaf["nested"] = child
+                leaf = child
+            shallow = self.metadata("provider")
+            document = {
+                "schema_version": 1,
+                "metadata": shallow,
+                "timing": {"started_at": "2026-01-01T00:00:00Z", "elapsed_seconds": 1},
+                "provider_usage": holder,
+                "rows": [completed("p1", "python", "consistent", None, "consistent")],
+            }
+            placeholder = Path(directory) / "provider.json"
+            placeholder.write_text("{}")
+            with mock.patch.object(report, "load_json", return_value=document):
+                self.assertEqual(report.main([
+                    str(placeholder), "--markdown", str(markdown)
+                ]), 2)
+            self.assertIn("artifact nesting exceeds safe limit", markdown.read_text())
+
     def test_language_heading_is_markdown_safe(self):
         from eval.bench import report
 
