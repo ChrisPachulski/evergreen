@@ -6,6 +6,10 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: evergreen-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   doc-drift:
     runs-on: ubuntu-latest

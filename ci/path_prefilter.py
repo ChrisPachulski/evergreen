@@ -2,11 +2,17 @@
 """Classify bounded NUL-delimited Git paths without per-path subprocesses."""
 
 import argparse
+import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
 import sys
 import time
+
+try:
+    from .path_policy import is_protocol_path
+except ImportError:  # Direct script execution.
+    from path_policy import is_protocol_path
 
 
 DOC_SUFFIXES = {".md", ".markdown", ".rst"}
@@ -28,19 +34,67 @@ def _living_doc(path: str) -> bool:
     )
 
 
+def _read_input(path: Path, max_bytes: int, deadline: float) -> tuple[bytes | None, str | None]:
+    nonblocking = getattr(os, "O_NONBLOCK", None)
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if nonblocking is None or nofollow is None:
+        return None, "path prefilter requires nonblocking no-follow file reads"
+    descriptor = None
+    try:
+        before = path.lstat()
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or
+                before.st_size > max_bytes):
+            return None, "path prefilter input is missing, unsafe, or oversized"
+        if time.monotonic() > deadline:
+            return None, "path prefilter exceeded wall-clock limit"
+        descriptor = os.open(path, os.O_RDONLY | nonblocking | nofollow)
+        opened = os.fstat(descriptor)
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1 or
+                opened.st_size > max_bytes or
+                (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)):
+            return None, "path prefilter input changed or became unsafe"
+        chunks = []
+        remaining = max_bytes + 1
+        while remaining:
+            if time.monotonic() > deadline:
+                return None, "path prefilter exceeded wall-clock limit"
+            chunk = os.read(descriptor, min(65_536, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        after_open = os.fstat(descriptor)
+        if len(payload) > max_bytes:
+            return None, "path prefilter input is oversized"
+    except OSError as error:
+        return None, f"path prefilter input could not be read: {error}"
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    try:
+        after = path.lstat()
+    except OSError as error:
+        return None, f"path prefilter input could not be revalidated: {error}"
+    identity = lambda item: (
+        item.st_dev, item.st_ino, item.st_mode, item.st_nlink, item.st_size,
+        item.st_mtime_ns, item.st_ctime_ns,
+    )
+    if identity(before) != identity(opened) or identity(opened) != identity(after_open) or \
+            identity(opened) != identity(after):
+        return None, "path prefilter input changed while it was read"
+    if time.monotonic() > deadline:
+        return None, "path prefilter exceeded wall-clock limit"
+    return payload, None
+
+
 def classify(
     path: Path, mode: str, *, max_bytes: int, max_paths: int, timeout_seconds: float
 ) -> tuple[bool | None, str | None]:
     deadline = time.monotonic() + timeout_seconds
-    try:
-        metadata = path.lstat()
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > max_bytes:
-            return None, "path prefilter input is missing, unsafe, or oversized"
-        payload = path.read_bytes()
-    except OSError as error:
-        return None, f"path prefilter input could not be read: {error}"
-    if len(payload) > max_bytes:
-        return None, "path prefilter input is oversized"
+    payload, error = _read_input(path, max_bytes, deadline)
+    if error or payload is None:
+        return None, error
     for index, raw in enumerate(payload.split(b"\0")):
         if not raw:
             continue
@@ -52,6 +106,8 @@ def classify(
             value = raw.decode("utf-8")
         except UnicodeDecodeError:
             return None, "path prefilter encountered invalid UTF-8"
+        if not is_protocol_path(value):
+            return None, "path prefilter encountered a path not citable by the result protocol"
         is_doc = PurePosixPath(value).suffix.casefold() in DOC_SUFFIXES
         if (mode == "code" and not is_doc) or (mode == "docs" and _living_doc(value)):
             return True, None

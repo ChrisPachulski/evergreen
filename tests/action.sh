@@ -91,7 +91,12 @@ cat > "$FAIL_GIT_BIN/git" <<'EOF'
 #!/usr/bin/env bash
 set -u
 mode="$(cat "$HOME/git-fail-mode" 2>/dev/null || true)"
+if [[ "$*" = *'rev-parse --verify'* ]]; then
+  printf 'ARGS=%s SECRET=%s\n' "$*" "${UNRELATED_SECRET+set}" >> "$HOME/git-resolve.log"
+fi
 case "$mode:$*" in
+  hang-resolve:*'rev-parse --verify'*) sleep .3 ;;
+  malformed-resolve:*'rev-parse --verify'*) printf '%s\n' 'not-a-commit'; exit 0 ;;
   diff:*'diff --name-only'*|tree:*'ls-tree -r -z --name-only'*) exit 70 ;;
   hang-diff:*'diff --name-only'*|hang-tree:*'ls-tree -r -z --name-only'*) sleep 5 ;;
   hang-manifest:*'diff --name-status'*) sleep 5 ;;
@@ -202,6 +207,7 @@ run_driver() {
   : > "$NPM_ENV_LOG_FILE"
   : > "$CLAUDE_ARGS_FILE_PATH"
   : > "$CLAUDE_ENV_FILE_PATH"
+  : > "$CASE_DIR/git-resolve.log"
   case "${TEST_CLAUDE_BEHAVIOR:-}" in
     hang-version) : > "$CASE_DIR/hang-version" ;;
     hang-model) : > "$CASE_DIR/hang-model" ;;
@@ -357,6 +363,27 @@ run_driver oversized-context ''
 contains "$SUMMARY_FILE" 'Commit-derived review context is truncated or contains deterministic errors.' "oversized context did not report the exact context failure"
 [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "oversized context still invoked Claude"
 pass "review context bounds fail closed"
+
+make_repo resolve-timeout
+TEST_GIT_FAIL_MODE=hang-resolve TEST_GIT_TIMEOUT_SECONDS=0.05 \
+  run_driver resolve-timeout '' true "$FAIL_GIT_BIN"
+[ "$STATUS" -ne 0 ] || fail "hanging commit resolution must be inconclusive"
+contains "$SUMMARY_FILE" 'diff base could not be resolved.' "commit resolution timeout lost its exact reason"
+[ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "commit resolution timeout still invoked Claude"
+
+make_repo malformed-resolve
+TEST_GIT_FAIL_MODE=malformed-resolve run_driver malformed-resolve '' true "$FAIL_GIT_BIN"
+[ "$STATUS" -ne 0 ] || fail "malformed commit resolution must be inconclusive"
+contains "$SUMMARY_FILE" 'diff base could not be resolved.' "malformed commit resolution lost its exact reason"
+[ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "malformed commit resolution still invoked Claude"
+
+make_repo clean-resolve
+run_driver clean-resolve "$(clean_result)" true "$FAIL_GIT_BIN"
+[ "$STATUS" -eq 0 ] || fail "bounded clean commit resolution should complete"
+contains "$CASE_DIR/git-resolve.log" '--no-replace-objects' "commit resolution permits replace objects"
+contains "$CASE_DIR/git-resolve.log" 'SECRET=' "commit resolution inherited unrelated secrets"
+not_contains "$CASE_DIR/git-resolve.log" 'SECRET=set' "commit resolution inherited unrelated secrets"
+pass "commit resolution is exact, clean, and bounded"
 
 make_repo diff-prefilter-failure
 TEST_GIT_FAIL_MODE=diff run_driver diff-prefilter-failure '' true "$FAIL_GIT_BIN"
@@ -589,9 +616,15 @@ contains "$ROOT/.github/workflows/evergreen-pr.yml" 'uses: ./.evergreen-action' 
 contains "$ROOT/.github/workflows/evergreen-pr.yml" 'repo_path: ${{ github.workspace }}/review' "workflow does not point the action at the evidence checkout"
 contains "$ROOT/.github/workflows/evergreen-pr.yml" 'base_ref: ${{ github.event.pull_request.base.sha }}' "workflow does not bind the requested base commit"
 contains "$ROOT/.github/workflows/evergreen-pr.yml" 'pr_number: ${{ github.event.pull_request.number }}' "workflow does not bind publication to the triggering PR"
+contains "$ROOT/.github/workflows/evergreen-pr.yml" 'group: evergreen-pr-${{ github.event.pull_request.number }}' "workflow does not serialize publication by PR"
+contains "$ROOT/.github/workflows/evergreen-pr.yml" 'cancel-in-progress: true' "workflow does not cancel superseded PR reviews"
 not_contains "$ROOT/ci/evergreen-pr.sh" '/tmp/evergreen-comment.md' "driver uses a predictable temporary-file fallback"
 contains "$ROOT/ci/evergreen-pr.sh" 'MANIFEST_SAFE_STATUS=$?' "manifest sanitizer status is unchecked"
 contains "$ROOT/ci/evergreen-pr.sh" 'CONTEXT_SAFE_STATUS=$?' "context sanitizer status is unchecked"
+contains "$ROOT/ci/bounded_process.py" 'children that remain in its inherited process group' "process-group containment is overstated"
+contains "$ROOT/ci/bounded_process.py" 'Deliberately detached descendants' "detached-child limitation is undocumented"
+contains "$ROOT/ci/evergreen-pr.sh" 'or model content cannot spawn processes' "Action prompt omits its no-tools process boundary"
+contains "$ROOT/ci/evergreen-pr.sh" 'requires runner-level' "Action prompt overstates portable process containment"
 pass "Action contract"
 
 echo "all action integration tests passed"

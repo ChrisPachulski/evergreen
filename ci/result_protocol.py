@@ -4,12 +4,13 @@
 import json
 from pathlib import Path
 import re
+import time
 
 try:
-    from .bounded_process import OUTPUT_EXIT, run_bounded
+    from .bounded_process import OUTPUT_EXIT, TIMEOUT_EXIT, run_bounded
     from .path_policy import MAX_PATH, is_protocol_path
 except ImportError:  # Direct script execution.
-    from bounded_process import OUTPUT_EXIT, run_bounded
+    from bounded_process import OUTPUT_EXIT, TIMEOUT_EXIT, run_bounded
     from path_policy import MAX_PATH, is_protocol_path
 
 
@@ -19,6 +20,7 @@ MAX_TEXT = 4096
 MAX_RUNTIME_TEXT = 256
 MAX_CITATION_BYTES = 1_048_576
 CITATION_TIMEOUT_SECONDS = 3
+MAX_CITATION_GIT_CALLS = 600
 
 RESULT_FIELDS = {
     "schema_version", "status", "base", "head", "claims", "findings",
@@ -128,14 +130,13 @@ def _head_blob(
     repo: Path,
     head: str,
     path: str,
+    state: dict,
 ) -> tuple[list[str] | None, str | None]:
-    status, entry, failure = run_bounded(
+    status, entry, failure = _citation_git(
         ["git", "--no-replace-objects", "-C", str(repo), "ls-tree", "-z", head,
          "--", f":(literal){path}"],
-        timeout_seconds=CITATION_TIMEOUT_SECONDS,
         max_output_bytes=4096,
-        clean_env=True,
-        keep_env=[],
+        state=state,
     )
     if status or not entry:
         return None, failure or f"does not exist at head: {path}"
@@ -153,12 +154,10 @@ def _head_blob(
     if kind != "blob":
         return None, f"is not a file blob at head: {path}"
 
-    status, content, failure = run_bounded(
+    status, content, failure = _citation_git(
         ["git", "--no-replace-objects", "-C", str(repo), "cat-file", "blob", object_id],
-        timeout_seconds=CITATION_TIMEOUT_SECONDS,
         max_output_bytes=MAX_CITATION_BYTES,
-        clean_env=True,
-        keep_env=[],
+        state=state,
     )
     if status == OUTPUT_EXIT:
         return None, f"citation exceeds {MAX_CITATION_BYTES} bytes at head: {path}"
@@ -176,6 +175,32 @@ def _head_blob(
     return [line[:-1] if line.endswith("\r") else line for line in lines], None
 
 
+def _citation_git(
+    command: list[str], *, max_output_bytes: int, state: dict
+) -> tuple[int, bytes, str | None]:
+    if state["failure"]:
+        return TIMEOUT_EXIT, b"", state["failure"]
+    remaining = state["deadline"] - time.monotonic()
+    if remaining <= 0:
+        state["failure"] = "citation validation timed out; aggregate wall-clock limit exceeded"
+        return TIMEOUT_EXIT, b"", state["failure"]
+    if state["calls"] >= MAX_CITATION_GIT_CALLS:
+        state["failure"] = f"citation Git call limit exceeded ({MAX_CITATION_GIT_CALLS})"
+        return TIMEOUT_EXIT, b"", state["failure"]
+    state["calls"] += 1
+    status, output, failure = run_bounded(
+        command,
+        timeout_seconds=remaining,
+        max_output_bytes=max_output_bytes,
+        clean_env=True,
+        keep_env=[],
+    )
+    if status == TIMEOUT_EXIT:
+        state["failure"] = "citation validation timed out; aggregate wall-clock limit exceeded"
+        return status, output, state["failure"]
+    return status, output, failure
+
+
 def _head_lines(
     repo: Path,
     head: str,
@@ -183,9 +208,10 @@ def _head_lines(
     label: str,
     errors: list[str],
     cache: dict[str, tuple[list[str] | None, str | None]],
+    state: dict,
 ) -> list[str] | None:
     if path not in cache:
-        cache[path] = _head_blob(repo, head, path)
+        cache[path] = _head_blob(repo, head, path, state)
     lines, failure = cache[path]
     if failure:
         errors.append(f"{label} {failure}")
@@ -199,6 +225,7 @@ def _citation(
     head: str,
     errors: list[str],
     cache: dict[str, tuple[list[str] | None, str | None]],
+    state: dict,
     *,
     verify_claim: bool,
 ) -> None:
@@ -208,7 +235,7 @@ def _citation(
     line_ok = _integer(item.get(line_key), line_key, errors, positive=True)
     if path is None or not line_ok:
         return
-    lines = _head_lines(repo, head, path, path_key, errors, cache)
+    lines = _head_lines(repo, head, path, path_key, errors, cache, state)
     line = item[line_key]
     if lines is None:
         return
@@ -226,6 +253,7 @@ def _validate_finding(
     head: str,
     errors: list[str],
     cache: dict[str, tuple[list[str] | None, str | None]],
+    state: dict,
 ) -> None:
     label = f"findings[{index}]"
     if not _shape(item, FINDING_FIELDS, label, errors):
@@ -236,8 +264,9 @@ def _validate_finding(
     _enum(item["fix_or_flag"], FIX_OR_FLAG, f"{label}.fix_or_flag", errors)
     _text(item["claim"], f"{label}.claim", errors, single_line=True)
     _text(item["why"], f"{label}.why", errors)
-    _citation(item, "doc", repo, head, errors, cache, verify_claim=True)
-    _citation(item, "code", repo, head, errors, cache, verify_claim=False)
+    _citation(item, "doc", repo, head, errors, cache, state, verify_claim=True)
+    if not state["failure"]:
+        _citation(item, "code", repo, head, errors, cache, state, verify_claim=False)
 
 
 def _validate_unverified(
@@ -247,6 +276,7 @@ def _validate_unverified(
     head: str,
     errors: list[str],
     cache: dict[str, tuple[list[str] | None, str | None]],
+    state: dict,
 ) -> None:
     label = f"unverified[{index}]"
     if not _shape(item, UNVERIFIED_FIELDS, label, errors):
@@ -254,7 +284,7 @@ def _validate_unverified(
     assert isinstance(item, dict)
     _text(item["claim"], f"{label}.claim", errors, single_line=True)
     _text(item["reason"], f"{label}.reason", errors)
-    _citation(item, "doc", repo, head, errors, cache, verify_claim=True)
+    _citation(item, "doc", repo, head, errors, cache, state, verify_claim=True)
 
 
 def validate_result(
@@ -266,6 +296,11 @@ def validate_result(
     """Return every protocol or HEAD-citation error in a result envelope."""
     errors: list[str] = []
     citation_cache: dict[str, tuple[list[str] | None, str | None]] = {}
+    citation_state = {
+        "deadline": time.monotonic() + CITATION_TIMEOUT_SECONDS,
+        "calls": 0,
+        "failure": None,
+    }
     repo = Path(repo).resolve()
     if not _shape(result, RESULT_FIELDS, "result", errors):
         return errors
@@ -303,10 +338,19 @@ def validate_result(
 
     if isinstance(result["findings"], list) and len(result["findings"]) <= MAX_ITEMS:
         for index, item in enumerate(result["findings"]):
-            _validate_finding(item, index, repo, expected_head, errors, citation_cache)
-    if isinstance(result["unverified"], list) and len(result["unverified"]) <= MAX_ITEMS:
+            _validate_finding(
+                item, index, repo, expected_head, errors, citation_cache, citation_state
+            )
+            if citation_state["failure"]:
+                break
+    if (not citation_state["failure"] and isinstance(result["unverified"], list) and
+            len(result["unverified"]) <= MAX_ITEMS):
         for index, item in enumerate(result["unverified"]):
-            _validate_unverified(item, index, repo, expected_head, errors, citation_cache)
+            _validate_unverified(
+                item, index, repo, expected_head, errors, citation_cache, citation_state
+            )
+            if citation_state["failure"]:
+                break
     if isinstance(result["errors"], list) and len(result["errors"]) <= MAX_ITEMS:
         for index, item in enumerate(result["errors"]):
             _text(item, f"errors[{index}]", errors)

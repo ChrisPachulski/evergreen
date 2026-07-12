@@ -6,6 +6,8 @@ import tempfile
 import time
 import unittest
 
+from ci import bounded_process
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "ci" / "bounded_process.py"
@@ -49,7 +51,7 @@ class BoundedProcessTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 2)
         self.assertIn(b"timed out", result.stderr)
 
-    def test_timeout_kills_descendant_after_parent_has_exited(self):
+    def test_timeout_kills_inherited_group_descendant_after_parent_has_exited(self):
         with tempfile.TemporaryDirectory() as temporary:
             marker = Path(temporary) / "descendant-survived"
             child = (
@@ -68,6 +70,29 @@ class BoundedProcessTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 124)
             self.assertFalse(marker.exists())
+
+    def test_detached_descendant_limitation_is_explicit_and_truthful(self):
+        self.assertIn("deliberately detached descendants", bounded_process.__doc__.casefold())
+        with tempfile.TemporaryDirectory() as temporary:
+            marker = Path(temporary) / "detached-descendant-survived"
+            child = (
+                "import pathlib,time; time.sleep(.3); "
+                f"pathlib.Path({str(marker)!r}).write_text('alive')"
+            )
+            result = self.run_runner(
+                "--timeout-seconds", "0.1",
+                "--max-output-bytes", "100",
+                code=(
+                    "import subprocess,sys; "
+                    f"subprocess.Popen([sys.executable, '-c', {child!r}], "
+                    "start_new_session=True)"
+                ),
+            )
+            time.sleep(0.4)
+
+            self.assertEqual(result.returncode, 124)
+            self.assertTrue(marker.exists())
+            marker.unlink()
 
     def test_stops_when_output_exceeds_the_ceiling(self):
         result = self.run_runner(

@@ -139,6 +139,35 @@ class ResultProtocolTests(unittest.TestCase):
         self.assertTrue(any("timed out" in error for error in errors))
         self.assertTrue(run.called)
 
+    def test_citation_validation_has_one_aggregate_deadline(self):
+        result = self.result(
+            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            findings=[self.finding()],
+        )
+        with mock.patch.object(result_protocol, "CITATION_TIMEOUT_SECONDS", 1), \
+             mock.patch("time.monotonic", side_effect=[0, 2]), \
+             mock.patch.object(result_protocol, "run_bounded",
+                               return_value=(0, b"", None)) as run:
+            errors = validate_result(result, self.repo, self.base, self.head)
+
+        self.assertTrue(any("citation validation" in error and "wall-clock limit" in error
+                            for error in errors), errors)
+        run.assert_not_called()
+
+    def test_citation_validation_stops_at_one_git_call_budget(self):
+        result = self.result(
+            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            findings=[self.finding()],
+        )
+        entry = b"100644 blob " + b"a" * 40 + b"\tdocs/usage.md\0"
+        with mock.patch.object(result_protocol, "MAX_CITATION_GIT_CALLS", 1, create=True), \
+             mock.patch.object(result_protocol, "run_bounded",
+                               return_value=(0, entry, None)) as run:
+            errors = validate_result(result, self.repo, self.base, self.head)
+
+        self.assertTrue(any("citation Git call limit" in error for error in errors), errors)
+        self.assertEqual(run.call_count, 1)
+
     def test_accepts_release_identity_drift_findings(self):
         finding = self.finding(category="release_identity_drift")
         result = self.result(

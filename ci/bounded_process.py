@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Run one command with wall-clock, output, process-group, and environment bounds."""
+"""Run one command with wall-clock, output, process-group, and environment bounds.
+
+On POSIX, timeout stops the CLI and children that remain in its inherited process group.
+Deliberately detached descendants are outside portable stdlib containment and require
+runner-level OS isolation.
+"""
 
 import argparse
 import os
