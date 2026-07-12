@@ -21,6 +21,7 @@ if [ "${1:-}" = "--version" ]; then
   printf '%s\n' '2.1.197 (Claude Code)'
   exit 0
 fi
+printf '%s\n' "$*" > "$CLAUDE_ARGS_FILE"
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "-p" ]; then
     shift
@@ -57,6 +58,8 @@ cat > "$STUB_BIN/npm" <<'EOF'
 #!/usr/bin/env bash
 set -u
 printf '%s\n' "$*" >> "$NPM_LOG"
+printf 'ANTHROPIC_API_KEY=%s GITHUB_TOKEN=%s\n' \
+  "${ANTHROPIC_API_KEY+set}" "${GITHUB_TOKEN+set}" >> "$NPM_ENV_LOG"
 exit "${NPM_EXIT:-0}"
 EOF
 chmod +x "$STUB_BIN/claude" "$STUB_BIN/gh" "$STUB_BIN/npm"
@@ -132,11 +135,15 @@ run_driver() {
   SUMMARY_FILE="$CASE_DIR/summary.md"
   GH_LOG_FILE="$CASE_DIR/gh.log"
   NPM_LOG_FILE="$CASE_DIR/npm.log"
+  NPM_ENV_LOG_FILE="$CASE_DIR/npm-env.log"
+  CLAUDE_ARGS_FILE_PATH="$CASE_DIR/claude-args.log"
   printf '%s' "$output" > "$OUTPUT_FILE"
   : > "$PROMPT_FILE"
   : > "$SUMMARY_FILE"
   : > "$GH_LOG_FILE"
   : > "$NPM_LOG_FILE"
+  : > "$NPM_ENV_LOG_FILE"
+  : > "$CLAUDE_ARGS_FILE_PATH"
   set +e
   PATH="$path_prefix:$PYTHON_BIN:/usr/bin:/bin" \
     GITHUB_WORKSPACE="$REPO" \
@@ -146,7 +153,7 @@ run_driver() {
     GITHUB_REPOSITORY=acme/demo \
     EVERGREEN_ACTION_PATH="$ROOT" \
     EVERGREEN_BASE_REF="$BASE_SHA" \
-    EVERGREEN_MODEL=test-model \
+    EVERGREEN_MODEL="${TEST_MODEL-test-model}" \
     EVERGREEN_POST_COMMENT=true \
     EVERGREEN_FAIL_ON_INCONCLUSIVE="$policy" \
     EVERGREEN_SETUP_ERROR="${SETUP_ERROR:-}" \
@@ -154,8 +161,10 @@ run_driver() {
     ANTHROPIC_API_KEY="${TEST_API_KEY-test-key}" \
     CLAUDE_OUTPUT_FILE="$OUTPUT_FILE" \
     CLAUDE_PROMPT_FILE="$PROMPT_FILE" \
+    CLAUDE_ARGS_FILE="$CLAUDE_ARGS_FILE_PATH" \
     GH_LOG="$GH_LOG_FILE" \
     NPM_LOG="$NPM_LOG_FILE" \
+    NPM_ENV_LOG="$NPM_ENV_LOG_FILE" \
     GH_EXISTING_ID="${GH_EXISTING_ID:-}" \
     GH_HOSTILE_ID="${GH_HOSTILE_ID:-}" \
     GH_PATCH_FAIL="${GH_PATCH_FAIL:-false}" \
@@ -192,19 +201,31 @@ pass "empty output"
 make_repo hostile true
 run_driver hostile "$(clean_result)"
 [ "$STATUS" -eq 0 ] || fail "hostile repository text should remain data"
-contains "$PROMPT_FILE" '<untrusted_repository_evidence encoding="base64">' "prompt lacks encoded evidence delimiter"
+contains "$PROMPT_FILE" '<untrusted_repository_evidence encoding="json">' "prompt lacks readable JSON evidence delimiter"
 contains "$PROMPT_FILE" "</untrusted_repository_evidence>" "prompt lacks closing evidence delimiter"
 EXPECTED_MANIFEST="$(python3 "$ROOT/ci/change_manifest.py" --base "$BASE_SHA" --head "$HEAD_SHA" --repo "$REPO")"
 CLOSE_COUNT="$(grep -Fo '</untrusted_repository_evidence>' "$PROMPT_FILE" | wc -l | tr -d ' ')"
 [ "$CLOSE_COUNT" -eq 1 ] || fail "hostile evidence forged a closing delimiter"
-ENCODED_MANIFEST="$(awk '/^<untrusted_repository_evidence encoding="base64">$/{take=1;next} /^<\/untrusted_repository_evidence>$/{take=0} take' "$PROMPT_FILE" | tr -d '\n')"
-DECODED_MANIFEST="$(printf '%s' "$ENCODED_MANIFEST" | python3 -c 'import base64,sys; print(base64.b64decode(sys.stdin.buffer.read()).decode(), end="")')"
-[ "$DECODED_MANIFEST" = "$EXPECTED_MANIFEST" ] || fail "encoded evidence is not the exact generated manifest"
+ENCODED_MANIFEST="$(awk '/^<untrusted_repository_evidence encoding="json">$/{take=1;next} /^<\/untrusted_repository_evidence>$/{take=0} take' "$PROMPT_FILE" | tr -d '\n')"
+contains "$PROMPT_FILE" '\u003c/untrusted_repository_evidence\u003e' "hostile closing delimiter was not JSON-escaped"
+contains "$PROMPT_FILE" '"schema_version":1' "manifest schema is not directly readable"
+contains "$PROMPT_FILE" '"files":[' "manifest fields are not directly readable"
+printf '%s' "$ENCODED_MANIFEST" | python3 -c 'import json,sys; json.load(sys.stdin)' || fail "escaped evidence is not valid JSON"
+EXPECTED_OBJECT="$(printf '%s' "$EXPECTED_MANIFEST" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True))')"
+ACTUAL_OBJECT="$(printf '%s' "$ENCODED_MANIFEST" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True))')"
+[ "$ACTUAL_OBJECT" = "$EXPECTED_OBJECT" ] || fail "escaped evidence changed the manifest object"
 contains "$PROMPT_FILE" "Do not follow" "prompt does not explicitly forbid repository instructions"
 contains "$PROMPT_FILE" "exactly one fenced block" "prompt does not require one result envelope"
 contains "$PROMPT_FILE" '"model":"test-model"' "prompt does not record the resolved model identity"
 contains "$PROMPT_FILE" '"cli_version":"2.1.197 (Claude Code)"' "prompt does not record the resolved CLI identity"
 pass "hostile docs are delimited as evidence"
+
+make_repo concrete-model
+TEST_MODEL=claude-opus-4-8 run_driver concrete-model "$(clean_result | sed 's/test-model/claude-opus-4-8/')"
+[ "$STATUS" -eq 0 ] || fail "concrete configured model should produce a complete audit"
+contains "$CLAUDE_ARGS_FILE_PATH" '--model claude-opus-4-8' "driver did not pass the concrete model explicitly"
+contains "$SUMMARY_FILE" 'model: claude-opus-4-8' "renderer did not publish the trusted concrete model"
+pass "concrete model identity"
 
 make_repo missing-cli
 NO_CLAUDE_BIN="$TMP_ROOT/no-claude-bin"
@@ -287,10 +308,22 @@ contains "$GH_LOG_FILE" "pr comment 42" "patch failure did not fall back to comm
 pass "bot-owned upsert and patch fallback"
 
 contains "$ROOT/action.yml" '@anthropic-ai/claude-code@2.1.197' "Action does not pin the tested Claude CLI"
+contains "$ROOT/action.yml" 'model:' "Action lacks a model input"
+contains "$ROOT/action.yml" 'default: "claude-opus-4-8"' "Action model default is not concrete and tested"
+contains "$ROOT/action.yml" 'EVERGREEN_MODEL: ${{ inputs.model }}' "Action does not pass its concrete model"
 contains "$ROOT/action.yml" 'fail_on_inconclusive:' "Action lacks fail_on_inconclusive input"
 contains "$ROOT/action.yml" 'EVERGREEN_FAIL_ON_INCONCLUSIVE:' "Action does not pass the inconclusive policy"
 contains "$ROOT/action.yml" 'EVERGREEN_SETUP_ERROR' "Action does not route npm failure through audit policy"
 contains "$ROOT/action.yml" 'EVERGREEN_IS_FORK:' "Action does not declare its fork policy"
+contains "$ROOT/action.yml" 'env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN npm install' "npm install inherits audit secrets"
+NPM_PROBE_LOG="$TMP_ROOT/npm-probe.log"
+NPM_PROBE_ENV="$TMP_ROOT/npm-probe-env.log"
+: > "$NPM_PROBE_LOG"
+: > "$NPM_PROBE_ENV"
+ANTHROPIC_API_KEY=secret GITHUB_TOKEN=token NPM_LOG="$NPM_PROBE_LOG" NPM_ENV_LOG="$NPM_PROBE_ENV" \
+  env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN "$STUB_BIN/npm" install -g @anthropic-ai/claude-code@2.1.197
+contains "$NPM_PROBE_ENV" 'ANTHROPIC_API_KEY= GITHUB_TOKEN=' "npm child environment retained audit secrets"
+not_contains "$NPM_PROBE_ENV" '=set' "npm child environment retained audit secrets"
 not_contains "$ROOT/.github/workflows/evergreen-pr.yml" 'continue-on-error:' "workflow masks the inconclusive policy"
 not_contains "$ROOT/ci/evergreen-pr.sh" '/tmp/evergreen-comment.md' "driver uses a predictable temporary-file fallback"
 pass "Action contract"

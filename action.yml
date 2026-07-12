@@ -16,6 +16,10 @@ inputs:
     description: "Reserved for future depths; currently always the winnow (deep affirmative) pass."
     required: false
     default: "winnow"
+  model:
+    description: "Concrete Claude model identifier used for the audit and trusted runtime record."
+    required: false
+    default: "claude-opus-4-8"
   post_comment:
     description: "Upsert a PR comment with the findings ('true'/'false'). The step summary is always written."
     required: false
@@ -35,13 +39,14 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
         EVERGREEN_BASE_REF: ${{ inputs.base_ref }}
         EVERGREEN_MODE: ${{ inputs.mode }}
+        EVERGREEN_MODEL: ${{ inputs.model }}
         EVERGREEN_POST_COMMENT: ${{ inputs.post_comment }}
         EVERGREEN_FAIL_ON_INCONCLUSIVE: ${{ inputs.fail_on_inconclusive }}
         EVERGREEN_IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         # Where SKILL.md and ci/ live, regardless of the consuming repo's checkout.
         EVERGREEN_ACTION_PATH: ${{ github.action_path }}
       run: |
-        if ! npm install -g @anthropic-ai/claude-code@2.1.197; then
+        if ! env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN npm install -g @anthropic-ai/claude-code@2.1.197; then
           export EVERGREEN_SETUP_ERROR="Claude CLI installation failed."
         fi
         bash "$GITHUB_ACTION_PATH/ci/evergreen-pr.sh"
