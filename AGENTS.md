@@ -36,8 +36,20 @@ input remains a warning.
 
 ## Release identity
 
-Treat shipped version metadata as executable documentation. On release, archive, TestFlight,
-App Store, ship, or version-bump work:
+Treat shipped package, CLI, app, and deployed-doc version metadata as executable documentation.
+
+Release identity spans package manifests, registry versions, and version-reporting CLI output.
+Audit badges, installed-command examples, generated API docs, and deployed docs labels as linked release claims.
+Keep independently versioned packages and platforms as independent release streams unless repository policy explicitly couples them.
+Without direct registry, store, or deployment evidence, report external release state unverified.
+Never publish, upload, push, deploy, or mutate a portal or registry without explicit user authority.
+
+For each release stream, find the checked-in source manifest, reconcile CLI `--version`, badges,
+installed examples, generated API-doc sources/output, and living docs. Regenerate owned output;
+never hand-edit it. Local contradictions can prove `release_identity_drift`; tags and manifests do
+not prove registry, store, or deployment state.
+
+On release, archive, TestFlight, App Store, ship, or version-bump work, preserve these Apple rules:
 
 1. Find the checked-in source of truth. In Xcode/XcodeGen projects, keep `MARKETING_VERSION`
    (`CFBundleShortVersionString`) separate from `CURRENT_PROJECT_VERSION` (`CFBundleVersion`), and
@@ -56,7 +68,7 @@ App Store, ship, or version-bump work:
    trial. Report proven staleness as `release_identity_drift`.
 5. Keep related Universal Purchase app and extension targets aligned unless the repository
    explicitly documents another policy. Regenerate, inspect every target's resolved settings, and
-   run release preflight. Never upload, push, or mutate a portal without explicit authority.
+   run release preflight.
 
 Worked behavior: eight evidenced pre-1.0 milestone waves can justify `0.1.0 (71)` →
 `0.9.0 (72)`. This is evidence-guided, not a fixed eight-waves formula; reserve `1.0.0` for the

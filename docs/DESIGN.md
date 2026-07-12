@@ -78,6 +78,25 @@ call that combines staging and commit is rejected conservatively because PreTool
 the index between them: use **separate tool calls**. `EVERGREEN_GUARD=off` remains the explicit
 bypass. Semantic truth findings and CI drift findings do not use this blocking path.
 
+## Release identity boundary
+
+Release identity spans package manifests, registry versions, and version-reporting CLI output.
+Audit badges, installed-command examples, generated API docs, and deployed docs labels as linked release claims.
+Keep independently versioned packages and platforms as independent release streams unless repository policy explicitly couples them.
+Without direct registry, store, or deployment evidence, report external release state unverified.
+Never publish, upload, push, deploy, or mutate a portal or registry without explicit user authority.
+
+The checked-in manifest owns a release stream unless the repository declares another source.
+Version-reporting code and living documentation are local claims that can be proved from the tree.
+Registry/store versions and deployed documentation labels are external facts: a local manifest,
+tag, badge, or release note cannot certify them. Generated API documentation is reconciled through
+its generator or source, not silently hand-edited.
+
+Monorepos need an explicit coupling rule. Related deliverables in one stream align; independently
+published packages do not receive synchronized bumps merely because they share a repository. Apple
+apps retain the distinct marketing-version/build-number rules, monotonic binary builds, Universal
+Purchase alignment, and external-store uncertainty described by the skill.
+
 ## Hybrid provider boundary
 
 Provider evidence and source maps nominate candidates, never findings or verdicts.

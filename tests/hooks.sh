@@ -128,6 +128,43 @@ for tok in "MARKETING_VERSION" "CURRENT_PROJECT_VERSION" "release_identity_drift
     no "release identity agrees across Claude/Codex: $tok"
   fi
 done
+
+# Package, registry, CLI, and deployed-doc release claims share one cross-host contract.
+for tok in \
+  "Release identity spans package manifests, registry versions, and version-reporting CLI output." \
+  "Audit badges, installed-command examples, generated API docs, and deployed docs labels as linked release claims." \
+  "Keep independently versioned packages and platforms as independent release streams unless repository policy explicitly couples them." \
+  "Without direct registry, store, or deployment evidence, report external release state unverified." \
+  "Never publish, upload, push, deploy, or mutate a portal or registry without explicit user authority."; do
+  if grep -Fq "$tok" "$ROOT/README.md" \
+     && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
+     && grep -Fq "$tok" "$ROOT/AGENTS.md"; then
+    ok "general release identity agrees across product/Claude/Codex: $tok"
+  else
+    no "general release identity agrees across product/Claude/Codex: $tok"
+  fi
+done
+
+if ROOT="$ROOT" python3 - <<'PY'
+import os
+from pathlib import Path
+
+root = Path(os.environ["ROOT"])
+fixture = (root / "examples/package-release-identity.md").read_text()
+for token in (
+    "package.json", "1.4.0", "1.3.2", "Expected: release_identity_drift",
+    "Expected: external release state unverified", "independent release stream",
+):
+    assert token in fixture
+PY
+then
+  ok "package release identity example covers mismatch, uncertainty, and independent streams"
+else
+  no "package release identity example covers mismatch, uncertainty, and independent streams"
+fi
+
 printf 'strict' > "$TMP/.evergreen-mode"
 out="$(bash "$HOOKS/evergreen-activate.sh")"
 has "$out" "all four rungs" "activate: strict includes the full semantic pass"

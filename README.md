@@ -55,10 +55,19 @@ When code changes, it stops at the first rung that catches:
 4. Does the prose still tell the truth? → only then, reason
 ```
 
-For app releases, it also finds the checked-in version source of truth, audits product milestones
-since the marketing version last changed, advances the binary build monotonically, and verifies
-every related app/extension target resolves the same release identity. External store state is
-reported unverified unless it can actually be queried.
+For releases, it follows each package or platform's checked-in version source, then reconciles the
+surfaces that repeat that identity.
+
+Release identity spans package manifests, registry versions, and version-reporting CLI output.
+Audit badges, installed-command examples, generated API docs, and deployed docs labels as linked release claims.
+Keep independently versioned packages and platforms as independent release streams unless repository policy explicitly couples them.
+Without direct registry, store, or deployment evidence, report external release state unverified.
+Never publish, upload, push, deploy, or mutate a portal or registry without explicit user authority.
+
+For Apple apps, the existing rules remain: audit product milestones since the marketing version
+last changed, advance the binary build monotonically, and verify related app/extension targets
+resolve the same release identity. See the [package mismatch example](examples/package-release-identity.md)
+for a non-app stream whose registry and deployment state remain deliberately unverified.
 
 One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — so this one never does.
 

@@ -70,9 +70,30 @@ change can nominate timeout docs while a per-project override remains true.
 
 ## Release identity reflex
 
-Treat a shipped app version as executable documentation: it tells users how far the product has
-moved. On release, archive, upload, TestFlight/App Store, or version-bump work, inspect it even when
-no prose doc mentions the number.
+Treat every shipped version as executable documentation. Inspect release identity on package,
+binary, app, archive, registry, deployed-docs, or version-bump work even when prose omits it.
+
+Release identity spans package manifests, registry versions, and version-reporting CLI output.
+Audit badges, installed-command examples, generated API docs, and deployed docs labels as linked release claims.
+Keep independently versioned packages and platforms as independent release streams unless repository policy explicitly couples them.
+Without direct registry, store, or deployment evidence, report external release state unverified.
+Never publish, upload, push, deploy, or mutate a portal or registry without explicit user authority.
+
+1. **Inventory streams and sources.** Find each stream's checked-in source of truth (`package.json`,
+   `pyproject.toml`, `Cargo.toml`, app manifest, or repository-declared equivalent). A lockfile,
+   generated project, badge, tag, or release note is not automatically the owner.
+2. **Reconcile linked claims.** For each stream, compare the manifest with `--version` behavior,
+   installed-command examples, static badge labels, generated API-doc sources/output, and living
+   docs. Regenerate owned output from its source; do not hand-edit a generated artifact.
+3. **Separate local proof from external state.** A checked-in mismatch can prove
+   `release_identity_drift`. A registry version, store build, or deployed docs label is evidence
+   only when directly queried for the same stream; otherwise report it unverified.
+4. **Apply repository version policy.** Use the stream's declared SemVer/calendar/build policy and
+   product evidence, not elapsed commits alone. Put a material milestone judgment on trial.
+
+### Apple app and binary builds
+
+Preserve the Apple-specific two-counter policy:
 
 1. **Find the source of truth.** Prefer the checked-in manifest. For Xcode/XcodeGen this is usually
    `MARKETING_VERSION` (`CFBundleShortVersionString`) plus `CURRENT_PROJECT_VERSION`
@@ -97,8 +118,7 @@ no prose doc mentions the number.
    version and, unless the repository explicitly documents otherwise, one build number.
 6. **Verify the resolved result.** Regenerate from the source manifest, inspect build settings for
    every shippable target, run the repository's release preflight, and scan living docs/release
-   notes for stale version claims. Do not upload, push, or mutate a portal without explicit
-   authority from the user.
+   notes for stale version claims.
 
 Report proven drift as `release_identity_drift`. Example: a product that remained `0.1.0` while
 moving from an initial shell through eight evidenced pre-1.0 milestone waves may warrant

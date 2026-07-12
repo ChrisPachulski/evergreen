@@ -32,7 +32,17 @@ CI trust contract:
   it fails by default, while exact `fail_on_inconclusive: false` keeps it advisory without changing
   the status.
 
-Release identity is a living claim. On release/version/TestFlight/App Store work:
+Release identity is a living claim for packages, CLIs, apps, and deployed documentation.
+Release identity spans package manifests, registry versions, and version-reporting CLI output.
+Audit badges, installed-command examples, generated API docs, and deployed docs labels as linked release claims.
+Keep independently versioned packages and platforms as independent release streams unless repository policy explicitly couples them.
+Without direct registry, store, or deployment evidence, report external release state unverified.
+Never publish, upload, push, deploy, or mutate a portal or registry without explicit user authority.
+
+- Find every stream's checked-in manifest, reconcile its CLI and living/generated doc claims, and
+  regenerate owned output. A local mismatch can prove `release_identity_drift`; a tag or local
+  manifest cannot prove registry/store/deployment state.
+- On release/version/TestFlight/App Store work, preserve the Apple-specific rules:
 - Find the checked-in source of truth; for Xcode/XcodeGen, distinguish `MARKETING_VERSION`
   (`CFBundleShortVersionString`) from monotonically increasing `CURRENT_PROJECT_VERSION`
   (`CFBundleVersion`). Never patch a generated project when a manifest owns it.
@@ -44,8 +54,7 @@ Release identity is a living claim. On release/version/TestFlight/App Store work
 - Next build = max(local, every related platform's published build) + 1. Without portal evidence,
   use local + 1, say `external build state unverified`, and never call it upload-safe.
 - Keep related Universal Purchase app/extension targets aligned, regenerate, inspect every target's
-  resolved settings, and run release preflight. Never upload, push, or mutate a portal without
-  explicit authority.
+  resolved settings, and run release preflight.
 - Worked behavior: eight evidenced pre-1.0 milestone waves can justify `0.1.0 (71)` →
   `0.9.0 (72)`; this is evidence-guided, not a fixed arithmetic formula.
 
