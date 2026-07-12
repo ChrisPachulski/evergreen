@@ -32,13 +32,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 try:
-    from .artifact import artifact_document, artifact_metadata, dumps
+    from .artifact import (
+        artifact_document, artifact_metadata, dumps, load_json, merge_usage, resume_state,
+    )
 except ImportError:  # Direct script execution.
-    from artifact import artifact_document, artifact_metadata, dumps
+    from artifact import (
+        artifact_document, artifact_metadata, dumps, load_json, merge_usage, resume_state,
+    )
 
 HERE = Path(__file__).parent
 SKILL = HERE.parent.parent / "skills" / "evergreen" / "SKILL.md"
 CORE_CATEGORIES = {None, "direct-mismatch", "over-promise"}
+MAX_CONCURRENCY = 32
+MAX_RESUME_BYTES = 64 * 1024 * 1024
+MAX_PROVIDER_USAGE_BYTES = 64 * 1024
 
 
 def skill_body():
@@ -534,6 +541,29 @@ def artifact_rows(value):
     raise ValueError("benchmark artifact must be a transcript list or contain a rows list")
 
 
+def eval_concurrency(environment=os.environ):
+    raw = environment.get("EVAL_CONCURRENCY", "1")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError("EVAL_CONCURRENCY must be an integer from 1 to 32") from None
+    if not 1 <= value <= MAX_CONCURRENCY:
+        raise ValueError("EVAL_CONCURRENCY must be an integer from 1 to 32")
+    return value
+
+
+def provider_usage(environment=os.environ):
+    raw = environment.get("EVAL_PROVIDER_USAGE_JSON")
+    if raw is None:
+        return None
+    if len(raw.encode()) > MAX_PROVIDER_USAGE_BYTES:
+        raise ValueError("EVAL_PROVIDER_USAGE_JSON is too large")
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError("EVAL_PROVIDER_USAGE_JSON must contain a JSON object")
+    return value
+
+
 def main():
     if "--selftest" in sys.argv:
         return selftest()
@@ -550,25 +580,33 @@ def main():
     for role, m in (("strong", strong), ("cheap", cheap)):
         assert "fable" not in m.lower(), f"Fable is banned from this project ({role}={m})"
     models = {"strong": strong, "cheap": cheap}
-    workers = int(os.environ.get("EVAL_CONCURRENCY", "1"))
+    workers = eval_concurrency()
     settings = {"models": models, "concurrency": workers}
     metadata = artifact_metadata(ds, HERE.parent.parent, settings)
-    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    new_started_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     start = time.monotonic()
-    provider_usage = json.loads(os.environ["EVAL_PROVIDER_USAGE_JSON"]) \
-        if os.environ.get("EVAL_PROVIDER_USAGE_JSON") else None
+    current_usage = provider_usage()
     pairs = [json.loads(l) for l in ds.read_text().splitlines() if l.strip()]
     out_dir = HERE / "out"; out_dir.mkdir(exist_ok=True)
     out_path = out_dir / f"bench-{ds.stem}-trial-{strong}.json"
-    existing = artifact_rows(json.loads(out_path.read_text())) if out_path.exists() else []
-    done = {item["id"]: item for item in existing}
+    if out_path.exists():
+        state = resume_state(load_json(out_path, MAX_RESUME_BYTES), metadata)
+    else:
+        state = {
+            "rows": [], "started_at": new_started_at, "elapsed_seconds": 0,
+            "provider_usage": None,
+        }
+    done = {item["id"]: item for item in state["rows"]}
+    started_at = state["started_at"]
+    prior_elapsed = state["elapsed_seconds"]
+    accumulated_usage = merge_usage(state["provider_usage"], current_usage)
     todo = [p for p in pairs if p["id"] not in done]  # resumable: crash loses nothing scored
 
     def write_artifact(rows):
         document = artifact_document(
             rows, metadata, started_at=started_at,
-            elapsed_seconds=round(time.monotonic() - start, 3),
-            provider_usage=provider_usage,
+            elapsed_seconds=round(prior_elapsed + time.monotonic() - start, 3),
+            provider_usage=accumulated_usage,
         )
         out_path.write_text(dumps(document))
 
