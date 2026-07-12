@@ -1,0 +1,13 @@
+description = "Find additive documentation candidates before editing changed paths."
+prompt = """
+Arguments: `{{args}}`.
+
+Resolve this command file's plugin root, then run:
+
+```sh
+python3 <plugin-root>/bin/evergreen impact --json {{args}}
+```
+
+Present `candidates` as pre-edit documentation candidates, ordered exactly as returned. Present
+`warnings` separately. Candidates are not findings or verdicts. Do not edit the project.
+"""

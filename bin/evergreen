@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Dependency-free Evergreen command-line entry point."""
+
+import argparse
+import json
+from pathlib import Path
+import sys
+
+
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+if str(PLUGIN_ROOT) not in sys.path:
+    sys.path.insert(0, str(PLUGIN_ROOT))
+
+from evergreen.evidence import load_evidence  # noqa: E402
+from evergreen.impact import impact  # noqa: E402
+
+
+def parser():
+    root = argparse.ArgumentParser(
+        prog="evergreen",
+        description="Query additive documentation candidates without editing the project.",
+    )
+    commands = root.add_subparsers(dest="command", required=True)
+    query = commands.add_parser(
+        "impact", help="find documentation candidates for changed paths and passive evidence"
+    )
+    query.add_argument("--repo", default=".", help="repository root (default: current directory)")
+    query.add_argument("--evidence", help="passive evidence-provider JSON file")
+    query.add_argument("--json", action="store_true", help="emit one JSON object")
+    query.add_argument("paths", metavar="PATH", nargs="*", help="changed repository-relative path")
+    query.set_defaults(run=run_impact)
+    return root
+
+
+def run_impact(args):
+    repo = Path(args.repo).expanduser()
+    if not repo.is_dir():
+        print(f"evergreen: repository must be a directory: {repo}", file=sys.stderr)
+        return 2
+    repo = repo.resolve()
+
+    evidence = []
+    warnings = []
+    if args.evidence is not None:
+        evidence, evidence_warnings = load_evidence(Path(args.evidence), repo)
+        warnings.extend(evidence_warnings)
+    report = impact(repo, args.paths, evidence)
+    warnings.extend(report.warnings)
+    warnings = sorted(set(warnings))
+    payload = {
+        "schema_version": 1,
+        "candidates": [
+            {"path": item.path, "rank": item.rank, "reasons": list(item.reasons)}
+            for item in report.candidates
+        ],
+        "warnings": warnings,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+    else:
+        print_human(payload)
+    return 0
+
+
+def print_human(payload):
+    candidates = payload["candidates"]
+    print(f"Candidates ({len(candidates)}):")
+    if not candidates:
+        print("- none")
+    for candidate in candidates:
+        print(f"- [{candidate['rank']}] {candidate['path']}")
+        for reason in candidate["reasons"]:
+            print(f"  reason: {reason}")
+    warnings = payload["warnings"]
+    if warnings:
+        print(f"Warnings ({len(warnings)}):")
+        for warning in warnings:
+            print(f"- {warning}")
+
+
+def main(argv=None):
+    arguments = parser().parse_args(argv)
+    try:
+        return arguments.run(arguments)
+    except (OSError, UnicodeError) as error:
+        print(f"evergreen: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

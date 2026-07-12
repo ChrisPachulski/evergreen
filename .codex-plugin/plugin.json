@@ -20,7 +20,8 @@
     "capabilities": ["Read", "Write"],
     "websiteURL": "https://github.com/ChrisPachulski/evergreen",
     "defaultPrompt": [
-      "Check whether my docs and release version still match the code."
+      "Check whether my docs and release version still match the code.",
+      "Find documentation impact candidates before I edit changed paths."
     ]
   }
 }
