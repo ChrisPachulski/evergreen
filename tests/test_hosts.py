@@ -723,6 +723,44 @@ class HostTests(unittest.TestCase):
         self.assertIn(str(backups[0]), " ".join(result.messages))
         self.assertIn("manual recovery", " ".join(result.messages).lower())
 
+    def test_source_metadata_must_be_durable_before_backup_or_publication(self):
+        from evergreen import hosts
+
+        for operation in ("write", "delete"):
+            with self.subTest(operation=operation):
+                home = self.home / operation
+                codex = home / ".codex"
+                codex.mkdir(parents=True)
+                instructions = codex / "AGENTS.md"
+                if operation == "delete":
+                    self.assertTrue(hosts.install(home, ROOT, "codex").ok)
+                else:
+                    instructions.write_bytes(b"original")
+                before = instructions.stat()
+                original_fsync = hosts.os.fsync
+
+                def fail_source_fsync(descriptor):
+                    if hosts.os.fstat(descriptor).st_ino == before.st_ino:
+                        raise OSError("injected source metadata fsync failure")
+                    return original_fsync(descriptor)
+
+                with mock.patch.object(hosts.os, "fsync", side_effect=fail_source_fsync):
+                    result = (
+                        hosts.uninstall(home, "codex") if operation == "delete"
+                        else hosts.install(home, ROOT, "codex")
+                    )
+
+                self.assertFalse(result.ok)
+                self.assertTrue(instructions.exists())
+                if instructions.exists():
+                    after = instructions.stat()
+                    self.assertEqual((after.st_dev, after.st_ino), (
+                        before.st_dev, before.st_ino,
+                    ))
+                self.assertFalse(any(
+                    "evergreen-backup" in path.name for path in codex.iterdir()
+                ))
+
     def test_path_snapshot_records_link_count(self):
         from evergreen import hosts
 

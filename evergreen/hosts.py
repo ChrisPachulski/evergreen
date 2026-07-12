@@ -887,6 +887,7 @@ def _replace_regular_at(
                 _metadata_identity(current) != _snapshot_identity(expected)):
             raise OSError(f"transaction path changed before in-place write: {expected.path}")
         os.utime(source_fd, ns=(expected.atime_ns, expected.mtime_ns))
+        os.fsync(source_fd)
         source = os.fstat(source_fd)
         _clone_regular_metadata(source_fd, temp_fd, source, expected)
         temp_metadata = os.fstat(temp_fd)
@@ -1026,11 +1027,25 @@ def _delete_regular_at(
     backup = f".{path.name}.evergreen-backup-{uuid.uuid4().hex}"
     backup_created = False
     deleted = False
+    source_fd = None
     entry = RollbackEntry(
         expected, PathSnapshot(path, "absent"), parent_snapshot, backup
     )
     try:
+        source_fd = os.open(
+            path.name,
+            os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) |
+            getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=parent_fd,
+        )
         _verify_snapshot_at(expected, parent_fd)
+        source = os.fstat(source_fd)
+        current = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+        if (_metadata_identity(source) != _snapshot_identity(expected) or
+                _metadata_identity(current) != _snapshot_identity(expected)):
+            raise OSError(f"transaction path changed before delete: {path}")
+        os.utime(source_fd, ns=(expected.atime_ns, expected.mtime_ns))
+        os.fsync(source_fd)
         os.link(
             path.name, backup, src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
             follow_symlinks=False,
@@ -1047,8 +1062,20 @@ def _delete_regular_at(
         os.fsync(parent_fd)
         return entry.after
     finally:
+        close_error = None
+        if source_fd is not None:
+            try:
+                os.close(source_fd)
+            except OSError as error:
+                close_error = error
         if backup_created and not deleted:
             _cleanup_artifact(parent_fd, backup, path, "backup", conflicts)
+        if close_error is not None:
+            conflicts.append(
+                f"{path}: manual recovery required after source descriptor cleanup "
+                f"failure: {close_error}"
+            )
+            raise OSError(f"transaction descriptor cleanup failed: {path}")
 
 
 def _cleanup_artifact(parent_fd, name, path, label, conflicts):
