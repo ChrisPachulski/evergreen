@@ -3,12 +3,19 @@
 import ast
 from dataclasses import asdict, dataclass, field
 import errno
+import hashlib
 import json
 import os
 from pathlib import Path
 import stat
+import sys
 import time
 import uuid
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - POSIX hosts are required by the CLI.
+    fcntl = None
 
 try:
     import posix as _posix
@@ -78,6 +85,7 @@ class RollbackEntry:
     after: PathSnapshot
     parent: PathSnapshot
     backup: str | None = None
+    journal: str | None = None
 
 
 def detect_hosts(home: Path) -> list[HostStatus]:
@@ -88,7 +96,250 @@ def detect_hosts(home: Path) -> list[HostStatus]:
     ]
 
 
+def _host_runtime_error():
+    if sys.version_info < (3, 11):
+        return "error: host management requires Python 3.11 or newer"
+    if sys.platform == "darwin" and not _native_metadata_copy_available():
+        return "error: host management requires macOS Python metadata-copy support"
+    return None
+
+
+def _native_metadata_copy_available():
+    return (
+        _posix is not None and hasattr(_posix, "_fcopyfile") and
+        all(hasattr(_posix, name) for name in (
+            "_COPYFILE_STAT", "_COPYFILE_ACL", "_COPYFILE_XATTR",
+        ))
+    )
+
+
+def _lock_hosts(selected):
+    if fcntl is None:
+        return [], "error: host operation locking is unavailable"
+    descriptors = []
+    missing = []
+    try:
+        for status in sorted(selected, key=lambda item: str(item.root)):
+            snapshot = _snapshot(status.root, allow_directory=True)
+            root_fd = _open_directory(snapshot)
+            try:
+                flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+                try:
+                    descriptor = os.open(".evergreen-host.lock", flags, dir_fd=root_fd)
+                except FileNotFoundError:
+                    missing.append((status, root_fd))
+                    root_fd = None
+                    continue
+            finally:
+                if root_fd is not None:
+                    os.close(root_fd)
+            try:
+                _verify_lock_descriptor(descriptor, status.root)
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BaseException:
+                os.close(descriptor)
+                raise
+            descriptors.append(descriptor)
+        while missing:
+            status, root_fd = missing.pop(0)
+            try:
+                flags = os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+                try:
+                    descriptor = os.open(
+                        ".evergreen-host.lock", flags, 0o600, dir_fd=root_fd,
+                    )
+                except FileExistsError:
+                    descriptor = os.open(
+                        ".evergreen-host.lock",
+                        os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+                        dir_fd=root_fd,
+                    )
+            finally:
+                os.close(root_fd)
+            try:
+                _verify_lock_descriptor(descriptor, status.root)
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BaseException:
+                os.close(descriptor)
+                raise
+            descriptors.append(descriptor)
+    except OSError as error:
+        for _, root_fd in missing:
+            try:
+                os.close(root_fd)
+            except OSError:
+                pass
+        _unlock_hosts(descriptors)
+        return [], f"error: another host operation is active or locking failed: {error}"
+    return descriptors, None
+
+
+def _verify_lock_descriptor(descriptor, root):
+    metadata = os.fstat(descriptor)
+    if (
+        not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1 or
+        metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != 0o600
+    ):
+        raise OSError(f"unsafe host lock file: {root}")
+
+
+def _unlock_hosts(descriptors):
+    for descriptor in reversed(descriptors):
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
+def _recover_transactions(selected):
+    errors = []
+    for status in selected:
+        for target in (status.instructions, status.ownership, status.skill):
+            if _kind(target.parent) != "directory":
+                continue
+            parent = _snapshot(target.parent, allow_directory=True)
+            descriptor = _open_directory(parent)
+            try:
+                error = _recover_target_artifacts(descriptor, target)
+                if error:
+                    errors.append(f"{status.name}: {error}")
+            finally:
+                os.close(descriptor)
+    return errors
+
+
+def _recover_target_artifacts(parent_fd, target):
+    groups = {}
+    for name in os.listdir(parent_fd):
+        parsed = _artifact_name(target.name, name)
+        if parsed is not None:
+            kind, transaction_id = parsed
+            groups.setdefault(transaction_id, {})[kind] = name
+    if not groups:
+        return None
+    paths = sorted(
+        str(target.parent / name)
+        for artifacts in groups.values() for name in artifacts.values()
+    )
+    if len(groups) != 1:
+        return _manual_artifact_error(paths)
+    transaction_id, artifacts = next(iter(groups.items()))
+    journal_name = artifacts.get("journal")
+    if journal_name is None:
+        return _manual_artifact_error(paths)
+    journal_path = target.with_name(journal_name)
+    try:
+        snapshot = _snapshot_at(journal_path, parent_fd)
+        if len(snapshot.data) > MAX_STATE_BYTES:
+            return _manual_artifact_error(paths)
+        journal = json.loads(snapshot.data)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return _manual_artifact_error(paths)
+    if not isinstance(journal, dict):
+        return _manual_artifact_error(paths)
+    operation = journal.get("operation")
+    expected_names = {
+        "temporary": (
+            f".{target.name}.evergreen-{transaction_id}" if operation == "write" else None
+        ),
+        "backup": f".{target.name}.evergreen-backup-{transaction_id}",
+        "journal": journal_name,
+    }
+    if (
+        journal.get("schema_version") != 1 or
+        journal.get("target") != target.name or journal.get("transaction_id") != transaction_id or
+        operation not in {"write", "delete"} or
+        any(journal.get(kind) != name for kind, name in expected_names.items())
+    ):
+        return _manual_artifact_error(paths)
+    phase = journal.get("phase")
+    required = {"journal"}
+    if operation == "write":
+        required.add("temporary")
+    if phase == "backed_up":
+        required.add("backup")
+    allowed = {frozenset(required)}
+    if phase == "prepared":
+        allowed.add(frozenset(required | {"backup"}))
+    if frozenset(artifacts) not in allowed or phase not in {"prepared", "backed_up"}:
+        return _manual_artifact_error(paths)
+    if not _safe_prepublication_state(parent_fd, target, artifacts, journal):
+        return _manual_artifact_error(paths)
+    for kind in ("temporary", "backup", "journal"):
+        name = artifacts.get(kind)
+        if name is not None:
+            os.unlink(name, dir_fd=parent_fd)
+    os.fsync(parent_fd)
+    return None
+
+
+def _artifact_name(target_name, name):
+    prefixes = (
+        ("backup", f".{target_name}.evergreen-backup-"),
+        ("journal", f".{target_name}.evergreen-journal-"),
+        ("temporary", f".{target_name}.evergreen-"),
+    )
+    for kind, prefix in prefixes:
+        if name.startswith(prefix):
+            transaction_id = name[len(prefix):]
+            if len(transaction_id) == 32 and all(char in "0123456789abcdef" for char in transaction_id):
+                return kind, transaction_id
+    return None
+
+
+def _manual_artifact_error(paths):
+    return (
+        "transaction artifacts require manual recovery: " + ", ".join(paths) +
+        "; inspect the journal and restore the named backup before removing artifacts"
+    )
+
+
+def _safe_prepublication_state(parent_fd, target, artifacts, journal):
+    try:
+        live = _snapshot_at(target, parent_fd)
+        temporary = (
+            _snapshot_at(target.with_name(artifacts["temporary"]), parent_fd)
+            if "temporary" in artifacts else None
+        )
+        backup = (
+            _snapshot_at(target.with_name(artifacts["backup"]), parent_fd)
+            if "backup" in artifacts else None
+        )
+    except (OSError, ValueError):
+        return False
+    before = journal.get("before")
+    after = journal.get("after")
+    if journal.get("operation") == "write" and not _journal_snapshot_matches(
+        temporary, after, nlink=1
+    ):
+        return False
+    if journal.get("operation") == "delete" and temporary is not None:
+        return False
+    if journal.get("phase") == "prepared":
+        if backup is None:
+            return _journal_snapshot_matches(live, before, nlink=1)
+    return (
+        backup is not None and
+        (live.dev, live.ino) == (backup.dev, backup.ino) and
+        _journal_snapshot_matches(live, before, nlink=2) and
+        _journal_snapshot_matches(backup, before, nlink=2)
+    )
+
+
+def _journal_snapshot_matches(snapshot, expected, *, nlink):
+    if not isinstance(expected, dict) or snapshot.nlink != nlink:
+        return False
+    actual = _journal_snapshot(snapshot)
+    expected = dict(expected, nlink=nlink)
+    actual.pop("atime_ns", None)
+    expected.pop("atime_ns", None)
+    return actual == expected
+
+
 def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> OperationResult:
+    runtime_error = _host_runtime_error()
+    if runtime_error:
+        return OperationResult(False, (runtime_error,))
     canonical, canonical_messages = _canonical(plugin_root)
     if canonical is None:
         return OperationResult(False, tuple(canonical_messages))
@@ -96,9 +347,23 @@ def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> 
     selected, error = _select(home, host)
     if error:
         return OperationResult(False, (error,))
-    errors = _host_errors(selected)
-    if errors:
-        return OperationResult(False, tuple(errors))
+    locks, lock_error = _lock_hosts(selected)
+    if lock_error:
+        return OperationResult(False, (lock_error,))
+    try:
+        recovery_errors = _recover_transactions(selected)
+        if recovery_errors:
+            return OperationResult(False, tuple(recovery_errors))
+        errors = _host_errors(selected)
+        if errors:
+            return OperationResult(False, tuple(errors))
+        return _install_locked(selected, root, target, dry_run)
+    finally:
+        _unlock_hosts(locks)
+
+
+def _install_locked(selected, root, target, dry_run):
+    errors = []
     try:
         captured = _capture_preflight(selected)
     except Exception as error:
@@ -127,12 +392,29 @@ def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> 
 
 
 def uninstall(home: Path, host: str, dry_run: bool = False) -> OperationResult:
+    runtime_error = _host_runtime_error()
+    if runtime_error:
+        return OperationResult(False, (runtime_error,))
     selected, error = _select(home, host)
     if error:
         return OperationResult(False, (error,))
-    errors = _host_errors(selected)
-    if errors:
-        return OperationResult(False, tuple(errors))
+    locks, lock_error = _lock_hosts(selected)
+    if lock_error:
+        return OperationResult(False, (lock_error,))
+    try:
+        recovery_errors = _recover_transactions(selected)
+        if recovery_errors:
+            return OperationResult(False, tuple(recovery_errors))
+        errors = _host_errors(selected)
+        if errors:
+            return OperationResult(False, tuple(errors))
+        return _uninstall_locked(selected, dry_run)
+    finally:
+        _unlock_hosts(locks)
+
+
+def _uninstall_locked(selected, dry_run):
+    errors = []
     try:
         captured = _capture_preflight(selected)
     except Exception as error:
@@ -861,11 +1143,14 @@ def _perform_action(
 def _replace_regular_at(
     parent_fd, path, data, expected, parent_snapshot, rollback_entries, conflicts,
 ):
-    temporary = f".{path.name}.evergreen-{uuid.uuid4().hex}"
-    backup = f".{path.name}.evergreen-backup-{uuid.uuid4().hex}"
+    transaction_id = uuid.uuid4().hex
+    temporary = f".{path.name}.evergreen-{transaction_id}"
+    backup = f".{path.name}.evergreen-backup-{transaction_id}"
+    journal_name = f".{path.name}.evergreen-journal-{transaction_id}"
     temp_fd = None
     source_fd = None
     backup_created = False
+    journal_created = False
     published = False
     entry = None
     try:
@@ -900,21 +1185,48 @@ def _replace_regular_at(
         )
         if not _matches_postimage("write", data, postimage, expected):
             raise OSError(f"transaction temporary metadata mismatch: {path}")
+        journal = _transaction_journal(
+            path, transaction_id, temporary, backup, journal_name,
+            "write", "prepared", expected, postimage,
+        )
+        _write_journal_at(parent_fd, journal_name, journal, create=True)
+        journal_created = True
         os.link(
             path.name, backup, src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
             follow_symlinks=False,
         )
         backup_created = True
         os.fsync(parent_fd)
-        entry = RollbackEntry(expected, postimage, parent_snapshot, backup)
+        journal["phase"] = "backed_up"
+        _write_journal_at(parent_fd, journal_name, journal, create=False)
+        entry = RollbackEntry(
+            expected, postimage, parent_snapshot, backup, journal_name
+        )
         rollback_entries.append(entry)
         try:
             os.replace(temporary, path.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
             published = True
         except BaseException:
-            rollback_entries.remove(entry)
-            entry = None
+            try:
+                actual = _snapshot_at(path, parent_fd)
+            except Exception:
+                actual = None
+            if actual == expected or (
+                actual is not None and
+                _backup_snapshot_matches(actual, expected, nlink=expected.nlink + 1)
+            ):
+                rollback_entries.remove(entry)
+                entry = None
+            else:
+                # Publication succeeded or its result cannot be proven. Retain the
+                # registered backup and journal for rollback or manual recovery.
+                published = True
+                if actual == postimage:
+                    journal["phase"] = "published"
+                    _write_journal_at(parent_fd, journal_name, journal, create=False)
             raise
+        journal["phase"] = "published"
+        _write_journal_at(parent_fd, journal_name, journal, create=False)
         _verify_snapshot_at(postimage, parent_fd)
         os.fsync(parent_fd)
         return postimage
@@ -930,6 +1242,8 @@ def _replace_regular_at(
         _cleanup_artifact(parent_fd, temporary, path, "temporary", conflicts)
         if backup_created and not published:
             _cleanup_artifact(parent_fd, backup, path, "backup", conflicts)
+        if journal_created and not published:
+            _cleanup_artifact(parent_fd, journal_name, path, "journal", conflicts)
         if close_errors:
             conflicts.append(
                 f"{path}: manual recovery required after descriptor cleanup failure: "
@@ -965,13 +1279,56 @@ def _snapshot_identity(snapshot):
     )
 
 
+def _transaction_journal(
+    path, transaction_id, temporary, backup, journal, operation, phase,
+    before, after,
+):
+    return {
+        "schema_version": 1,
+        "transaction_id": transaction_id,
+        "target": path.name,
+        "temporary": temporary,
+        "backup": backup,
+        "journal": journal,
+        "operation": operation,
+        "phase": phase,
+        "before": _journal_snapshot(before),
+        "after": _journal_snapshot(after),
+    }
+
+
+def _journal_snapshot(snapshot):
+    return {
+        "kind": snapshot.kind,
+        "dev": snapshot.dev,
+        "ino": snapshot.ino,
+        "mode": snapshot.mode,
+        "nlink": snapshot.nlink,
+        "uid": snapshot.uid,
+        "gid": snapshot.gid,
+        "atime_ns": snapshot.atime_ns,
+        "mtime_ns": snapshot.mtime_ns,
+        "size": len(snapshot.data) if snapshot.data is not None else 0,
+        "sha256": hashlib.sha256(snapshot.data or b"").hexdigest(),
+    }
+
+
+def _write_journal_at(parent_fd, name, journal, *, create):
+    payload = json.dumps(journal, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    if len(payload) > MAX_STATE_BYTES:
+        raise OSError("transaction journal exceeds byte limit")
+    flags = os.O_WRONLY | (os.O_CREAT | os.O_EXCL if create else os.O_TRUNC)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(name, flags, 0o600, dir_fd=parent_fd)
+    try:
+        _replace_descriptor_bytes(descriptor, payload, Path(name))
+    finally:
+        os.close(descriptor)
+    os.fsync(parent_fd)
+
+
 def _clone_regular_metadata(source_fd, destination_fd, source, expected):
-    native_metadata = (
-        _posix is not None and hasattr(_posix, "_fcopyfile") and
-        all(hasattr(_posix, name) for name in (
-            "_COPYFILE_STAT", "_COPYFILE_ACL", "_COPYFILE_XATTR",
-        ))
-    )
+    native_metadata = _native_metadata_copy_available()
     if native_metadata:
         _posix._fcopyfile(
             source_fd,
@@ -1024,13 +1381,15 @@ def _clone_xattrs(source_fd, destination_fd):
 def _delete_regular_at(
     parent_fd, path, expected, parent_snapshot, rollback_entries, conflicts,
 ):
-    backup = f".{path.name}.evergreen-backup-{uuid.uuid4().hex}"
+    transaction_id = uuid.uuid4().hex
+    backup = f".{path.name}.evergreen-backup-{transaction_id}"
+    journal_name = f".{path.name}.evergreen-journal-{transaction_id}"
     backup_created = False
+    journal_created = False
     deleted = False
     source_fd = None
-    entry = RollbackEntry(
-        expected, PathSnapshot(path, "absent"), parent_snapshot, backup
-    )
+    postimage = PathSnapshot(path, "absent")
+    entry = RollbackEntry(expected, postimage, parent_snapshot, backup, journal_name)
     try:
         source_fd = os.open(
             path.name,
@@ -1046,12 +1405,20 @@ def _delete_regular_at(
             raise OSError(f"transaction path changed before delete: {path}")
         os.utime(source_fd, ns=(expected.atime_ns, expected.mtime_ns))
         os.fsync(source_fd)
+        journal = _transaction_journal(
+            path, transaction_id, None, backup, journal_name,
+            "delete", "prepared", expected, postimage,
+        )
+        _write_journal_at(parent_fd, journal_name, journal, create=True)
+        journal_created = True
         os.link(
             path.name, backup, src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
             follow_symlinks=False,
         )
         backup_created = True
         os.fsync(parent_fd)
+        journal["phase"] = "backed_up"
+        _write_journal_at(parent_fd, journal_name, journal, create=False)
         rollback_entries.append(entry)
         try:
             os.unlink(path.name, dir_fd=parent_fd)
@@ -1059,6 +1426,8 @@ def _delete_regular_at(
         except BaseException:
             rollback_entries.remove(entry)
             raise
+        journal["phase"] = "published"
+        _write_journal_at(parent_fd, journal_name, journal, create=False)
         os.fsync(parent_fd)
         return entry.after
     finally:
@@ -1070,6 +1439,8 @@ def _delete_regular_at(
                 close_error = error
         if backup_created and not deleted:
             _cleanup_artifact(parent_fd, backup, path, "backup", conflicts)
+        if journal_created and not deleted:
+            _cleanup_artifact(parent_fd, journal_name, path, "journal", conflicts)
         if close_error is not None:
             conflicts.append(
                 f"{path}: manual recovery required after source descriptor cleanup "
@@ -1135,7 +1506,18 @@ def _atomic_link_at(parent_fd, name, target, expected):
 def _restore_entry(entry):
     parent_fd = _open_directory(entry.parent)
     try:
-        actual = _snapshot_at(entry.after.path, parent_fd)
+        try:
+            actual = _snapshot_at(entry.after.path, parent_fd)
+        except (OSError, ValueError) as error:
+            retained = (
+                f"; backup retained at {_backup_path(entry)}"
+                if entry.backup else ""
+            )
+            if entry.journal:
+                retained += f"; journal retained at {entry.before.path.parent / entry.journal}"
+            raise OSError(
+                f"rollback postimage unavailable: {entry.after.path}{retained}: {error}"
+            ) from error
         if actual != entry.after:
             backup = f"; backup retained at {_backup_path(entry)}" if entry.backup else ""
             raise OSError(
@@ -1149,11 +1531,20 @@ def _restore_entry(entry):
                     entry.backup, entry.before.path.name,
                     src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
                 )
-            except OSError as error:
-                raise OSError(
-                    f"backup restore failed; backup retained at {_backup_path(entry)}: "
-                    f"{error}"
-                ) from error
+            except BaseException as error:
+                try:
+                    restored = (
+                        _backup_snapshot_matches(
+                            _snapshot_at(entry.before.path, parent_fd), entry.before,
+                        ) and
+                        _snapshot_at(_backup_path(entry), parent_fd).kind == "absent"
+                    )
+                except Exception:
+                    restored = False
+                if not restored:
+                    raise OSError(
+                        f"backup restore failed; inspect {_backup_path(entry)}: {error}"
+                    ) from error
             try:
                 os.fsync(parent_fd)
             except OSError as error:
@@ -1161,6 +1552,7 @@ def _restore_entry(entry):
                     f"backup restored to {entry.before.path}, but directory durability "
                     f"failed; inspect former backup path {_backup_path(entry)}: {error}"
                 ) from error
+            _remove_journal(parent_fd, entry)
             return
         before = entry.before
         if before.kind == "absent":
@@ -1212,11 +1604,18 @@ def _commit_entry(entry):
                 os.close(descriptor)
         try:
             os.unlink(entry.backup, dir_fd=parent_fd)
-            os.fsync(parent_fd)
         except OSError as error:
             raise OSError(
                 f"backup cleanup failed at {_backup_path(entry)}: {error}"
             ) from error
+        try:
+            os.fsync(parent_fd)
+        except OSError as error:
+            raise OSError(
+                f"backup unlink succeeded but directory durability failed; inspect "
+                f"former backup path {_backup_path(entry)}: {error}"
+            ) from error
+        _remove_journal(parent_fd, entry)
     finally:
         os.close(parent_fd)
 
@@ -1225,15 +1624,56 @@ def _verify_backup(parent_fd, entry):
     if entry.backup is None:
         raise OSError("transaction backup is missing")
     try:
-        metadata = os.stat(entry.backup, dir_fd=parent_fd, follow_symlinks=False)
-    except OSError as error:
+        actual = _snapshot_at(entry.before.path.with_name(entry.backup), parent_fd)
+    except (OSError, ValueError) as error:
         raise OSError(f"transaction backup unavailable at {_backup_path(entry)}: {error}") from error
-    if _metadata_identity(metadata) != _snapshot_identity(entry.before):
+    if not _backup_snapshot_matches(actual, entry.before):
         raise OSError(f"transaction backup changed at {_backup_path(entry)}")
+    descriptor = os.open(
+        entry.backup,
+        os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0),
+        dir_fd=parent_fd,
+    )
+    try:
+        if _metadata_identity(os.fstat(descriptor)) != _snapshot_identity(entry.before):
+            raise OSError(f"transaction backup changed at {_backup_path(entry)}")
+        os.utime(
+            descriptor, ns=(entry.before.atime_ns, entry.before.mtime_ns),
+        )
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _backup_snapshot_matches(actual, before, *, nlink=None):
+    return (
+        actual.kind == before.kind and actual.data == before.data and
+        (actual.dev, actual.ino) == (before.dev, before.ino) and
+        actual.mode == before.mode and
+        actual.nlink == (before.nlink if nlink is None else nlink) and
+        (actual.uid, actual.gid) == (before.uid, before.gid) and
+        (actual.atime_ns, actual.mtime_ns) == (before.atime_ns, before.mtime_ns)
+    )
 
 
 def _backup_path(entry):
     return entry.before.path.parent / entry.backup
+
+
+def _remove_journal(parent_fd, entry):
+    if entry.journal is None:
+        return
+    path = entry.before.path.parent / entry.journal
+    try:
+        os.unlink(entry.journal, dir_fd=parent_fd)
+    except OSError as error:
+        raise OSError(f"transaction journal cleanup failed at {path}: {error}") from error
+    try:
+        os.fsync(parent_fd)
+    except OSError as error:
+        raise OSError(
+            f"journal unlink succeeded but directory durability failed; inspect {path}: {error}"
+        ) from error
 
 
 def _instruction_state(path):
@@ -1368,7 +1808,7 @@ def _validate_python_command(command):
     try:
         payload = _read_regular_bounded(command, MAX_COMMAND_BYTES, "canonical command")
         source = payload.decode("utf-8")
-        first_line = source.splitlines()[0] if source else ""
+        first_line = source.partition("\n")[0] if source else ""
         if not _is_python_shebang(first_line):
             return "canonical command requires a Python shebang"
         ast.parse(source, filename=str(command))
@@ -1380,7 +1820,7 @@ def _validate_python_command(command):
 
 
 def _is_python_shebang(line):
-    if not line.startswith("#!"):
+    if not line.startswith("#!") or any(ord(char) < 32 or ord(char) == 127 for char in line):
         return False
     fields = line[2:].strip().split()
     if len(fields) == 1:

@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -571,7 +572,7 @@ class HostTests(unittest.TestCase):
             before.st_uid, before.st_gid, before.st_mode,
         ))
         self.assertEqual(
-            [path.name for path in codex.iterdir()],
+            [path.name for path in codex.iterdir() if path.name != ".evergreen-host.lock"],
             ["AGENTS.md"],
         )
 
@@ -666,7 +667,10 @@ class HostTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(instructions.read_bytes(), b"original")
         self.assertEqual((after.st_dev, after.st_ino), (before.st_dev, before.st_ino))
-        self.assertEqual([path.name for path in codex.iterdir()], ["AGENTS.md"])
+        self.assertEqual(
+            [path.name for path in codex.iterdir() if path.name != ".evergreen-host.lock"],
+            ["AGENTS.md"],
+        )
 
     def test_rollback_failure_retains_and_reports_original_backup(self):
         from evergreen import hosts
@@ -760,6 +764,211 @@ class HostTests(unittest.TestCase):
                 self.assertFalse(any(
                     "evergreen-backup" in path.name for path in codex.iterdir()
                 ))
+
+    def test_prepublication_crash_artifacts_are_safely_recovered_on_next_install(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        script = f"""
+import os
+from pathlib import Path
+from evergreen import hosts
+real_write_journal = hosts._write_journal_at
+def crash_after_backup_link(parent_fd, name, journal, *, create):
+    if name.startswith('.AGENTS.md.evergreen-journal-') and not create:
+        os._exit(91)
+    return real_write_journal(parent_fd, name, journal, create=create)
+hosts._write_journal_at = crash_after_backup_link
+hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
+"""
+
+        crashed = subprocess.run(
+            [sys.executable, "-c", script], cwd=ROOT,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+
+        self.assertEqual(crashed.returncode, 91, crashed.stderr)
+        artifacts = sorted(
+            path.name for path in codex.iterdir()
+            if path.name.startswith(".AGENTS.md.evergreen-")
+        )
+        self.assertEqual(len(artifacts), 3)
+        temporary = next(
+            name for name in artifacts
+            if "evergreen-backup" not in name and "evergreen-journal" not in name
+        )
+        backup = next(name for name in artifacts if "evergreen-backup" in name)
+        journal = next(name for name in artifacts if "evergreen-journal" in name)
+        transaction_ids = {
+            temporary.removeprefix(".AGENTS.md.evergreen-"),
+            backup.removeprefix(".AGENTS.md.evergreen-backup-"),
+            journal.removeprefix(".AGENTS.md.evergreen-journal-"),
+        }
+        self.assertEqual(len(transaction_ids), 1)
+        self.assertEqual(instructions.stat().st_nlink, 2)
+
+        recovered = hosts.install(self.home, ROOT, "codex")
+
+        self.assertTrue(recovered.ok, recovered.messages)
+        self.assertEqual(instructions.stat().st_nlink, 1)
+        self.assertIn(hosts.BEGIN_MARKER.encode(), instructions.read_bytes())
+        self.assertFalse(any(
+            path.name.startswith(".AGENTS.md.evergreen-") for path in codex.iterdir()
+        ))
+
+    def test_unmatched_transaction_artifact_refuses_with_manual_path(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        artifact = codex / (".AGENTS.md.evergreen-" + "a" * 32)
+        artifact.write_bytes(b"unmatched")
+
+        result = hosts.install(self.home, ROOT, "codex")
+
+        rendered = " ".join(result.messages)
+        self.assertFalse(result.ok)
+        self.assertIn(str(artifact), rendered)
+        self.assertIn("manual", rendered.lower())
+        self.assertTrue(artifact.exists())
+
+    def test_corrupt_backup_is_retained_and_never_restored(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        real_action = hosts._perform_action
+
+        def corrupt_backup_then_fail(action, path, value, *args, **kwargs):
+            postimage = real_action(action, path, value, *args, **kwargs)
+            if path.name == instructions.name:
+                backup = next(
+                    item for item in codex.iterdir() if "evergreen-backup" in item.name
+                )
+                backup.write_bytes(b"corrupt backup")
+                raise OSError("force rollback with corrupt backup")
+            return postimage
+
+        with mock.patch.object(
+            hosts, "_perform_action", side_effect=corrupt_backup_then_fail
+        ):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        backups = [item for item in codex.iterdir() if "evergreen-backup" in item.name]
+        rendered = " ".join(result.messages)
+        self.assertFalse(result.ok)
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_bytes(), b"corrupt backup")
+        self.assertIn(hosts.BEGIN_MARKER.encode(), instructions.read_bytes())
+        self.assertIn(str(backups[0]), rendered)
+        self.assertIn("manual recovery", rendered.lower())
+        self.assertNotIn("ordinary recovery completed", rendered)
+
+    def test_replace_success_then_exception_keeps_backup_registered_for_rollback(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        original_inode = instructions.stat().st_ino
+        real_replace = hosts.os.replace
+
+        def replace_then_raise(source, destination, *args, **kwargs):
+            result = real_replace(source, destination, *args, **kwargs)
+            if destination == instructions.name and "evergreen-" in os.fspath(source):
+                raise OSError("ambiguous publication result")
+            return result
+
+        with mock.patch.object(hosts.os, "replace", side_effect=replace_then_raise):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(instructions.read_bytes(), b"original")
+        self.assertEqual(instructions.stat().st_ino, original_inode)
+        self.assertFalse(any(
+            item.name.startswith(".AGENTS.md.evergreen-") for item in codex.iterdir()
+        ))
+
+    def test_ambiguous_replace_with_failed_inspection_never_deletes_backup(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        real_replace = hosts.os.replace
+        real_snapshot_at = hosts._snapshot_at
+        publication_attempted = False
+
+        def replace_then_raise(source, destination, *args, **kwargs):
+            nonlocal publication_attempted
+            result = real_replace(source, destination, *args, **kwargs)
+            if destination == instructions.name and "evergreen-" in os.fspath(source):
+                publication_attempted = True
+                raise OSError("ambiguous publication result")
+            return result
+
+        def fail_destination_inspection(path, parent_fd):
+            if publication_attempted and path.name == instructions.name:
+                raise OSError("destination inspection unavailable")
+            return real_snapshot_at(path, parent_fd)
+
+        with (
+            mock.patch.object(hosts.os, "replace", side_effect=replace_then_raise),
+            mock.patch.object(hosts, "_snapshot_at", side_effect=fail_destination_inspection),
+        ):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        backups = [item for item in codex.iterdir() if "evergreen-backup" in item.name]
+        journals = [item for item in codex.iterdir() if "evergreen-journal" in item.name]
+        self.assertFalse(result.ok)
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(len(journals), 1)
+        self.assertIn(str(backups[0]), " ".join(result.messages))
+
+    def test_host_mutation_preflight_requires_python_311(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+
+        with mock.patch.object(hosts.sys, "version_info", (3, 10, 99)):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertIn("Python 3.11", " ".join(result.messages))
+        self.assertEqual(list(codex.iterdir()), [])
+
+    def test_all_host_lock_contention_performs_zero_cross_host_mutation(self):
+        import fcntl
+        from evergreen import hosts
+
+        claude = self.home / ".claude"
+        codex = self.home / ".codex"
+        claude.mkdir()
+        codex.mkdir()
+        stale = claude / (".CLAUDE.md.evergreen-" + "a" * 32)
+        stale.write_bytes(b"must remain untouched")
+        lock_path = codex / ".evergreen-host.lock"
+        lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        before = self.snapshot()
+        try:
+            result = hosts.install(self.home, ROOT, "all")
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+
+        self.assertFalse(result.ok)
+        self.assertIn("another host operation", " ".join(result.messages))
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(stale.read_bytes(), b"must remain untouched")
 
     def test_path_snapshot_records_link_count(self):
         from evergreen import hosts
@@ -1210,6 +1419,21 @@ class HostTests(unittest.TestCase):
                 self.assertIsNotNone(error)
                 self.assertIn("Python shebang", error)
 
+    def test_static_command_rejects_crlf_and_control_character_shebangs(self):
+        from evergreen import hosts
+
+        command = self.home / "evergreen"
+        for content in (
+            b"#!/usr/bin/env python3\r\npass\n",
+            b"#!/usr/bin/env\tpython3\npass\n",
+            b"#!/usr/bin/python3\x7f\npass\n",
+        ):
+            with self.subTest(content=content):
+                command.write_bytes(content)
+                error = hosts._validate_python_command(command)
+                self.assertIsNotNone(error)
+                self.assertIn("Python shebang", error)
+
     def test_readme_documents_runtime_platform_and_host_safety_bounds(self):
         from evergreen.hosts import MAX_INSTRUCTION_BYTES
 
@@ -1223,6 +1447,8 @@ class HostTests(unittest.TestCase):
     def snapshot(self, include_directories=False):
         values = {}
         for path in self.home.rglob("*"):
+            if path.name == ".evergreen-host.lock":
+                continue
             relative = path.relative_to(self.home).as_posix()
             if path.is_symlink():
                 values[relative] = ("link", os.readlink(path))
