@@ -282,7 +282,9 @@ The reflex is the *truth* axis. Two on-demand commands, same prove-or-drop creed
   guard hook backstops it. The guard inspects the finalized staged index on commit-only calls and
   blocks known secret/slop paths, while deletion-only cleanup remains allowed. If one Bash tool
   call contains both `git add` and `git commit`, use **separate tool calls**: PreToolUse cannot
-  inspect the index between them, so the compound call is conservatively rejected.
+  inspect the index between them, so the compound call is conservatively rejected. Commit modes
+  that can source unstaged content (`-a`/`--all`, include/only, and pathspec forms) are likewise
+  rejected; use a separately staged plain commit.
 
 One creed, one trial: each command runs its judgment-call verdicts through "Put the verdict on
 trial" above. Truth and craft only flag or propose; hygiene alone may block a commit (a leaked

@@ -487,6 +487,11 @@ has "$(printf '%s' "$compound_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOK
   "separate" "guard: unavailable Python still blocks obvious compound Git"
 eq "$(printf '%s' "$compound_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?")" \
   "2" "guard: unavailable Python compound Git exits 2"
+unsafe_payload="$(guard_payload "git commit -am x")"
+has "$(printf '%s' "$unsafe_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "separately staged plain commit" "guard: unavailable Python blocks unsafe commit modes"
+eq "$(printf '%s' "$unsafe_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?")" \
+  "2" "guard: unavailable Python unsafe commit mode exits 2"
 joined_payload="$(guard_payload "g''it a''dd . && g''it com''mit -m x")"
 has "$(printf '%s' "$joined_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
   "separate" "guard: unavailable Python joins quoted Git fragments"
@@ -509,6 +514,48 @@ has "$(printf '%s' "$commit_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/
 git -C "$TMP" rm -q --cached .env
 rm -rf "$TMP/no-python"
 rm -f "$TMP/.env"
+
+# Commit modes that can pull tracked working-tree content around the inspected index must be
+# rejected. A plain commit still inspects only the separately finalized staged index.
+printf 'baseline\n' > "$TMP/.env"; git -C "$TMP" add -f .env
+git -C "$TMP" commit -qm "track env fixture"
+printf 'unstaged secret\n' > "$TMP/.env"
+for case_row in \
+  "git commit -am x|-am" \
+  "git commit -qam x|combined -qam" \
+  "git commit --all -m x|--all" \
+  "git commit --include .env -m x|--include" \
+  "git commit --only .env -m x|--only" \
+  "git commit -i .env -m x|short -i" \
+  "git commit -o .env -m x|short -o" \
+  "git commit -p -m x|short -p" \
+  "git commit -m x .env|positional pathspec" \
+  "git commit -m x -- .env|double-dash pathspec" \
+  "git commit --pathspec-from-file=paths -m x|pathspec file" \
+  "git -C $TMP commit -am x|git -C wrapper" \
+  "command git commit --all -m x|command wrapper" \
+  "env X=1 git commit --include .env -m x|env wrapper" \
+  "sh -c 'git commit -am x'|sh -c wrapper" \
+  "eval 'git commit --all -m x'|eval wrapper"; do
+  cmd="${case_row%|*}"
+  label="${case_row##*|}"
+  has "$(guard_cmd "$cmd")" "separately staged plain commit" \
+    "guard: unsafe commit mode $label is blocked"
+  eq "$(guard_rc "$cmd")" "2" "guard: unsafe commit mode $label exits 2"
+done
+empty "$(guard_cmd "git commit -m 'message mentions --all and .env'")" \
+  "guard: unsafe-looking words inside commit message are not options"
+empty "$(guard_cmd "git commit --author 'Only Person' -m x")" \
+  "guard: safe option values are not pathspecs"
+empty "$(guard_cmd "git commit -qm x")" \
+  "guard: combined safe commit options remain allowed"
+empty "$(guard_cmd "git commit --amend --no-edit")" \
+  "guard: amend without unstaged-content modes remains allowed"
+empty "$(EVERGREEN_GUARD=off guard_cmd "git commit -am x")" \
+  "guard: EVERGREEN_GUARD=off bypasses unsafe commit-mode rejection"
+git -C "$TMP" checkout -q -- .env
+git -C "$TMP" rm -q .env
+git -C "$TMP" commit -qm "remove env fixture"
 
 # A commit that DELETES slop is the guard doing its job — must never be blocked (--diff-filter=d).
 printf 's\n' > "$TMP/AUDIT-2026-01-01.md"; git -C "$TMP" add -f AUDIT-2026-01-01.md

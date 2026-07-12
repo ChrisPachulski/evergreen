@@ -90,7 +90,9 @@ Rules:
   mirrored snippet); flag-never-rewrite everything else. Truth findings never block a commit.
 - The hygiene guard alone may block known staged secret/slop paths. Deletion-only cleanup is
   allowed. A compound stage-and-commit call must use **separate tool calls** because PreToolUse
-  cannot inspect the finalized index between commands; `EVERGREEN_GUARD=off` is the bypass.
+  cannot inspect the finalized index between commands. Commit modes that can source unstaged
+  content (`-a`/`--all`, include/only, and pathspec forms) require a separately staged plain
+  commit; `EVERGREEN_GUARD=off` is the bypass.
 
 Output, per finding: `[high|med|low] category  file:line — what's wrong (cite the code) → fix | flag`
 Exempt docs go on a trailing `left alone:` line, never as a finding.

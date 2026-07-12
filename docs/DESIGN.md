@@ -81,7 +81,9 @@ infrastructure advisory without changing the rendered status.
 The commit-time hygiene guard has a narrower boundary. It inspects the finalized staged index on a
 commit-only call, blocks known secret/slop paths, and allows deletion-only cleanup. A single shell
 call that combines staging and commit is rejected conservatively because PreToolUse cannot observe
-the index between them: use **separate tool calls**. `EVERGREEN_GUARD=off` remains the explicit
+the index between them. Commit modes that can add unstaged content (`-a`/`--all`, include/only, or
+pathspec forms) are rejected for the same reason: use a **separately staged plain commit**.
+Run staging and commit in **separate tool calls**. `EVERGREEN_GUARD=off` remains the explicit
 bypass. Semantic truth findings and CI drift findings do not use this blocking path.
 
 ## Shipped local and host surface

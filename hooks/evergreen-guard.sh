@@ -32,6 +32,9 @@ fallback_intent() {
   fallback_has_git_intent commit && commit=true
   if $add && $commit; then
     echo compound
+  elif $commit && printf '%s' "$FALLBACK_TEXT" | grep -Eq \
+      'commit([^[:alnum:]_-]|$).*(--(all|include|only|interactive|patch|pathspec-from-file|pathspec-file-nul)([=[:space:]]|$)|-[[:alpha:]]*[aiop][[:alpha:]]*([[:space:]]|$))'; then
+    echo unsafe
   elif $add || $commit; then
     echo git
   else
@@ -44,7 +47,7 @@ if command -v python3 >/dev/null 2>&1; then
   intent="$(printf '%s' "$STDIN" | python3 "$SCRIPT_DIR/evergreen-guard-command.py" 2>/dev/null)" || intent=""
 fi
 case "$intent" in
-  compound|git|none) ;;
+  compound|unsafe|git|none) ;;
   *) intent="$(fallback_intent)" ;;
 esac
 
@@ -52,6 +55,11 @@ esac
 # ordering or exclusivity safely at this trust boundary.
 if [ "$intent" = "compound" ]; then
   echo "evergreen guard: run git add and git commit in separate Bash tool calls so the finalized staged index can be inspected, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
+  exit 2
+fi
+
+if [ "$intent" = "unsafe" ]; then
+  echo "evergreen guard: commit modes that can read unstaged working-tree content are blocked; use a separately staged plain commit, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
   exit 2
 fi
 

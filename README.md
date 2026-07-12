@@ -227,9 +227,11 @@ content from spawning them; the hosted runner remains the outer isolation bounda
 
 This CI boundary is separate from the local hygiene guard. Truth findings never block a commit.
 The guard blocks staged secrets/slop and conservatively rejects a Bash tool call that combines
-`git add` and `git commit`, because it cannot inspect the finalized index between them. Use
-**separate tool calls**; deletion-only cleanup is allowed, and `EVERGREEN_GUARD=off` is the explicit
-bypass.
+`git add` and `git commit`, because it cannot inspect the finalized index between them. It also
+rejects commit modes such as `-a`/`--all`, `--include`, `--only`, and pathspec commits because they
+can source unstaged working-tree content after inspection. Use a **separately staged plain commit**;
+run staging and commit in **separate tool calls**. Deletion-only cleanup is allowed, and
+`EVERGREEN_GUARD=off` is the explicit bypass.
 
 ### Any other agent
 
