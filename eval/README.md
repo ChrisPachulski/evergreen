@@ -29,17 +29,11 @@ The harness prints its own numbers on each run.
 
 ## How it compares
 
-The per-pair benchmark ([`bench/`](bench/)) reduces to one confusion matrix. Current judge,
-CoDocBench Python — 332 pairs, 9 real drifts, 323 true claims:
-
-|                      | flagged | silent  |
-|----------------------|---------|---------|
-| **actual drift** (9)   | TP 8  | FN 1    |
-| **actual true** (323)  | FP 16 | TN 307  |
-
-**Recall 0.89** (8/9) and **specificity 0.95** (307/323) read straight off it, base-rate independent.
-Precision depends on how common drift is: **0.33** at this corpus's raw ~3/97 mix, **0.57** reweighted
-to 10/90, **0.89** at 50/50. The peer, **DocPrism** (arXiv:2511.00215), reports 0.62 precision @ ~15%
-flag rate — at a matched flag rate evergreen trails on precision and has no peer number to beat on
-recall. Precision rests on just 9 positives, so it's the soft axis. Java (CASCADE, recall 0.33 on the
-old judge) and TS/Rust/Go on the current judge are pending — [`bench/`](bench/) has the full breakdown.
+The per-pair benchmark ([`bench/`](bench/)) reduces each language to one confusion matrix, but no
+five-language current-judge result is published yet. Python, Java, TypeScript, Rust, and Go must all
+finish and individually clear the declared generated-report coverage threshold. The current run was
+interrupted by a provider session limit, and implementation commits landed between language starts.
+Those diagnostic checkpoints have incompatible provenance and will not be resumed or published. A
+fresh run from one stabilized commit is required; partial matrices and historical prior-judge numbers
+are intentionally not presented as current results. [`bench/`](bench/) records the run protocol and
+dataset provenance.

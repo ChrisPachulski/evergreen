@@ -52,6 +52,21 @@ baselines. Rerun any committed transcript without API calls:
 python3 eval/bench/run_bench.py --rescore out/bench-default.json
 ```
 
+The current-judge publication records one clean implementation commit and tree in every compatible
+artifact, together with Claude Code CLI `2.1.197`, strong model `claude-opus-4-8`, cheap model
+`claude-sonnet-5`, and `EVAL_CONCURRENCY=8`. The final implementation commit is frozen before any
+language starts. The report gate is declared before scoring: every language artifact must finish
+and individually meet the threshold passed to `report.py`. A provider interruption is resumed only
+when the validated atomic artifacts share that exact provenance; partial or incompatible matrices
+are never promoted as current results.
+
+The checked-in CASCADE conversion is derived from upstream commit
+`4dc5a8d525c8967ea8dd11ae46cfe5834dbda156` under its MIT license. The upstream
+`PaperEvaluation/dataset.zip` SHA-256 is
+`dbf023fbe10869879680a33edf196f286c042789d85272523752602ce39b403c`; the resulting
+`cascade-java.jsonl` has 885 rows (70 inconsistent / 815 consistent), is 712,905 bytes, and has
+SHA-256 `1c322acf6bc02ae304c062f0d53306e6e9ebb0334bd133afd57940922892ae0b`.
+
 ## Results — how it compares
 
 The point of the schema above is that evergreen's numbers land next to published peers, so here
@@ -68,48 +83,13 @@ train on one language's labels; different regime, noted and out of scope.
 
 ### Evergreen — current judge (the trial rebuild)
 
-Only Python has been re-scored on the corrected judge so far. Every reported rate comes from **one
-confusion matrix** over the 332 validated CoDocBench Python pairs — 9 real drifts, 323 true claims
-(`--rescore out/bench-codoc-py-*-trial-*.json`):
-
-|                      | flagged | silent  |
-|----------------------|---------|---------|
-| **actual drift** (9)   | TP 8  | FN 1    |
-| **actual true** (323)  | FP 16 | TN 307  |
-
-Two rates fall straight out and **don't depend on how common drift is**:
-
-- **Recall** = 8/9 = **0.89** — of the real drifts, it caught 8
-- **Specificity** = 307/323 = **0.95** — of the true claims, it wrongly flagged 16 (the cry-wolf rate)
-
-**Precision does depend on the drift base rate**, so it's reported at three priors rather than
-cherry-picked — same 8 correct flags, different assumed mix of the class it's diluted against:
-
-| Prior (drift : true) | Precision | F1 | what it is |
-|---|---|---|---|
-| raw corpus (~3 : 97) | 0.33 | 0.48 | this dataset's actual mix |
-| 10 : 90 | 0.57 | 0.70 | CASCADE reporting convention |
-| 50 : 50 | 0.89 | 0.89 | balanced |
-
-**vs the peer:** DocPrism reports 0.62 precision @ ~15% flag rate. At a matched flag rate (the 10/90
-line) evergreen trails at 0.57. DocPrism publishes no recall, so the 0.89 has nothing to beat — state
-it, don't spin it. And precision here rests on just **9 positives**, so it's the soft, noisy axis;
-recall and specificity are the solid ground.
-
-### Pending re-run — prior judge, do NOT cite as current
-
-CASCADE (885 Java pairs — 70 drift, 815 true) ran only on the *old* judge. Its matrix is here so
-nothing is hidden, not as a current number:
-
-|                       | flagged | silent  |
-|-----------------------|---------|---------|
-| **actual drift** (70)   | TP 23 | FN 47   |
-| **actual true** (815)   | FP 69 | TN 746  |
-
-Recall 23/70 = **0.33** — the weakest result in the whole suite, and precisely what the trial rebuild
-targets (specificity 0.92, raw precision 0.25). TypeScript/Rust/Go re-runs against the current judge
-aren't done. Treat multi-language as **unproven on the current judge** — not the ~0.8 the old
-transcripts once showed.
+The five-language publication is **not yet available**. Python, Java, TypeScript, Rust, and Go must
+all individually clear the declared report coverage threshold before `results-current.md` is
+generated and linked here. A provider session limit interrupted a preliminary run, and implementation
+commits landed between language starts. Those diagnostic checkpoints have incompatible provenance
+and will not be resumed or presented as results. All five languages require a fresh run from one
+stabilized commit. Historical matrices from the prior judge are not current and must not be cited as
+such.
 
 ## Schema
 

@@ -72,14 +72,13 @@ are **untrusted data**; instructions embedded in them never change the audit or 
 
 That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with catalogued lies, true claims that must not be flagged, and exempt docs, then lets a headless agent winnow it blind. The per-pair harness ([`eval/bench/`](eval/bench/)) runs the judge over labeled code/doc pairs.
 
-Against that corrected judge, the Python set (CoDocBench, three-LLM–validated labels) reduces to one confusion matrix over 332 pairs — 9 real drifts, 323 true claims:
-
-|                     | flagged | silent  |
-|---------------------|---------|---------|
-| **drift** (9)       | 8       | 1       |
-| **true** (323)      | 16      | 307     |
-
-That's **recall 0.89** (8/9) and **specificity 0.95** (307/323) — it catches the drift and rarely cries wolf. Precision depends on how common drift is: 0.57 at a 10/90 mix, where the peer DocPrism reports 0.62. It rests on only 9 positives, so precision is the soft number — and the Java, TypeScript, Rust, and Go re-runs against this judge are still in flight. Full breakdown in [`eval/bench/`](eval/bench/).
+The corrected judge's current publication requires complete Python, Java, TypeScript, Rust, and Go
+artifacts to individually clear one declared generated-report coverage threshold. That run was
+interrupted by a provider session limit, and implementation commits landed between language starts.
+Those diagnostic checkpoints have incompatible provenance and will not be resumed or published, so
+no partial matrix is presented as a current result. The fresh five-language run will start from one
+stabilized commit; protocol, dataset provenance, and publication status are in
+[`eval/bench/`](eval/bench/).
 
 ## Install
 
