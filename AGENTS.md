@@ -83,6 +83,21 @@ could not settle named claims, so it is not clean. **inconclusive** means the au
 could not validate; it fails by default. Only exact `fail_on_inconclusive: false` makes that
 infrastructure failure advisory, and the report must remain inconclusive.
 
+## Safe prove by test
+
+Run only a repository-declared test command with a bounded timeout.
+Use a disposable scratch location and remove it only through the host's safe cleanup mechanism.
+Do not add, print, or forward secrets; declare any existing secret dependency before execution.
+Disable network access when the host can do so safely; otherwise declare the network requirement before execution.
+Refuse privileged, destructive, cleanup, deployment, upload, push, publication, and portal-mutation commands.
+If the command, isolation, timeout, dependencies, or test setup cannot be trusted, report inconclusive, never drift.
+Classifier output is advisory: allowed still requires the runtime safeguards above.
+
+Inspect the repository's declared test command and pass an argv list, never a shell string, to the
+helper. `refused` and `inconclusive` are both do-not-run outcomes. A trusted failure in application
+behavior proves drift; timeout, setup, dependency, or safety failure remains
+`behavior-asserted — verify manually`.
+
 ## Rules
 
 - **Prove it or drop it.** Cite the code, or it isn't a finding. "Confirmed fresh" = you read both

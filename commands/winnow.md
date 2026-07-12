@@ -37,11 +37,20 @@ doc's assertion against the current code; the **verdict space** is drift / fine 
 **prongs** are *defend* (the reading that makes it hold) / *prove-wrong* (the exact code token that
 breaks it) / *hardest-broken* (the airtight case for drift). Snap, challenge, three blind reads,
 blind-spot, weigh — a drift ships only if the accusation beat its strongest defense.
-Where the code runs, **prove by test is the default** for behavioral claims — write the smallest
-test that encodes what the *doc* claims and run it: passes → certified by test, fails →
-drift-proven-by-execution, won't run → inconclusive, fall back to `verify manually` (never flag on
-a test you don't trust). `--prove-by-test` forces it on a bare CLI. The test is scratch; show it,
-don't commit it.
+Where the code runs, **prove by test is the default** for behavioral claims, within this boundary:
+
+Run only a repository-declared test command with a bounded timeout.
+Use a disposable scratch location and remove it only through the host's safe cleanup mechanism.
+Do not add, print, or forward secrets; declare any existing secret dependency before execution.
+Disable network access when the host can do so safely; otherwise declare the network requirement before execution.
+Refuse privileged, destructive, cleanup, deployment, upload, push, publication, and portal-mutation commands.
+If the command, isolation, timeout, dependencies, or test setup cannot be trusted, report inconclusive, never drift.
+Classifier output is advisory: allowed still requires the runtime safeguards above.
+
+Write the smallest scratch test that encodes what the *doc* claims; show it and do not commit it.
+Use argv, not a shell string. A trusted application-behavior failure proves drift and a pass
+certifies by test. Any refused, inconclusive, timed-out, unavailable, or setup-failed run falls back
+to `behavior-asserted — verify manually`.
 
 **Affirmative verification** — every claim is left in one of three states, never silently passed:
 - **certified** — you read the doc passage and the current code and they match; cite the code.

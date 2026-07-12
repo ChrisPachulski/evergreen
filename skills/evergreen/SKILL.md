@@ -133,21 +133,23 @@ advisory, and the rendered result must still say inconclusive.
 
 ## Prove by test (default for executable behavioral claims)
 
-Rung 4's behavioral claims can't be settled by reading — "retries 3 times", "returns empty on
-miss". Where the code actually runs, **settle them by execution instead of deferring** — this is
-what buys precision (CASCADE's Phase 2 lifts precision 0.82→0.88 exactly here). strict winnow does
-it automatically; `--prove-by-test` forces it; a bare CLI whose deps don't resolve falls back to
-`behavior-asserted — verify manually`.
+Run only a repository-declared test command with a bounded timeout.
+Use a disposable scratch location and remove it only through the host's safe cleanup mechanism.
+Do not add, print, or forward secrets; declare any existing secret dependency before execution.
+Disable network access when the host can do so safely; otherwise declare the network requirement before execution.
+Refuse privileged, destructive, cleanup, deployment, upload, push, publication, and portal-mutation commands.
+If the command, isolation, timeout, dependencies, or test setup cannot be trusted, report inconclusive, never drift.
+Classifier output is advisory: allowed still requires the runtime safeguards above.
 
-1. Write the smallest test that encodes what the *doc* claims — not what the code does.
-2. Run it against the current code. Fails → **drift, proven by execution** (cite the failure).
-   Passes → **certified by test** (cite the passing test).
-3. Guard against a bad test: a test that won't compile or run is **inconclusive**, never drift —
-   fall back to `behavior-asserted — verify manually`. An inconsistency counts only when running
-   code fails a test the doc backs. Never flag on a test you don't trust.
+Inspect the repository's own test manifest or documented test command; do not invent a shell
+pipeline. Write the smallest scratch test that encodes the *doc's* claim, show it, and do not commit
+it. Use `classify_command(argv)` only as a conservative helper: `refused` means do not run;
+`inconclusive` means do not run without a separately established safe path. `allowed` recognizes a
+test-driver shape, not available isolation or permission to skip the safeguards.
 
-The test is scratch — show it, don't commit it. This is the one rung that executes; every other
-rung only reads.
+A trusted test failure caused by application behavior proves drift; a pass certifies by test.
+Timeout, compilation/setup failure, missing dependencies, unavailable isolation, or an untrusted
+test is inconclusive and falls back to `behavior-asserted — verify manually`.
 
 ## Put the verdict on trial (the shared harness)
 

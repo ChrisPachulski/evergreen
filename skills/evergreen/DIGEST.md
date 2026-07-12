@@ -49,6 +49,17 @@ Release identity is a living claim. On release/version/TestFlight/App Store work
 - Worked behavior: eight evidenced pre-1.0 milestone waves can justify `0.1.0 (71)` →
   `0.9.0 (72)`; this is evidence-guided, not a fixed arithmetic formula.
 
+Safe prove by test:
+Run only a repository-declared test command with a bounded timeout.
+Use a disposable scratch location and remove it only through the host's safe cleanup mechanism.
+Do not add, print, or forward secrets; declare any existing secret dependency before execution.
+Disable network access when the host can do so safely; otherwise declare the network requirement before execution.
+Refuse privileged, destructive, cleanup, deployment, upload, push, publication, and portal-mutation commands.
+If the command, isolation, timeout, dependencies, or test setup cannot be trusted, report inconclusive, never drift.
+Classifier output is advisory: allowed still requires the runtime safeguards above.
+Only a trusted application-behavior failure of the scratch test proves drift; setup and safety
+failures remain `behavior-asserted — verify manually`.
+
 Rules:
 - **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. Every
   judgment-call verdict in the family — a rung-3/4 drift flag, cultivate's delete/block, flourish's
