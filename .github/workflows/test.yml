@@ -2,10 +2,27 @@ name: test
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
-  hooks:
-    runs-on: ubuntu-latest
+  test:
+    name: ${{ matrix.os }} / Python 3.11
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
-      - name: Run hook tests
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+      - name: Python tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: Hook integration
         run: bash tests/hooks.sh
+      - name: Action integration
+        run: bash tests/action.sh
+      - name: Benchmark self-test
+        run: python3 eval/bench/run_bench.py --selftest

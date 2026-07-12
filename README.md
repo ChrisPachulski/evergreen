@@ -195,7 +195,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with: { fetch-depth: 0 }
-      - uses: ChrisPachulski/evergreen@58c48b47ae1c8972f36d65cb844cd5f085156d5e # v0.4.0
+      - uses: ChrisPachulski/evergreen@f9dfe38ad42500e49e950e72436692f2595bfcb8 # v0.4.0 RC
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           fail_on_inconclusive: true

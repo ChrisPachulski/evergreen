@@ -565,6 +565,18 @@ empty "$(guard_cmd "git -C $TMP commit -m cleanup")" \
   "guard: deletion-only option-prefixed commit of slop -> allowed (cleanup enforced, not blocked)"
 git -C "$TMP" commit -qm "remove slop"
 
+# Release CI must gate the complete trust and host surface on both supported OS families.
+workflow="$(cat "$ROOT/.github/workflows/test.yml")"
+for token in \
+  "ubuntu-latest" \
+  "macos-latest" \
+  "python3 -m unittest discover" \
+  "bash tests/hooks.sh" \
+  "bash tests/action.sh" \
+  "eval/bench/run_bench.py --selftest"; do
+  has "$workflow" "$token" "CI gates release surface: $token"
+done
+
 # --- companion python selftests (comment renderer + benchmark scorer) ---
 python3 "$ROOT/ci/pr_comment.py" --selftest >/dev/null 2>&1 && ok "ci/pr_comment.py --selftest" || no "ci/pr_comment.py --selftest"
 python3 "$ROOT/eval/bench/run_bench.py" --selftest >/dev/null 2>&1 && ok "eval/bench/run_bench.py --selftest" || no "eval/bench/run_bench.py --selftest"
