@@ -7,6 +7,7 @@ from pathlib import Path
 import stat
 import subprocess
 import tempfile
+import time
 
 
 BEGIN_MARKER = "<!-- evergreen:begin -->"
@@ -16,6 +17,7 @@ MAX_STATE_BYTES = 4096
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_INSTRUCTION_BYTES = 1024 * 1024
 COMMAND_SMOKE_TIMEOUT_SECONDS = 5
+CONTROLLED_READ_TIMEOUT_SECONDS = 3
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,10 @@ def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> 
     errors = _host_errors(selected)
     if errors:
         return OperationResult(False, tuple(errors))
+    try:
+        captured = _capture_preflight(selected)
+    except Exception as error:
+        return OperationResult(False, (f"error: transaction preflight failed: {error}",))
     states = {}
     for status in selected:
         state, state_error = _load_ownership(status)
@@ -91,7 +97,7 @@ def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> 
         errors.extend(f"{status.name}: refusing {message}" for message in plan_errors)
     if errors:
         return OperationResult(False, tuple(errors))
-    return _apply(plans, dry_run)
+    return _apply(plans, dry_run, captured)
 
 
 def uninstall(home: Path, host: str, dry_run: bool = False) -> OperationResult:
@@ -101,6 +107,10 @@ def uninstall(home: Path, host: str, dry_run: bool = False) -> OperationResult:
     errors = _host_errors(selected)
     if errors:
         return OperationResult(False, tuple(errors))
+    try:
+        captured = _capture_preflight(selected)
+    except Exception as error:
+        return OperationResult(False, (f"error: transaction preflight failed: {error}",))
     states = {}
     for status in selected:
         state, state_error = _load_ownership(status)
@@ -117,7 +127,7 @@ def uninstall(home: Path, host: str, dry_run: bool = False) -> OperationResult:
         errors.extend(f"{status.name}: refusing {message}" for message in plan_errors)
     if errors:
         return OperationResult(False, tuple(errors))
-    return _apply(plans, dry_run)
+    return _apply(plans, dry_run, captured)
 
 
 def doctor(home: Path, plugin_root: Path, host: str = "all") -> OperationResult:
@@ -211,9 +221,9 @@ def _canonical(plugin_root):
             errors.append(f"error canonical manifests missing or unsafe: {path}")
             continue
         try:
-            if path.stat().st_size > MAX_MANIFEST_BYTES:
-                raise ValueError("manifest exceeds byte limit")
-            value = json.loads(path.read_bytes())
+            value = json.loads(_read_regular_bounded(
+                path, MAX_MANIFEST_BYTES, "canonical manifest"
+            ))
             version = value.get("version") if isinstance(value, dict) else None
             if not isinstance(version, str) or not version:
                 raise ValueError("manifest version must be a non-empty string")
@@ -295,9 +305,9 @@ def _load_ownership(status):
     if _kind(status.ownership) == "absent":
         return None, None
     try:
-        if status.ownership.stat().st_size > MAX_STATE_BYTES:
-            raise ValueError("ownership record exceeds byte limit")
-        value = json.loads(status.ownership.read_bytes())
+        value = json.loads(_read_regular_bounded(
+            status.ownership, MAX_STATE_BYTES, "ownership record"
+        ))
         fields = {
             "schema_version", "host", "plugin_root", "instruction_existed",
             "instruction_separator", "skill_target",
@@ -374,7 +384,10 @@ def _install_plans(status, state, root, target, block):
             skill_target=str(target),
         )
     encoded = _encode_ownership(state)
-    current = status.ownership.read_bytes() if _kind(status.ownership) == "regular" else None
+    current = (
+        _read_regular_bounded(status.ownership, MAX_STATE_BYTES, "ownership record")
+        if _kind(status.ownership) == "regular" else None
+    )
     state_plan = (
         "unchanged" if current == encoded else "write",
         f"ownership record {'unchanged' if current == encoded else 'updated'} {status.ownership}",
@@ -444,24 +457,38 @@ def _uninstall_plans(status, state):
     return [instruction_plan, skill_plan, state_plan], []
 
 
-def _apply(plans, dry_run):
+def _apply(plans, dry_run, captured):
     messages = []
     for status, (action, detail, path, value) in plans:
         prefix = "would " if dry_run and action not in ("unchanged", "unowned") else ""
         messages.append(f"{status.name}: {prefix}{detail}")
-    if dry_run:
-        return OperationResult(True, tuple(messages))
     mutations = [plan for _status, plan in plans if plan[0] not in ("unchanged", "unowned")]
     try:
-        snapshots = _snapshots(mutations)
+        _verify_preflight(captured)
     except Exception as error:
         return OperationResult(False, tuple(messages + [f"error: transaction preflight failed: {error}"]))
+    if dry_run:
+        return OperationResult(True, tuple(messages))
     try:
+        verified_parents = set()
+        rollback_snapshots = []
+        rollback_paths = set()
         for action, _detail, path, value in mutations:
+            if path.parent in captured and path.parent not in verified_parents:
+                _verify_snapshot(captured[path.parent])
+                verified_parents.add(path.parent)
+            _verify_snapshot(captured[path])
+            if path.parent in captured and captured[path.parent].kind == "absent" and \
+                    path.parent not in rollback_paths:
+                rollback_snapshots.append(captured[path.parent])
+                rollback_paths.add(path.parent)
+            if path not in rollback_paths:
+                rollback_snapshots.append(captured[path])
+                rollback_paths.add(path)
             _perform_action(action, path, value)
     except Exception as error:
         rollback_errors = []
-        for snapshot in reversed(snapshots):
+        for snapshot in reversed(rollback_snapshots):
             try:
                 _restore_snapshot(snapshot)
             except Exception as rollback_error:
@@ -477,18 +504,29 @@ def _apply(plans, dry_run):
     return OperationResult(True, tuple(messages))
 
 
-def _snapshots(mutations):
-    snapshots = []
-    seen = set()
-    for _action, _detail, path, _value in mutations:
-        parent = path.parent
-        if _kind(parent) == "absent" and parent not in seen:
-            snapshots.append(_snapshot(parent, allow_directory=True))
-            seen.add(parent)
-        if path not in seen:
-            snapshots.append(_snapshot(path))
-            seen.add(path)
-    return snapshots
+def _capture_preflight(selected):
+    captured = {}
+    for status in selected:
+        for path, allow_directory in (
+            (status.instructions, False),
+            (status.skill, False),
+            (status.ownership, False),
+            (status.skill.parent, True),
+        ):
+            if path not in captured:
+                captured[path] = _snapshot(path, allow_directory=allow_directory)
+    return captured
+
+
+def _verify_preflight(captured):
+    for snapshot in captured.values():
+        _verify_snapshot(snapshot)
+
+
+def _verify_snapshot(expected):
+    actual = _snapshot(expected.path, allow_directory=expected.kind == "directory")
+    if actual != expected:
+        raise OSError(f"transaction path changed after planning: {expected.path}")
 
 
 def _snapshot(path, allow_directory=False):
@@ -499,11 +537,17 @@ def _snapshot(path, allow_directory=False):
         metadata = path.lstat()
         if metadata.st_nlink != 1:
             raise OSError(f"refusing hard-linked transaction path: {path}")
-        limit = MAX_INSTRUCTION_BYTES if path.name in {"CLAUDE.md", "AGENTS.md"} else None
-        data = _read_regular_bounded(path, limit, "instruction snapshot") if limit else path.read_bytes()
+        limit = MAX_STATE_BYTES if path.name == OWNERSHIP_FILE else MAX_INSTRUCTION_BYTES
+        data = _read_regular_bounded(path, limit, "transaction snapshot")
         return PathSnapshot(path, kind, data=data, mode=stat.S_IMODE(metadata.st_mode))
     if kind == "symlink":
-        return PathSnapshot(path, kind, target=os.readlink(path))
+        before = path.lstat()
+        target = os.readlink(path)
+        after = path.lstat()
+        if (before.st_dev, before.st_ino, before.st_mode) != (
+                after.st_dev, after.st_ino, after.st_mode):
+            raise OSError(f"refusing changed transaction symlink: {path}")
+        return PathSnapshot(path, kind, target=target)
     if kind == "directory" and allow_directory:
         return PathSnapshot(path, kind, mode=stat.S_IMODE(path.lstat().st_mode))
     raise OSError(f"refusing unsafe transaction path ({kind}): {path}")
@@ -655,14 +699,22 @@ def _read_instruction(path):
 
 
 def _read_regular_bounded(path, limit, label):
+    nonblocking = getattr(os, "O_NONBLOCK", None)
+    if nonblocking is None:
+        raise OSError(f"refusing {label}: nonblocking reads unavailable")
+    deadline = time.monotonic() + CONTROLLED_READ_TIMEOUT_SECONDS
     before = path.lstat()
     if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
         raise OSError(f"refusing unsafe {label}: {path}")
     if before.st_size > limit:
         raise ValueError(f"{label} exceeds byte limit (maximum {limit})")
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    if time.monotonic() > deadline:
+        raise TimeoutError(f"{label} read timed out")
+    flags = os.O_RDONLY | nonblocking | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags)
     try:
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"{label} read timed out")
         opened = os.fstat(descriptor)
         if ((opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino) or
                 not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1):
@@ -672,6 +724,8 @@ def _read_regular_bounded(path, limit, label):
         chunks = []
         remaining = limit + 1
         while remaining:
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"{label} read timed out")
             chunk = os.read(descriptor, min(64 * 1024, remaining))
             if not chunk:
                 break
@@ -680,6 +734,15 @@ def _read_regular_bounded(path, limit, label):
         data = b"".join(chunks)
         if len(data) > limit:
             raise ValueError(f"{label} exceeds byte limit (maximum {limit})")
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"{label} read timed out")
+        after = path.lstat()
+        identity = lambda item: (
+            item.st_dev, item.st_ino, item.st_mode, item.st_nlink, item.st_size,
+            item.st_mtime_ns, item.st_ctime_ns,
+        )
+        if identity(after) != identity(opened) or identity(before) != identity(opened):
+            raise OSError(f"refusing changed {label}: {path}")
         return data
     finally:
         os.close(descriptor)
@@ -691,22 +754,36 @@ def _smoke_command(command):
         "PATH": os.environ.get("PATH", os.defpath),
         "PYTHONDONTWRITEBYTECODE": "1",
     }
+    process = None
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             [str(command), "--help"],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=COMMAND_SMOKE_TIMEOUT_SECONDS,
             env=env,
-            check=False,
+            cwd=str(command.parent.resolve()),
+            start_new_session=True,
         )
+        process.wait(timeout=COMMAND_SMOKE_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
+        if process is not None:
+            try:
+                os.killpg(process.pid, 9)
+            except ProcessLookupError:
+                pass
+            process.wait()
         return f"timed out after {COMMAND_SMOKE_TIMEOUT_SECONDS} seconds"
     except OSError as error:
+        if process is not None:
+            try:
+                os.killpg(process.pid, 9)
+            except ProcessLookupError:
+                pass
+            process.wait()
         return str(error)
-    if completed.returncode != 0:
-        return f"exit status {completed.returncode}"
+    if process.returncode != 0:
+        return f"exit status {process.returncode}"
     return None
 
 

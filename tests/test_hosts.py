@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -217,6 +218,85 @@ class HostTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(self.snapshot(include_directories=True), before)
         self.assertFalse((self.home / ".claude" / "CLAUDE.md").exists())
+
+    def test_install_aborts_atomically_when_instructions_change_after_planning(self):
+        from evergreen import hosts
+
+        for directory, filename in ((".claude", "CLAUDE.md"), (".codex", "AGENTS.md")):
+            root = self.home / directory
+            root.mkdir()
+            (root / filename).write_bytes(directory.encode())
+        changed = self.home / ".codex" / "AGENTS.md"
+        real_verify = hosts._verify_preflight
+
+        def change_then_verify(captured):
+            changed.write_bytes(b"concurrent replacement")
+            return real_verify(captured)
+
+        with mock.patch.object(hosts, "_verify_preflight", side_effect=change_then_verify):
+            result = hosts.install(self.home, ROOT, "all")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(changed.read_bytes(), b"concurrent replacement")
+        self.assertFalse((self.home / ".claude" / "skills").exists())
+        self.assertFalse((self.home / ".codex" / "skills").exists())
+
+    def test_uninstall_aborts_atomically_when_owned_link_is_replaced_after_planning(self):
+        from evergreen import hosts
+
+        (self.home / ".claude").mkdir()
+        (self.home / ".codex").mkdir()
+        self.assertTrue(hosts.install(self.home, ROOT, "all").ok)
+        link = self.home / ".codex" / "skills" / "evergreen"
+        replacement = self.home / "replacement"
+        replacement.mkdir()
+        real_verify = hosts._verify_preflight
+
+        def replace_then_verify(captured):
+            link.unlink()
+            link.symlink_to(replacement, target_is_directory=True)
+            return real_verify(captured)
+
+        before_claude = self.snapshot(include_directories=True)
+        with mock.patch.object(hosts, "_verify_preflight", side_effect=replace_then_verify):
+            result = hosts.uninstall(self.home, "all")
+
+        self.assertFalse(result.ok)
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(os.readlink(link), str(replacement))
+        after = self.snapshot(include_directories=True)
+        for path, value in before_claude.items():
+            if not path.startswith(".codex/skills/evergreen"):
+                self.assertEqual(after.get(path), value)
+
+    def test_mid_apply_replacement_is_preserved_while_prior_actions_roll_back(self):
+        from evergreen import hosts
+
+        for directory, filename in ((".claude", "CLAUDE.md"), (".codex", "AGENTS.md")):
+            root = self.home / directory
+            root.mkdir()
+            (root / filename).write_bytes(directory.encode())
+        before = self.snapshot(include_directories=True)
+        changed = self.home / ".codex" / "AGENTS.md"
+        real_action = hosts._perform_action
+        calls = 0
+
+        def replace_future_target(action, path, value):
+            nonlocal calls
+            calls += 1
+            real_action(action, path, value)
+            if calls == 1:
+                changed.write_bytes(b"concurrent replacement")
+
+        with mock.patch.object(hosts, "_perform_action", side_effect=replace_future_target):
+            result = hosts.install(self.home, ROOT, "all")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(changed.read_bytes(), b"concurrent replacement")
+        after = self.snapshot(include_directories=True)
+        for path, value in before.items():
+            if path != ".codex/AGENTS.md":
+                self.assertEqual(after.get(path), value)
 
     def test_invalid_canonical_plugin_refuses_real_and_dry_run_before_home_planning(self):
         from evergreen.hosts import install
@@ -552,17 +632,70 @@ class HostTests(unittest.TestCase):
         (self.home / ".codex").mkdir()
         self.assertTrue(hosts.install(self.home, plugin, "codex").ok)
 
-        with mock.patch("evergreen.hosts.subprocess.run", wraps=hosts.subprocess.run) as run:
+        with mock.patch("evergreen.hosts.subprocess.Popen", wraps=hosts.subprocess.Popen) as popen:
             result = hosts.doctor(self.home, plugin, "codex")
 
         self.assertFalse(result.ok)
         self.assertTrue(any("smoke test failed" in message for message in result.messages))
-        self.assertEqual(run.call_args.kwargs["timeout"], hosts.COMMAND_SMOKE_TIMEOUT_SECONDS)
-        self.assertIs(run.call_args.kwargs["stdout"], hosts.subprocess.DEVNULL)
-        self.assertIs(run.call_args.kwargs["stderr"], hosts.subprocess.DEVNULL)
-        self.assertEqual(set(run.call_args.kwargs["env"]), {
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        self.assertEqual(popen.call_args.kwargs["cwd"], str(command.parent.resolve()))
+        self.assertIs(popen.call_args.kwargs["stdout"], hosts.subprocess.DEVNULL)
+        self.assertIs(popen.call_args.kwargs["stderr"], hosts.subprocess.DEVNULL)
+        self.assertEqual(set(popen.call_args.kwargs["env"]), {
             "LC_ALL", "PATH", "PYTHONDONTWRITEBYTECODE",
         })
+
+    def test_regular_reader_requires_nonblocking_open_and_post_open_identity(self):
+        from evergreen import hosts
+
+        path = self.home / "bounded"
+        path.write_bytes(b"safe")
+        with mock.patch.object(hosts.os, "O_NONBLOCK", None, create=True):
+            with self.assertRaisesRegex(OSError, "nonblocking"):
+                hosts._read_regular_bounded(path, 10, "test file")
+
+    def test_doctor_smoke_uses_isolated_process_group_and_canonical_cwd(self):
+        from evergreen import hosts
+
+        process = mock.Mock(returncode=0)
+        process.wait.return_value = 0
+        command = ROOT / "bin" / "evergreen"
+        with mock.patch("evergreen.hosts.subprocess.Popen", return_value=process) as popen:
+            error = hosts._smoke_command(command)
+
+        self.assertIsNone(error)
+        kwargs = popen.call_args.kwargs
+        self.assertTrue(kwargs["start_new_session"])
+        self.assertEqual(kwargs["cwd"], str(command.parent.resolve()))
+        self.assertIs(kwargs["stdin"], hosts.subprocess.DEVNULL)
+        self.assertEqual(process.wait.call_args.kwargs["timeout"],
+                         hosts.COMMAND_SMOKE_TIMEOUT_SECONDS)
+
+    def test_doctor_timeout_kills_spawned_descendants(self):
+        from evergreen import hosts
+
+        directory = self.home / "command"
+        directory.mkdir()
+        marker = directory / "descendant-survived"
+        command = directory / "evergreen"
+        child = (
+            "import pathlib,time; time.sleep(.3); "
+            f"pathlib.Path({str(marker)!r}).write_text('alive')"
+        )
+        command.write_text(
+            "#!/usr/bin/env python3\n"
+            "import subprocess, sys, time\n"
+            f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
+            "time.sleep(10)\n"
+        )
+        command.chmod(0o755)
+
+        with mock.patch.object(hosts, "COMMAND_SMOKE_TIMEOUT_SECONDS", 0.1):
+            error = hosts._smoke_command(command)
+        time.sleep(0.4)
+
+        self.assertIn("timed out", error)
+        self.assertFalse(marker.exists())
 
     def test_readme_documents_runtime_platform_and_host_safety_bounds(self):
         from evergreen.hosts import MAX_INSTRUCTION_BYTES
@@ -574,7 +707,7 @@ class HostTests(unittest.TestCase):
         self.assertIn("POSIX", readme)
         self.assertIn(f"{MAX_INSTRUCTION_BYTES // (1024 * 1024)} MiB", readme)
         self.assertIn("five-second", readme)
-        self.assertIn("discards command output", readme)
+        self.assertIn("isolated stdio", readme)
 
     def snapshot(self, include_directories=False):
         values = {}

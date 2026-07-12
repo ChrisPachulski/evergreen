@@ -126,6 +126,44 @@ class ImpactTests(unittest.TestCase):
         self.assertEqual([item.path for item in report.candidates], ["src/client.py"])
         self.assertTrue(any("living doc search truncated" in item for item in report.warnings))
 
+    def test_zero_config_source_scan_has_aggregate_byte_and_work_bounds(self):
+        from evergreen import impact as module
+
+        (self.repo / "src").mkdir()
+        for name in ("a.py", "b.py", "c.py"):
+            (self.repo / "src" / name).write_bytes(b"1234")
+        with mock.patch.object(module, "MAX_SOURCE_SCAN_BYTES", 5), \
+             mock.patch.object(module, "MAX_SOURCE_SCAN_WORK", 2):
+            report = module.impact(self.repo, ["src/a.py", "src/b.py", "src/c.py"], [])
+
+        self.assertEqual([item.path for item in report.candidates],
+                         ["src/a.py", "src/b.py", "src/c.py"])
+        self.assertTrue(any("source contract scan truncated" in item
+                            for item in report.warnings))
+
+    def test_contract_symbol_scan_returns_truncation_metadata(self):
+        from evergreen import impact as module
+
+        (self.repo / "a.py").write_text("class A:\n    pass\n")
+        with mock.patch.object(module, "MAX_SOURCE_SCAN_WORK", 0):
+            symbols, truncated = module._contract_symbols(self.repo, ["a.py"])
+
+        self.assertEqual(symbols, [])
+        self.assertTrue(truncated)
+
+    def test_contract_symbol_scan_obeys_deadline_before_reading(self):
+        from evergreen import impact as module
+
+        (self.repo / "a.py").write_text("class A:\n    pass\n")
+        with mock.patch.object(module.time, "monotonic", side_effect=[0, 4]), \
+             mock.patch.object(module, "SOURCE_SCAN_TIMEOUT_SECONDS", 3), \
+             mock.patch.object(module, "_bounded_regular_bytes") as read:
+            symbols, truncated = module._contract_symbols(self.repo, ["a.py"])
+
+        self.assertEqual(symbols, [])
+        self.assertTrue(truncated)
+        read.assert_not_called()
+
     def test_multiple_maps_merge_reasons_dedupe_and_sort_deterministically(self):
         from evergreen.impact import impact, load_map
 

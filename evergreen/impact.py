@@ -35,6 +35,9 @@ MAX_DOC_SEARCH_FILES = 1000
 MAX_DOC_SEARCH_BYTES = 8 * 1024 * 1024
 MAX_DOC_LIST_BYTES = 1024 * 1024
 MAX_CONTRACT_SYMBOLS = 100
+MAX_SOURCE_SCAN_BYTES = 8 * 1024 * 1024
+MAX_SOURCE_SCAN_WORK = 1000
+SOURCE_SCAN_TIMEOUT_SECONDS = 3
 DOC_SEARCH_TIMEOUT_SECONDS = 3
 
 DECLARATION_RE = re.compile(
@@ -511,14 +514,33 @@ def _bounded_regular_bytes(path, limit):
 
 def _contract_symbols(repo, paths):
     symbols = set()
+    scanned_bytes = 0
+    work = 0
+    deadline = time.monotonic() + SOURCE_SCAN_TIMEOUT_SECONDS
+    truncated = False
     for path in paths:
-        payload = _bounded_regular_bytes(repo / path, MAX_FILE_BYTES)
+        if (work >= MAX_SOURCE_SCAN_WORK or scanned_bytes >= MAX_SOURCE_SCAN_BYTES or
+                time.monotonic() >= deadline):
+            truncated = True
+            break
+        remaining = MAX_SOURCE_SCAN_BYTES - scanned_bytes
+        try:
+            source_metadata = (repo / path).lstat()
+        except OSError:
+            source_metadata = None
+        if (source_metadata is not None and stat.S_ISREG(source_metadata.st_mode) and
+                source_metadata.st_size > remaining):
+            truncated = True
+            break
+        payload = _bounded_regular_bytes(repo / path, min(MAX_FILE_BYTES, remaining))
+        work += 1
         if payload is None:
             continue
+        scanned_bytes += len(payload)
         symbols.update(match.decode("ascii") for match in DECLARATION_RE.findall(payload))
         if len(symbols) >= MAX_CONTRACT_SYMBOLS:
             break
-    return sorted(symbols)[:max(MAX_CONTRACT_SYMBOLS, 0)]
+    return sorted(symbols)[:max(MAX_CONTRACT_SYMBOLS, 0)], truncated
 
 
 def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactReport:
@@ -642,7 +664,13 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
             f"living docs truncated (maximum {MAX_DOC_SEARCH_FILES} files and "
             f"{MAX_DOC_LIST_BYTES} path bytes)"
         )
-    symbols = _contract_symbols(repo, changed_paths)
+    symbols, source_scan_truncated = _contract_symbols(repo, changed_paths)
+    if source_scan_truncated:
+        warnings.add(
+            "source contract scan truncated "
+            f"(maximum {MAX_SOURCE_SCAN_WORK} files, {MAX_SOURCE_SCAN_BYTES} bytes, "
+            f"or {SOURCE_SCAN_TIMEOUT_SECONDS} seconds)"
+        )
     search_bytes = 0
     for doc in living_docs:
         remaining = MAX_DOC_SEARCH_BYTES - search_bytes
