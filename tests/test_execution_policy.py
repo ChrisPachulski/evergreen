@@ -115,6 +115,30 @@ class ExecutionPolicyTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.classify(command), "refused")
 
+    def test_shell_privilege_and_destructive_components_cannot_hide_in_flags_or_args(self):
+        commands = (
+            ["pytest", "--sudo"],
+            ["pytest", "test:sudo"],
+            ["pytest", "--rm"],
+            ["pytest", "test:mkfs"],
+            ["pytest", "--bash"],
+            ["pytest", "runner:powershell"],
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(self.classify(command), "refused")
+
+    def test_executable_parent_directories_and_source_path_prose_are_not_operations(self):
+        commands = (
+            ["/tmp/release/pytest", "-q"],
+            ["pytest", "tests/test_release_notes.py"],
+            ["pytest", "test_push_notification.py"],
+            ["python3", "-m", "pytest", "/tmp/upload/tests/test_release_notes.py"],
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(self.classify(command), "allowed")
+
     def test_network_secret_and_unavailable_isolation_are_inconclusive(self):
         commands = (
             ["pytest", "--network"],

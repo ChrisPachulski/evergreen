@@ -17,6 +17,13 @@ NETWORK_FLAGS = {"network", "allow-net", "allow-network", "online", "internet"}
 SECRET_KEYS = {
     "api-key", "apikey", "client-secret", "password", "secret", "token",
 }
+SOURCE_SUFFIXES = {
+    ".bash", ".c", ".cc", ".cpp", ".cs", ".ex", ".exs", ".fish", ".go", ".h",
+    ".hpp", ".hrl", ".java", ".js", ".json", ".jsx", ".kt", ".kts", ".m", ".md",
+    ".mm", ".php", ".py", ".pyi", ".rb", ".rs", ".rst", ".scala", ".sh", ".swift",
+    ".toml", ".ts", ".tsx", ".txt", ".xml", ".yaml", ".yml", ".zsh",
+}
+FORBIDDEN_COMPONENTS = SHELLS | PRIVILEGED | DESTRUCTIVE | DANGEROUS_WORDS
 
 
 def classify_command(argv: list[str]) -> str:
@@ -28,9 +35,9 @@ def classify_command(argv: list[str]) -> str:
         return "refused"
 
     executable = _name(argv[0])
-    names = {_name(token) for token in argv}
-    if (names & (SHELLS | PRIVILEGED | DESTRUCTIVE) or
-            any(_has_dangerous_component(token) for token in argv)):
+    if (_has_forbidden_component(executable) or
+            any(not _is_source_path(token) and _has_forbidden_component(token)
+                for token in argv[1:])):
         return "refused"
     if executable in ("timeout", "gtimeout"):
         if len(argv) < 3 or not argv[1].isascii() or not argv[1].isdecimal():
@@ -130,10 +137,17 @@ def _operation(token):
     return word
 
 
-def _has_dangerous_component(token):
+def _has_forbidden_component(token):
     components = re.findall(r"[a-z0-9]+", token.casefold())
     return any(
         component == word or component.startswith(word) or component.endswith(word)
         for component in components
-        for word in DANGEROUS_WORDS
+        for word in FORBIDDEN_COMPONENTS
     )
+
+
+def _is_source_path(token):
+    if token.startswith("-"):
+        return False
+    path = token.split("::", 1)[0]
+    return Path(path).suffix.casefold() in SOURCE_SUFFIXES
