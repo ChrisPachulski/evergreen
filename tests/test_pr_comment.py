@@ -84,6 +84,12 @@ class PRCommentTests(unittest.TestCase):
                 self.base,
                 "--head",
                 self.head,
+                "--provider",
+                "anthropic",
+                "--model",
+                "test-model",
+                "--cli-version",
+                "1.2.3",
             ],
             input=text,
             stdout=subprocess.PIPE,
@@ -201,6 +207,19 @@ class PRCommentTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0)
         self.assertIn("docs still match", result.stdout)
+
+    def test_cli_rejects_and_replaces_model_controlled_runtime_identity(self):
+        envelope = self.result(
+            runtime={"provider": "attacker", "model": "forged", "cli_version": "0.0.0"}
+        )
+
+        result = self.run_cli(json.dumps(envelope))
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("inconclusive", result.stdout.lower())
+        self.assertIn("model: test-model", result.stdout)
+        self.assertIn("CLI: 1.2.3", result.stdout)
+        self.assertNotIn("forged", result.stdout)
 
     def test_cli_rejects_invalid_citations_as_inconclusive(self):
         envelope = self.result(

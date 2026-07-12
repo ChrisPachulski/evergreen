@@ -165,9 +165,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--base", required=True)
     parser.add_argument("--head", required=True)
+    parser.add_argument("--provider", required=True)
+    parser.add_argument("--model", required=True)
+    parser.add_argument("--cli-version", required=True)
     args = parser.parse_args(argv)
 
     result, errors = load_validated_result(sys.stdin.read(), args.repo, args.base, args.head)
+    expected_runtime = {
+        "provider": args.provider,
+        "model": args.model,
+        "cli_version": args.cli_version,
+    }
+    if result is not None:
+        supplied_runtime = result["runtime"]
+        for name, expected in expected_runtime.items():
+            if supplied_runtime[name] != expected:
+                errors.append(f"runtime.{name} does not match trusted runtime identity")
+        result["runtime"] = expected_runtime
     sys.stdout.write(
         render_result(
             result,
