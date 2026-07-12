@@ -11,3 +11,4 @@ __pycache__/
 .autoloop-self/
 .claude/worktrees/
 # <<< autoloop managed <<<
+.worktrees/
