@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from evergreen import host_metadata
 
@@ -14,6 +15,50 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class HostMetadataTests(unittest.TestCase):
+    def test_deadline_crossing_inside_final_value_fetch_is_rejected(self):
+        clock = [0]
+
+        class Function:
+            def __init__(self, implementation):
+                self.implementation = implementation
+
+            def __call__(self, *args):
+                return self.implementation(*args)
+
+        class Library:
+            pass
+
+        library = Library()
+        list_calls = 0
+
+        def list_attributes(_descriptor, buffer, _size):
+            nonlocal list_calls
+            list_calls += 1
+            if buffer is None:
+                return 2
+            buffer.raw = b"a\0"
+            return 2
+
+        get_calls = 0
+
+        def get_attribute(_descriptor, _name, buffer, _size):
+            nonlocal get_calls
+            get_calls += 1
+            if buffer is None:
+                return 1
+            buffer[0] = b"x"
+            clock[0] = 2
+            return 1
+
+        library.flistxattr = Function(list_attributes)
+        library.fgetxattr = Function(get_attribute)
+        with mock.patch.object(host_metadata.sys, "platform", "linux"), \
+                mock.patch.object(host_metadata.ctypes, "CDLL", return_value=library), \
+                mock.patch.object(host_metadata.time, "monotonic", side_effect=lambda: clock[0]):
+            with self.assertRaises(TimeoutError):
+                host_metadata._items_fd(1, deadline=1)
+        self.assertEqual(get_calls, 2)
+
     def test_acl_free_has_pointer_safe_macos_signature(self):
         library = ctypes.CDLL(None)
         if not hasattr(library, "acl_free"):

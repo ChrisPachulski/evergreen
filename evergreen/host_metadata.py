@@ -154,12 +154,15 @@ def _items_fd(descriptor: int, *, deadline: float) -> list[tuple[str, bytes]]:
             return library.flistxattr(descriptor, buffer, size, 0)
         return library.flistxattr(descriptor, buffer, size)
     size = list_call(None, 0)
+    _check_deadline(deadline)
     if size < 0 or size > MAX_XATTR_BYTES:
         raise OSError(ctypes.get_errno(), "cannot enumerate extended attributes")
-    _check_deadline(deadline)
     buffer = ctypes.create_string_buffer(size) if size else None
-    if size and list_call(buffer, size) != size:
-        raise OSError(ctypes.get_errno(), "cannot read extended-attribute names")
+    if size:
+        read_size = list_call(buffer, size)
+        _check_deadline(deadline)
+        if read_size != size:
+            raise OSError(ctypes.get_errno(), "cannot read extended-attribute names")
     names = _bounded_names(buffer.raw if size else b"", deadline)
     get_args = [ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p, ctypes.c_size_t]
     if sys.platform == "darwin":
@@ -175,11 +178,15 @@ def _items_fd(descriptor: int, *, deadline: float) -> list[tuple[str, bytes]]:
     for name in names:
         _check_deadline(deadline)
         size = get_call(name, None, 0)
+        _check_deadline(deadline)
         if size < 0 or used + size > MAX_XATTR_BYTES:
             raise OSError(ctypes.get_errno(), "cannot size extended attribute")
         value = ctypes.create_string_buffer(size) if size else None
-        if size and get_call(name, value, size) != size:
-            raise OSError(ctypes.get_errno(), "cannot read extended attribute")
+        if size:
+            read_size = get_call(name, value, size)
+            _check_deadline(deadline)
+            if read_size != size:
+                raise OSError(ctypes.get_errno(), "cannot read extended attribute")
         items.append((name.decode("utf-8"), value.raw if size else b""))
         used += size
     acl = _acl_bytes(library, descriptor, deadline) if sys.platform == "darwin" else None
@@ -194,6 +201,7 @@ def _acl_bytes(library, descriptor: int, deadline: float) -> bytes | None:
     _check_deadline(deadline)
     _configure_acl_api(library)
     acl = library.acl_get_fd_np(descriptor, 0x100)
+    _check_deadline(deadline)
     if not acl:
         if ctypes.get_errno() == errno.ENOENT:
             return None
@@ -201,11 +209,16 @@ def _acl_bytes(library, descriptor: int, deadline: float) -> bytes | None:
     try:
         length = ctypes.c_ssize_t()
         text = library.acl_to_text(acl, ctypes.byref(length))
+        _check_deadline(deadline)
         if not text or length.value < 0 or length.value > MAX_XATTR_BYTES:
             raise OSError(ctypes.get_errno(), "cannot serialize file ACL")
         try:
-            return ctypes.string_at(text, length.value)
+            value = ctypes.string_at(text, length.value)
+            _check_deadline(deadline)
+            return value
         finally:
             library.acl_free(text)
+            _check_deadline(deadline)
     finally:
         library.acl_free(acl)
+        _check_deadline(deadline)

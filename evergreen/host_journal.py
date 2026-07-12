@@ -4,7 +4,6 @@ from dataclasses import replace
 import os
 from pathlib import Path
 import time
-import uuid
 
 from .host_snapshot import kind, open_directory, snapshot, snapshot_at
 from .host_types import JournalPhase, JournalRecord, MutationKind, PathSnapshot
@@ -57,9 +56,16 @@ def recover_target_artifacts(parent_fd, target):
     if journal_name is None:
         return manual_artifact_error(paths)
     try:
-        record = JournalRecord.parse(snapshot_at(target.with_name(journal_name), parent_fd).data)
+        update_name = artifacts.get("journal_update")
+        record_name = update_name or journal_name
+        record = JournalRecord.parse(snapshot_at(target.with_name(record_name), parent_fd).data)
         if not record.names_match(target.name, transaction_id, artifacts):
             return manual_artifact_error(paths)
+        if update_name is not None:
+            os.replace(
+                update_name, journal_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
+            )
+            os.fsync(parent_fd)
         recover_record(parent_fd, target, record, artifacts)
         return None
     except (OSError, TypeError, ValueError, KeyError):
@@ -106,9 +112,9 @@ def recover_record(parent_fd, target, record, artifacts):
                     (live.dev, live.ino) != (backup.dev, backup.ino) or backup.nlink != 2
                 ):
                     raise ValueError("replace backup changed")
-            remove_kind(parent_fd, record.temporary, staged.kind)
             if backup.kind != "absent":
                 remove_kind(parent_fd, record.backup, backup.kind)
+            remove_kind(parent_fd, record.temporary, staged.kind)
         else:
             after_matches = journal_snapshot_matches(live, record.after)
             if live.kind == "directory":
@@ -167,7 +173,7 @@ def write_journal_at(parent_fd, name, journal, *, create):
     payload = journal.encode()
     if len(payload) > 4096:
         raise OSError("transaction journal exceeds byte limit")
-    write_name = name if create else name + ".update-" + uuid.uuid4().hex
+    write_name = name if create else name + ".update"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     descriptor = os.open(
         write_name, flags | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=parent_fd,

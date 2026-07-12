@@ -146,6 +146,8 @@ class JournalRecord:
 
     def names_match(self, target: str, transaction_id: str, artifacts: dict[str, str]) -> bool:
         expected = {"journal": self.journal}
+        if "journal_update" in artifacts:
+            expected["journal_update"] = self.journal + ".update"
         if self.temporary is not None:
             expected["temporary"] = self.temporary
         if self.backup is not None:
@@ -161,6 +163,13 @@ class JournalRecord:
 
     @staticmethod
     def artifact_name(target: str, name: str) -> tuple[str, str] | None:
+        journal_prefix = f".{target}.evergreen-journal-"
+        if name.startswith(journal_prefix) and name.endswith(".update"):
+            transaction_id = name[len(journal_prefix):-len(".update")]
+            if len(transaction_id) == 32 and all(
+                char in "0123456789abcdef" for char in transaction_id
+            ):
+                return "journal_update", transaction_id
         prefixes = (
             ("backup", f".{target}.evergreen-backup-"),
             ("journal", f".{target}.evergreen-journal-"),
