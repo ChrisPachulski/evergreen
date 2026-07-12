@@ -76,13 +76,15 @@ python3 eval/bench/report.py \
   --require-language typescript \
   --require-language rust \
   --require-language go \
-  --coverage-threshold 1.0 \
+  --coverage-threshold 0.99 \
   --markdown eval/bench/results-current.md
 ```
 
-The declared set must exactly match the artifact languages. Generic or single-language reports use
-the same command with their own explicit `--require-language` set; missing, duplicate, empty, or
-undeclared languages fail publication.
+The declared set must exactly match the artifact languages. Each language must complete at least
+99% of its pairs; abstentions remain visible and outside the confusion matrix instead of being
+silently retried until they disappear. Generic or single-language reports use the same command
+with their own explicit `--require-language` set; missing, duplicate, empty, or undeclared
+languages fail publication.
 
 The checked-in CASCADE conversion is derived from upstream commit
 `4dc5a8d525c8967ea8dd11ae46cfe5834dbda156` under its MIT license. The upstream
