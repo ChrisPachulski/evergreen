@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import json
 import subprocess
 import tempfile
@@ -9,11 +10,34 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from eval.bench import run_bench
+from eval.bench import metrics, run_bench, runner, trial
 
 
 def ok(value):
     return {"status": "ok", "value": value}
+
+
+class ModuleBoundaryTests(unittest.TestCase):
+    def test_benchmark_responsibilities_have_importable_modules(self):
+        for name in ("trial", "metrics", "runner"):
+            with self.subTest(name=name):
+                self.assertIsNotNone(importlib.util.find_spec(f"eval.bench.{name}"))
+
+    def test_run_bench_is_an_explicit_compatibility_facade(self):
+        from eval.bench import metrics, runner, trial
+
+        self.assertIs(run_bench.judge, trial.judge)
+        self.assertIs(run_bench.claude_json, trial.claude_json)
+        self.assertIs(run_bench.score, metrics.score)
+        self.assertIs(run_bench.rows_from_transcript, metrics.rows_from_transcript)
+        self.assertIs(run_bench.load_dataset, runner.load_dataset)
+        self.assertIs(run_bench.bounded_results, runner.bounded_results)
+
+    def test_selftest_is_a_thin_compatible_health_check(self):
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(run_bench.selftest(), 0)
+        self.assertEqual(output.getvalue(), "selftest ok\n")
 
 
 class ClaudeJSONTests(unittest.TestCase):
@@ -24,7 +48,7 @@ class ClaudeJSONTests(unittest.TestCase):
             commands.append(command)
             return SimpleNamespace(stdout='{"ok":true}\n', stderr="", returncode=0)
 
-        result = run_bench.claude_json("prompt", "model", runner=runner)
+        result = trial.claude_json("prompt", "model", runner=runner)
 
         self.assertEqual(result, {"status": "ok", "value": {"ok": True}})
         self.assertEqual(len(commands), 1)
@@ -42,7 +66,7 @@ class ClaudeJSONTests(unittest.TestCase):
             calls.append((args, kwargs))
             raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
 
-        result = run_bench.claude_json("prompt", "model", runner=timeout)
+        result = trial.claude_json("prompt", "model", runner=timeout)
 
         self.assertEqual(result["status"], "abstain")
         self.assertIn("timeout", result["reason"])
@@ -55,7 +79,7 @@ class ClaudeJSONTests(unittest.TestCase):
             calls.append((args, kwargs))
             return SimpleNamespace(stdout="not json", returncode=0)
 
-        result = run_bench.claude_json("prompt", "model", runner=malformed)
+        result = trial.claude_json("prompt", "model", runner=malformed)
 
         self.assertEqual(result["status"], "abstain")
         self.assertIn("malformed", result["reason"])
@@ -73,7 +97,7 @@ class ClaudeJSONTests(unittest.TestCase):
             calls.append((args, kwargs))
             return next(replies)
 
-        result = run_bench.claude_json("prompt", "model", runner=runner)
+        result = trial.claude_json("prompt", "model", runner=runner)
 
         self.assertEqual(result, {"status": "ok", "value": {"verdict": "consistent"}})
         self.assertEqual(len(calls), 3)
@@ -82,7 +106,7 @@ class ClaudeJSONTests(unittest.TestCase):
         def missing(*args, **kwargs):
             raise FileNotFoundError("claude not found")
 
-        result = run_bench.claude_json("prompt", "model", runner=missing)
+        result = trial.claude_json("prompt", "model", runner=missing)
 
         self.assertEqual(result["status"], "abstain")
         self.assertIn("claude not found", result["reason"])
@@ -112,28 +136,28 @@ class PromptIsolationTests(unittest.TestCase):
         snap = {"verdict": "consistent", "category": None, "why": trial_injection}
         challenge = {"cracks": False, "why": trial_injection}
         prongs = [{"role": role, "verdict": "consistent", "why": trial_injection}
-                  for role in run_bench.PRONGS]
+                  for role in trial.PRONGS]
         blindspot = {"missed_angle": trial_injection}
-        with mock.patch.object(run_bench, "claude_json", side_effect=capture):
-            run_bench.snap_call(pair, "strong")
-            run_bench.challenge_call(pair, "consistent", "cheap")
-            for role in run_bench.PRONGS:
-                run_bench.prong_call(pair, role, "cheap")
-            run_bench.blindspot_call(pair, "cheap")
-            run_bench.synthesis_call(
+        with mock.patch.object(trial, "claude_json", side_effect=capture):
+            trial.snap_call(pair, "strong")
+            trial.challenge_call(pair, "consistent", "cheap")
+            for role in trial.PRONGS:
+                trial.prong_call(pair, role, "cheap")
+            trial.blindspot_call(pair, "cheap")
+            trial.synthesis_call(
                 pair, snap, challenge, prongs, blindspot, "strong"
             )
 
         self.assertEqual(len(prompts), 7)
         for prompt in prompts:
-            self.assertIn(run_bench.UNTRUSTED_DATA_INSTRUCTION, prompt)
+            self.assertIn(trial.UNTRUSTED_DATA_INSTRUCTION, prompt)
             self.assertNotIn(f"\n{injected_line}\n", prompt)
             self.assertNotIn(unicode_injection, prompt)
             line = next(
                 line for line in prompt.splitlines()
-                if line.startswith(run_bench.UNTRUSTED_PAIR_PREFIX)
+                if line.startswith(trial.UNTRUSTED_PAIR_PREFIX)
             )
-            envelope = json.loads(line.removeprefix(run_bench.UNTRUSTED_PAIR_PREFIX))
+            envelope = json.loads(line.removeprefix(trial.UNTRUSTED_PAIR_PREFIX))
             canonical = json.dumps(
                 envelope["data"], ensure_ascii=False, separators=(",", ":"), sort_keys=True
             ).encode()
@@ -145,10 +169,10 @@ class PromptIsolationTests(unittest.TestCase):
         self.assertNotIn(trial_injection, synthesis_prompt)
         trial_line = next(
             line for line in synthesis_prompt.splitlines()
-            if line.startswith(run_bench.UNTRUSTED_TRIAL_PREFIX)
+            if line.startswith(trial.UNTRUSTED_TRIAL_PREFIX)
         )
         trial_envelope = json.loads(
-            trial_line.removeprefix(run_bench.UNTRUSTED_TRIAL_PREFIX)
+            trial_line.removeprefix(trial.UNTRUSTED_TRIAL_PREFIX)
         )
         trial_data = {
             "snap": snap, "challenge": challenge, "prongs": prongs,
@@ -171,10 +195,10 @@ class PromptIsolationTests(unittest.TestCase):
         }
         for field in ("id", "func", "code", "doc", "language"):
             with self.subTest(field=field), self.assertRaisesRegex(ValueError, field):
-                run_bench._pair_envelope({**pair, field: ""})
-        with mock.patch.object(run_bench, "MAX_PAIR_TEXT_BYTES", 3), \
+                trial._pair_envelope({**pair, field: ""})
+        with mock.patch.object(trial, "MAX_PAIR_TEXT_BYTES", 3), \
              self.assertRaisesRegex(ValueError, "code"):
-            run_bench._pair_envelope({**pair, "code": "four"})
+            trial._pair_envelope({**pair, "code": "four"})
 
     def test_dataset_prevalidates_every_prompt_field_before_returning_rows(self):
         valid = {
@@ -186,7 +210,7 @@ class PromptIsolationTests(unittest.TestCase):
             path = Path(directory) / "dataset.jsonl"
             path.write_text("\n".join(json.dumps(row) for row in (valid, invalid)) + "\n")
             with self.assertRaisesRegex(ValueError, "doc"):
-                run_bench.load_dataset(path)
+                runner.load_dataset(path)
 
 
 class JudgeAbstentionTests(unittest.TestCase):
@@ -202,24 +226,24 @@ class JudgeAbstentionTests(unittest.TestCase):
         self.consistent = {"verdict": "consistent", "category": None, "why": "return 1"}
 
     def test_missing_snap_verdict_abstains_instead_of_defaulting_consistent(self):
-        with mock.patch.object(run_bench, "snap_call", return_value=ok({"why": "missing"})), \
-             mock.patch.object(run_bench, "challenge_call", return_value=ok({"cracks": False})), \
-             mock.patch.object(run_bench, "run_prongs", return_value=[ok(self.consistent)] * 3), \
-             mock.patch.object(run_bench, "blindspot_call", return_value=ok({"missed_angle": None})), \
-             mock.patch.object(run_bench, "synthesis_call", return_value=ok(self.consistent)):
-            result = run_bench.judge(self.pair, self.models)
+        with mock.patch.object(trial, "snap_call", return_value=ok({"why": "missing"})), \
+             mock.patch.object(trial, "challenge_call", return_value=ok({"cracks": False})), \
+             mock.patch.object(trial, "run_prongs", return_value=[ok(self.consistent)] * 3), \
+             mock.patch.object(trial, "blindspot_call", return_value=ok({"missed_angle": None})), \
+             mock.patch.object(trial, "synthesis_call", return_value=ok(self.consistent)):
+            result = trial.judge(self.pair, self.models)
 
         self.assertEqual(result["final_status"], "abstain")
         self.assertIsNone(result["final_verdict"])
         self.assertEqual(result["stages"]["snap"]["status"], "abstain")
 
     def test_missing_prong_verdict_abstains(self):
-        snap = mock.patch.object(run_bench, "snap_call", return_value=ok(self.consistent))
+        snap = mock.patch.object(trial, "snap_call", return_value=ok(self.consistent))
         challenge = mock.patch.object(
-            run_bench, "challenge_call", return_value=ok({"cracks": False})
+            trial, "challenge_call", return_value=ok({"cracks": False})
         )
         prongs = mock.patch.object(
-            run_bench,
+            trial,
             "run_prongs",
             return_value=[
                 ok({"verdict": "consistent", "why": "yes"}),
@@ -228,13 +252,13 @@ class JudgeAbstentionTests(unittest.TestCase):
             ],
         )
         blindspot = mock.patch.object(
-            run_bench, "blindspot_call", return_value=ok({"missed_angle": None})
+            trial, "blindspot_call", return_value=ok({"missed_angle": None})
         )
         synthesis = mock.patch.object(
-            run_bench, "synthesis_call", return_value=ok(self.consistent)
+            trial, "synthesis_call", return_value=ok(self.consistent)
         )
         with snap, challenge, prongs, blindspot, synthesis:
-            result = run_bench.judge(self.pair, self.models)
+            result = trial.judge(self.pair, self.models)
 
         self.assertEqual(result["final_status"], "abstain")
         self.assertEqual(result["stages"]["prongs"][1]["status"], "abstain")
@@ -242,11 +266,11 @@ class JudgeAbstentionTests(unittest.TestCase):
     def test_missing_or_invalid_challenge_cracks_abstains(self):
         for challenge_value in ({}, {"cracks": "false"}, {"cracks": 1}):
             with self.subTest(challenge=challenge_value), \
-                 mock.patch.object(run_bench, "snap_call", return_value=ok(self.consistent)), \
+                 mock.patch.object(trial, "snap_call", return_value=ok(self.consistent)), \
                  mock.patch.object(
-                     run_bench, "challenge_call", return_value=ok(challenge_value)
+                     trial, "challenge_call", return_value=ok(challenge_value)
                  ):
-                result = run_bench.judge(self.pair, self.models)
+                result = trial.judge(self.pair, self.models)
 
             self.assertEqual(result["final_status"], "abstain")
             self.assertEqual(result["stages"]["challenge"]["status"], "abstain")
@@ -260,20 +284,20 @@ class JudgeAbstentionTests(unittest.TestCase):
             {"missed_angle": "  \t"},
         ):
             with self.subTest(blindspot=blindspot_value), \
-                 mock.patch.object(run_bench, "snap_call", return_value=ok(self.consistent)), \
+                 mock.patch.object(trial, "snap_call", return_value=ok(self.consistent)), \
                  mock.patch.object(
-                     run_bench, "challenge_call", return_value=ok({"cracks": False})
+                     trial, "challenge_call", return_value=ok({"cracks": False})
                  ), \
                  mock.patch.object(
-                     run_bench, "run_prongs", return_value=[ok(self.consistent)] * 3
+                     trial, "run_prongs", return_value=[ok(self.consistent)] * 3
                  ), \
                  mock.patch.object(
-                     run_bench, "blindspot_call", return_value=ok(blindspot_value)
+                     trial, "blindspot_call", return_value=ok(blindspot_value)
                  ), \
                  mock.patch.object(
-                     run_bench, "synthesis_call", return_value=ok(self.consistent)
+                     trial, "synthesis_call", return_value=ok(self.consistent)
                  ):
-                result = run_bench.judge(self.pair, self.models)
+                result = trial.judge(self.pair, self.models)
 
             self.assertEqual(result["final_status"], "abstain")
             self.assertEqual(result["stages"]["blindspot"]["status"], "abstain")
@@ -290,21 +314,21 @@ class JudgeAbstentionTests(unittest.TestCase):
             "category": "direct-mismatch",
             "why": "x",
         }
-        with mock.patch.object(run_bench, "snap_call", return_value=ok(inconsistent)), \
-             mock.patch.object(run_bench, "challenge_call", return_value=ok({"cracks": False})), \
-             mock.patch.object(run_bench, "run_prongs", side_effect=[initial, escalated]):
-            result = run_bench.judge(self.pair, self.models)
+        with mock.patch.object(trial, "snap_call", return_value=ok(inconsistent)), \
+             mock.patch.object(trial, "challenge_call", return_value=ok({"cracks": False})), \
+             mock.patch.object(trial, "run_prongs", side_effect=[initial, escalated]):
+            result = trial.judge(self.pair, self.models)
 
         self.assertEqual(result["final_status"], "abstain")
         self.assertEqual(result["stages"]["prongs_escalated"][1]["status"], "abstain")
 
     def test_missing_synthesis_verdict_abstains(self):
-        snap = mock.patch.object(run_bench, "snap_call", return_value=ok(self.consistent))
+        snap = mock.patch.object(trial, "snap_call", return_value=ok(self.consistent))
         challenge = mock.patch.object(
-            run_bench, "challenge_call", return_value=ok({"cracks": True})
+            trial, "challenge_call", return_value=ok({"cracks": True})
         )
         prongs = mock.patch.object(
-            run_bench,
+            trial,
             "run_prongs",
             return_value=[
                 ok({"verdict": "consistent", "why": "yes"}),
@@ -313,23 +337,23 @@ class JudgeAbstentionTests(unittest.TestCase):
             ],
         )
         blindspot = mock.patch.object(
-            run_bench, "blindspot_call", return_value=ok({"missed_angle": None})
+            trial, "blindspot_call", return_value=ok({"missed_angle": None})
         )
-        synthesis = mock.patch.object(run_bench, "synthesis_call", return_value=ok({"why": "missing"}))
+        synthesis = mock.patch.object(trial, "synthesis_call", return_value=ok({"why": "missing"}))
         with snap, challenge, prongs, blindspot, synthesis:
-            result = run_bench.judge(self.pair, self.models)
+            result = trial.judge(self.pair, self.models)
 
         self.assertEqual(result["final_status"], "abstain")
         self.assertEqual(result["stages"]["synthesis"]["status"], "abstain")
 
     def test_unanimous_plurality_path_still_completes_without_synthesis(self):
         inconsistent = {"verdict": "inconsistent", "category": "direct-mismatch", "why": "x"}
-        with mock.patch.object(run_bench, "snap_call", return_value=ok(inconsistent)), \
-             mock.patch.object(run_bench, "challenge_call", return_value=ok({"cracks": False})), \
-             mock.patch.object(run_bench, "run_prongs", return_value=[ok(inconsistent)] * 3), \
-             mock.patch.object(run_bench, "blindspot_call", return_value=ok({"missed_angle": None})), \
-             mock.patch.object(run_bench, "synthesis_call") as synthesis:
-            result = run_bench.judge(self.pair, self.models)
+        with mock.patch.object(trial, "snap_call", return_value=ok(inconsistent)), \
+             mock.patch.object(trial, "challenge_call", return_value=ok({"cracks": False})), \
+             mock.patch.object(trial, "run_prongs", return_value=[ok(inconsistent)] * 3), \
+             mock.patch.object(trial, "blindspot_call", return_value=ok({"missed_angle": None})), \
+             mock.patch.object(trial, "synthesis_call") as synthesis:
+            result = trial.judge(self.pair, self.models)
 
         self.assertEqual(result["final_status"], "complete")
         self.assertEqual(result["final_verdict"], "inconsistent")
@@ -344,7 +368,7 @@ class ScoringTests(unittest.TestCase):
             {"label": "consistent", "category": None, "final_status": "complete", "final_verdict": "consistent"},
         ]
 
-        result = run_bench.score(rows)
+        result = metrics.score(rows)
 
         self.assertEqual((result["tp"], result["fp"], result["fn"], result["tn"]), (1, 0, 0, 1))
         self.assertEqual((result["attempted"], result["completed"], result["abstained"]), (3, 2, 1))
@@ -357,7 +381,7 @@ class ScoringTests(unittest.TestCase):
             {"label": "inconsistent", "category": "under-promise", "final_status": "abstain", "final_verdict": None},
         ]
 
-        result = run_bench.score(rows)
+        result = metrics.score(rows)
 
         self.assertEqual(result["under_flagged"], 1)
         self.assertEqual(
@@ -376,7 +400,7 @@ class ScoringTests(unittest.TestCase):
         output = StringIO()
 
         with redirect_stdout(output):
-            run_bench.report(rows)
+            metrics.report(rows)
 
         text = output.getvalue()
         self.assertIn("language=go", text)
@@ -397,10 +421,10 @@ class ScoringTests(unittest.TestCase):
                  "final_status": "abstain", "final_verdict": None},
             ]
             with self.subTest(completed_label=completed_label):
-                result = run_bench.score(rows)
+                result = metrics.score(rows)
                 output = StringIO()
                 with redirect_stdout(output):
-                    run_bench.report(rows)
+                    metrics.report(rows)
 
                 self.assertFalse(result["metrics_available"])
                 self.assertIsNone(result["precision"])
@@ -419,10 +443,10 @@ class ScoringTests(unittest.TestCase):
              "final_status": "abstain", "final_verdict": None},
         ]
 
-        result = run_bench.score(rows)
+        result = metrics.score(rows)
         output = StringIO()
         with redirect_stdout(output):
-            run_bench.report(rows)
+            metrics.report(rows)
 
         self.assertFalse(result["metrics_available"])
         for name in ("precision", "recall", "f1", "specificity", "accuracy", "flag_rate"):
@@ -451,10 +475,10 @@ class ScoringTests(unittest.TestCase):
             {"language": "python", "label": "consistent", "category": None, "final_status": "abstain", "final_verdict": None},
         ]
 
-        rescored_rows = run_bench.rows_from_transcript(transcript)
+        rescored_rows = metrics.rows_from_transcript(transcript)
 
         self.assertEqual(rescored_rows, direct)
-        self.assertEqual(run_bench.score(rescored_rows), run_bench.score(direct))
+        self.assertEqual(metrics.score(rescored_rows), metrics.score(direct))
 
 
 if __name__ == "__main__":

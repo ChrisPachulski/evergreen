@@ -25,6 +25,9 @@ MAX_SKILL_METADATA_BYTES = 1024 * 1024
 MAX_JUDGE_METADATA_BYTES = 1024 * 1024
 MAX_METADATA_HASH_SECONDS = 30
 VALID_CATEGORIES = {None, "direct-mismatch", "over-promise", "under-promise"}
+JUDGE_MODULES = (
+    "artifact.py", "metrics.py", "run_bench.py", "runner.py", "trial.py",
+)
 
 
 @contextmanager
@@ -225,12 +228,37 @@ def _canonical(value):
     return value
 
 
+def judge_identity(repo, deadline=None):
+    """Hash every module that can change benchmark verdicts or artifact semantics."""
+    repo = Path(repo)
+    deadline = deadline or time.monotonic() + MAX_METADATA_HASH_SECONDS
+    files = []
+    total_bytes = 0
+    for name in JUDGE_MODULES:
+        path = repo / "eval" / "bench" / name
+        try:
+            total_bytes += path.lstat().st_size
+        except OSError as error:
+            raise ValueError(f"judge module unavailable: {path}") from error
+        if total_bytes > MAX_JUDGE_METADATA_BYTES:
+            raise ValueError("judge modules exceed metadata byte limit")
+        files.append({
+            "path": _display_path(path, repo),
+            "sha256": sha256_file(path, MAX_JUDGE_METADATA_BYTES, deadline),
+        })
+    encoded = json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
+    return {
+        "path": "eval/bench/run_bench.py",
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+        "files": files,
+    }
+
+
 def artifact_metadata(dataset: Path, repo: Path, settings: dict) -> dict:
     """Capture the immutable inputs needed to reproduce a benchmark run."""
     dataset = Path(dataset)
     repo = Path(repo)
     skill = repo / "skills" / "evergreen" / "SKILL.md"
-    judge = repo / "eval" / "bench" / "run_bench.py"
     deadline = time.monotonic() + MAX_METADATA_HASH_SECONDS
     return {
         "dataset": {"path": _display_path(dataset, repo), "sha256": sha256_file(
@@ -239,9 +267,7 @@ def artifact_metadata(dataset: Path, repo: Path, settings: dict) -> dict:
         "skill": {"path": _display_path(skill, repo), "sha256": sha256_file(
             skill, MAX_SKILL_METADATA_BYTES, deadline
         )},
-        "judge": {"path": _display_path(judge, repo), "sha256": sha256_file(
-            judge, MAX_JUDGE_METADATA_BYTES, deadline
-        )},
+        "judge": judge_identity(repo, deadline),
         "git": git_identity(repo),
         "cli_version": _command_output(["claude", "--version"]),
         "settings": _canonical(settings),

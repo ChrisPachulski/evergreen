@@ -9,10 +9,10 @@ import math
 from pathlib import Path
 
 try:
-    from . import run_bench
+    from . import metrics
     from .artifact import load_json, valid_iso_time, validate_benchmark_row, validate_usage
 except ImportError:  # Direct script execution.
-    import run_bench
+    import metrics
     from artifact import load_json, valid_iso_time, validate_benchmark_row, validate_usage
 
 MAX_ARTIFACTS = 64
@@ -58,6 +58,16 @@ def _validate_metadata(metadata):
             raise ValueError(f"unavailable provenance: {key}")
         if not value["path"] or len(value["path"]) > 4096 or not _is_hex(value.get("sha256"), {64}):
             raise ValueError(f"invalid provenance: {key}")
+    judge_files = metadata["judge"].get("files")
+    if judge_files is not None:
+        if (not isinstance(judge_files, list) or not judge_files or
+                any(not isinstance(item, dict) or set(item) != {"path", "sha256"} or
+                    not isinstance(item["path"], str) or not item["path"] or
+                    not _is_hex(item["sha256"], {64}) for item in judge_files)):
+            raise ValueError("invalid provenance: judge files")
+        paths = [item["path"] for item in judge_files]
+        if paths != sorted(set(paths)):
+            raise ValueError("invalid provenance: judge files")
     git = metadata["git"]
     if (not isinstance(git, dict) or type(git.get("dirty")) is not bool or
             any(git.get(key) in (None, "", "unavailable") for key in
@@ -190,40 +200,40 @@ def _build_report(paths, coverage_threshold):
     passed_all = bool(languages)
     for language in languages:
         language_rows = [row for row in rows if row.get("language", "unknown") == language]
-        metrics = run_bench.score(run_bench.rows_from_transcript(language_rows))
-        passed = metrics["completion_rate"] >= coverage_threshold
+        language_metrics = metrics.score(metrics.rows_from_transcript(language_rows))
+        passed = language_metrics["completion_rate"] >= coverage_threshold
         passed_all = passed_all and passed
         lines.extend([
             "",
             f"## {_safe_text(language)}",
             "",
-            f"Coverage: **{_percent(metrics['completion_rate'])}** — "
+            f"Coverage: **{_percent(language_metrics['completion_rate'])}** — "
             f"**{'PASS' if passed else 'FAIL'}**.",
             "",
             "| Coverage | Count |",
             "|---|---:|",
-            f"| Attempted | {metrics['attempted']} |",
-            f"| Completed | {metrics['completed']} |",
-            f"| Abstained | {metrics['abstained']} |",
+            f"| Attempted | {language_metrics['attempted']} |",
+            f"| Completed | {language_metrics['completed']} |",
+            f"| Abstained | {language_metrics['abstained']} |",
             "",
             "| Core result | Value |",
             "|---|---:|",
-            f"| TP | {metrics['tp']} |",
-            f"| FP | {metrics['fp']} |",
-            f"| FN | {metrics['fn']} |",
-            f"| TN | {metrics['tn']} |",
-            f"| Precision | {_metric(metrics['precision'])} |",
-            f"| Recall | {_metric(metrics['recall'])} |",
-            f"| F1 | {_metric(metrics['f1'])} |",
-            f"| Specificity | {_metric(metrics['specificity'])} |",
-            f"| Accuracy | {_metric(metrics['accuracy'])} |",
+            f"| TP | {language_metrics['tp']} |",
+            f"| FP | {language_metrics['fp']} |",
+            f"| FN | {language_metrics['fn']} |",
+            f"| TN | {language_metrics['tn']} |",
+            f"| Precision | {_metric(language_metrics['precision'])} |",
+            f"| Recall | {_metric(language_metrics['recall'])} |",
+            f"| F1 | {_metric(language_metrics['f1'])} |",
+            f"| Specificity | {_metric(language_metrics['specificity'])} |",
+            f"| Accuracy | {_metric(language_metrics['accuracy'])} |",
             "",
             "| Under-promise (informational) | Count |",
             "|---|---:|",
-            f"| Attempted | {metrics['under_attempted']} |",
-            f"| Completed | {metrics['under_completed']} |",
-            f"| Abstained | {metrics['under_abstained']} |",
-            f"| Flagged | {metrics['under_flagged']} |",
+            f"| Attempted | {language_metrics['under_attempted']} |",
+            f"| Completed | {language_metrics['under_completed']} |",
+            f"| Abstained | {language_metrics['under_abstained']} |",
+            f"| Flagged | {language_metrics['under_flagged']} |",
         ])
     if not passed_all:
         lines[2] = "Publication status: **FAIL**."

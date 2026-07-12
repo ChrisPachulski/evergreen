@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from eval.bench import run_bench
+from eval.bench import metrics, run_bench, runner, trial
 
 
 def completed(identifier, language, label, category, verdict):
@@ -40,12 +40,21 @@ class ArtifactMetadataTests(unittest.TestCase):
             repo = Path(directory)
             dataset = repo / "dataset.jsonl"
             skill = repo / "skills" / "evergreen" / "SKILL.md"
-            judge = repo / "eval" / "bench" / "run_bench.py"
+            bench = repo / "eval" / "bench"
+            judge = bench / "run_bench.py"
             skill.parent.mkdir(parents=True)
             judge.parent.mkdir(parents=True)
             dataset.write_bytes(b'{"id":"one"}\n')
             skill.write_bytes(b"skill body\n")
-            judge.write_bytes(b"judge body\n")
+            modules = {
+                "artifact.py": b"artifact body\n",
+                "metrics.py": b"metrics body\n",
+                "run_bench.py": b"judge body\n",
+                "runner.py": b"runner body\n",
+                "trial.py": b"trial body\n",
+            }
+            for name, payload in modules.items():
+                (bench / name).write_bytes(payload)
 
             settings = {"models": {"strong": "opus", "cheap": "sonnet"}, "concurrency": 2}
             git = {
@@ -61,7 +70,13 @@ class ArtifactMetadataTests(unittest.TestCase):
 
         self.assertEqual(metadata["dataset"]["sha256"], hashlib.sha256(b'{"id":"one"}\n').hexdigest())
         self.assertEqual(metadata["skill"]["sha256"], hashlib.sha256(b"skill body\n").hexdigest())
-        self.assertEqual(metadata["judge"]["sha256"], hashlib.sha256(b"judge body\n").hexdigest())
+        self.assertEqual(
+            [item["path"] for item in metadata["judge"]["files"]],
+            [f"eval/bench/{name}" for name in sorted(modules)],
+        )
+        self.assertNotEqual(
+            metadata["judge"]["sha256"], hashlib.sha256(b"judge body\n").hexdigest()
+        )
         self.assertEqual(metadata["git"], git)
         self.assertEqual(metadata["cli_version"], "2.7.1 (Claude Code)")
         self.assertEqual(metadata["settings"], settings)
@@ -73,12 +88,14 @@ class ArtifactMetadataTests(unittest.TestCase):
             repo = Path(directory)
             dataset = repo / "dataset.jsonl"
             skill = repo / "skills" / "evergreen" / "SKILL.md"
-            judge = repo / "eval" / "bench" / "run_bench.py"
+            bench = repo / "eval" / "bench"
+            judge = bench / "run_bench.py"
             skill.parent.mkdir(parents=True)
             judge.parent.mkdir(parents=True)
             dataset.write_text("data")
             skill.write_text("skill")
-            judge.write_text("judge")
+            for name in ("artifact.py", "metrics.py", "run_bench.py", "runner.py", "trial.py"):
+                (bench / name).write_text(name)
             git = {"commit": "c", "tree": "t", "dirty": False,
                    "status_sha256": hashlib.sha256(b"").hexdigest(),
                    "diff_sha256": hashlib.sha256(b"").hexdigest(),
@@ -103,6 +120,24 @@ class ArtifactMetadataTests(unittest.TestCase):
         )
         self.assertEqual(with_usage["provider_usage"], {"input_tokens": 11, "output_tokens": 7})
         self.assertEqual(with_usage["timing"]["elapsed_seconds"], 1.25)
+
+    def test_judge_identity_changes_with_every_behavior_module(self):
+        from eval.bench import artifact
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            bench = repo / "eval" / "bench"
+            bench.mkdir(parents=True)
+            for name in artifact.JUDGE_MODULES:
+                (bench / name).write_text(name)
+            first = artifact.judge_identity(repo)
+            for name in artifact.JUDGE_MODULES:
+                with self.subTest(name=name):
+                    path = bench / name
+                    original = path.read_text()
+                    path.write_text(original + " changed")
+                    self.assertNotEqual(artifact.judge_identity(repo)["sha256"], first["sha256"])
+                    path.write_text(original)
 
     def test_hashing_streams_in_bounded_chunks(self):
         from eval.bench import artifact
@@ -677,34 +712,34 @@ class ArtifactReportTests(unittest.TestCase):
 class RunBenchArtifactIntegrationTests(unittest.TestCase):
     def test_artifact_rows_supports_new_envelope_and_legacy_transcript(self):
         rows = [completed("p1", "python", "consistent", None, "consistent")]
-        self.assertEqual(run_bench.artifact_rows({"schema_version": 1, "rows": rows}), rows)
-        self.assertEqual(run_bench.artifact_rows(rows), rows)
+        self.assertEqual(runner.artifact_rows({"schema_version": 1, "rows": rows}), rows)
+        self.assertEqual(runner.artifact_rows(rows), rows)
 
     def test_concurrency_is_strictly_bounded(self):
         for value in ("0", "33", "not-an-int"):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "EVAL_CONCURRENCY"):
-                run_bench.eval_concurrency({"EVAL_CONCURRENCY": value})
-        self.assertEqual(run_bench.eval_concurrency({"EVAL_CONCURRENCY": "32"}), 32)
+                runner.eval_concurrency({"EVAL_CONCURRENCY": value})
+        self.assertEqual(runner.eval_concurrency({"EVAL_CONCURRENCY": "32"}), 32)
 
     def test_provider_usage_requires_incremental_envelope(self):
         valid = {"EVAL_PROVIDER_USAGE_JSON": json.dumps({
             "semantics": "incremental", "usage": {"input_tokens": 3}
         })}
-        self.assertEqual(run_bench.provider_usage(valid), {"input_tokens": 3})
+        self.assertEqual(runner.provider_usage(valid), {"input_tokens": 3})
         for value in ({"input_tokens": 3}, {"semantics": "cumulative", "usage": {}}):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "incremental"):
-                run_bench.provider_usage({"EVAL_PROVIDER_USAGE_JSON": json.dumps(value)})
+                runner.provider_usage({"EVAL_PROVIDER_USAGE_JSON": json.dumps(value)})
         with self.assertRaisesRegex(ValueError, "numeric"):
-            run_bench.provider_usage({"EVAL_PROVIDER_USAGE_JSON": json.dumps({
+            runner.provider_usage({"EVAL_PROVIDER_USAGE_JSON": json.dumps({
                 "semantics": "incremental", "usage": {"input_tokens": "many"}
             })})
 
     def test_no_op_resume_does_not_merge_incremental_usage(self):
         previous = {"input_tokens": 10}
         current = {"input_tokens": 3}
-        self.assertEqual(run_bench.accumulated_usage(previous, current, evaluated_rows=0), previous)
+        self.assertEqual(runner.accumulated_usage(previous, current, evaluated_rows=0), previous)
         self.assertEqual(
-            run_bench.accumulated_usage(previous, current, evaluated_rows=1),
+            runner.accumulated_usage(previous, current, evaluated_rows=1),
             {"input_tokens": 13},
         )
 
@@ -712,14 +747,14 @@ class RunBenchArtifactIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             dataset = Path(directory) / "data.jsonl"
             dataset.write_text('{"id":"one"}\n')
-            with mock.patch.object(run_bench, "MAX_DATASET_BYTES", 4):
+            with mock.patch.object(runner, "MAX_DATASET_BYTES", 4):
                 with self.assertRaisesRegex(ValueError, "dataset too large"):
-                    run_bench.load_dataset(dataset)
+                    runner.load_dataset(dataset)
             legacy = Path(directory) / "legacy.json"
             legacy.write_text("[]" + " " * 20)
-            with mock.patch.object(run_bench, "MAX_RESCORE_BYTES", 4):
+            with mock.patch.object(runner, "MAX_RESCORE_BYTES", 4):
                 with self.assertRaisesRegex(ValueError, "artifact too large"):
-                    run_bench.load_rescore(legacy)
+                    runner.load_rescore(legacy)
 
     def test_legacy_rescore_allows_missing_or_null_got_as_abstention(self):
         rows = [
@@ -729,16 +764,16 @@ class RunBenchArtifactIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "legacy.json"
             path.write_text(json.dumps(rows))
-            loaded = run_bench.load_rescore(path)
+            loaded = runner.load_rescore(path)
 
-        rescored = run_bench.rows_from_transcript(loaded)
+        rescored = metrics.rows_from_transcript(loaded)
         self.assertEqual([row["final_status"] for row in rescored], ["abstain", "abstain"])
 
     def test_model_cli_capture_bounds_noisy_stdout_and_stderr(self):
-        with mock.patch.object(run_bench, "MAX_MODEL_STDOUT_BYTES", 32), \
-             mock.patch.object(run_bench, "MAX_MODEL_STDERR_BYTES", 32):
+        with mock.patch.object(trial, "MAX_MODEL_STDOUT_BYTES", 32), \
+             mock.patch.object(trial, "MAX_MODEL_STDERR_BYTES", 32):
             with self.assertRaisesRegex(OSError, "output limit"):
-                run_bench.bounded_cli_run([
+                trial.bounded_cli_run([
                     sys.executable, "-c",
                     "import sys; print('x'*100); print('e'*100, file=sys.stderr)",
                 ], capture_output=True, text=True, timeout=2)
@@ -764,7 +799,7 @@ class RunBenchArtifactIntegrationTests(unittest.TestCase):
                 return Future(self, function(item))
 
         executor = Executor()
-        results = list(run_bench.bounded_results(executor, lambda value: value * 2, range(20), 3))
+        results = list(runner.bounded_results(executor, lambda value: value * 2, range(20), 3))
 
         self.assertEqual(results, [(value, value * 2) for value in range(20)])
         self.assertEqual(executor.maximum, 3)
