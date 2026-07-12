@@ -1,6 +1,6 @@
 # Provider boundary
 
-This fixture separates mechanically observed facts from Evergreen's semantic judgment.
+This example separates mechanically observed facts from Evergreen's semantic judgment.
 
 ## Proven contract mismatch
 

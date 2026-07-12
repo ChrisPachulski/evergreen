@@ -80,7 +80,7 @@ warnings. Deterministic confidence means the provider proved its mechanical fact
 a documentation claim false. Drift-shaped adapters may translate mechanical facts into this
 schema, but provider-supplied findings and verdicts are rejected at the boundary. See the
 [`provider-evidence.json`](examples/provider-evidence.json) sample and the
-[semantic false-positive fixture](eval/fixture/docs/provider-boundary.md).
+[semantic false-positive example](examples/provider-boundary.md).
 
 ## How it's checked
 

@@ -4,7 +4,7 @@
     "version": "1.0",
     "type": "return-contract-changed",
     "path": "eval/fixture/config.py",
-    "line": 10,
+    "line": 11,
     "span": 1,
     "symbol": "load_config",
     "old": "returns null when project is missing",

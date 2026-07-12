@@ -187,6 +187,30 @@ class ImpactTests(unittest.TestCase):
         self.assertFalse(any(word in reason.lower() for candidate in report.candidates
                              for reason in candidate.reasons for word in ("finding", "verdict")))
 
+    def test_deterministic_fixture_remains_a_candidate_without_semantic_verdict(self):
+        from evergreen.evidence import load_evidence
+        from evergreen.impact import impact
+
+        root = Path(__file__).resolve().parents[1]
+        evidence, warnings = load_evidence(root / "examples/provider-evidence.json", root)
+        timeout = next(item for item in evidence if item.type == "constant-value-changed")
+        return_contract = next(item for item in evidence
+                               if item.type == "return-contract-changed")
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(return_contract.line, 11)
+        report = impact(root, [], [timeout])
+        self.assertEqual([candidate.path for candidate in report.candidates], [
+            "eval/fixture/config.py",
+        ])
+        self.assertIn("(deterministic)", report.candidates[0].reasons[0])
+        self.assertFalse(hasattr(report.candidates[0], "finding"))
+        self.assertFalse(hasattr(report.candidates[0], "verdict"))
+
+        boundary = (root / "examples/provider-boundary.md").read_text()
+        self.assertIn("Expected: no finding", boundary)
+        self.assertIn("per-project timeout override remains true", boundary)
+
     def test_impact_revalidates_hostile_and_malformed_evidence_without_aborting(self):
         from evergreen.impact import impact
 

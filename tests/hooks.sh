@@ -83,10 +83,11 @@ assert {record["type"] for record in records} == {
 }
 assert all(record["confidence"] == "deterministic" for record in records)
 assert all(not ({"finding", "verdict", "drift", "status"} & set(record)) for record in records)
+assert next(record for record in records if record["type"] == "return-contract-changed")["line"] == 11
 loaded, warnings = load_evidence(path, root)
 assert len(loaded) == 2 and warnings == []
 
-fixture = (root / "eval/fixture/docs/provider-boundary.md").read_text()
+fixture = (root / "examples/provider-boundary.md").read_text()
 assert "Expected: finding" in fixture
 assert "Expected: no finding" in fixture
 assert "per-project timeout override remains true" in fixture

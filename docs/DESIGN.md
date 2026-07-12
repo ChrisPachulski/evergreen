@@ -86,8 +86,8 @@ Re-read every candidate against current code before deciding drift.
 The read-only `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` command
 combines changed paths, validated provider facts, and repository-local source maps into a ranked
 candidate list. Provider confidence affects ranking only. A map broadens the candidate set; it
-cannot suppress a document or certify it. Invalid records and maps remain warnings rather than
-semantic conclusions.
+cannot suppress changed-path or normal grep baseline candidates, and it cannot certify a document.
+Invalid records and maps remain warnings rather than semantic conclusions.
 
 This boundary supports Drift-shaped interoperability through adapters that translate mechanical
 facts into the v1 evidence schema. It deliberately does not import an external tool's finding or
