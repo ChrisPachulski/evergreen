@@ -27,7 +27,14 @@ import random
 import statistics
 import subprocess
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    from .artifact import artifact_document, artifact_metadata, dumps
+except ImportError:  # Direct script execution.
+    from artifact import artifact_document, artifact_metadata, dumps
 
 HERE = Path(__file__).parent
 SKILL = HERE.parent.parent / "skills" / "evergreen" / "SKILL.md"
@@ -518,12 +525,22 @@ def rows_from_transcript(transcript):
     return rows
 
 
+def artifact_rows(value):
+    """Read versioned artifacts while retaining legacy transcript compatibility."""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict) and isinstance(value.get("rows"), list):
+        return value["rows"]
+    raise ValueError("benchmark artifact must be a transcript list or contain a rows list")
+
+
 def main():
     if "--selftest" in sys.argv:
         return selftest()
     if "--rescore" in sys.argv:
         path = Path(sys.argv[sys.argv.index("--rescore") + 1])
-        return report(rows_from_transcript(json.loads(path.read_text())), f", rescored from {path.name}")
+        return report(rows_from_transcript(artifact_rows(json.loads(path.read_text()))),
+                      f", rescored from {path.name}")
     ds = Path(sys.argv[sys.argv.index("--dataset") + 1]) if "--dataset" in sys.argv \
         else Path(os.environ.get("EVAL_DATASET", HERE / "dataset.jsonl"))
     # Two tiers: strong (snap + escalated prongs + synthesis) and cheap (challenge, prongs,
@@ -533,12 +550,28 @@ def main():
     for role, m in (("strong", strong), ("cheap", cheap)):
         assert "fable" not in m.lower(), f"Fable is banned from this project ({role}={m})"
     models = {"strong": strong, "cheap": cheap}
+    workers = int(os.environ.get("EVAL_CONCURRENCY", "1"))
+    settings = {"models": models, "concurrency": workers}
+    metadata = artifact_metadata(ds, HERE.parent.parent, settings)
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    start = time.monotonic()
+    provider_usage = json.loads(os.environ["EVAL_PROVIDER_USAGE_JSON"]) \
+        if os.environ.get("EVAL_PROVIDER_USAGE_JSON") else None
     pairs = [json.loads(l) for l in ds.read_text().splitlines() if l.strip()]
     out_dir = HERE / "out"; out_dir.mkdir(exist_ok=True)
     out_path = out_dir / f"bench-{ds.stem}-trial-{strong}.json"
-    done = {t["id"]: t for t in json.loads(out_path.read_text())} if out_path.exists() else {}
+    existing = artifact_rows(json.loads(out_path.read_text())) if out_path.exists() else []
+    done = {item["id"]: item for item in existing}
     todo = [p for p in pairs if p["id"] not in done]  # resumable: crash loses nothing scored
-    workers = int(os.environ.get("EVAL_CONCURRENCY", "1"))
+
+    def write_artifact(rows):
+        document = artifact_document(
+            rows, metadata, started_at=started_at,
+            elapsed_seconds=round(time.monotonic() - start, 3),
+            provider_usage=provider_usage,
+        )
+        out_path.write_text(dumps(document))
+
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for p, v in zip(todo, pool.map(lambda p: judge(p, models), todo)):
@@ -552,9 +585,9 @@ def main():
             print(f"  {mark} [{len(done)}/{len(pairs)}] {p['id']:40} label={p['label']:12} "
                   f"verdict={(verdict or 'abstain'):12} [{path}]", flush=True)
             if len(done) % 25 == 0:
-                out_path.write_text(json.dumps(list(done.values()), indent=2))
+                write_artifact([done[pair["id"]] for pair in pairs if pair["id"] in done])
     transcript = [done[p["id"]] for p in pairs]
-    out_path.write_text(json.dumps(transcript, indent=2))
+    write_artifact(transcript)
     report(rows_from_transcript(transcript), f", trial, strong={strong} cheap={cheap}")
 
 
