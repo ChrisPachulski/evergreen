@@ -16,6 +16,8 @@ MAX_MAPS = 1000
 MAX_PATTERNS = 100
 MAX_DOCS = 100
 MAX_STRING_BYTES = 4096
+MAX_PATH_SEGMENTS = 64
+MAX_PATTERN_SEGMENTS = 64
 MAX_CHANGED_PATHS = 10_000
 MAX_EVIDENCE_ITEMS = 10_000
 MAX_MATCH_WORK = 100_000
@@ -95,6 +97,8 @@ def _lexical(value, name):
 
 def _path(value, repo, name="path"):
     value, pure = _lexical(value, name)
+    if len(pure.parts) > MAX_PATH_SEGMENTS:
+        raise ValueError(f"{name} has too many segments (maximum {MAX_PATH_SEGMENTS})")
     try:
         root = repo.resolve()
         current = root
@@ -115,7 +119,11 @@ def _path(value, repo, name="path"):
 
 
 def _pattern(value):
-    value, _pure = _lexical(value, "source pattern")
+    value, pure = _lexical(value, "source pattern")
+    if len(pure.parts) > MAX_PATTERN_SEGMENTS:
+        raise ValueError(
+            f"source pattern has too many segments (maximum {MAX_PATTERN_SEGMENTS})"
+        )
     index = 0
     while index < len(value):
         if value[index] == "]":
@@ -139,24 +147,34 @@ def _pattern(value):
     return value
 
 
-def _glob_match(pattern, path):
+def _glob_match(pattern, path, max_work):
     pattern_parts = []
     for part in pattern.split("/"):
         if part != "**" or not pattern_parts or pattern_parts[-1] != "**":
             pattern_parts.append(part)
     path_parts = tuple(path.split("/"))
     reachable = {0}
+    work = 0
     for part in pattern_parts:
         if part == "**":
-            reachable = set(range(min(reachable), len(path_parts) + 1))
+            start = min(reachable)
+            transitions = len(path_parts) - start + 1
+            if work + transitions > max_work:
+                return False, max_work, True
+            work += transitions
+            reachable = set(range(start, len(path_parts) + 1))
         else:
-            reachable = {
-                index + 1 for index in reachable
-                if index < len(path_parts) and fnmatch.fnmatchcase(path_parts[index], part)
-            }
+            next_reachable = set()
+            for index in reachable:
+                if work >= max_work:
+                    return False, work, True
+                work += 1
+                if index < len(path_parts) and fnmatch.fnmatchcase(path_parts[index], part):
+                    next_reachable.add(index + 1)
+            reachable = next_reachable
         if not reachable:
-            return False
-    return len(path_parts) in reachable
+            return False, work, False
+    return len(path_parts) in reachable, work, False
 
 
 def _evidence_text(value, name, *, nullable=False, limit=8192):
@@ -457,9 +475,14 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
     for source in sorted(sources):
         for mapping in mappings:
             for pattern in mapping.sources:
-                if not spend_work():
+                matched, consumed, exhausted = _glob_match(
+                    pattern, source, max(MAX_MATCH_WORK - work, 0)
+                )
+                work += consumed
+                if exhausted:
+                    work_truncated = True
                     break
-                if _glob_match(pattern, source):
+                if matched:
                     reason = f"map {pattern} matched {source}"
                     for doc in mapping.docs:
                         if not spend_work():

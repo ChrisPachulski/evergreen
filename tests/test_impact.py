@@ -137,16 +137,31 @@ class ImpactTests(unittest.TestCase):
         self.assertIn("docs/shallow.md", direct_paths)
         self.assertIn("docs/client.md", direct_paths)
 
-    def test_many_globstars_do_not_crash_or_suppress_bounded_baseline(self):
+    def test_over_segment_glob_is_rejected_before_matching_without_suppressing_baseline(self):
         from evergreen import impact as module
 
-        hostile_pattern = "/".join(["**"] * 1200)
+        hostile_pattern = "/".join(["**", "a"] * 800)
         self.write_map([self.mapping([hostile_pattern], ["docs/hostile.md"])])
-        with mock.patch.object(module, "MAX_MATCH_WORK", 1):
-            report = module.impact(self.repo, ["src/a.py"], [])
+        report = module.impact(self.repo, ["src/a.py"], [])
 
         self.assertEqual([candidate.path for candidate in report.candidates], ["src/a.py"])
-        self.assertTrue(any("matching work truncated" in warning for warning in report.warnings))
+        self.assertTrue(any("source pattern has too many segments" in warning
+                            for warning in report.warnings))
+        self.assertFalse(any("matching work truncated" in warning
+                             for warning in report.warnings))
+
+    def test_over_segment_changed_path_warns_while_valid_baseline_survives(self):
+        from evergreen.impact import impact
+
+        hostile_path = "/".join(["a"] * 65)
+        boundary_path = "/".join(["b"] * 64)
+        report = impact(self.repo, [hostile_path, boundary_path, "valid.py"], [])
+
+        self.assertEqual({candidate.path for candidate in report.candidates}, {
+            boundary_path, "valid.py",
+        })
+        self.assertTrue(any("changed path has too many segments" in warning
+                            for warning in report.warnings))
 
     def test_deleted_source_and_missing_doc_targets_are_valid_candidates(self):
         from evergreen.impact import impact
@@ -328,6 +343,14 @@ class ImpactTests(unittest.TestCase):
 
         self.write_map([self.mapping(["src/**"], ["docs/a.md", "docs/b.md", "docs/c.md"])])
         with mock.patch.object(module, "MAX_MATCH_WORK", 2):
+            transition_bounded = module.impact(self.repo, ["src/a.py"], [])
+        self.assertEqual([candidate.path for candidate in transition_bounded.candidates], [
+            "src/a.py",
+        ])
+        self.assertTrue(any("matching work truncated" in warning
+                            for warning in transition_bounded.warnings))
+
+        with mock.patch.object(module, "MAX_MATCH_WORK", 4):
             report = module.impact(self.repo, ["src/a.py"], [])
 
         self.assertEqual([candidate.path for candidate in report.candidates], [
@@ -391,19 +414,23 @@ class ImpactTests(unittest.TestCase):
         self.assertEqual(schema["x-impactInputBounds"], {
             "changedPaths": {
                 "maxItems": 10000,
+                "maxPathSegments": 64,
                 "overLimit": "retain-caller-order-prefix",
             },
             "evidence": {
                 "maxItems": 10000,
+                "maxPathSegments": 64,
                 "overLimit": "retain-caller-order-prefix",
             },
         })
         source = schema["properties"]["maps"]["items"]["properties"]["sources"]["items"]
         self.assertEqual(source["x-globSemantics"], "segment-aware")
         self.assertTrue(source["x-runtimeConstraints"]["balancedBracketClasses"])
+        self.assertEqual(source["x-runtimeConstraints"]["maxSegments"], 64)
         self.assertIn("**", source["description"])
         self.assertIn("pattern", source)
         docs = schema["properties"]["maps"]["items"]["properties"]["docs"]["items"]
+        self.assertEqual(docs["x-maxPathSegments"], 64)
         self.assertIn("pattern", docs)
         self.assertIn("repository-relative", docs["description"])
         self.assertEqual(

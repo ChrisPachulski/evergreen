@@ -7,8 +7,8 @@
   "additionalProperties": false,
   "x-duplicateKeyBehavior": "reject-file",
   "x-impactInputBounds": {
-    "changedPaths": {"maxItems": 10000, "overLimit": "retain-caller-order-prefix"},
-    "evidence": {"maxItems": 10000, "overLimit": "retain-caller-order-prefix"}
+    "changedPaths": {"maxItems": 10000, "maxPathSegments": 64, "overLimit": "retain-caller-order-prefix"},
+    "evidence": {"maxItems": 10000, "maxPathSegments": 64, "overLimit": "retain-caller-order-prefix"}
   },
   "required": ["version", "maps"],
   "properties": {
@@ -35,7 +35,7 @@
               "description": "Normalized repository-relative segment-aware glob. *, ?, and character classes match within one path segment; ** as a complete segment matches across zero or more segments.",
               "x-maxUtf8Bytes": 4096,
               "x-globSemantics": "segment-aware",
-              "x-runtimeConstraints": {"balancedBracketClasses": true}
+              "x-runtimeConstraints": {"balancedBracketClasses": true, "maxSegments": 64}
             }
           },
           "docs": {
@@ -50,6 +50,7 @@
               "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*[\\u0000-\\u001F\\u007F])[^/]+(?:/[^/]+)*$",
               "description": "Normalized repository-relative document path, resolved within the repository at runtime.",
               "x-maxUtf8Bytes": 4096,
+              "x-maxPathSegments": 64,
               "x-repositoryContainment": "resolved-within-repo"
             }
           }
