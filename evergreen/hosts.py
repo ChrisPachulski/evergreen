@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import tempfile
 
 
 BEGIN_MARKER = "<!-- evergreen:begin -->"
@@ -39,6 +40,15 @@ class Ownership:
     instruction_existed: bool
     instruction_separator: bool
     skill_target: str
+
+
+@dataclass(frozen=True)
+class PathSnapshot:
+    path: Path
+    kind: str
+    data: bytes | None = None
+    target: str | None = None
+    mode: int | None = None
 
 
 def detect_hosts(home: Path) -> list[HostStatus]:
@@ -253,9 +263,13 @@ def _host_errors(selected):
         instructions_kind = _kind(status.instructions)
         if instructions_kind not in ("absent", "regular"):
             errors.append(f"{status.name}: refusing unsafe instructions ({instructions_kind})")
+        elif instructions_kind == "regular" and status.instructions.lstat().st_nlink != 1:
+            errors.append(f"{status.name}: refusing instruction hard link")
         ownership_kind = _kind(status.ownership)
         if ownership_kind not in ("absent", "regular"):
             errors.append(f"{status.name}: refusing unsafe ownership record ({ownership_kind})")
+        elif ownership_kind == "regular" and status.ownership.lstat().st_nlink != 1:
+            errors.append(f"{status.name}: refusing ownership hard link")
     return errors
 
 
@@ -411,19 +425,149 @@ def _apply(plans, dry_run):
     for status, (action, detail, path, value) in plans:
         prefix = "would " if dry_run and action not in ("unchanged", "unowned") else ""
         messages.append(f"{status.name}: {prefix}{detail}")
-        if dry_run or action in ("unchanged", "unowned"):
-            continue
-        if action == "write":
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(value)
-        elif action == "link":
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if path.is_symlink():
-                path.unlink()
-            path.symlink_to(value, target_is_directory=True)
-        elif action == "delete" and (path.is_symlink() or path.exists()):
-            path.unlink()
+    if dry_run:
+        return OperationResult(True, tuple(messages))
+    mutations = [plan for _status, plan in plans if plan[0] not in ("unchanged", "unowned")]
+    try:
+        snapshots = _snapshots(mutations)
+    except Exception as error:
+        return OperationResult(False, tuple(messages + [f"error: transaction preflight failed: {error}"]))
+    try:
+        for action, _detail, path, value in mutations:
+            _perform_action(action, path, value)
+    except Exception as error:
+        rollback_errors = []
+        for snapshot in reversed(snapshots):
+            try:
+                _restore_snapshot(snapshot)
+            except Exception as rollback_error:
+                rollback_errors.append(f"{snapshot.path}: {rollback_error}")
+        if rollback_errors:
+            return OperationResult(False, tuple(messages + [
+                f"error: apply failed: {error}; rollback failed; manual recovery required: "
+                + "; ".join(rollback_errors)
+            ]))
+        return OperationResult(False, tuple(messages + [
+            f"error: apply failed: {error}; all changes rolled back"
+        ]))
     return OperationResult(True, tuple(messages))
+
+
+def _snapshots(mutations):
+    snapshots = []
+    seen = set()
+    for _action, _detail, path, _value in mutations:
+        parent = path.parent
+        if _kind(parent) == "absent" and parent not in seen:
+            snapshots.append(_snapshot(parent, allow_directory=True))
+            seen.add(parent)
+        if path not in seen:
+            snapshots.append(_snapshot(path))
+            seen.add(path)
+    return snapshots
+
+
+def _snapshot(path, allow_directory=False):
+    kind = _kind(path)
+    if kind == "absent":
+        return PathSnapshot(path, kind)
+    if kind == "regular":
+        metadata = path.lstat()
+        if metadata.st_nlink != 1:
+            raise OSError(f"refusing hard-linked transaction path: {path}")
+        return PathSnapshot(
+            path, kind, data=path.read_bytes(), mode=stat.S_IMODE(metadata.st_mode)
+        )
+    if kind == "symlink":
+        return PathSnapshot(path, kind, target=os.readlink(path))
+    if kind == "directory" and allow_directory:
+        return PathSnapshot(path, kind, mode=stat.S_IMODE(path.lstat().st_mode))
+    raise OSError(f"refusing unsafe transaction path ({kind}): {path}")
+
+
+def _perform_action(action, path, value):
+    if _kind(path.parent) == "absent":
+        path.parent.mkdir()
+    if action == "write":
+        existing_mode = (
+            stat.S_IMODE(path.lstat().st_mode) if _kind(path) == "regular"
+            else (0o600 if path.name == OWNERSHIP_FILE else 0o644)
+        )
+        _atomic_write(path, value, existing_mode)
+    elif action == "link":
+        _atomic_link(path, value)
+    elif action == "delete" and _kind(path) != "absent":
+        path.unlink()
+        _fsync_directory(path.parent)
+
+
+def _restore_snapshot(snapshot):
+    path = snapshot.path
+    current = _kind(path)
+    if snapshot.kind == "absent":
+        if current == "directory":
+            path.rmdir()
+        elif current != "absent":
+            path.unlink()
+        return
+    if snapshot.kind == "directory":
+        if current == "absent":
+            path.mkdir(mode=snapshot.mode)
+        elif current != "directory":
+            path.unlink()
+            path.mkdir(mode=snapshot.mode)
+        return
+    if _kind(path.parent) == "absent":
+        path.parent.mkdir()
+    if snapshot.kind == "regular":
+        if current == "directory":
+            path.rmdir()
+        _atomic_write(path, snapshot.data, snapshot.mode)
+    elif snapshot.kind == "symlink":
+        if current == "directory":
+            path.rmdir()
+        _atomic_link(path, snapshot.target)
+
+
+def _atomic_write(path, data, mode):
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.evergreen-", dir=path.parent)
+    temporary = Path(temporary)
+    try:
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = -1
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        _fsync_directory(path.parent)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary.exists() or temporary.is_symlink():
+            temporary.unlink()
+
+
+def _atomic_link(path, target):
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.evergreen-", dir=path.parent)
+    os.close(descriptor)
+    temporary = Path(temporary)
+    temporary.unlink()
+    try:
+        temporary.symlink_to(target, target_is_directory=True)
+        os.replace(temporary, path)
+        _fsync_directory(path.parent)
+    finally:
+        if temporary.exists() or temporary.is_symlink():
+            temporary.unlink()
+
+
+def _fsync_directory(path):
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _instruction_state(path):

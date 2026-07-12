@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -267,6 +268,114 @@ class HostTests(unittest.TestCase):
         self.assertFalse(attempted_install.ok)
         self.assertFalse(attempted_uninstall.ok)
         self.assertEqual(self.snapshot(include_directories=True), before)
+
+    def test_hard_linked_instruction_and_ownership_files_are_refused(self):
+        from evergreen.hosts import OWNERSHIP_FILE, install, uninstall
+
+        for name, relative in (("instructions", "AGENTS.md"), ("ownership", OWNERSHIP_FILE)):
+            with self.subTest(name=name):
+                home = self.home / f"hard-link-{name}"
+                codex = home / ".codex"
+                codex.mkdir(parents=True)
+                outside = self.home / f"outside-{name}"
+                outside.write_bytes(b"outside bytes")
+                os.link(outside, codex / relative)
+                before = self.snapshot(include_directories=True)
+
+                attempted_install = install(home, ROOT, "codex")
+                attempted_uninstall = uninstall(home, "codex")
+
+                self.assertFalse(attempted_install.ok)
+                self.assertFalse(attempted_uninstall.ok)
+                self.assertTrue(any(
+                    "hard link" in message
+                    for message in attempted_install.messages + attempted_uninstall.messages
+                ))
+                self.assertEqual(self.snapshot(include_directories=True), before)
+                self.assertEqual(outside.read_bytes(), b"outside bytes")
+
+    def test_failure_at_every_action_boundary_rolls_back_both_hosts_exactly(self):
+        from evergreen import hosts
+
+        cases = [("before-first", 1, False)] + [
+            (f"after-{boundary}", boundary, True) for boundary in range(1, 7)
+        ]
+        for name, boundary, after in cases:
+            with self.subTest(name=name):
+                home = self.home / name
+                (home / ".claude").mkdir(parents=True)
+                (home / ".codex").mkdir()
+                (home / ".claude" / "CLAUDE.md").write_bytes(b"claude bytes")
+                (home / ".codex" / "AGENTS.md").write_bytes(b"codex\r\nbytes\r\n")
+                before = self.snapshot(include_directories=True)
+                real_action = hosts._perform_action
+                calls = 0
+
+                def fail_at_boundary(action, path, value):
+                    nonlocal calls
+                    calls += 1
+                    if calls == boundary and not after:
+                        raise OSError(f"injected before action {calls}")
+                    real_action(action, path, value)
+                    if calls == boundary and after:
+                        raise OSError(f"injected after action {calls}")
+
+                with mock.patch.object(hosts, "_perform_action", side_effect=fail_at_boundary):
+                    result = hosts.install(home, ROOT, "all")
+
+                self.assertFalse(result.ok)
+                self.assertIn("rolled back", " ".join(result.messages))
+                self.assertEqual(self.snapshot(include_directories=True), before)
+
+    def test_rollback_failure_reports_manual_recovery_and_never_success(self):
+        from evergreen import hosts
+
+        home = self.home / "rollback failure"
+        (home / ".claude").mkdir(parents=True)
+        real_action = hosts._perform_action
+
+        def mutate_then_fail(action, path, value):
+            real_action(action, path, value)
+            raise OSError("injected action failure")
+
+        with mock.patch.object(hosts, "_perform_action", side_effect=mutate_then_fail), \
+             mock.patch.object(hosts, "_restore_snapshot", side_effect=OSError("rollback failed")):
+            result = hosts.install(home, ROOT, "claude")
+
+        self.assertFalse(result.ok)
+        rendered = " ".join(result.messages).lower()
+        self.assertIn("manual recovery", rendered)
+        self.assertIn("rollback failed", rendered)
+        self.assertNotIn("healthy", rendered)
+
+    def test_uninstall_failure_at_every_action_boundary_restores_installed_state(self):
+        from evergreen import hosts
+
+        for boundary in range(1, 7):
+            with self.subTest(boundary=boundary):
+                home = self.home / f"uninstall-after-{boundary}"
+                (home / ".claude").mkdir(parents=True)
+                (home / ".codex").mkdir()
+                (home / ".claude" / "CLAUDE.md").write_bytes(b"claude")
+                (home / ".codex" / "AGENTS.md").write_bytes(b"codex")
+                self.assertTrue(hosts.install(home, ROOT, "all").ok)
+                before = self.snapshot(include_directories=True)
+                real_action = hosts._perform_action
+                calls = 0
+
+                def fail_after_action(action, path, value):
+                    nonlocal calls
+                    calls += 1
+                    real_action(action, path, value)
+                    if calls == boundary:
+                        raise OSError(f"injected after uninstall action {calls}")
+
+                with mock.patch.object(hosts, "_perform_action", side_effect=fail_after_action):
+                    result = hosts.uninstall(home, "all")
+
+                self.assertFalse(result.ok)
+                self.assertIn("rolled back", " ".join(result.messages))
+                self.assertEqual(self.snapshot(include_directories=True), before)
 
     def test_dry_run_describes_changes_without_touching_home_with_spaces(self):
         from evergreen.hosts import install
