@@ -14,10 +14,13 @@ set -u
 
 STDIN="$(cat 2>/dev/null || true)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || exit 0
+# Fail-safe fallback applies the same simple quote/backslash joining as the JSON helper. It does not
+# attempt to evaluate variables, substitutions, aliases, or other computed commands.
+FALLBACK_TEXT="$(printf '%s' "$STDIN" | tr -d '\\' | tr -d "'" | tr -d '"')"
 
 fallback_has_git_intent() {
   local wanted="$1"
-  printf '%s' "$STDIN" | grep -Eq \
+  printf '%s' "$FALLBACK_TEXT" | grep -Eq \
     "(^|[^[:alnum:]_-])git.*${wanted}([^[:alnum:]_-]|$)"
 }
 

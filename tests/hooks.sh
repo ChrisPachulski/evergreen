@@ -170,7 +170,11 @@ for case_row in \
   "stage(){ git add .; }; stage && git commit -m x|shell function" \
   "git add . && if true; then git commit -m x; fi|conditional" \
   "eval 'git add .' && git commit -m x|eval wrapper" \
-  "git add . & wait; git commit -m x|background and wait"; do
+  "git add . & wait; git commit -m x|background and wait" \
+  "g''it add . && git commit -m x|quoted git fragment" \
+  "git a''dd . && git commit -m x|quoted add fragment" \
+  "git add . && git com''mit -m x|quoted commit fragment" \
+  "g\\it a\\dd . && g\\it com\\mit -m x|backslash-split words"; do
   cmd="${case_row%|*}"
   label="${case_row##*|}"
   has "$(guard_cmd "$cmd")" "separate" "guard: compound $label stage-and-commit is blocked"
@@ -203,6 +207,12 @@ has "$(printf '%s' "$compound_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOK
   "separate" "guard: unavailable Python still blocks obvious compound Git"
 eq "$(printf '%s' "$compound_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?")" \
   "2" "guard: unavailable Python compound Git exits 2"
+joined_payload="$(guard_payload "g''it a''dd . && g''it com''mit -m x")"
+has "$(printf '%s' "$joined_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "separate" "guard: unavailable Python joins quoted Git fragments"
+escaped_payload="$(guard_payload "g\\it a\\dd . && g\\it com\\mit -m x")"
+has "$(printf '%s' "$escaped_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "separate" "guard: unavailable Python joins backslash-split Git words"
 git -C "$TMP" add -f .env
 commit_payload="$(guard_payload "git commit -m x")"
 has "$(printf '%s' "$commit_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
