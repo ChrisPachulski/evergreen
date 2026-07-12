@@ -25,6 +25,14 @@ def completed(identifier, language, label, category, verdict):
 
 
 class ArtifactMetadataTests(unittest.TestCase):
+    def test_row_validation_rejects_invalid_and_unhashable_categories(self):
+        from eval.bench import artifact
+
+        base = completed("p1", "python", "consistent", None, "consistent")
+        for category in ("invented", [], {}, 1):
+            with self.subTest(category=category), self.assertRaisesRegex(ValueError, "category"):
+                artifact.validate_benchmark_row({**base, "category": category}, require_result=True)
+
     def test_hashes_inputs_and_captures_commit_cli_and_settings(self):
         from eval.bench import artifact
 
@@ -116,6 +124,17 @@ class ArtifactMetadataTests(unittest.TestCase):
         self.assertNotIn(-1, reads)
         self.assertLessEqual(max(reads), 2)
 
+    def test_bounded_read_enforces_byte_and_time_limits(self):
+        from eval.bench import artifact
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "input"
+            path.write_bytes(b"12345")
+            with self.assertRaisesRegex(ValueError, "dataset too large"):
+                artifact.read_bytes(path, 4, timeout=10, label="dataset")
+            with self.assertRaisesRegex(ValueError, "dataset read exceeded"):
+                artifact.read_bytes(path, 10, timeout=-1, label="dataset")
+
     def test_command_capture_has_a_wall_clock_deadline(self):
         from eval.bench import artifact
 
@@ -166,6 +185,17 @@ class ArtifactMetadataTests(unittest.TestCase):
 
         self.assertNotEqual(first["untracked_sha256"], second["untracked_sha256"])
 
+    def test_untracked_hash_enforces_total_byte_and_time_limits(self):
+        from eval.bench import artifact
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            (repo / "large.bin").write_bytes(b"12345")
+            with self.assertRaisesRegex(ValueError, "untracked files exceed"):
+                artifact._untracked_hash(repo, b"large.bin\0", max_bytes=4, timeout=10)
+            with self.assertRaisesRegex(ValueError, "untracked hashing exceeded"):
+                artifact._untracked_hash(repo, b"large.bin\0", max_bytes=10, timeout=-1)
+
     def test_resume_requires_exact_provenance_and_accumulates_accounting(self):
         from eval.bench import artifact
 
@@ -191,6 +221,60 @@ class ArtifactMetadataTests(unittest.TestCase):
         existing["timing"]["elapsed_seconds"] = True
         with self.assertRaisesRegex(ValueError, "timing"):
             artifact.resume_state(existing, metadata)
+        existing["timing"]["elapsed_seconds"] = 1
+        existing["provider_usage"] = {"input_tokens": "many"}
+        with self.assertRaisesRegex(ValueError, "numeric"):
+            artifact.resume_state(existing, metadata)
+
+    def test_resume_rows_must_exactly_match_hashed_dataset(self):
+        from eval.bench import artifact
+
+        dataset = [{
+            "id": "p1", "func": "f", "code": "return 1", "doc": "returns 1",
+            "language": "python", "label": "consistent", "category": None,
+        }]
+        metadata = {"dataset": {"sha256": "a"}}
+        document = artifact.artifact_document(
+            [{**dataset[0], "code": "tampered", "got": {
+                "final_status": "complete", "final_verdict": "consistent"
+            }}], metadata, started_at="2026-01-01T00:00:00Z", elapsed_seconds=1,
+        )
+        with self.assertRaisesRegex(ValueError, "dataset"):
+            artifact.resume_state(document, metadata, dataset_rows=dataset)
+
+    def test_input_hash_revalidation_detects_mid_run_mutation(self):
+        from eval.bench import artifact
+
+        with tempfile.TemporaryDirectory() as directory:
+            dataset = Path(directory) / "dataset.jsonl"
+            skill = Path(directory) / "SKILL.md"
+            dataset.write_text("original")
+            skill.write_text("skill")
+            metadata = {
+                "dataset": {"sha256": artifact.sha256_file(dataset)},
+                "skill": {"sha256": artifact.sha256_file(skill)},
+            }
+            artifact.validate_input_hashes(metadata, dataset, skill)
+            dataset.write_text("mutated")
+            with self.assertRaisesRegex(ValueError, "dataset changed"):
+                artifact.validate_input_hashes(metadata, dataset, skill)
+            dataset.write_bytes(b"x" * 10)
+            with self.assertRaisesRegex(ValueError, "dataset changed"):
+                artifact.validate_input_hashes(
+                    metadata, dataset, skill, dataset_max_bytes=4, skill_max_bytes=10
+                )
+
+    def test_atomic_write_preserves_previous_artifact_if_replace_fails(self):
+        from eval.bench import artifact
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifact.json"
+            path.write_text("old")
+            with mock.patch("eval.bench.artifact.os.replace", side_effect=OSError("interrupted")):
+                with self.assertRaisesRegex(OSError, "interrupted"):
+                    artifact.atomic_write(path, "new")
+            self.assertEqual(path.read_text(), "old")
+            self.assertEqual(list(Path(directory).iterdir()), [path])
 
 
 class ArtifactReportTests(unittest.TestCase):
@@ -405,6 +489,38 @@ class ArtifactReportTests(unittest.TestCase):
             self.assertEqual(report.main([str(path), "--markdown", str(markdown)]), 2)
             self.assertIn("language", markdown.read_text().lower())
 
+    def test_metadata_types_iso_time_and_finite_elapsed_are_strict(self):
+        from eval.bench import report
+
+        rows = [completed("p1", "python", "consistent", None, "consistent")]
+        cases = []
+        bad_git = self.metadata("git")
+        bad_git["git"]["dirty"] = 1
+        cases.append((bad_git, {"started_at": "2026-01-01T00:00:00Z", "elapsed_seconds": 1}))
+        cases.append((self.metadata("empty-cli"), {"started_at": "", "elapsed_seconds": 1}))
+        cases.append((self.metadata("nan"), {"started_at": "2026-01-01", "elapsed_seconds": float("nan")}))
+        with tempfile.TemporaryDirectory() as directory:
+            markdown = Path(directory) / "report.md"
+            for index, (metadata, timing) in enumerate(cases):
+                with self.subTest(index=index):
+                    path = self.write_artifact(directory, f"{index}.json", rows, metadata)
+                    document = json.loads(path.read_text())
+                    document["timing"] = timing
+                    path.write_text(json.dumps(document))
+                    self.assertEqual(report.main([
+                        str(path), "--markdown", str(markdown)
+                    ]), 2)
+            path = self.write_artifact(directory, "usage.json", rows, self.metadata("usage"))
+            document = json.loads(path.read_text())
+            document["provider_usage"] = {"input_tokens": "many"}
+            path.write_text(json.dumps(document))
+            self.assertEqual(report.main([str(path), "--markdown", str(markdown)]), 2)
+            path = self.write_artifact(directory, "settings.json", rows, self.metadata("settings"))
+            document = json.loads(path.read_text())
+            document["metadata"]["settings"] = {"temperature": float("nan")}
+            path.write_text(json.dumps(document))
+            self.assertEqual(report.main([str(path), "--markdown", str(markdown)]), 2)
+
 
 class RunBenchArtifactIntegrationTests(unittest.TestCase):
     def test_artifact_rows_supports_new_envelope_and_legacy_transcript(self):
@@ -417,6 +533,41 @@ class RunBenchArtifactIntegrationTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "EVAL_CONCURRENCY"):
                 run_bench.eval_concurrency({"EVAL_CONCURRENCY": value})
         self.assertEqual(run_bench.eval_concurrency({"EVAL_CONCURRENCY": "32"}), 32)
+
+    def test_provider_usage_requires_incremental_envelope(self):
+        valid = {"EVAL_PROVIDER_USAGE_JSON": json.dumps({
+            "semantics": "incremental", "usage": {"input_tokens": 3}
+        })}
+        self.assertEqual(run_bench.provider_usage(valid), {"input_tokens": 3})
+        for value in ({"input_tokens": 3}, {"semantics": "cumulative", "usage": {}}):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "incremental"):
+                run_bench.provider_usage({"EVAL_PROVIDER_USAGE_JSON": json.dumps(value)})
+        with self.assertRaisesRegex(ValueError, "numeric"):
+            run_bench.provider_usage({"EVAL_PROVIDER_USAGE_JSON": json.dumps({
+                "semantics": "incremental", "usage": {"input_tokens": "many"}
+            })})
+
+    def test_no_op_resume_does_not_merge_incremental_usage(self):
+        previous = {"input_tokens": 10}
+        current = {"input_tokens": 3}
+        self.assertEqual(run_bench.accumulated_usage(previous, current, evaluated_rows=0), previous)
+        self.assertEqual(
+            run_bench.accumulated_usage(previous, current, evaluated_rows=1),
+            {"input_tokens": 13},
+        )
+
+    def test_dataset_and_legacy_rescore_loads_are_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dataset = Path(directory) / "data.jsonl"
+            dataset.write_text('{"id":"one"}\n')
+            with mock.patch.object(run_bench, "MAX_DATASET_BYTES", 4):
+                with self.assertRaisesRegex(ValueError, "dataset too large"):
+                    run_bench.load_dataset(dataset)
+            legacy = Path(directory) / "legacy.json"
+            legacy.write_text("[]" + " " * 20)
+            with mock.patch.object(run_bench, "MAX_RESCORE_BYTES", 4):
+                with self.assertRaisesRegex(ValueError, "artifact too large"):
+                    run_bench.load_rescore(legacy)
 
 
 if __name__ == "__main__":

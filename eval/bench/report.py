@@ -5,14 +5,15 @@ import argparse
 import hashlib
 import html
 import json
+import math
 from pathlib import Path
 
 try:
     from . import run_bench
-    from .artifact import load_json
+    from .artifact import load_json, valid_iso_time, validate_benchmark_row, validate_usage
 except ImportError:  # Direct script execution.
     import run_bench
-    from artifact import load_json
+    from artifact import load_json, valid_iso_time, validate_benchmark_row, validate_usage
 
 MAX_ARTIFACTS = 64
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
@@ -34,9 +35,21 @@ def _is_hex(value, lengths):
             all(character in "0123456789abcdef" for character in value.lower()))
 
 
+def _strict_json(value):
+    if isinstance(value, dict):
+        return all(isinstance(key, str) and _strict_json(item) for key, item in value.items())
+    if isinstance(value, list):
+        return all(_strict_json(item) for item in value)
+    if isinstance(value, float):
+        return math.isfinite(value)
+    return value is None or isinstance(value, (str, int, bool))
+
+
 def _validate_metadata(metadata):
     if not isinstance(metadata, dict) or any(key not in metadata for key in REQUIRED_METADATA):
         raise ValueError("unavailable provenance: required metadata is missing")
+    if not _strict_json(metadata):
+        raise ValueError("invalid provenance: metadata types")
     for key in ("dataset", "skill", "judge"):
         value = metadata[key]
         if not isinstance(value, dict) or not isinstance(value.get("path"), str):
@@ -44,7 +57,7 @@ def _validate_metadata(metadata):
         if not value["path"] or len(value["path"]) > 4096 or not _is_hex(value.get("sha256"), {64}):
             raise ValueError(f"invalid provenance: {key}")
     git = metadata["git"]
-    if (not isinstance(git, dict) or git.get("dirty") is None or
+    if (not isinstance(git, dict) or type(git.get("dirty")) is not bool or
             any(git.get(key) in (None, "", "unavailable") for key in
                 ("commit", "tree", "status_sha256", "diff_sha256", "untracked_sha256"))):
         raise ValueError("unavailable provenance: git identity")
@@ -55,7 +68,8 @@ def _validate_metadata(metadata):
         raise ValueError("invalid provenance: git working tree hashes")
     if metadata["cli_version"] in (None, "", "unavailable"):
         raise ValueError("unavailable provenance: CLI version")
-    if not isinstance(metadata["cli_version"], str) or len(metadata["cli_version"]) > 4096:
+    if (not isinstance(metadata["cli_version"], str) or
+            not metadata["cli_version"].strip() or len(metadata["cli_version"]) > 4096):
         raise ValueError("invalid provenance: CLI version")
     if not isinstance(metadata["settings"], dict):
         raise ValueError("unavailable provenance: settings")
@@ -76,7 +90,8 @@ def _load_artifacts(paths):
         document = load_json(path, MAX_ARTIFACT_BYTES)
         if isinstance(document, list):
             raise ValueError("legacy artifact provenance is unknown; publication refused")
-        if not isinstance(document, dict) or document.get("schema_version") != 1:
+        if (not isinstance(document, dict) or type(document.get("schema_version")) is not int or
+                document["schema_version"] != 1):
             raise ValueError("unsupported artifact schema; publication refused")
         metadata = document.get("metadata")
         _validate_metadata(metadata)
@@ -89,26 +104,23 @@ def _load_artifacts(paths):
         if not isinstance(rows, list):
             raise ValueError("artifact rows must be a list")
         timing = document.get("timing")
-        if (not isinstance(timing, dict) or not isinstance(timing.get("started_at"), str) or
+        if (not isinstance(timing, dict) or not valid_iso_time(timing.get("started_at")) or
                 not isinstance(timing.get("elapsed_seconds"), (int, float)) or
                 isinstance(timing.get("elapsed_seconds"), bool) or
-                timing["elapsed_seconds"] < 0):
+                not math.isfinite(timing["elapsed_seconds"]) or timing["elapsed_seconds"] < 0):
             raise ValueError("artifact timing is unavailable or invalid")
         if "provider_usage" in document and not isinstance(document["provider_usage"], dict):
             raise ValueError("artifact provider usage is invalid")
+        if "provider_usage" in document:
+            validate_usage(document["provider_usage"])
         row_count += len(rows)
         if row_count > MAX_ROWS:
             raise ValueError(f"too many rows (maximum {MAX_ROWS})")
         for row in rows:
-            if not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"]:
-                raise ValueError("every artifact row must have a non-empty string id")
+            validate_benchmark_row(row, require_result=True)
             language = row.get("language", "unknown")
             if not isinstance(language, str) or not language or len(language) > MAX_LANGUAGE_CHARS:
                 raise ValueError("every artifact row must have a bounded string language")
-            if row.get("label") not in ("consistent", "inconsistent") or "category" not in row:
-                raise ValueError("every artifact row must have a valid label and category")
-            if not isinstance(row.get("got"), dict):
-                raise ValueError("every artifact row must have a result object")
             if row["id"] in seen_ids:
                 raise ValueError(f"duplicate pair id: {_safe_text(row['id'])}")
             seen_ids.add(row["id"])

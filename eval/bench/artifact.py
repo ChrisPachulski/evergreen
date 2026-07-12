@@ -2,24 +2,57 @@
 
 import hashlib
 import json
+import math
 import os
 import selectors
 import subprocess
+import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 
 HASH_CHUNK_BYTES = 1024 * 1024
 MAX_COMMAND_BYTES = 32 * 1024 * 1024
 MAX_CLI_VERSION_BYTES = 64 * 1024
+MAX_UNTRACKED_BYTES = 1024 * 1024 * 1024
+MAX_UNTRACKED_FILES = 100_000
+MAX_UNTRACKED_SECONDS = 30
+VALID_CATEGORIES = {None, "direct-mismatch", "over-promise", "under-promise"}
 
 
-def sha256_file(path):
+def sha256_file(path, max_bytes=None, deadline=None):
     """Hash a file without loading it into memory."""
     digest = hashlib.sha256()
+    total = 0
     with path.open("rb") as source:
         while chunk := source.read(HASH_CHUNK_BYTES):
+            total += len(chunk)
+            if max_bytes is not None and total > max_bytes:
+                raise ValueError(f"file exceeds {max_bytes} bytes")
+            if deadline is not None and time.monotonic() > deadline:
+                raise ValueError("file hashing exceeded time limit")
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def read_bytes(path, max_bytes, timeout=30, label="artifact"):
+    """Read a file with byte and wall-clock ceilings, including growth races."""
+    path = Path(path)
+    if path.stat().st_size > max_bytes:
+        raise ValueError(f"{label} too large")
+    deadline = time.monotonic() + timeout
+    payload = bytearray()
+    with path.open("rb") as source:
+        while True:
+            if time.monotonic() > deadline:
+                raise ValueError(f"{label} read exceeded time limit")
+            chunk = source.read(min(HASH_CHUNK_BYTES, max_bytes + 1 - len(payload)))
+            if not chunk:
+                break
+            payload.extend(chunk)
+            if len(payload) > max_bytes:
+                raise ValueError(f"{label} too large")
+    return bytes(payload)
 
 
 def _display_path(path, repo):
@@ -74,10 +107,19 @@ def _git_bytes(repo, *args):
     return _process_bytes(["git", "-C", str(repo), *args], MAX_COMMAND_BYTES)
 
 
-def _untracked_hash(repo, payload):
+def _untracked_hash(
+    repo, payload, max_bytes=MAX_UNTRACKED_BYTES, timeout=MAX_UNTRACKED_SECONDS
+):
     digest = hashlib.sha256()
     root = repo.resolve()
-    for raw_path in sorted(item for item in payload.split(b"\0") if item):
+    raw_paths = sorted(item for item in payload.split(b"\0") if item)
+    if len(raw_paths) > MAX_UNTRACKED_FILES:
+        raise ValueError("too many untracked files")
+    deadline = time.monotonic() + timeout
+    remaining = max_bytes
+    for raw_path in raw_paths:
+        if time.monotonic() > deadline:
+            raise ValueError("untracked hashing exceeded time limit")
         path = repo / os.fsdecode(raw_path)
         resolved_parent = path.parent.resolve()
         if resolved_parent != root and root not in resolved_parent.parents:
@@ -85,11 +127,19 @@ def _untracked_hash(repo, payload):
         digest.update(len(raw_path).to_bytes(8, "big"))
         digest.update(raw_path)
         if path.is_symlink():
+            target = os.fsencode(os.readlink(path))
+            remaining -= len(target)
+            if remaining < 0:
+                raise ValueError("untracked files exceed byte limit")
             digest.update(b"symlink\0")
-            digest.update(os.fsencode(os.readlink(path)))
+            digest.update(target)
         elif path.is_file():
+            size = path.stat().st_size
+            if size > remaining:
+                raise ValueError("untracked files exceed byte limit")
             digest.update(b"file\0")
-            digest.update(bytes.fromhex(sha256_file(path)))
+            digest.update(bytes.fromhex(sha256_file(path, remaining, deadline)))
+            remaining -= size
         else:
             digest.update(b"other\0")
     return digest.hexdigest()
@@ -147,6 +197,67 @@ def artifact_metadata(dataset: Path, repo: Path, settings: dict) -> dict:
     }
 
 
+def validate_benchmark_row(row, require_result):
+    if not isinstance(row, dict):
+        raise ValueError("benchmark row must be an object")
+    if not isinstance(row.get("id"), str) or not row["id"]:
+        raise ValueError("benchmark row id must be a non-empty string")
+    if row.get("label") not in ("consistent", "inconsistent"):
+        raise ValueError("benchmark row label is invalid")
+    if "category" not in row:
+        raise ValueError("benchmark row category is missing")
+    category = row["category"]
+    if category is not None and (not isinstance(category, str) or category not in VALID_CATEGORIES):
+        raise ValueError("benchmark row category is invalid")
+    language = row.get("language", "unknown")
+    if not isinstance(language, str) or not language:
+        raise ValueError("benchmark row language must be a non-empty string")
+    if require_result and not isinstance(row.get("got"), dict):
+        raise ValueError("benchmark row result must be an object")
+
+
+def validate_input_hashes(
+    metadata, dataset, skill, dataset_max_bytes=64 * 1024 * 1024,
+    skill_max_bytes=1024 * 1024, timeout=30,
+):
+    deadline = time.monotonic() + timeout
+    try:
+        dataset_hash = sha256_file(Path(dataset), dataset_max_bytes, deadline)
+    except ValueError:
+        raise ValueError("dataset changed after provenance capture") from None
+    if dataset_hash != metadata["dataset"]["sha256"]:
+        raise ValueError("dataset changed after provenance capture")
+    try:
+        skill_hash = sha256_file(Path(skill), skill_max_bytes, deadline)
+    except ValueError:
+        raise ValueError("skill changed after provenance capture") from None
+    if skill_hash != metadata["skill"]["sha256"]:
+        raise ValueError("skill changed after provenance capture")
+
+
+def valid_iso_time(value):
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
+
+
+def validate_usage(value):
+    if not isinstance(value, dict):
+        raise ValueError("provider usage must be an object")
+    for key, item in value.items():
+        if not isinstance(key, str) or not key:
+            raise ValueError("provider usage keys must be non-empty strings")
+        if isinstance(item, dict):
+            validate_usage(item)
+        elif (not isinstance(item, (int, float)) or isinstance(item, bool) or
+              not math.isfinite(item) or item < 0):
+            raise ValueError("provider usage values must be finite non-negative numeric counts")
+
+
 def artifact_document(
     rows, metadata, *, started_at, elapsed_seconds, provider_usage=None
 ):
@@ -172,21 +283,15 @@ def dumps(document):
 
 def load_json(path, max_bytes):
     """Load JSON with a hard byte ceiling."""
-    path = Path(path)
-    if path.stat().st_size > max_bytes:
-        raise ValueError(f"artifact too large: {path}")
-    with path.open("rb") as source:
-        payload = source.read(max_bytes + 1)
-    if len(payload) > max_bytes:
-        raise ValueError(f"artifact too large: {path}")
-    return json.loads(payload)
+    return json.loads(read_bytes(path, max_bytes, label="artifact"))
 
 
-def resume_state(document, expected_metadata):
+def resume_state(document, expected_metadata, dataset_rows=None):
     """Validate a resumable envelope and return its accumulated accounting."""
     if isinstance(document, list):
         raise ValueError("legacy artifacts have unknown provenance and cannot be resumed")
-    if not isinstance(document, dict) or document.get("schema_version") != 1:
+    if (not isinstance(document, dict) or type(document.get("schema_version")) is not int or
+            document["schema_version"] != 1):
         raise ValueError("unsupported benchmark artifact schema")
     if document.get("metadata") != expected_metadata:
         raise ValueError("benchmark artifact provenance does not match this run")
@@ -196,12 +301,31 @@ def resume_state(document, expected_metadata):
         raise ValueError("benchmark artifact is missing rows or timing")
     started_at = timing.get("started_at")
     elapsed = timing.get("elapsed_seconds")
-    if (not isinstance(started_at, str) or not isinstance(elapsed, (int, float)) or
-            isinstance(elapsed, bool) or elapsed < 0):
+    if (not valid_iso_time(started_at) or not isinstance(elapsed, (int, float)) or
+            isinstance(elapsed, bool) or not math.isfinite(elapsed) or elapsed < 0):
         raise ValueError("benchmark artifact has invalid timing")
     usage = document.get("provider_usage")
     if usage is not None and not isinstance(usage, dict):
         raise ValueError("benchmark artifact has invalid provider usage")
+    if usage is not None:
+        validate_usage(usage)
+    for row in rows:
+        validate_benchmark_row(row, require_result=True)
+    if dataset_rows is not None:
+        expected = {}
+        for row in dataset_rows:
+            validate_benchmark_row(row, require_result=False)
+            if row["id"] in expected:
+                raise ValueError("dataset contains duplicate pair ids")
+            expected[row["id"]] = row
+        seen = set()
+        for row in rows:
+            if row["id"] in seen:
+                raise ValueError("resumed rows contain duplicate pair ids")
+            seen.add(row["id"])
+            source = {key: value for key, value in row.items() if key != "got"}
+            if expected.get(row["id"]) != source:
+                raise ValueError("resumed row does not match hashed dataset")
     return {
         "rows": rows, "started_at": started_at, "elapsed_seconds": elapsed,
         "provider_usage": usage,
@@ -225,3 +349,26 @@ def merge_usage(previous, current):
     if previous == current:
         return _canonical(previous)
     raise ValueError("provider usage fields changed type or value while resuming")
+
+
+def atomic_write(path, text):
+    """Durably replace an artifact without exposing partial JSON."""
+    path = Path(path)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            output.write(text)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
