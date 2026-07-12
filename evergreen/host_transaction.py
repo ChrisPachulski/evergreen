@@ -18,6 +18,7 @@ from .host_metadata import digest_fd as _metadata_digest_fd
 from .host_metadata import digest_path as _metadata_digest_path
 from .host_metadata import clone as _clone_regular_metadata
 from .host_metadata import native_copy_available as _native_metadata_copy_available
+
 class TransactionEngine:
     def __init__(self, selected, locks):
         self.selected, self._locks = tuple(selected), locks
@@ -28,12 +29,14 @@ class TransactionEngine:
     def apply(self, plans, dry_run, captured): return _apply(plans, dry_run, captured)
     def close(self):
         _unlock_hosts(self._locks); self._locks = []
+
 def _host_runtime_error():
     if sys.version_info < (3, 11):
         return "error: host management requires Python 3.11 or newer"
     return (
         "error: host management requires macOS Python metadata-copy support"
         if sys.platform == "darwin" and not _native_metadata_copy_available() else None)
+
 def _lock_hosts(selected):
     descriptors = []
     missing = []
@@ -91,6 +94,7 @@ def _lock_hosts(selected):
         _unlock_hosts(descriptors)
         return [], f"error: another host operation is active or locking failed: {error}"
     return descriptors, None
+
 def _verify_lock_descriptor(descriptor, root):
     metadata = os.fstat(descriptor)
     if (
@@ -98,12 +102,14 @@ def _verify_lock_descriptor(descriptor, root):
         metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != 0o600
     ):
         raise OSError(f"unsafe host lock file: {root}")
+
 def _unlock_hosts(descriptors):
     for descriptor in reversed(descriptors):
         try:
             fcntl.flock(descriptor, fcntl.LOCK_UN)
         finally:
             os.close(descriptor)
+
 def _recover_transactions(selected):
     errors = []
     for status in selected:
@@ -121,6 +127,7 @@ def _recover_transactions(selected):
             finally:
                 os.close(descriptor)
     return errors
+
 def _recover_target_artifacts(parent_fd, target):
     deadline = time.monotonic() + READ_ELAPSED_LIMIT_SECONDS
     groups = {}
@@ -129,7 +136,7 @@ def _recover_target_artifacts(parent_fd, target):
             for index, entry in enumerate(entries, start=1):
                 if index > 128 or time.monotonic() > deadline:
                     return f"artifact scan limit exceeded in {target.parent}; inspect manually"
-                parsed = _artifact_name(target.name, entry.name)
+                parsed = JournalRecord.artifact_name(target.name, entry.name)
                 if parsed:
                     kind, transaction_id = parsed
                     groups.setdefault(transaction_id, {})[kind] = entry.name
@@ -150,29 +157,13 @@ def _recover_target_artifacts(parent_fd, target):
     try:
         snapshot = _snapshot_at(target.with_name(journal_name), parent_fd)
         record = JournalRecord.parse(snapshot.data)
-        if not _journal_names_match(record, target.name, transaction_id, artifacts):
+        if not record.names_match(target.name, transaction_id, artifacts):
             return _manual_artifact_error(paths)
         _recover_record(parent_fd, target, record, artifacts)
         return None
     except (OSError, TypeError, ValueError, KeyError):
         return _manual_artifact_error(paths)
-def _journal_names_match(record, target, transaction_id, artifacts):
-    if record.target != target or record.transaction_id != transaction_id:
-        return False
-    expected = {"journal": record.journal}
-    if record.temporary is not None:
-        expected["temporary"] = record.temporary
-    if record.backup is not None:
-        expected["backup"] = record.backup
-    return (
-        record.journal == f".{target}.evergreen-journal-{transaction_id}" and
-        (record.temporary is None or
-         record.temporary == f".{target}.evergreen-{transaction_id}") and
-        (record.backup is None or
-         record.backup == f".{target}.evergreen-backup-{transaction_id}") and
-        set(artifacts).issubset(expected) and
-        all(expected[kind] == name for kind, name in artifacts.items())
-    )
+
 def _recover_record(parent_fd, target, record, artifacts):
     live = _snapshot_at(target, parent_fd)
     staged = _artifact_snapshot(parent_fd, target, artifacts.get("temporary"))
@@ -228,28 +219,19 @@ def _recover_record(parent_fd, target, record, artifacts):
             os.replace(record.backup, target.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
     os.unlink(record.journal, dir_fd=parent_fd)
     os.fsync(parent_fd)
+
 def _artifact_snapshot(parent_fd, target, name):
     if name is None:
         return PathSnapshot(target, "absent")
     return _snapshot_at(target.with_name(name), parent_fd)
-def _artifact_name(target_name, name):
-    prefixes = (
-        ("backup", f".{target_name}.evergreen-backup-"),
-        ("journal", f".{target_name}.evergreen-journal-"),
-        ("temporary", f".{target_name}.evergreen-"),
-    )
-    for kind, prefix in prefixes:
-        transaction_id = name.removeprefix(prefix)
-        if transaction_id != name and len(transaction_id) == 32 and all(
-            char in "0123456789abcdef" for char in transaction_id
-        ):
-            return kind, transaction_id
-    return None
+
 def _manual_artifact_error(paths):
     return ("transaction artifacts require manual recovery: " + ", ".join(paths) +
             "; inspect the journal and restore the named backup before removing artifacts")
+
 def _remove_kind(parent_fd, name, kind):
     (os.rmdir if kind == "directory" else os.unlink)(name, dir_fd=parent_fd)
+
 def _journal_snapshot_matches(snapshot, expected, *, nlink=None):
     if not isinstance(expected, dict) or (nlink is not None and snapshot.nlink != nlink):
         return False
@@ -258,6 +240,7 @@ def _journal_snapshot_matches(snapshot, expected, *, nlink=None):
     if nlink is not None:
         expected["nlink"] = nlink
     return actual == expected
+
 def _apply(plans, dry_run, captured):
     messages = []
     for status, (action, detail, path, value) in plans:
@@ -341,8 +324,10 @@ def _apply(plans, dry_run, captured):
             "manual recovery required: " + "; ".join(cleanup_errors)
         ]))
     return OperationResult(True, tuple(messages))
+
 def _entry_for_path(entries, path):
     return next((entry for entry in reversed(entries) if entry.before.path == path), None)
+
 def _capture_preflight(selected):
     captured = {}
     for status in selected:
@@ -356,8 +341,10 @@ def _capture_preflight(selected):
             if path not in captured:
                 captured[path] = _snapshot(path, allow_directory=allow_directory)
     return captured
+
 def _verify_preflight(captured):
     for snapshot in captured.values(): _verify_snapshot(snapshot)
+
 def _read_regular_bounded(path, limit, label):
     nonblocking = getattr(os, "O_NONBLOCK", None)
     if nonblocking is None:
@@ -398,9 +385,11 @@ def _read_regular_bounded(path, limit, label):
         return data
     finally:
         os.close(descriptor)
+
 def _verify_snapshot(expected):
     if _snapshot(expected.path, allow_directory=expected.kind == "directory") != expected:
         raise OSError(f"transaction path changed after planning: {expected.path}")
+
 def _snapshot(path, allow_directory=False):
     path = Path(path)
     if _kind(path) == "absent":
@@ -416,6 +405,7 @@ def _snapshot(path, allow_directory=False):
     if snapshot.kind == "directory" and not allow_directory:
         raise OSError(f"refusing unsafe transaction path (directory): {path}")
     return snapshot
+
 def _open_directory(snapshot):
     if snapshot.kind != "directory":
         raise OSError(f"transaction parent is {snapshot.kind}: {snapshot.path}")
@@ -431,6 +421,7 @@ def _open_directory(snapshot):
         os.close(descriptor)
         raise
     return descriptor
+
 def _prepare_parent(path, captured, rollback_entries, conflicts):
     snapshot = captured[path]
     if snapshot.kind == "directory":
@@ -459,6 +450,7 @@ def _prepare_parent(path, captured, rollback_entries, conflicts):
         os.close(descriptor)
     captured[path] = created
     return _open_directory(created)
+
 def _kind_from_mode(mode):
     if stat.S_ISLNK(mode):
         return "symlink"
@@ -467,13 +459,16 @@ def _kind_from_mode(mode):
     if stat.S_ISREG(mode):
         return "regular"
     return "other"
+
 def _kind(path):
     try:
         return _kind_from_mode(Path(path).lstat().st_mode)
     except FileNotFoundError:
         return "absent"
+
 def _normalized_lexical_path(path):
     return Path(os.path.abspath(os.path.normpath(os.fspath(path))))
+
 def _normalized_snapshot_target(snapshot):
     if snapshot.kind != "symlink" or snapshot.target is None:
         return None
@@ -481,6 +476,7 @@ def _normalized_snapshot_target(snapshot):
     return _normalized_lexical_path(
         target if target.is_absolute() else snapshot.path.parent / target
     )
+
 def _snapshot_at(path, parent_fd):
     try:
         metadata = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
@@ -542,10 +538,12 @@ def _snapshot_at(path, parent_fd):
     if kind == "directory":
         return PathSnapshot(path, kind, **common)
     raise OSError(f"refusing unsafe transaction path ({kind}): {path}")
+
 def _verify_snapshot_at(expected, parent_fd):
     actual = _snapshot_at(expected.path, parent_fd)
     if actual != expected:
         raise OSError(f"transaction path changed after planning: {expected.path}")
+
 def _verify_open_directory_path(path, descriptor):
     expected = os.fstat(descriptor)
     actual = path.lstat()
@@ -554,6 +552,7 @@ def _verify_open_directory_path(path, descriptor):
     )
     if identity(actual) != identity(expected):
         raise OSError(f"transaction directory changed during mutation: {path}")
+
 def _matches_postimage(action, value, snapshot, expected):
     if action == "write":
         mode = expected.mode if expected.kind == "regular" else (
@@ -568,6 +567,7 @@ def _matches_postimage(action, value, snapshot, expected):
     if action == "delete":
         return snapshot.kind == "absent"
     return False
+
 def _perform_action(
     action, path, value, *, parent_fd, expected, parent_snapshot,
     rollback_entries, conflicts,
@@ -603,6 +603,7 @@ def _perform_action(
     if not _matches_postimage(action, value, postimage, expected):
         raise OSError(f"transaction postimage mismatch: {path}")
     return postimage
+
 def _publish_path(
     parent_fd, path, kind, before, parent_snapshot, rollback_entries, conflicts,
     *, data=None, target=None, mode=None,
@@ -688,7 +689,7 @@ def _publish_path(
                 actual = None
             unchanged = actual == before or (
                 actual is not None and backup is not None and
-                _backup_snapshot_matches(actual, before, nlink=before.nlink + 1)
+                before.matches(actual, nlink=before.nlink + 1)
             )
             if unchanged:
                 rollback_entries.remove(entry)
@@ -707,6 +708,7 @@ def _publish_path(
                 _cleanup_artifact(parent_fd, backup, path, "backup", conflicts)
             if journal_created:
                 _cleanup_artifact(parent_fd, journal_name, path, "journal", conflicts)
+
 def _publish_delete(
     parent_fd, path, expected, parent_snapshot, rollback_entries, conflicts,
 ):
@@ -757,6 +759,7 @@ def _publish_delete(
     finally:
         if not published:
             _cleanup_artifact(parent_fd, journal_name, path, "journal", conflicts)
+
 def _replace_descriptor_bytes(descriptor, data, path):
     os.ftruncate(descriptor, 0)
     os.lseek(descriptor, 0, os.SEEK_SET)
@@ -767,15 +770,7 @@ def _replace_descriptor_bytes(descriptor, data, path):
             raise OSError(f"short in-place write: {path}")
         remaining = remaining[written:]
     os.fsync(descriptor)
-def _metadata_identity(metadata):
-    return (
-        _kind_from_mode(metadata.st_mode), metadata.st_dev, metadata.st_ino,
-        stat.S_IMODE(metadata.st_mode), metadata.st_nlink,
-        metadata.st_uid, metadata.st_gid,
-    )
-def _snapshot_identity(snapshot):
-    return (snapshot.kind, snapshot.dev, snapshot.ino, snapshot.mode,
-            snapshot.nlink, snapshot.uid, snapshot.gid)
+
 def _transaction_journal(
     path, transaction_id, temporary, backup, journal, operation, phase,
     before, after,
@@ -786,6 +781,7 @@ def _transaction_journal(
         target=path.name, temporary=temporary, backup=backup, journal=journal,
         before=before.journal_identity(), after=after.journal_identity(),
     )
+
 def _write_journal_at(parent_fd, name, journal, *, create):
     payload = journal.encode()
     if len(payload) > MAX_STATE_BYTES:
@@ -798,6 +794,7 @@ def _write_journal_at(parent_fd, name, journal, *, create):
     finally:
         os.close(descriptor)
     os.fsync(parent_fd)
+
 def _cleanup_artifact(parent_fd, name, path, label, conflicts):
     try:
         _remove_durable(parent_fd, name, path.parent / name, label)
@@ -805,6 +802,7 @@ def _cleanup_artifact(parent_fd, name, path, label, conflicts):
         return
     except OSError as error:
         conflicts.append(f"{path}: manual recovery required; {error}")
+
 def _restore_entry(entry):
     parent_fd = _open_directory(entry.parent)
     try:
@@ -842,9 +840,7 @@ def _restore_entry(entry):
             except BaseException as error:
                 try:
                     restored = (
-                        _backup_snapshot_matches(
-                            _snapshot_at(entry.before.path, parent_fd), entry.before,
-                        ) and
+                entry.before.matches(_snapshot_at(entry.before.path, parent_fd)) and
                         _snapshot_at(_backup_path(entry), parent_fd).kind == "absent"
                     )
                 except Exception:
@@ -886,6 +882,7 @@ def _restore_entry(entry):
             raise OSError(f"unsupported rollback preimage: {before.path}")
     finally:
         os.close(parent_fd)
+
 def _commit_entry(entry):
     parent_fd = _open_directory(entry.parent)
     try:
@@ -916,7 +913,7 @@ def _commit_entry(entry):
                 dir_fd=parent_fd,
             )
             try:
-                if _metadata_identity(os.fstat(descriptor)) != _snapshot_identity(entry.after):
+                if not entry.after.matches_stat(os.fstat(descriptor)):
                     raise OSError(f"transaction postimage changed: {entry.after.path}")
                 os.utime(
                     descriptor,
@@ -932,6 +929,7 @@ def _commit_entry(entry):
         _remove_journal(parent_fd, entry)
     finally:
         os.close(parent_fd)
+
 def _verify_backup(parent_fd, entry):
     if entry.backup is None:
         raise OSError("transaction backup is missing")
@@ -939,7 +937,7 @@ def _verify_backup(parent_fd, entry):
         actual = _snapshot_at(entry.before.path.with_name(entry.backup), parent_fd)
     except (OSError, ValueError) as error:
         raise OSError(f"transaction backup unavailable at {_backup_path(entry)}: {error}") from error
-    if not _backup_snapshot_matches(actual, entry.before):
+    if not entry.before.matches(actual):
         raise OSError(f"transaction backup changed at {_backup_path(entry)}")
     if entry.before.kind != "regular":
         return
@@ -949,7 +947,7 @@ def _verify_backup(parent_fd, entry):
         dir_fd=parent_fd,
     )
     try:
-        if _metadata_identity(os.fstat(descriptor)) != _snapshot_identity(entry.before):
+        if not entry.before.matches_stat(os.fstat(descriptor)):
             raise OSError(f"transaction backup changed at {_backup_path(entry)}")
         os.utime(
             descriptor, ns=(entry.before.atime_ns, entry.before.mtime_ns),
@@ -957,24 +955,16 @@ def _verify_backup(parent_fd, entry):
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
-def _backup_snapshot_matches(actual, before, *, nlink=None):
-    return (
-        actual.kind == before.kind and actual.data == before.data and
-        actual.target == before.target and
-        (actual.dev, actual.ino) == (before.dev, before.ino) and
-        actual.mode == before.mode and
-        actual.nlink == (before.nlink if nlink is None else nlink) and
-        (actual.uid, actual.gid) == (before.uid, before.gid) and
-        (actual.atime_ns, actual.mtime_ns) == (before.atime_ns, before.mtime_ns) and
-        actual.metadata_digest == before.metadata_digest
-    )
+
 def _backup_path(entry):
     return entry.before.path.parent / entry.backup
+
 def _remove_journal(parent_fd, entry):
     if entry.journal is None:
         return
     path = entry.before.path.parent / entry.journal
     _remove_durable(parent_fd, entry.journal, path, "journal")
+
 def _remove_durable(parent_fd, name, path, label, *, kind="regular"):
     removed = False
     try:

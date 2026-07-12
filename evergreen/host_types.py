@@ -5,6 +5,7 @@ from enum import Enum
 import hashlib
 import json
 from pathlib import Path
+import stat
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,25 @@ class PathSnapshot:
             "sha256": hashlib.sha256(self.data or b"").hexdigest(),
             "metadata_digest": self.metadata_digest,
         }
+
+    def matches(self, actual: "PathSnapshot", *, nlink: int | None = None) -> bool:
+        return (
+            actual.kind == self.kind and actual.data == self.data and
+            actual.target == self.target and (actual.dev, actual.ino) == (self.dev, self.ino) and
+            actual.mode == self.mode and actual.nlink == (self.nlink if nlink is None else nlink) and
+            (actual.uid, actual.gid) == (self.uid, self.gid) and
+            (actual.atime_ns, actual.mtime_ns) == (self.atime_ns, self.mtime_ns) and
+            actual.metadata_digest == self.metadata_digest
+        )
+
+    def matches_stat(self, metadata) -> bool:
+        return (
+            self.kind, self.dev, self.ino, self.mode, self.nlink, self.uid, self.gid,
+        ) == (
+            _kind_from_mode(metadata.st_mode), metadata.st_dev, metadata.st_ino,
+            stat.S_IMODE(metadata.st_mode), metadata.st_nlink,
+            metadata.st_uid, metadata.st_gid,
+        )
 
 
 class MutationKind(str, Enum):
@@ -123,6 +143,36 @@ class JournalRecord:
             asdict(self), sort_keys=True, separators=(",", ":"),
         ).encode("utf-8")
 
+    def names_match(self, target: str, transaction_id: str, artifacts: dict[str, str]) -> bool:
+        expected = {"journal": self.journal}
+        if self.temporary is not None:
+            expected["temporary"] = self.temporary
+        if self.backup is not None:
+            expected["backup"] = self.backup
+        return (
+            self.target == target and self.transaction_id == transaction_id and
+            self.journal == f".{target}.evergreen-journal-{transaction_id}" and
+            (self.temporary is None or self.temporary == f".{target}.evergreen-{transaction_id}") and
+            (self.backup is None or self.backup == f".{target}.evergreen-backup-{transaction_id}") and
+            set(artifacts).issubset(expected) and
+            all(expected[kind] == name for kind, name in artifacts.items())
+        )
+
+    @staticmethod
+    def artifact_name(target: str, name: str) -> tuple[str, str] | None:
+        prefixes = (
+            ("backup", f".{target}.evergreen-backup-"),
+            ("journal", f".{target}.evergreen-journal-"),
+            ("temporary", f".{target}.evergreen-"),
+        )
+        for kind, prefix in prefixes:
+            transaction_id = name.removeprefix(prefix)
+            if transaction_id != name and len(transaction_id) == 32 and all(
+                char in "0123456789abcdef" for char in transaction_id
+            ):
+                return kind, transaction_id
+        return None
+
 
 @dataclass(frozen=True)
 class RollbackEntry:
@@ -131,3 +181,13 @@ class RollbackEntry:
     parent: PathSnapshot
     backup: str | None = None
     journal: str | None = None
+
+
+def _kind_from_mode(mode: int) -> str:
+    for predicate, kind in (
+        (stat.S_ISLNK, "symlink"), (stat.S_ISDIR, "directory"),
+        (stat.S_ISREG, "regular"),
+    ):
+        if predicate(mode):
+            return kind
+    return "other"
