@@ -58,6 +58,10 @@ for tok in "deterministic trust layer" "complete with findings" "complete with u
   fi
 done
 
+grep -Fq "Under the default fail-closed policy, a green check means" "$ROOT/README.md" \
+  && ok "README qualifies green-check meaning by the default fail-closed policy" \
+  || no "README qualifies green-check meaning by the default fail-closed policy"
+
 # Release identity must reach both Claude's injected digest/full skill and Codex's AGENTS rules.
 for tok in "MARKETING_VERSION" "CURRENT_PROJECT_VERSION" "release_identity_drift" \
            "external build state unverified" "0.9.0 (72)" "0.9.1 (73)" \

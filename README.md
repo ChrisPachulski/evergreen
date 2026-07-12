@@ -98,8 +98,9 @@ What it costs, since you count tokens: session start injects a ~40-line [digest]
 
 Want the check in CI too? Add the Action — it winnows the docs the PR's code touched, writes the
 step summary, and upserts its bot-owned report comment (creating a replacement if an update fails).
-Drift never fails the build. Audit infrastructure is stricter, so a green check means the requested
-review actually completed.
+Drift never fails the build. Under the default fail-closed policy, a green check means the requested
+review actually completed; advisory `fail_on_inconclusive: false` runs can be green while still
+reporting an inconclusive audit.
 
 ```yaml
 # .github/workflows/evergreen.yml
