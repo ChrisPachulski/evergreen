@@ -1,5 +1,5 @@
 name: "Evergreen doc-drift"
-description: "Winnow the docs against the code on every PR and post findings as a comment. Never fails the build."
+description: "Winnow docs against code, post findings, and fail only when a required audit is inconclusive."
 branding:
   icon: "book-open"
   color: "green"
@@ -20,13 +20,17 @@ inputs:
     description: "Upsert a PR comment with the findings ('true'/'false'). The step summary is always written."
     required: false
     default: "true"
+  fail_on_inconclusive:
+    description: "Fail the step when Evergreen cannot produce a conclusive validated audit ('true'/'false')."
+    required: false
+    default: "true"
 
 runs:
   using: "composite"
   steps:
     - name: Install the Claude CLI
       shell: bash
-      run: npm install -g @anthropic-ai/claude-code
+      run: npm install -g @anthropic-ai/claude-code@2.1.197
     - name: Run evergreen winnow on the PR
       shell: bash
       env:
@@ -35,6 +39,7 @@ runs:
         EVERGREEN_BASE_REF: ${{ inputs.base_ref }}
         EVERGREEN_MODE: ${{ inputs.mode }}
         EVERGREEN_POST_COMMENT: ${{ inputs.post_comment }}
+        EVERGREEN_FAIL_ON_INCONCLUSIVE: ${{ inputs.fail_on_inconclusive }}
         # Where SKILL.md and ci/ live, regardless of the consuming repo's checkout.
         EVERGREEN_ACTION_PATH: ${{ github.action_path }}
       run: bash "$GITHUB_ACTION_PATH/ci/evergreen-pr.sh"
