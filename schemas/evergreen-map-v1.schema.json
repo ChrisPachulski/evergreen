@@ -5,6 +5,7 @@
   "description": "Additive candidate mappings only; maps cannot suppress discovery or express findings, verdicts, or commands.",
   "type": "object",
   "additionalProperties": false,
+  "x-duplicateKeyBehavior": "reject-file",
   "required": ["version", "maps"],
   "properties": {
     "version": {"const": 1},
@@ -14,6 +15,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
+        "x-duplicateKeyBehavior": "reject-containing-map",
         "required": ["sources", "docs"],
         "properties": {
           "sources": {
@@ -21,7 +23,15 @@
             "minItems": 1,
             "maxItems": 100,
             "uniqueItems": true,
-            "items": {"type": "string", "minLength": 1, "maxLength": 4096, "x-maxUtf8Bytes": 4096}
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*[\\u0000-\\u001F\\u007F])(?!.*(?:^|/)[^/]+\\*\\*)(?!.*\\*\\*[^/]+(?:/|$))[^/]+(?:/[^/]+)*$",
+              "description": "Normalized repository-relative segment-aware glob. *, ?, and character classes match within one path segment; ** as a complete segment matches across zero or more segments.",
+              "x-maxUtf8Bytes": 4096,
+              "x-globSemantics": "segment-aware"
+            }
           },
           "docs": {
             "type": "array",
@@ -32,6 +42,8 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 4096,
+              "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*[\\u0000-\\u001F\\u007F])[^/]+(?:/[^/]+)*$",
+              "description": "Normalized repository-relative document path, resolved within the repository at runtime.",
               "x-maxUtf8Bytes": 4096,
               "x-repositoryContainment": "resolved-within-repo"
             }

@@ -2,9 +2,12 @@
 
 import fnmatch
 import json
+import math
 import os
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
 from .evidence import Evidence
@@ -14,6 +17,16 @@ MAX_MAPS = 1000
 MAX_PATTERNS = 100
 MAX_DOCS = 100
 MAX_STRING_BYTES = 4096
+MAX_CHANGED_PATHS = 10_000
+MAX_EVIDENCE_ITEMS = 10_000
+MAX_MATCH_WORK = 100_000
+MAX_CANDIDATES = 10_000
+MAX_REASONS_PER_CANDIDATE = 100
+MAX_TOTAL_REASONS = 100_000
+MAX_WARNINGS = 1000
+MAX_EVIDENCE_METADATA_ITEMS = 1000
+MAX_EVIDENCE_METADATA_DEPTH = 8
+MAX_EVIDENCE_METADATA_BYTES = 16 * 1024
 
 
 @dataclass(frozen=True)
@@ -35,17 +48,33 @@ class ImpactReport:
     warnings: tuple[str, ...]
 
 
-class _DuplicateKey(ValueError):
-    pass
+class _DecodedObject(dict):
+    __slots__ = ("duplicate_keys",)
 
 
-def _unique_object(pairs):
-    value = {}
+def _decoded_object(pairs):
+    value = _DecodedObject()
+    duplicates = []
     for key, item in pairs:
         if key in value:
-            raise _DuplicateKey(key)
+            duplicates.append(key)
+            continue
         value[key] = item
+    value.duplicate_keys = tuple(duplicates)
     return value
+
+
+def _duplicate_key(value):
+    stack = [value]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, _DecodedObject) and current.duplicate_keys:
+            return current.duplicate_keys[0]
+        if isinstance(current, dict):
+            stack.extend(reversed(tuple(current.values())))
+        elif isinstance(current, list):
+            stack.extend(reversed(current))
+    return None
 
 
 def _text(value, name):
@@ -103,10 +132,162 @@ def _pattern(value):
         if end < 0 or end == start + 1:
             raise ValueError("source pattern has invalid brackets")
         index = end + 1
+    if any("**" in part and part != "**" for part in value.split("/")):
+        raise ValueError("globstar must occupy a complete path segment")
     return value
 
 
+def _glob_match(pattern, path):
+    pattern_parts = tuple(pattern.split("/"))
+    path_parts = tuple(path.split("/"))
+
+    @lru_cache(maxsize=None)
+    def matches(pattern_index, path_index):
+        if pattern_index == len(pattern_parts):
+            return path_index == len(path_parts)
+        part = pattern_parts[pattern_index]
+        if part == "**":
+            return matches(pattern_index + 1, path_index) or (
+                path_index < len(path_parts) and matches(pattern_index, path_index + 1)
+            )
+        return (path_index < len(path_parts) and
+                fnmatch.fnmatchcase(path_parts[path_index], part) and
+                matches(pattern_index + 1, path_index + 1))
+
+    return matches(0, 0)
+
+
+def _evidence_text(value, name, *, nullable=False, limit=8192):
+    if value is None and nullable:
+        return None
+    if (not isinstance(value, str) or not value or len(value.encode("utf-8")) > limit or
+            any(ord(character) < 32 or ord(character) == 127 for character in value)):
+        raise ValueError(f"{name} must be a bounded string without control characters")
+    return value
+
+
+def _evidence_metadata(value):
+    if not isinstance(value, Mapping):
+        raise ValueError("metadata must be an object")
+    item_count = 0
+    active = set()
+
+    def normalize(current, depth):
+        nonlocal item_count
+        if depth > MAX_EVIDENCE_METADATA_DEPTH:
+            raise ValueError("metadata exceeds depth limit")
+        item_count += 1
+        if item_count > MAX_EVIDENCE_METADATA_ITEMS:
+            raise ValueError("metadata exceeds item limit")
+        if isinstance(current, Mapping):
+            identity = id(current)
+            if identity in active:
+                raise ValueError("metadata must not contain cycles")
+            active.add(identity)
+            try:
+                pairs = []
+                for key, item in current.items():
+                    if not isinstance(key, str):
+                        raise ValueError("metadata keys must be strings")
+                    pairs.append((key, normalize(item, depth + 1)))
+                return {key: item for key, item in sorted(pairs)}
+            finally:
+                active.remove(identity)
+        if isinstance(current, (list, tuple)):
+            identity = id(current)
+            if identity in active:
+                raise ValueError("metadata must not contain cycles")
+            active.add(identity)
+            try:
+                return [normalize(item, depth + 1) for item in current]
+            finally:
+                active.remove(identity)
+        if isinstance(current, str):
+            return current
+        if isinstance(current, float) and not math.isfinite(current):
+            raise ValueError("metadata numbers must be finite")
+        if current is None or isinstance(current, (bool, int, float)):
+            return current
+        raise ValueError("metadata must contain JSON values")
+
+    normalized = normalize(value, 1)
+    encoded = json.dumps(
+        normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
+    if len(encoded.encode("utf-8")) > MAX_EVIDENCE_METADATA_BYTES:
+        raise ValueError("metadata exceeds byte limit")
+    return encoded
+
+
+def _validated_evidence(item, repo):
+    if not isinstance(item, Evidence):
+        raise ValueError("item has invalid type")
+    provider = _evidence_text(item.provider, "provider", limit=256)
+    version = _evidence_text(item.version, "version", limit=256)
+    evidence_type = _evidence_text(item.type, "type", limit=256)
+    path = _path(item.path, repo, "path")
+    if type(item.line) is not int or not 1 <= item.line <= 2_147_483_647:
+        raise ValueError("line must be a positive integer")
+    if (item.span is not None and
+            (type(item.span) is not int or not 1 <= item.span <= 2_147_483_647)):
+        raise ValueError("span must be null or a positive integer")
+    symbol = _evidence_text(item.symbol, "symbol", nullable=True)
+    old = _evidence_text(item.old, "old", nullable=True)
+    current = _evidence_text(item.current, "current", nullable=True)
+    if item.confidence not in ("deterministic", "advisory"):
+        raise ValueError("confidence must be deterministic or advisory")
+    metadata = _evidence_metadata(item.metadata)
+    key = (
+        provider, version, evidence_type, path, item.line, item.span or 0,
+        symbol or "", old or "", current or "", item.confidence, metadata,
+    )
+    reason = f"evidence {provider}@{version} {evidence_type} ({item.confidence})"
+    rank = 50 if item.confidence == "deterministic" else 40
+    return key, path, rank, reason
+
+
+def _safe_warning(value):
+    value = "".join(
+        character if ord(character) >= 32 and ord(character) != 127 else "?"
+        for character in str(value)
+    )
+    encoded = value.encode("utf-8")
+    if len(encoded) > MAX_STRING_BYTES:
+        value = encoded[:MAX_STRING_BYTES].decode("utf-8", errors="ignore")
+    return value
+
+
+class _WarningCollector:
+    def __init__(self, values=()):
+        self.values = set()
+        self.truncated = False
+        for value in values:
+            self.add(value)
+
+    def add(self, value):
+        value = _safe_warning(value)
+        if value in self.values:
+            return
+        capacity = max(MAX_WARNINGS - (1 if self.truncated else 0), 0)
+        if len(self.values) < capacity:
+            self.values.add(value)
+            return
+        self.truncated = True
+        capacity = max(MAX_WARNINGS - 1, 0)
+        retained = sorted(self.values | {value})[:capacity]
+        self.values = set(retained)
+
+    def result(self):
+        values = set(self.values)
+        if self.truncated and MAX_WARNINGS > 0:
+            values.add(f"warnings truncated (maximum {MAX_WARNINGS})")
+        return tuple(sorted(values))
+
+
 def _map_record(value, repo):
+    duplicate = _duplicate_key(value)
+    if duplicate is not None:
+        raise ValueError(f"duplicate JSON key: {duplicate}")
     if not isinstance(value, dict) or set(value) != {"sources", "docs"}:
         raise ValueError("map must contain only sources and docs")
     if (not isinstance(value["sources"], list) or not value["sources"] or
@@ -151,13 +332,13 @@ def load_map(repo: Path) -> tuple[list[ImpactMap], list[str]]:
             payload = source.read(MAX_FILE_BYTES + 1)
         if len(payload) > MAX_FILE_BYTES:
             return [], [f"map config too large (maximum {MAX_FILE_BYTES} bytes)"]
-        root = json.loads(payload, object_pairs_hook=_unique_object)
-    except _DuplicateKey as error:
-        return [], [f"map config contains duplicate JSON key: {error}"]
+        root = json.loads(payload, object_pairs_hook=_decoded_object)
     except (OSError, UnicodeError) as error:
         return [], [f"could not read map config: {error}"]
     except (json.JSONDecodeError, RecursionError):
         return [], ["map config contains invalid JSON"]
+    if isinstance(root, _DecodedObject) and root.duplicate_keys:
+        return [], [f"map config contains duplicate JSON key: {root.duplicate_keys[0]}"]
     if (not isinstance(root, dict) or set(root) != {"version", "maps"} or
             type(root["version"]) is not int or root["version"] != 1 or
             not isinstance(root["maps"], list)):
@@ -184,46 +365,122 @@ def load_map(repo: Path) -> tuple[list[ImpactMap], list[str]]:
 def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactReport:
     """Return additive candidates only; mappings never suppress or decide drift."""
     repo = Path(repo)
-    mappings, warnings = load_map(repo)
+    mappings, map_warnings = load_map(repo)
+    warnings = _WarningCollector(map_warnings)
     candidates = {}
+    reasons_truncated = False
+    candidates_truncated = False
 
     def add(path, rank, reason):
+        nonlocal candidates, candidates_truncated, reasons_truncated
         current_rank, reasons = candidates.get(path, (0, set()))
+        reasons = set(reasons)
         reasons.add(reason)
+        if len(reasons) > MAX_REASONS_PER_CANDIDATE:
+            reasons = set(sorted(reasons)[:MAX_REASONS_PER_CANDIDATE])
+            reasons_truncated = True
         candidates[path] = (max(current_rank, rank), reasons)
+        # Bound discovery memory while retaining the same candidates that final ordering selects.
+        threshold = max(MAX_CANDIDATES * 2, 1)
+        if len(candidates) > threshold:
+            retained = sorted(
+                candidates, key=lambda item: (
+                    -candidates[item][0], item.lower(), item
+                )
+            )[:MAX_CANDIDATES]
+            candidates = {item: candidates[item] for item in retained}
+            candidates_truncated = True
 
-    sources = set()
+    changed_paths = set()
+    changed_truncated = False
     for raw_path in paths:
         try:
             path = _path(raw_path, repo, "changed path")
-        except (TypeError, ValueError) as error:
-            warnings.append(f"changed path: {error}")
+        except (TypeError, ValueError, UnicodeError) as error:
+            warnings.add(f"changed path: {error}")
             continue
-        sources.add(path)
-        add(path, 10, f"changed path {path}")
+        if path in changed_paths:
+            continue
+        if len(changed_paths) < MAX_CHANGED_PATHS:
+            changed_paths.add(path)
+            continue
+        changed_truncated = True
+        if MAX_CHANGED_PATHS > 0 and path < max(changed_paths):
+            changed_paths.remove(max(changed_paths))
+            changed_paths.add(path)
+    changed_paths = sorted(changed_paths)
+    if changed_truncated:
+        warnings.add(f"changed paths truncated (maximum {MAX_CHANGED_PATHS})")
+
+    accepted_evidence = {}
+    evidence_truncated = False
     for item in evidence:
-        if not isinstance(item, Evidence):
-            warnings.append("provider evidence item has invalid type")
-            continue
         try:
-            path = _path(item.path, repo, "evidence path")
-        except (TypeError, ValueError) as error:
-            warnings.append(f"evidence path: {error}")
+            key, path, rank, reason = _validated_evidence(item, repo)
+        except (Exception, RecursionError) as error:
+            warnings.add(f"evidence: {error}")
             continue
+        if key in accepted_evidence:
+            continue
+        if len(accepted_evidence) < MAX_EVIDENCE_ITEMS:
+            accepted_evidence[key] = (path, rank, reason)
+            continue
+        evidence_truncated = True
+        if MAX_EVIDENCE_ITEMS > 0 and key < max(accepted_evidence):
+            del accepted_evidence[max(accepted_evidence)]
+            accepted_evidence[key] = (path, rank, reason)
+    evidence_keys = sorted(accepted_evidence)
+    if evidence_truncated:
+        warnings.add(f"evidence items truncated (maximum {MAX_EVIDENCE_ITEMS})")
+
+    sources = set(changed_paths)
+    for path in changed_paths:
+        add(path, 10, f"changed path {path}")
+    for key in evidence_keys:
+        path, rank, reason = accepted_evidence[key]
         sources.add(path)
-        reason = f"evidence {item.provider}@{item.version} {item.type} ({item.confidence})"
-        add(path, 50 if item.confidence == "deterministic" else 40, reason)
+        add(path, rank, reason)
+
+    work = 0
+    work_truncated = False
     for source in sorted(sources):
         for mapping in mappings:
             for pattern in mapping.sources:
-                if fnmatch.fnmatchcase(source, pattern):
+                if work >= MAX_MATCH_WORK:
+                    work_truncated = True
+                    break
+                work += 1
+                if _glob_match(pattern, source):
                     reason = f"map {pattern} matched {source}"
                     for doc in mapping.docs:
                         add(doc, 100, reason)
-    result = tuple(
-        ImpactCandidate(path, rank, tuple(sorted(reasons)))
-        for path, (rank, reasons) in sorted(
-            candidates.items(), key=lambda item: (-item[1][0], item[0].lower(), item[0])
-        )
+            if work_truncated:
+                break
+        if work_truncated:
+            break
+    if work_truncated:
+        warnings.add(f"matching work truncated (maximum {MAX_MATCH_WORK} comparisons)")
+
+    ordered_paths = sorted(
+        candidates, key=lambda item: (-candidates[item][0], item.lower(), item)
     )
-    return ImpactReport(result, tuple(sorted(warnings)))
+    if len(ordered_paths) > MAX_CANDIDATES:
+        ordered_paths = ordered_paths[:MAX_CANDIDATES]
+        candidates_truncated = True
+    if candidates_truncated:
+        warnings.add(f"candidates truncated (maximum {MAX_CANDIDATES})")
+
+    remaining_reasons = MAX_TOTAL_REASONS
+    result_items = []
+    for path in ordered_paths:
+        rank, reasons = candidates[path]
+        ordered_reasons = sorted(reasons)
+        if len(ordered_reasons) > remaining_reasons:
+            ordered_reasons = ordered_reasons[:max(remaining_reasons, 0)]
+            reasons_truncated = True
+        remaining_reasons -= len(ordered_reasons)
+        result_items.append(ImpactCandidate(path, rank, tuple(ordered_reasons)))
+    if reasons_truncated:
+        warnings.add("reasons truncated for one or more candidates")
+
+    return ImpactReport(tuple(result_items), warnings.result())

@@ -103,6 +103,24 @@ class ImpactTests(unittest.TestCase):
         self.assertEqual(len(maps), 2)
         self.assertEqual(warnings, [])
 
+    def test_segment_aware_globs_keep_star_shallow_and_globstar_recursive(self):
+        from evergreen.impact import impact
+
+        self.write_map([
+            self.mapping(["src/*.py"], ["docs/shallow.md"]),
+            self.mapping(["src/**"], ["docs/recursive.md"]),
+            self.mapping(["src/**/client.py"], ["docs/client.md"]),
+        ])
+        nested = impact(self.repo, ["src/nested/api.py"], [])
+        direct = impact(self.repo, ["src/client.py"], [])
+
+        nested_paths = [candidate.path for candidate in nested.candidates]
+        direct_paths = [candidate.path for candidate in direct.candidates]
+        self.assertNotIn("docs/shallow.md", nested_paths)
+        self.assertIn("docs/recursive.md", nested_paths)
+        self.assertIn("docs/shallow.md", direct_paths)
+        self.assertIn("docs/client.md", direct_paths)
+
     def test_deleted_source_and_missing_doc_targets_are_valid_candidates(self):
         from evergreen.impact import impact
 
@@ -126,6 +144,23 @@ class ImpactTests(unittest.TestCase):
                       report.candidates[1].reasons)
         self.assertFalse(any(word in reason.lower() for candidate in report.candidates
                              for reason in candidate.reasons for word in ("finding", "verdict")))
+
+    def test_impact_revalidates_hostile_and_malformed_evidence_without_aborting(self):
+        from evergreen.impact import impact
+
+        hostile = [
+            object(),
+            self.evidence(provider="bad\nprovider"),
+            self.evidence(confidence="certain"),
+            self.evidence(line="8"),
+            self.evidence(path="bad\npath.py"),
+            self.evidence(provider="valid", path="valid.py"),
+        ]
+        report = impact(self.repo, [], hostile)
+
+        self.assertEqual([candidate.path for candidate in report.candidates], ["valid.py"])
+        self.assertEqual(len(report.warnings), 5)
+        self.assertTrue(all("evidence" in warning for warning in report.warnings))
 
     def test_input_and_evidence_order_do_not_change_report_order(self):
         from evergreen.impact import impact
@@ -159,6 +194,51 @@ class ImpactTests(unittest.TestCase):
         self.assertEqual(maps, [])
         self.assertTrue(any("too large" in warning for warning in warnings))
 
+    def test_collection_work_output_and_reason_bounds_warn_deterministically(self):
+        from evergreen import impact as module
+
+        self.write_map([
+            self.mapping(["src/**", "src/*.py"], ["docs/a.md", "docs/b.md", "docs/c.md"]),
+        ])
+        evidence = [self.evidence(path="z.py"), self.evidence(path="a.py", provider="other")]
+        with mock.patch.object(module, "MAX_CHANGED_PATHS", 2), \
+             mock.patch.object(module, "MAX_EVIDENCE_ITEMS", 1), \
+             mock.patch.object(module, "MAX_CANDIDATES", 2), \
+             mock.patch.object(module, "MAX_REASONS_PER_CANDIDATE", 1):
+            first = module.impact(self.repo, ["src/z.py", "src/a.py", "src/m.py"], evidence)
+            second = module.impact(
+                self.repo, ["src/m.py", "src/z.py", "src/a.py"], list(reversed(evidence))
+            )
+
+        self.assertEqual(first, second)
+        self.assertLessEqual(len(first.candidates), 2)
+        self.assertTrue(all(len(candidate.reasons) <= 1 for candidate in first.candidates))
+        self.assertTrue(any("changed paths truncated" in warning for warning in first.warnings))
+        self.assertTrue(any("evidence items truncated" in warning for warning in first.warnings))
+        self.assertTrue(any("candidates truncated" in warning for warning in first.warnings))
+        self.assertTrue(any("reasons truncated" in warning for warning in first.warnings))
+
+        with mock.patch.object(module, "MAX_MATCH_WORK", 1):
+            bounded = module.impact(self.repo, ["src/a.py", "src/b.py"], [])
+        self.assertTrue(any("matching work truncated" in warning for warning in bounded.warnings))
+
+    def test_duplicate_keys_reject_only_the_containing_map(self):
+        from evergreen.impact import load_map
+
+        valid = json.dumps(self.mapping(["src/valid/**"], ["docs/valid.md"]))
+        duplicate = (
+            '{"sources":["src/bad/**"],"sources":["src/other/**"],'
+            '"docs":["docs/bad.md"]}'
+        )
+        (self.repo / ".evergreen-map.json").write_text(
+            '{"version":1,"maps":[' + duplicate + "," + valid + "]}"
+        )
+        maps, warnings = load_map(self.repo)
+
+        self.assertEqual(len(maps), 1)
+        self.assertEqual(maps[0].docs, ("docs/valid.md",))
+        self.assertEqual(warnings, ["map 1: duplicate JSON key: sources"])
+
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO test requires POSIX")
     def test_map_loader_rejects_non_regular_and_symlink_config_without_blocking(self):
         from evergreen.impact import load_map
@@ -180,6 +260,18 @@ class ImpactTests(unittest.TestCase):
         self.assertTrue(example["maps"])
         self.assertIn("candidate", schema["description"].lower())
         self.assertNotIn("commands", schema["properties"])
+        self.assertEqual(schema["x-duplicateKeyBehavior"], "reject-file")
+        source = schema["properties"]["maps"]["items"]["properties"]["sources"]["items"]
+        self.assertEqual(source["x-globSemantics"], "segment-aware")
+        self.assertIn("**", source["description"])
+        self.assertIn("pattern", source)
+        docs = schema["properties"]["maps"]["items"]["properties"]["docs"]["items"]
+        self.assertIn("pattern", docs)
+        self.assertIn("repository-relative", docs["description"])
+        self.assertEqual(
+            schema["properties"]["maps"]["items"]["x-duplicateKeyBehavior"],
+            "reject-containing-map",
+        )
 
 
 if __name__ == "__main__":
