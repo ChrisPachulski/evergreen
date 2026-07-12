@@ -1,5 +1,7 @@
+import base64
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -106,6 +108,65 @@ class ChangeManifestTests(unittest.TestCase):
         bounded = change_manifest.build_manifest(self.repo, base, head, max_bytes=first_hunk_bytes)
         self.assertEqual(bounded["files"][0]["hunks"], [hunks[0]])
         self.assertTrue(bounded["truncated"])
+
+    def test_token_dense_omitted_hunks_do_not_create_unbounded_seeds(self):
+        original = "".join(f"line {number}\n" for number in range(100))
+        self.write("dense.txt", original)
+        base = self.commit("base")
+        lines = original.splitlines(keepends=True)
+        lines[1] = "small_contract_seed\n"
+        lines[80] = " ".join(f"dense_contract_{number}" for number in range(20_000)) + "\n"
+        self.write("dense.txt", "".join(lines))
+        head = self.commit("changes")
+
+        complete = change_manifest.build_manifest(self.repo, base, head)
+        first_hunk_bytes = len(complete["files"][0]["hunks"][0].encode("utf-8"))
+        bounded = change_manifest.build_manifest(self.repo, base, head, max_bytes=first_hunk_bytes)
+        serialized = json.dumps(bounded, ensure_ascii=False).encode("utf-8")
+        hunk_bytes = sum(
+            len(hunk.encode("utf-8")) for file in bounded["files"] for hunk in file["hunks"]
+        )
+        seed_bytes = len(json.dumps(bounded["contract_seeds"], ensure_ascii=False).encode("utf-8"))
+
+        self.assertTrue(bounded["truncated"])
+        self.assertLessEqual(hunk_bytes, first_hunk_bytes)
+        self.assertLessEqual(seed_bytes, first_hunk_bytes)
+        self.assertLessEqual(len(serialized), first_hunk_bytes * 3 + 4096)
+        self.assertIn("small_contract_seed", bounded["contract_seeds"])
+        self.assertNotIn("dense_contract_19999", bounded["contract_seeds"])
+
+    @unittest.skipUnless(os.name == "posix", "Git byte-path identity is POSIX-specific")
+    def test_invalid_utf8_paths_keep_lossless_identity_and_report_display_collision(self):
+        self.write("base.txt", "base\n")
+        base = self.commit("base")
+        raw_paths = [b"invalid-\xfe.py", b"invalid-\xff.py"]
+        blob = subprocess.run(
+            [b"git", b"hash-object", b"-w", b"--stdin"],
+            cwd=os.fsencode(self.repo),
+            input=b"def byte_named_contract():\n    return True\n",
+            check=True,
+            stdout=subprocess.PIPE,
+        ).stdout.strip()
+        for raw_path in raw_paths:
+            subprocess.run(
+                [b"git", b"update-index", b"--add", b"--cacheinfo", b"100644", blob, raw_path],
+                cwd=os.fsencode(self.repo),
+                check=True,
+            )
+        self.git("commit", "-qm", "invalid byte paths")
+        head = self.git("rev-parse", "HEAD")
+
+        manifest = change_manifest.build_manifest(self.repo, base, head)
+
+        self.assertEqual(len(manifest["files"]), 2)
+        self.assertEqual(
+            {item["path_bytes_b64"] for item in manifest["files"]},
+            {base64.b64encode(path).decode("ascii") for path in raw_paths},
+        )
+        self.assertEqual(len({item["path"] for item in manifest["files"]}), 1)
+        self.assertTrue(all(item["hunks"] for item in manifest["files"]))
+        self.assertTrue(any("invalid UTF-8" in error for error in manifest["errors"]))
+        self.assertTrue(any("display collision" in error for error in manifest["errors"]))
 
     def test_invalid_refs_are_reported_without_raising(self):
         self.write("file.py", "value = 1\n")
