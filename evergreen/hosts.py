@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 import stat
 import subprocess
-import tempfile
 import time
+import uuid
 
 
 BEGIN_MARKER = "<!-- evergreen:begin -->"
@@ -17,7 +17,8 @@ MAX_STATE_BYTES = 4096
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_INSTRUCTION_BYTES = 1024 * 1024
 COMMAND_SMOKE_TIMEOUT_SECONDS = 5
-CONTROLLED_READ_TIMEOUT_SECONDS = 3
+# Elapsed-time detection only: regular-file syscalls are not portably interruptible.
+READ_ELAPSED_LIMIT_SECONDS = 3
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,15 @@ class PathSnapshot:
     data: bytes | None = None
     target: str | None = None
     mode: int | None = None
+    dev: int | None = None
+    ino: int | None = None
+
+
+@dataclass(frozen=True)
+class RollbackEntry:
+    before: PathSnapshot
+    after: PathSnapshot
+    parent: PathSnapshot
 
 
 def detect_hosts(home: Path) -> list[HostStatus]:
@@ -81,7 +91,7 @@ def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> 
         return OperationResult(False, (f"error: transaction preflight failed: {error}",))
     states = {}
     for status in selected:
-        state, state_error = _load_ownership(status)
+        state, state_error = _ownership_from_snapshot(status, captured[status.ownership])
         states[status.name] = state
         if state_error:
             errors.append(f"{status.name}: {state_error}")
@@ -92,7 +102,9 @@ def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> 
     plans = []
     for status in selected:
         state = states[status.name]
-        host_plans, plan_errors = _install_plans(status, state, root, target, block)
+        host_plans, plan_errors = _install_plans(
+            status, state, root, target, block, captured
+        )
         plans.extend((status, plan) for plan in host_plans)
         errors.extend(f"{status.name}: refusing {message}" for message in plan_errors)
     if errors:
@@ -113,7 +125,7 @@ def uninstall(home: Path, host: str, dry_run: bool = False) -> OperationResult:
         return OperationResult(False, (f"error: transaction preflight failed: {error}",))
     states = {}
     for status in selected:
-        state, state_error = _load_ownership(status)
+        state, state_error = _ownership_from_snapshot(status, captured[status.ownership])
         states[status.name] = state
         if state_error:
             errors.append(f"{status.name}: {state_error}")
@@ -122,7 +134,9 @@ def uninstall(home: Path, host: str, dry_run: bool = False) -> OperationResult:
 
     plans = []
     for status in selected:
-        host_plans, plan_errors = _uninstall_plans(status, states[status.name])
+        host_plans, plan_errors = _uninstall_plans(
+            status, states[status.name], captured
+        )
         plans.extend((status, plan) for plan in host_plans)
         errors.extend(f"{status.name}: refusing {message}" for message in plan_errors)
     if errors:
@@ -302,12 +316,20 @@ def _host_errors(selected):
 
 
 def _load_ownership(status):
-    if _kind(status.ownership) == "absent":
+    try:
+        snapshot = _snapshot(status.ownership)
+    except (OSError, ValueError) as error:
+        return None, f"invalid ownership record: {error}"
+    return _ownership_from_snapshot(status, snapshot)
+
+
+def _ownership_from_snapshot(status, snapshot):
+    if snapshot.kind == "absent":
         return None, None
     try:
-        value = json.loads(_read_regular_bounded(
-            status.ownership, MAX_STATE_BYTES, "ownership record"
-        ))
+        if snapshot.kind != "regular" or snapshot.data is None:
+            raise ValueError(f"ownership record is {snapshot.kind}, not regular")
+        value = json.loads(snapshot.data)
         fields = {
             "schema_version", "host", "plugin_root", "instruction_existed",
             "instruction_separator", "skill_target",
@@ -329,10 +351,12 @@ def _load_ownership(status):
         return None, f"invalid ownership record: {error}"
 
 
-def _install_plans(status, state, root, target, block):
+def _install_plans(status, state, root, target, block, captured):
     errors = []
-    instruction_state, owned = _instruction_state(status.instructions)
-    skill_kind = _kind(status.skill)
+    instruction = captured[status.instructions]
+    skill = captured[status.skill]
+    instruction_state, owned = _instruction_state_from_snapshot(instruction)
+    skill_kind = skill.kind
     if state is None:
         if instruction_state == "owned":
             errors.append("owned markers lack an ownership record")
@@ -342,7 +366,7 @@ def _install_plans(status, state, root, target, block):
             errors.append(f"skill path lacks ownership proof ({skill_kind})")
         if errors:
             return [], errors
-        original = _read_instruction(status.instructions) if instruction_state == "unowned" else b""
+        original = instruction.data if instruction_state == "unowned" else b""
         separator = bool(original)
         state = Ownership(
             schema_version=1,
@@ -364,14 +388,15 @@ def _install_plans(status, state, root, target, block):
             errors.append(f"owned skill path became {skill_kind}")
         if errors:
             return [], errors
-        instruction_value = _read_instruction(status.instructions).replace(owned, block, 1)
+        instruction_value = instruction.data.replace(owned, block, 1)
         instruction_plan = (
             "unchanged" if owned == block else "write",
             f"owned instructions {'unchanged' if owned == block else 'updated'} {status.instructions}",
             status.instructions,
             instruction_value,
         )
-        if skill_kind == "symlink" and status.skill.exists() and status.skill.resolve() == target:
+        if (skill_kind == "symlink" and
+                _normalized_snapshot_target(skill) == _normalized_lexical_path(target)):
             skill_plan = ("unchanged", f"skill link unchanged {status.skill}", status.skill, None)
         else:
             skill_plan = ("link", f"repair skill link {status.skill}", status.skill, target)
@@ -384,10 +409,8 @@ def _install_plans(status, state, root, target, block):
             skill_target=str(target),
         )
     encoded = _encode_ownership(state)
-    current = (
-        _read_regular_bounded(status.ownership, MAX_STATE_BYTES, "ownership record")
-        if _kind(status.ownership) == "regular" else None
-    )
+    ownership = captured[status.ownership]
+    current = ownership.data if ownership.kind == "regular" else None
     state_plan = (
         "unchanged" if current == encoded else "write",
         f"ownership record {'unchanged' if current == encoded else 'updated'} {status.ownership}",
@@ -397,9 +420,11 @@ def _install_plans(status, state, root, target, block):
     return [instruction_plan, skill_plan, state_plan], []
 
 
-def _uninstall_plans(status, state):
-    instruction_state, owned = _instruction_state(status.instructions)
-    skill_kind = _kind(status.skill)
+def _uninstall_plans(status, state, captured):
+    instruction = captured[status.instructions]
+    skill = captured[status.skill]
+    instruction_state, owned = _instruction_state_from_snapshot(instruction)
+    skill_kind = skill.kind
     if state is None:
         errors = []
         if instruction_state in ("owned", "malformed"):
@@ -422,12 +447,12 @@ def _uninstall_plans(status, state):
         return [], [f"owned skill path became {skill_kind}"]
     owns_skill_link = (
         skill_kind == "symlink" and
-        _normalized_link_target(status.skill) == _normalized_lexical_path(Path(state.skill_target))
+        _normalized_snapshot_target(skill) == _normalized_lexical_path(Path(state.skill_target))
     )
     if skill_kind == "symlink" and not owns_skill_link:
         return [], ["replacement skill link does not match ownership record"]
 
-    content = _read_instruction(status.instructions)
+    content = instruction.data
     begin = content.index(BEGIN_MARKER.encode("ascii"))
     remove_from = begin
     if state.instruction_separator:
@@ -469,34 +494,67 @@ def _apply(plans, dry_run, captured):
         return OperationResult(False, tuple(messages + [f"error: transaction preflight failed: {error}"]))
     if dry_run:
         return OperationResult(True, tuple(messages))
+    rollback_entries = []
+    conflicts = []
     try:
-        verified_parents = set()
-        rollback_snapshots = []
-        rollback_paths = set()
         for action, _detail, path, value in mutations:
-            if path.parent in captured and path.parent not in verified_parents:
-                _verify_snapshot(captured[path.parent])
-                verified_parents.add(path.parent)
-            _verify_snapshot(captured[path])
-            if path.parent in captured and captured[path.parent].kind == "absent" and \
-                    path.parent not in rollback_paths:
-                rollback_snapshots.append(captured[path.parent])
-                rollback_paths.add(path.parent)
-            if path not in rollback_paths:
-                rollback_snapshots.append(captured[path])
-                rollback_paths.add(path)
-            _perform_action(action, path, value)
+            parent_fd = _prepare_parent(
+                path.parent, captured, rollback_entries, conflicts
+            )
+            try:
+                _verify_snapshot_at(captured[path], parent_fd)
+                try:
+                    _perform_action(
+                        action, path, value, parent_fd=parent_fd,
+                        expected=captured[path],
+                    )
+                except Exception:
+                    try:
+                        current = _snapshot_at(path, parent_fd)
+                    except Exception as snapshot_error:
+                        conflicts.append(
+                            f"{path}: preserved concurrent state; postimage unavailable: "
+                            f"{snapshot_error}"
+                        )
+                        raise
+                    if current == captured[path]:
+                        pass
+                    elif _matches_postimage(action, value, current):
+                        rollback_entries.append(RollbackEntry(
+                            captured[path], current, captured[path.parent]
+                        ))
+                    else:
+                        conflicts.append(f"{path}: preserved concurrent state")
+                    raise
+                try:
+                    current = _snapshot_at(path, parent_fd)
+                except Exception as snapshot_error:
+                    conflicts.append(
+                        f"{path}: preserved concurrent state; postimage unavailable: "
+                        f"{snapshot_error}"
+                    )
+                    raise
+                if not _matches_postimage(action, value, current):
+                    conflicts.append(f"{path}: preserved concurrent state")
+                    raise OSError(f"transaction postimage mismatch: {path}")
+                rollback_entries.append(RollbackEntry(
+                    captured[path], current, captured[path.parent]
+                ))
+                _verify_open_directory_path(path.parent, parent_fd)
+            finally:
+                os.close(parent_fd)
     except Exception as error:
         rollback_errors = []
-        for snapshot in reversed(rollback_snapshots):
+        for entry in reversed(rollback_entries):
             try:
-                _restore_snapshot(snapshot)
+                _restore_entry(entry)
             except Exception as rollback_error:
-                rollback_errors.append(f"{snapshot.path}: {rollback_error}")
-        if rollback_errors:
+                rollback_errors.append(f"{entry.before.path}: {rollback_error}")
+        recovery = conflicts + rollback_errors
+        if recovery:
             return OperationResult(False, tuple(messages + [
                 f"error: apply failed: {error}; rollback failed; manual recovery required: "
-                + "; ".join(rollback_errors)
+                + "; ".join(recovery)
             ]))
         return OperationResult(False, tuple(messages + [
             f"error: apply failed: {error}; all changes rolled back"
@@ -512,6 +570,7 @@ def _capture_preflight(selected):
             (status.skill, False),
             (status.ownership, False),
             (status.skill.parent, True),
+            (status.root, True),
         ):
             if path not in captured:
                 captured[path] = _snapshot(path, allow_directory=allow_directory)
@@ -534,12 +593,18 @@ def _snapshot(path, allow_directory=False):
     if kind == "absent":
         return PathSnapshot(path, kind)
     if kind == "regular":
-        metadata = path.lstat()
-        if metadata.st_nlink != 1:
+        before = path.lstat()
+        if before.st_nlink != 1:
             raise OSError(f"refusing hard-linked transaction path: {path}")
         limit = MAX_STATE_BYTES if path.name == OWNERSHIP_FILE else MAX_INSTRUCTION_BYTES
         data = _read_regular_bounded(path, limit, "transaction snapshot")
-        return PathSnapshot(path, kind, data=data, mode=stat.S_IMODE(metadata.st_mode))
+        metadata = path.lstat()
+        if (before.st_dev, before.st_ino) != (metadata.st_dev, metadata.st_ino):
+            raise OSError(f"refusing changed transaction path: {path}")
+        return PathSnapshot(
+            path, kind, data=data, mode=stat.S_IMODE(metadata.st_mode),
+            dev=metadata.st_dev, ino=metadata.st_ino,
+        )
     if kind == "symlink":
         before = path.lstat()
         target = os.readlink(path)
@@ -547,59 +612,180 @@ def _snapshot(path, allow_directory=False):
         if (before.st_dev, before.st_ino, before.st_mode) != (
                 after.st_dev, after.st_ino, after.st_mode):
             raise OSError(f"refusing changed transaction symlink: {path}")
-        return PathSnapshot(path, kind, target=target)
+        return PathSnapshot(
+            path, kind, target=target, mode=stat.S_IMODE(after.st_mode),
+            dev=after.st_dev, ino=after.st_ino,
+        )
     if kind == "directory" and allow_directory:
-        return PathSnapshot(path, kind, mode=stat.S_IMODE(path.lstat().st_mode))
+        metadata = path.lstat()
+        return PathSnapshot(
+            path, kind, mode=stat.S_IMODE(metadata.st_mode),
+            dev=metadata.st_dev, ino=metadata.st_ino,
+        )
     raise OSError(f"refusing unsafe transaction path ({kind}): {path}")
 
 
-def _perform_action(action, path, value):
-    if _kind(path.parent) == "absent":
-        path.parent.mkdir()
-    if action == "write":
-        existing_mode = (
-            stat.S_IMODE(path.lstat().st_mode) if _kind(path) == "regular"
-            else (0o600 if path.name == OWNERSHIP_FILE else 0o644)
-        )
-        _atomic_write(path, value, existing_mode)
-    elif action == "link":
-        _atomic_link(path, value)
-    elif action == "delete" and _kind(path) != "absent":
-        path.unlink()
-        _fsync_directory(path.parent)
+def _open_directory(snapshot):
+    if snapshot.kind != "directory":
+        raise OSError(f"transaction parent is {snapshot.kind}: {snapshot.path}")
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(snapshot.path, flags)
+    metadata = os.fstat(descriptor)
+    if (not stat.S_ISDIR(metadata.st_mode) or
+            (metadata.st_dev, metadata.st_ino) != (snapshot.dev, snapshot.ino) or
+            stat.S_IMODE(metadata.st_mode) != snapshot.mode):
+        os.close(descriptor)
+        raise OSError(f"transaction directory changed: {snapshot.path}")
+    return descriptor
 
 
-def _restore_snapshot(snapshot):
-    path = snapshot.path
-    current = _kind(path)
-    if snapshot.kind == "absent":
-        if current == "directory":
-            path.rmdir()
-        elif current != "absent":
-            path.unlink()
-        return
+def _prepare_parent(path, captured, rollback_entries, conflicts):
+    snapshot = captured[path]
     if snapshot.kind == "directory":
-        if current == "absent":
-            path.mkdir(mode=snapshot.mode)
-        elif current != "directory":
-            path.unlink()
-            path.mkdir(mode=snapshot.mode)
-        return
-    if _kind(path.parent) == "absent":
-        path.parent.mkdir()
-    if snapshot.kind == "regular":
-        if current == "directory":
-            path.rmdir()
-        _atomic_write(path, snapshot.data, snapshot.mode)
-    elif snapshot.kind == "symlink":
-        if current == "directory":
-            path.rmdir()
-        _atomic_link(path, snapshot.target)
+        return _open_directory(snapshot)
+    if snapshot.kind != "absent":
+        raise OSError(f"transaction parent is {snapshot.kind}: {path}")
+    grandparent = captured[path.parent]
+    descriptor = _open_directory(grandparent)
+    created = None
+    try:
+        _verify_snapshot_at(snapshot, descriptor)
+        os.mkdir(path.name, mode=0o755, dir_fd=descriptor)
+        os.fsync(descriptor)
+        created = _snapshot_at(path, descriptor)
+        if created.kind != "directory":
+            raise OSError(f"transaction directory postimage mismatch: {path}")
+        rollback_entries.append(RollbackEntry(snapshot, created, grandparent))
+    except Exception as error:
+        if created is None:
+            try:
+                current = _snapshot_at(path, descriptor)
+            except Exception:
+                current = None
+            if current is not None and current.kind == "directory":
+                rollback_entries.append(RollbackEntry(snapshot, current, grandparent))
+            elif current != snapshot:
+                conflicts.append(f"{path}: preserved concurrent state")
+        raise error
+    finally:
+        os.close(descriptor)
+    captured[path] = created
+    return _open_directory(created)
 
 
-def _atomic_write(path, data, mode):
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.evergreen-", dir=path.parent)
-    temporary = Path(temporary)
+def _kind_from_mode(mode):
+    if stat.S_ISLNK(mode):
+        return "symlink"
+    if stat.S_ISDIR(mode):
+        return "directory"
+    if stat.S_ISREG(mode):
+        return "regular"
+    return "other"
+
+
+def _snapshot_at(path, parent_fd):
+    try:
+        metadata = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return PathSnapshot(path, "absent")
+    kind = _kind_from_mode(metadata.st_mode)
+    mode = stat.S_IMODE(metadata.st_mode)
+    common = {"mode": mode, "dev": metadata.st_dev, "ino": metadata.st_ino}
+    if kind == "regular":
+        limit = MAX_STATE_BYTES if path.name == OWNERSHIP_FILE else MAX_INSTRUCTION_BYTES
+        flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path.name, flags, dir_fd=parent_fd)
+        try:
+            opened = os.fstat(descriptor)
+            if (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino):
+                raise OSError(f"transaction path changed: {path}")
+            chunks = []
+            remaining = limit + 1
+            while remaining:
+                chunk = os.read(descriptor, min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            data = b"".join(chunks)
+            if len(data) > limit:
+                raise ValueError(f"transaction snapshot exceeds byte limit: {path}")
+            after_open = os.fstat(descriptor)
+        finally:
+            os.close(descriptor)
+        after_path = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+        identity = lambda item: (
+            item.st_dev, item.st_ino, item.st_mode, item.st_nlink, item.st_size,
+            item.st_mtime_ns, item.st_ctime_ns,
+        )
+        if identity(metadata) != identity(after_open) or identity(metadata) != identity(after_path):
+            raise OSError(f"transaction path changed: {path}")
+        return PathSnapshot(path, kind, data=data, **common)
+    if kind == "symlink":
+        target = os.readlink(path.name, dir_fd=parent_fd)
+        after = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+        if (after.st_dev, after.st_ino, after.st_mode) != (
+                metadata.st_dev, metadata.st_ino, metadata.st_mode):
+            raise OSError(f"transaction symlink changed: {path}")
+        return PathSnapshot(path, kind, target=target, **common)
+    if kind == "directory":
+        return PathSnapshot(path, kind, **common)
+    raise OSError(f"refusing unsafe transaction path ({kind}): {path}")
+
+
+def _verify_snapshot_at(expected, parent_fd):
+    actual = _snapshot_at(expected.path, parent_fd)
+    if actual != expected:
+        raise OSError(f"transaction path changed after planning: {expected.path}")
+
+
+def _verify_open_directory_path(path, descriptor):
+    expected = os.fstat(descriptor)
+    actual = path.lstat()
+    if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
+        raise OSError(f"transaction directory changed during mutation: {path}")
+
+
+def _matches_postimage(action, value, snapshot):
+    if action == "write":
+        return snapshot.kind == "regular" and snapshot.data == value
+    if action == "link":
+        return (snapshot.kind == "symlink" and
+                _normalized_snapshot_target(snapshot) == _normalized_lexical_path(value))
+    if action == "delete":
+        return snapshot.kind == "absent"
+    return False
+
+
+def _perform_action(action, path, value, *, parent_fd, expected):
+    if action == "write":
+        if expected.kind == "absent":
+            mode = 0o600 if path.name == OWNERSHIP_FILE else 0o644
+            _create_write_at(parent_fd, path.name, value, mode)
+        else:
+            metadata = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+            _atomic_write_at(parent_fd, path.name, value, stat.S_IMODE(metadata.st_mode))
+    elif action == "link":
+        if expected.kind == "absent":
+            os.symlink(value, path.name, target_is_directory=True, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        else:
+            _atomic_link_at(parent_fd, path.name, value)
+    elif action == "delete":
+        if expected.kind == "absent":
+            return
+        try:
+            os.unlink(path.name, dir_fd=parent_fd)
+        except FileNotFoundError:
+            pass
+        os.fsync(parent_fd)
+
+
+def _atomic_write_at(parent_fd, name, data, mode):
+    temporary = f".{name}.evergreen-{uuid.uuid4().hex}"
+    descriptor = os.open(
+        temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode, dir_fd=parent_fd,
+    )
     try:
         os.fchmod(descriptor, mode)
         with os.fdopen(descriptor, "wb") as stream:
@@ -607,46 +793,105 @@ def _atomic_write(path, data, mode):
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
-        _fsync_directory(path.parent)
+        os.replace(temporary, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        os.fsync(parent_fd)
     finally:
         if descriptor >= 0:
             os.close(descriptor)
-        if temporary.exists() or temporary.is_symlink():
-            temporary.unlink()
+        try:
+            os.unlink(temporary, dir_fd=parent_fd)
+        except FileNotFoundError:
+            pass
 
 
-def _atomic_link(path, target):
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.evergreen-", dir=path.parent)
-    os.close(descriptor)
-    temporary = Path(temporary)
-    temporary.unlink()
+def _create_write_at(parent_fd, name, data, mode):
+    temporary = f".{name}.evergreen-{uuid.uuid4().hex}"
+    descriptor = os.open(
+        temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode, dir_fd=parent_fd,
+    )
     try:
-        temporary.symlink_to(target, target_is_directory=True)
-        os.replace(temporary, path)
-        _fsync_directory(path.parent)
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = -1
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(
+            temporary, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+        os.unlink(temporary, dir_fd=parent_fd)
+        os.fsync(parent_fd)
     finally:
-        if temporary.exists() or temporary.is_symlink():
-            temporary.unlink()
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            os.unlink(temporary, dir_fd=parent_fd)
+        except FileNotFoundError:
+            pass
 
 
-def _fsync_directory(path):
-    descriptor = os.open(path, os.O_RDONLY)
+def _atomic_link_at(parent_fd, name, target):
+    temporary = f".{name}.evergreen-{uuid.uuid4().hex}"
     try:
-        os.fsync(descriptor)
+        os.symlink(target, temporary, target_is_directory=True, dir_fd=parent_fd)
+        os.replace(temporary, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        os.fsync(parent_fd)
     finally:
-        os.close(descriptor)
+        try:
+            os.unlink(temporary, dir_fd=parent_fd)
+        except FileNotFoundError:
+            pass
 
 
+def _restore_entry(entry):
+    parent_fd = _open_directory(entry.parent)
+    try:
+        actual = _snapshot_at(entry.after.path, parent_fd)
+        if actual != entry.after:
+            raise OSError(
+                f"preserved concurrent state; rollback postimage changed: {entry.after.path}"
+            )
+        before = entry.before
+        if before.kind == "absent":
+            if entry.after.kind == "directory":
+                try:
+                    os.rmdir(entry.after.path.name, dir_fd=parent_fd)
+                except OSError as error:
+                    raise OSError(
+                        f"preserved concurrent state; rollback directory not empty: "
+                        f"{entry.after.path}"
+                    ) from error
+                os.fsync(parent_fd)
+            else:
+                os.unlink(entry.after.path.name, dir_fd=parent_fd)
+                os.fsync(parent_fd)
+        elif before.kind == "regular":
+            _atomic_write_at(parent_fd, before.path.name, before.data, before.mode)
+        elif before.kind == "symlink":
+            _atomic_link_at(parent_fd, before.path.name, before.target)
+        else:
+            raise OSError(f"unsupported rollback preimage: {before.path}")
+    finally:
+        os.close(parent_fd)
 def _instruction_state(path):
     if _kind(path) == "absent":
         return "missing", None
     if _kind(path) != "regular":
         return "malformed", None
     try:
-        content = _read_instruction(path)
+        snapshot = _snapshot(path)
     except (OSError, ValueError):
         return "malformed", None
+    return _instruction_state_from_snapshot(snapshot)
+
+
+def _instruction_state_from_snapshot(snapshot):
+    if snapshot.kind == "absent":
+        return "missing", None
+    if snapshot.kind != "regular" or snapshot.data is None:
+        return "malformed", None
+    content = snapshot.data
     begin_marker = BEGIN_MARKER.encode("ascii")
     end_marker = END_MARKER.encode("ascii")
     if content.count(begin_marker) == content.count(end_marker) == 0:
@@ -694,6 +939,15 @@ def _normalized_link_target(path):
     return _normalized_lexical_path(target if target.is_absolute() else path.parent / target)
 
 
+def _normalized_snapshot_target(snapshot):
+    if snapshot.kind != "symlink" or snapshot.target is None:
+        return None
+    target = Path(snapshot.target)
+    return _normalized_lexical_path(
+        target if target.is_absolute() else snapshot.path.parent / target
+    )
+
+
 def _read_instruction(path):
     return _read_regular_bounded(path, MAX_INSTRUCTION_BYTES, "instruction file")
 
@@ -702,19 +956,19 @@ def _read_regular_bounded(path, limit, label):
     nonblocking = getattr(os, "O_NONBLOCK", None)
     if nonblocking is None:
         raise OSError(f"refusing {label}: nonblocking reads unavailable")
-    deadline = time.monotonic() + CONTROLLED_READ_TIMEOUT_SECONDS
+    deadline = time.monotonic() + READ_ELAPSED_LIMIT_SECONDS
     before = path.lstat()
     if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
         raise OSError(f"refusing unsafe {label}: {path}")
     if before.st_size > limit:
         raise ValueError(f"{label} exceeds byte limit (maximum {limit})")
     if time.monotonic() > deadline:
-        raise TimeoutError(f"{label} read timed out")
+        raise TimeoutError(f"{label} read exceeded elapsed-time limit")
     flags = os.O_RDONLY | nonblocking | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags)
     try:
         if time.monotonic() > deadline:
-            raise TimeoutError(f"{label} read timed out")
+            raise TimeoutError(f"{label} read exceeded elapsed-time limit")
         opened = os.fstat(descriptor)
         if ((opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino) or
                 not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1):
@@ -725,7 +979,7 @@ def _read_regular_bounded(path, limit, label):
         remaining = limit + 1
         while remaining:
             if time.monotonic() > deadline:
-                raise TimeoutError(f"{label} read timed out")
+                raise TimeoutError(f"{label} read exceeded elapsed-time limit")
             chunk = os.read(descriptor, min(64 * 1024, remaining))
             if not chunk:
                 break
@@ -735,7 +989,7 @@ def _read_regular_bounded(path, limit, label):
         if len(data) > limit:
             raise ValueError(f"{label} exceeds byte limit (maximum {limit})")
         if time.monotonic() > deadline:
-            raise TimeoutError(f"{label} read timed out")
+            raise TimeoutError(f"{label} read exceeded elapsed-time limit")
         after = path.lstat()
         identity = lambda item: (
             item.st_dev, item.st_ino, item.st_mode, item.st_nlink, item.st_size,
@@ -755,6 +1009,7 @@ def _smoke_command(command):
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     process = None
+    error = None
     try:
         process = subprocess.Popen(
             [str(command), "--help"],
@@ -767,21 +1022,18 @@ def _smoke_command(command):
         )
         process.wait(timeout=COMMAND_SMOKE_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
+        error = f"timed out after {COMMAND_SMOKE_TIMEOUT_SECONDS} seconds"
+    except OSError as caught:
+        error = str(caught)
+    finally:
         if process is not None:
             try:
                 os.killpg(process.pid, 9)
-            except ProcessLookupError:
+            except (OSError, TypeError):
                 pass
             process.wait()
-        return f"timed out after {COMMAND_SMOKE_TIMEOUT_SECONDS} seconds"
-    except OSError as error:
-        if process is not None:
-            try:
-                os.killpg(process.pid, 9)
-            except ProcessLookupError:
-                pass
-            process.wait()
-        return str(error)
+    if error is not None:
+        return error
     if process.returncode != 0:
         return f"exit status {process.returncode}"
     return None

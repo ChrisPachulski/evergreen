@@ -241,6 +241,65 @@ class HostTests(unittest.TestCase):
         self.assertFalse((self.home / ".claude" / "skills").exists())
         self.assertFalse((self.home / ".codex" / "skills").exists())
 
+    def test_install_rejects_same_bytes_replacement_inode_after_planning(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"same bytes")
+        original_inode = instructions.lstat().st_ino
+        real_verify = hosts._verify_preflight
+
+        def replace_then_verify(captured):
+            instructions.unlink()
+            instructions.write_bytes(b"same bytes")
+            self.assertNotEqual(instructions.lstat().st_ino, original_inode)
+            return real_verify(captured)
+
+        with mock.patch.object(hosts, "_verify_preflight", side_effect=replace_then_verify):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(instructions.read_bytes(), b"same bytes")
+        self.assertFalse((codex / "skills").exists())
+
+    def test_install_planning_consumes_captured_bytes_not_transient_live_reads(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+
+        with mock.patch.object(hosts, "_read_instruction", return_value=b"transient"):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        self.assertTrue(result.ok, result.messages)
+        self.assertTrue(instructions.read_bytes().startswith(b"original\n"))
+        self.assertNotIn(b"transient", instructions.read_bytes())
+
+    def test_install_rejects_same_mode_skills_directory_replacement(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        skills = codex / "skills"
+        skills.mkdir(parents=True)
+        replaced = codex / "skills-replaced"
+        real_verify = hosts._verify_preflight
+
+        def replace_then_verify(captured):
+            skills.rename(replaced)
+            skills.mkdir(mode=0o755)
+            return real_verify(captured)
+
+        with mock.patch.object(hosts, "_verify_preflight", side_effect=replace_then_verify):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertFalse((skills / "evergreen").exists())
+        self.assertFalse((replaced / "evergreen").exists())
+
     def test_uninstall_aborts_atomically_when_owned_link_is_replaced_after_planning(self):
         from evergreen import hosts
 
@@ -281,10 +340,10 @@ class HostTests(unittest.TestCase):
         real_action = hosts._perform_action
         calls = 0
 
-        def replace_future_target(action, path, value):
+        def replace_future_target(action, path, value, *args, **kwargs):
             nonlocal calls
             calls += 1
-            real_action(action, path, value)
+            real_action(action, path, value, *args, **kwargs)
             if calls == 1:
                 changed.write_bytes(b"concurrent replacement")
 
@@ -297,6 +356,34 @@ class HostTests(unittest.TestCase):
         for path, value in before.items():
             if path != ".codex/AGENTS.md":
                 self.assertEqual(after.get(path), value)
+
+    def test_rollback_preserves_concurrent_edit_to_already_mutated_path(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        real_action = hosts._perform_action
+        calls = 0
+
+        def edit_prior_and_block_future(action, path, value, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            real_action(action, path, value, *args, **kwargs)
+            if calls == 1:
+                instructions.write_bytes(b"concurrent edit")
+                skills = codex / "skills"
+                skills.mkdir(exist_ok=True)
+                (skills / "evergreen").symlink_to(self.home / "replacement")
+
+        with mock.patch.object(hosts, "_perform_action", side_effect=edit_prior_and_block_future):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertIn("manual recovery", " ".join(result.messages))
+        self.assertIn("preserved concurrent state", " ".join(result.messages))
+        self.assertEqual(instructions.read_bytes(), b"concurrent edit")
 
     def test_invalid_canonical_plugin_refuses_real_and_dry_run_before_home_planning(self):
         from evergreen.hosts import install
@@ -392,12 +479,12 @@ class HostTests(unittest.TestCase):
                 real_action = hosts._perform_action
                 calls = 0
 
-                def fail_at_boundary(action, path, value):
+                def fail_at_boundary(action, path, value, *args, **kwargs):
                     nonlocal calls
                     calls += 1
                     if calls == boundary and not after:
                         raise OSError(f"injected before action {calls}")
-                    real_action(action, path, value)
+                    real_action(action, path, value, *args, **kwargs)
                     if calls == boundary and after:
                         raise OSError(f"injected after action {calls}")
 
@@ -415,12 +502,12 @@ class HostTests(unittest.TestCase):
         (home / ".claude").mkdir(parents=True)
         real_action = hosts._perform_action
 
-        def mutate_then_fail(action, path, value):
-            real_action(action, path, value)
+        def mutate_then_fail(action, path, value, *args, **kwargs):
+            real_action(action, path, value, *args, **kwargs)
             raise OSError("injected action failure")
 
         with mock.patch.object(hosts, "_perform_action", side_effect=mutate_then_fail), \
-             mock.patch.object(hosts, "_restore_snapshot", side_effect=OSError("rollback failed")):
+             mock.patch.object(hosts, "_restore_entry", side_effect=OSError("rollback failed")):
             result = hosts.install(home, ROOT, "claude")
 
         self.assertFalse(result.ok)
@@ -444,10 +531,10 @@ class HostTests(unittest.TestCase):
                 real_action = hosts._perform_action
                 calls = 0
 
-                def fail_after_action(action, path, value):
+                def fail_after_action(action, path, value, *args, **kwargs):
                     nonlocal calls
                     calls += 1
-                    real_action(action, path, value)
+                    real_action(action, path, value, *args, **kwargs)
                     if calls == boundary:
                         raise OSError(f"injected after uninstall action {calls}")
 
@@ -668,7 +755,7 @@ class HostTests(unittest.TestCase):
         self.assertTrue(kwargs["start_new_session"])
         self.assertEqual(kwargs["cwd"], str(command.parent.resolve()))
         self.assertIs(kwargs["stdin"], hosts.subprocess.DEVNULL)
-        self.assertEqual(process.wait.call_args.kwargs["timeout"],
+        self.assertEqual(process.wait.call_args_list[0].kwargs["timeout"],
                          hosts.COMMAND_SMOKE_TIMEOUT_SECONDS)
 
     def test_doctor_timeout_kills_spawned_descendants(self):
@@ -695,6 +782,30 @@ class HostTests(unittest.TestCase):
         time.sleep(0.4)
 
         self.assertIn("timed out", error)
+        self.assertFalse(marker.exists())
+
+    def test_doctor_success_also_reaps_spawned_descendants(self):
+        from evergreen import hosts
+
+        directory = self.home / "successful-command"
+        directory.mkdir()
+        marker = directory / "descendant-survived"
+        command = directory / "evergreen"
+        child = (
+            "import pathlib,time; time.sleep(.3); "
+            f"pathlib.Path({str(marker)!r}).write_text('alive')"
+        )
+        command.write_text(
+            "#!/usr/bin/env python3\n"
+            "import subprocess, sys\n"
+            f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
+        )
+        command.chmod(0o755)
+
+        error = hosts._smoke_command(command)
+        time.sleep(0.4)
+
+        self.assertIsNone(error)
         self.assertFalse(marker.exists())
 
     def test_readme_documents_runtime_platform_and_host_safety_bounds(self):

@@ -536,9 +536,13 @@ def _contract_symbols(repo, paths):
         work += 1
         if payload is None:
             continue
+        if time.monotonic() >= deadline:
+            truncated = True
+            break
         scanned_bytes += len(payload)
         symbols.update(match.decode("ascii") for match in DECLARATION_RE.findall(payload))
-        if len(symbols) >= MAX_CONTRACT_SYMBOLS:
+        if len(symbols) > MAX_CONTRACT_SYMBOLS:
+            truncated = True
             break
     return sorted(symbols)[:max(MAX_CONTRACT_SYMBOLS, 0)], truncated
 

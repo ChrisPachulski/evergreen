@@ -164,6 +164,35 @@ class ImpactTests(unittest.TestCase):
         self.assertTrue(truncated)
         read.assert_not_called()
 
+    def test_contract_symbol_scan_reports_deadline_exceeded_during_read(self):
+        from evergreen import impact as module
+
+        (self.repo / "a.py").write_text("class A:\n    pass\n")
+
+        def slow_read(*_args):
+            import time
+            time.sleep(0.05)
+            return b"class A:\n    pass\n"
+
+        with mock.patch.object(module, "SOURCE_SCAN_TIMEOUT_SECONDS", 0.01), \
+             mock.patch.object(module, "_bounded_regular_bytes", side_effect=slow_read):
+            symbols, truncated = module._contract_symbols(self.repo, ["a.py"])
+
+        self.assertEqual(symbols, [])
+        self.assertTrue(truncated)
+
+    def test_contract_symbol_cap_reports_truthful_truncation(self):
+        from evergreen import impact as module
+
+        (self.repo / "many.py").write_text(
+            "".join(f"class Symbol{index}:\n    pass\n" for index in range(101))
+        )
+
+        symbols, truncated = module._contract_symbols(self.repo, ["many.py"])
+
+        self.assertEqual(len(symbols), module.MAX_CONTRACT_SYMBOLS)
+        self.assertTrue(truncated)
+
     def test_multiple_maps_merge_reasons_dedupe_and_sort_deterministically(self):
         from evergreen.impact import impact, load_map
 
