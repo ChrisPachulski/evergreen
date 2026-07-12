@@ -49,6 +49,11 @@ class ExecutionPolicyTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(self.classify(["timeout", value, "pytest"]), "inconclusive")
 
+    def test_timeout_accepts_ascii_decimal_only_and_never_leaks_conversion_errors(self):
+        for value in ("٣٠", "²", "３０", "+30", "9" * 4096):
+            with self.subTest(value=value[:20]):
+                self.assertEqual(self.classify(["timeout", value, "pytest"]), "inconclusive")
+
     def test_refuses_shell_indirection_and_metacharacters_without_parsing_shell(self):
         commands = (
             ["sh", "-c", "pytest"],
@@ -93,6 +98,23 @@ class ExecutionPolicyTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.classify(command), "refused")
 
+    def test_dangerous_components_cannot_hide_inside_known_test_argv(self):
+        commands = (
+            ["pytest", "test:deploy"],
+            ["pytest", "--upload"],
+            ["pytest", "test_cleanup"],
+            ["pytest", "--artifacts-release"],
+            ["make", "test", "deploy"],
+            ["npm", "test", "--publish-results"],
+            ["cargo", "test", "predeploy"],
+            ["pytest", "--deployment-mode"],
+            ["pytest", "cleanupNow"],
+            ["timeout", "30", "pytest", "test:deploy"],
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(self.classify(command), "refused")
+
     def test_network_secret_and_unavailable_isolation_are_inconclusive(self):
         commands = (
             ["pytest", "--network"],
@@ -112,7 +134,13 @@ class ExecutionPolicyTests(unittest.TestCase):
                 self.assertEqual(self.classify(command), "inconclusive")
 
     def test_invalid_or_empty_argv_is_inconclusive(self):
-        for argv in (None, [], "pytest", [1], [""], ["timeout", "30"]):
+        class StringSubclass(str):
+            pass
+
+        for argv in (
+            None, [], "pytest", [1], [""], ["timeout", "30"],
+            [StringSubclass("pytest")], ["pytest", StringSubclass("--upload")],
+        ):
             with self.subTest(argv=argv):
                 self.assertEqual(self.classify(argv), "inconclusive")
 

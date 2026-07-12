@@ -1,6 +1,7 @@
 """Conservative classification for local documentation-test commands."""
 
 from pathlib import Path
+import re
 
 
 SHELLS = {"bash", "cmd", "fish", "powershell", "pwsh", "sh", "zsh"}
@@ -21,7 +22,7 @@ SECRET_KEYS = {
 def classify_command(argv: list[str]) -> str:
     """Classify argv without executing it or interpreting shell syntax."""
     if (type(argv) is not list or not argv or len(argv) > 128 or
-            any(not isinstance(token, str) or not token or len(token) > 4096 for token in argv)):
+            any(type(token) is not str or not token or len(token) > 4096 for token in argv)):
         return "inconclusive"
     if any(any(marker in token for marker in SHELL_MARKERS) for token in argv):
         return "refused"
@@ -29,10 +30,16 @@ def classify_command(argv: list[str]) -> str:
     executable = _name(argv[0])
     names = {_name(token) for token in argv}
     if (names & (SHELLS | PRIVILEGED | DESTRUCTIVE) or
-            _operation(executable) in DANGEROUS_WORDS):
+            any(_has_dangerous_component(token) for token in argv)):
         return "refused"
     if executable in ("timeout", "gtimeout"):
-        if len(argv) < 3 or not argv[1].isdigit() or not 1 <= int(argv[1]) <= 900:
+        if len(argv) < 3 or not argv[1].isascii() or not argv[1].isdecimal():
+            return "inconclusive"
+        try:
+            seconds = int(argv[1])
+        except (ValueError, OverflowError):
+            return "inconclusive"
+        if not 1 <= seconds <= 900:
             return "inconclusive"
         return classify_command(argv[2:])
     if _dangerous_command(executable, argv[1:]):
@@ -41,8 +48,6 @@ def classify_command(argv: list[str]) -> str:
         return "inconclusive"
     if _known_test_command(executable, argv[1:]):
         return "allowed"
-    if any(_operation(token) in DANGEROUS_WORDS for token in argv[1:]):
-        return "refused"
     return "inconclusive"
 
 
@@ -123,3 +128,12 @@ def _operation(token):
     for separator in (":", "=", "/", "_"):
         word = word.split(separator, 1)[0]
     return word
+
+
+def _has_dangerous_component(token):
+    components = re.findall(r"[a-z0-9]+", token.casefold())
+    return any(
+        component == word or component.startswith(word) or component.endswith(word)
+        for component in components
+        for word in DANGEROUS_WORDS
+    )
