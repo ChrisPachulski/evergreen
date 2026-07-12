@@ -1,5 +1,6 @@
 name: evergreen
-on: pull_request
+on:
+  pull_request_target:
 
 permissions:
   contents: read
@@ -9,10 +10,24 @@ jobs:
   doc-drift:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out trusted Evergreen action
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          fetch-depth: 0   # need history for the diff base
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .evergreen-action
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Check out untrusted PR evidence
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: review
+          fetch-depth: 0
+          persist-credentials: false
       - name: Evergreen doc-drift check
-        uses: ./
+        uses: ./.evergreen-action
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          repo_path: ${{ github.workspace }}/review
+          base_ref: ${{ github.event.pull_request.base.sha }}
+          pr_number: ${{ github.event.pull_request.number }}

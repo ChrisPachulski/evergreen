@@ -8,7 +8,7 @@ ACTION_PATH="${EVERGREEN_ACTION_PATH:-$(cd "$(dirname "$0")/.." && pwd)}"
 SKILL="$ACTION_PATH/skills/evergreen/SKILL.md"
 MANIFEST_PY="$ACTION_PATH/ci/change_manifest.py"
 COMMENT_PY="$ACTION_PATH/ci/pr_comment.py"
-REPO_ROOT="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+REPO_ROOT="${EVERGREEN_REPO_ROOT:-${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}"
 MODE="${EVERGREEN_MODE:-winnow}"
 MODEL="${EVERGREEN_MODEL:-claude-opus-4-8}"
 PROVIDER="anthropic"
@@ -39,7 +39,7 @@ post_comment() {
   [ "$POST_COMMENT" = "false" ] && return 0
   [ -n "${GITHUB_BASE_REF:-}" ] || return 0
   command -v gh >/dev/null 2>&1 || return 0
-  pr="${GITHUB_REF_NAME:-}"
+  pr="${EVERGREEN_PR_NUMBER:-${GITHUB_REF_NAME:-}}"
   pr="${pr%%/*}"
   repo="${GITHUB_REPOSITORY:-}"
   [ -n "$pr" ] && [ -n "$repo" ] || return 0

@@ -28,6 +28,14 @@ inputs:
     description: "Fail the step when Evergreen cannot produce a conclusive validated audit ('true'/'false')."
     required: false
     default: "true"
+  repo_path:
+    description: "Repository checkout to review. Defaults to the workflow workspace."
+    required: false
+    default: "."
+  pr_number:
+    description: "Pull request number for comment publication. Empty falls back to the event ref."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -42,7 +50,9 @@ runs:
         EVERGREEN_MODEL: ${{ inputs.model }}
         EVERGREEN_POST_COMMENT: ${{ inputs.post_comment }}
         EVERGREEN_FAIL_ON_INCONCLUSIVE: ${{ inputs.fail_on_inconclusive }}
-        EVERGREEN_IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        EVERGREEN_REPO_ROOT: ${{ inputs.repo_path }}
+        EVERGREEN_PR_NUMBER: ${{ inputs.pr_number }}
+        EVERGREEN_IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         # Where SKILL.md and ci/ live, regardless of the consuming repo's checkout.
         EVERGREEN_ACTION_PATH: ${{ github.action_path }}
       run: |
