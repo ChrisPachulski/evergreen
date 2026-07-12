@@ -31,7 +31,7 @@ class HostTests(unittest.TestCase):
         self.assertEqual(present[1].skill, self.home / ".codex" / "skills" / "evergreen")
 
     def test_install_preserves_unmarked_instructions_and_is_idempotent_for_both_hosts(self):
-        from evergreen.hosts import BEGIN_MARKER, END_MARKER, install
+        from evergreen.hosts import BEGIN_MARKER, END_MARKER, MAX_STATE_BYTES, OWNERSHIP_FILE, install
 
         for directory, filename in ((".claude", "CLAUDE.md"), (".codex", "AGENTS.md")):
             host = self.home / directory
@@ -54,6 +54,10 @@ class HostTests(unittest.TestCase):
             link = host / "skills" / "evergreen"
             self.assertTrue(link.is_symlink())
             self.assertEqual(link.resolve(), (ROOT / "skills" / "evergreen").resolve())
+            state = host / OWNERSHIP_FILE
+            self.assertTrue(state.is_file())
+            self.assertLessEqual(state.stat().st_size, MAX_STATE_BYTES)
+            self.assertEqual(json.loads(state.read_text())["host"], directory.removeprefix("."))
 
     def test_install_refuses_unmarked_skill_content_and_malformed_owned_block(self):
         from evergreen.hosts import BEGIN_MARKER, install
@@ -109,8 +113,11 @@ class HostTests(unittest.TestCase):
         from evergreen.hosts import doctor, install
 
         claude = self.home / ".claude"
-        (claude / "skills").mkdir(parents=True)
-        (claude / "skills" / "evergreen").symlink_to(self.home / "missing skill")
+        claude.mkdir()
+        self.assertTrue(install(self.home, ROOT, "claude").ok)
+        link = claude / "skills" / "evergreen"
+        link.unlink()
+        link.symlink_to(self.home / "missing skill")
 
         unhealthy = doctor(self.home, ROOT, "claude")
         repaired = install(self.home, ROOT, "claude")
@@ -120,6 +127,146 @@ class HostTests(unittest.TestCase):
         self.assertTrue(any("broken" in message for message in unhealthy.messages))
         self.assertTrue(repaired.ok, repaired.messages)
         self.assertTrue(healthy.ok, healthy.messages)
+
+    def test_arbitrary_skill_link_without_owned_record_is_never_repaired_or_removed(self):
+        from evergreen.hosts import install, uninstall
+
+        codex = self.home / ".codex"
+        (codex / "skills").mkdir(parents=True)
+        link = codex / "skills" / "evergreen"
+        link.symlink_to(self.home / "arbitrary target")
+        before = self.snapshot(include_directories=True)
+
+        attempted_install = install(self.home, ROOT, "codex")
+        attempted_uninstall = uninstall(self.home, "codex")
+
+        self.assertFalse(attempted_install.ok)
+        self.assertFalse(attempted_uninstall.ok)
+        self.assertEqual(self.snapshot(include_directories=True), before)
+
+    def test_instruction_lifecycle_restores_absent_empty_and_no_newline_exactly(self):
+        from evergreen.hosts import install, uninstall
+
+        cases = (
+            ("absent", None), ("empty", b""), ("no-newline", b"user bytes"),
+            ("crlf", b"user\r\nbytes\r\n"), ("non-utf8", b"user-\xff-bytes"),
+        )
+        for name, original in cases:
+            with self.subTest(name=name):
+                home = self.home / name
+                codex = home / ".codex"
+                codex.mkdir(parents=True)
+                instructions = codex / "AGENTS.md"
+                if original is not None:
+                    instructions.write_bytes(original)
+
+                self.assertTrue(install(home, ROOT, "codex").ok)
+                self.assertTrue(uninstall(home, "codex").ok)
+
+                if original is None:
+                    self.assertFalse(instructions.exists())
+                else:
+                    self.assertTrue(instructions.exists())
+                    self.assertEqual(instructions.read_bytes(), original)
+
+    def test_symlinked_or_non_directory_home_host_and_skills_components_are_refused(self):
+        from evergreen.hosts import install
+
+        real_home = self.home / "real"
+        (real_home / ".claude").mkdir(parents=True)
+        home_link = self.home / "linked-home"
+        home_link.symlink_to(real_home, target_is_directory=True)
+        self.assertFalse(install(home_link, ROOT, "claude").ok)
+
+        host_link_home = self.home / "host-link"
+        host_link_home.mkdir()
+        (host_link_home / ".claude").symlink_to(
+            real_home / ".claude", target_is_directory=True
+        )
+        self.assertFalse(install(host_link_home, ROOT, "claude").ok)
+
+        host_file_home = self.home / "host-file"
+        host_file_home.mkdir()
+        (host_file_home / ".codex").write_text("not a directory")
+        self.assertFalse(install(host_file_home, ROOT, "codex").ok)
+
+        skills_link_home = self.home / "skills-link"
+        (skills_link_home / ".codex").mkdir(parents=True)
+        outside = self.home / "outside skills"
+        outside.mkdir()
+        (skills_link_home / ".codex" / "skills").symlink_to(
+            outside, target_is_directory=True
+        )
+        before = self.snapshot(include_directories=True)
+        self.assertFalse(install(skills_link_home, ROOT, "codex").ok)
+        self.assertEqual(self.snapshot(include_directories=True), before)
+
+    def test_all_host_preflight_is_atomic_when_second_host_is_unsafe(self):
+        from evergreen.hosts import install
+
+        (self.home / ".claude").mkdir()
+        codex = self.home / ".codex"
+        codex.mkdir()
+        (codex / "skills").write_text("not a directory")
+        before = self.snapshot(include_directories=True)
+
+        result = install(self.home, ROOT, "all")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(self.snapshot(include_directories=True), before)
+        self.assertFalse((self.home / ".claude" / "CLAUDE.md").exists())
+
+    def test_invalid_canonical_plugin_refuses_real_and_dry_run_before_home_planning(self):
+        from evergreen.hosts import install
+
+        (self.home / ".claude").mkdir()
+        invalid = Path(self.temporary.name) / "invalid plugin"
+        invalid.mkdir()
+        before = self.snapshot(include_directories=True)
+
+        preview = install(self.home, invalid, "claude", dry_run=True)
+        real = install(self.home, invalid, "claude")
+
+        self.assertFalse(preview.ok)
+        self.assertFalse(real.ok)
+        self.assertEqual(self.snapshot(include_directories=True), before)
+        self.assertTrue(any("canonical" in message for message in preview.messages))
+
+    def test_symlinked_canonical_root_and_owned_record_are_refused(self):
+        from evergreen.hosts import OWNERSHIP_FILE, install, uninstall
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        linked_plugin = Path(self.temporary.name) / "linked plugin"
+        linked_plugin.symlink_to(ROOT, target_is_directory=True)
+        before = self.snapshot(include_directories=True)
+        self.assertFalse(install(self.home, linked_plugin, "codex").ok)
+        self.assertEqual(self.snapshot(include_directories=True), before)
+
+        outside = self.home / "outside ownership"
+        outside.write_text("{}")
+        (codex / OWNERSHIP_FILE).symlink_to(outside)
+        before = self.snapshot(include_directories=True)
+        self.assertFalse(install(self.home, ROOT, "codex").ok)
+        self.assertFalse(uninstall(self.home, "codex").ok)
+        self.assertEqual(self.snapshot(include_directories=True), before)
+        self.assertEqual(outside.read_text(), "{}")
+
+    def test_malformed_or_oversized_owned_record_refuses_all_mutation(self):
+        from evergreen.hosts import MAX_STATE_BYTES, OWNERSHIP_FILE, install, uninstall
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        state = codex / OWNERSHIP_FILE
+        state.write_bytes(b"{" + b"x" * MAX_STATE_BYTES + b"}")
+        before = self.snapshot(include_directories=True)
+
+        attempted_install = install(self.home, ROOT, "codex")
+        attempted_uninstall = uninstall(self.home, "codex")
+
+        self.assertFalse(attempted_install.ok)
+        self.assertFalse(attempted_uninstall.ok)
+        self.assertEqual(self.snapshot(include_directories=True), before)
 
     def test_dry_run_describes_changes_without_touching_home_with_spaces(self):
         from evergreen.hosts import install
@@ -171,7 +318,9 @@ class HostTests(unittest.TestCase):
 
         (self.home / ".codex").mkdir()
         self.assertTrue(install(self.home, ROOT, "codex").ok)
+        before_doctor = self.snapshot(include_directories=True)
         healthy = doctor(self.home, ROOT, "codex")
+        self.assertEqual(self.snapshot(include_directories=True), before_doctor)
         instructions = self.home / ".codex" / "AGENTS.md"
         instructions.write_text(instructions.read_text().replace(str(ROOT), "/stale/plugin"))
         stale = doctor(self.home, ROOT, "codex")
