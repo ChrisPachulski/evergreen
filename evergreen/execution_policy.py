@@ -23,7 +23,10 @@ SOURCE_SUFFIXES = {
     ".mm", ".php", ".py", ".pyi", ".rb", ".rs", ".rst", ".scala", ".sh", ".swift",
     ".toml", ".ts", ".tsx", ".txt", ".xml", ".yaml", ".yml", ".zsh",
 }
-FORBIDDEN_COMPONENTS = SHELLS | PRIVILEGED | DESTRUCTIVE | DANGEROUS_WORDS
+EXACT_COMPONENTS = SHELLS | PRIVILEGED | DESTRUCTIVE | {
+    word for word in DANGEROUS_WORDS if len(word) < 6
+}
+LONG_OPERATION_WORDS = {word for word in DANGEROUS_WORDS if len(word) >= 6}
 
 
 def classify_command(argv: list[str]) -> str:
@@ -139,10 +142,9 @@ def _operation(token):
 
 def _has_forbidden_component(token):
     components = re.findall(r"[a-z0-9]+", token.casefold())
-    return any(
-        component == word or component.startswith(word) or component.endswith(word)
-        for component in components
-        for word in FORBIDDEN_COMPONENTS
+    return any(component in EXACT_COMPONENTS for component in components) or any(
+        component.startswith(word) or component.endswith(word)
+        for component in components for word in LONG_OPERATION_WORDS
     )
 
 

@@ -139,6 +139,19 @@ class ExecutionPolicyTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.classify(command), "allowed")
 
+    def test_common_test_flags_do_not_match_short_command_name_fragments(self):
+        commands = (
+            ["pytest", "--showlocals"],
+            ["pytest", "--setup-show"],
+            ["pytest", "--suppress-no-test-exit-code"],
+            ["pytest", "--summary"],
+            ["go", "test", "-shuffle=on"],
+            ["cargo", "test", "--", "--show-output"],
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(self.classify(command), "allowed")
+
     def test_network_secret_and_unavailable_isolation_are_inconclusive(self):
         commands = (
             ["pytest", "--network"],
