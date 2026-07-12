@@ -123,6 +123,28 @@ class ResultProtocolTests(unittest.TestCase):
         self.write("src/cli.py", "working tree has only one line\n")
         self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
 
+    def test_accepts_release_identity_drift_findings(self):
+        finding = self.finding(category="release_identity_drift")
+        result = self.result(
+            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            findings=[finding],
+        )
+
+        self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
+
+    def test_protocol_docs_list_every_accepted_finding_category(self):
+        root = Path(__file__).parents[1]
+        expected = {
+            "in_code_not_docs", "in_docs_not_code", "name_mismatch",
+            "release_identity_drift",
+        }
+        self.assertEqual(result_protocol.CATEGORIES, expected)
+        for relative in ("commands/winnow.md", "docs/DESIGN.md"):
+            text = (root / relative).read_text(encoding="utf-8")
+            with self.subTest(relative=relative):
+                for category in expected:
+                    self.assertIn(category, text)
+
     def test_accepts_unverified_claims(self):
         item = self.unverified()
         result = self.result(

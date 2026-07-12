@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -407,6 +408,49 @@ class HostTests(unittest.TestCase):
         self.assertFalse((codex / "skills" / "evergreen").exists())
         self.assertFalse((codex / "skills" / "evergreen").is_symlink())
 
+    def test_uninstall_replacement_link_refuses_all_hosts_without_any_mutation(self):
+        from evergreen.hosts import install, uninstall
+
+        claude = self.home / ".claude"
+        codex = self.home / ".codex"
+        claude.mkdir()
+        codex.mkdir()
+        (claude / "CLAUDE.md").write_bytes(b"claude bytes\r\n")
+        (codex / "AGENTS.md").write_bytes(b"codex bytes\n")
+        self.assertTrue(install(self.home, ROOT, "all").ok)
+        link = codex / "skills" / "evergreen"
+        replacement = self.home / "user replacement"
+        replacement.mkdir()
+        link.unlink()
+        link.symlink_to(replacement, target_is_directory=True)
+        before = self.snapshot(include_directories=True)
+
+        result = uninstall(self.home, "all")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(self.snapshot(include_directories=True), before)
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(os.readlink(link), str(replacement))
+        self.assertTrue(any("replacement skill link" in message for message in result.messages))
+
+    def test_uninstall_removes_owned_relative_skill_link_after_target_normalization(self):
+        from evergreen.hosts import install, uninstall
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        self.assertTrue(install(self.home, ROOT, "codex").ok)
+        link = codex / "skills" / "evergreen"
+        target = Path(os.path.relpath(
+            ROOT / "skills" / "evergreen", link.parent.resolve()
+        ))
+        link.unlink()
+        link.symlink_to(target, target_is_directory=True)
+
+        result = uninstall(self.home, "codex")
+
+        self.assertTrue(result.ok, result.messages)
+        self.assertFalse(link.is_symlink())
+
     def test_uninstall_dry_run_and_unmarked_instructions_are_non_mutating(self):
         from evergreen.hosts import uninstall
 
@@ -459,6 +503,78 @@ class HostTests(unittest.TestCase):
 
         self.assertFalse(result.ok)
         self.assertTrue(any("manifests" in message for message in result.messages))
+
+    def test_install_refuses_sparse_instruction_larger_than_documented_limit(self):
+        from evergreen.hosts import MAX_INSTRUCTION_BYTES, install
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        with instructions.open("wb") as stream:
+            stream.seek(MAX_INSTRUCTION_BYTES)
+            stream.write(b"x")
+        before = instructions.stat()
+
+        result = install(self.home, ROOT, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertEqual(instructions.stat().st_size, before.st_size)
+        self.assertFalse((codex / "skills").exists())
+        self.assertTrue(any("instruction byte limit" in message for message in result.messages))
+
+    def test_ancestor_path_aliases_are_canonicalized_for_install_and_doctor(self):
+        from evergreen.hosts import doctor, install
+
+        real = Path(self.temporary.name) / "real root"
+        plugin = real / "plugin"
+        shutil.copytree(ROOT, plugin, symlinks=True)
+        alias = Path(self.temporary.name) / "alias"
+        alias.symlink_to(real, target_is_directory=True)
+        aliased_plugin = alias / "plugin"
+        (self.home / ".codex").mkdir()
+
+        installed = install(self.home, aliased_plugin, "codex")
+        checked = doctor(self.home, aliased_plugin, "codex")
+
+        self.assertTrue(installed.ok, installed.messages)
+        self.assertTrue(checked.ok, checked.messages)
+        state = json.loads((self.home / ".codex" / ".evergreen-owned.json").read_text())
+        self.assertEqual(state["plugin_root"], str(plugin.resolve()))
+
+    def test_doctor_smoke_tests_command_with_time_and_output_bounds(self):
+        from evergreen import hosts
+
+        plugin = Path(self.temporary.name) / "broken plugin"
+        shutil.copytree(ROOT, plugin, symlinks=True)
+        command = plugin / "bin" / "evergreen"
+        command.write_text("#!/usr/bin/env python3\nthis is invalid python !\n")
+        command.chmod(0o755)
+        (self.home / ".codex").mkdir()
+        self.assertTrue(hosts.install(self.home, plugin, "codex").ok)
+
+        with mock.patch("evergreen.hosts.subprocess.run", wraps=hosts.subprocess.run) as run:
+            result = hosts.doctor(self.home, plugin, "codex")
+
+        self.assertFalse(result.ok)
+        self.assertTrue(any("smoke test failed" in message for message in result.messages))
+        self.assertEqual(run.call_args.kwargs["timeout"], hosts.COMMAND_SMOKE_TIMEOUT_SECONDS)
+        self.assertIs(run.call_args.kwargs["stdout"], hosts.subprocess.DEVNULL)
+        self.assertIs(run.call_args.kwargs["stderr"], hosts.subprocess.DEVNULL)
+        self.assertEqual(set(run.call_args.kwargs["env"]), {
+            "LC_ALL", "PATH", "PYTHONDONTWRITEBYTECODE",
+        })
+
+    def test_readme_documents_runtime_platform_and_host_safety_bounds(self):
+        from evergreen.hosts import MAX_INSTRUCTION_BYTES
+
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("Python 3.10+", readme)
+        self.assertIn("macOS and Linux", readme)
+        self.assertIn("POSIX", readme)
+        self.assertIn(f"{MAX_INSTRUCTION_BYTES // (1024 * 1024)} MiB", readme)
+        self.assertIn("five-second", readme)
+        self.assertIn("discards command output", readme)
 
     def snapshot(self, include_directories=False):
         values = {}

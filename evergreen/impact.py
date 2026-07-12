@@ -4,7 +4,10 @@ import fnmatch
 import json
 import math
 import os
+import re
 import stat
+import subprocess
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -28,6 +31,23 @@ MAX_WARNINGS = 1000
 MAX_EVIDENCE_METADATA_ITEMS = 1000
 MAX_EVIDENCE_METADATA_DEPTH = 8
 MAX_EVIDENCE_METADATA_BYTES = 16 * 1024
+MAX_DOC_SEARCH_FILES = 1000
+MAX_DOC_SEARCH_BYTES = 8 * 1024 * 1024
+MAX_DOC_LIST_BYTES = 1024 * 1024
+MAX_CONTRACT_SYMBOLS = 100
+DOC_SEARCH_TIMEOUT_SECONDS = 3
+
+DECLARATION_RE = re.compile(
+    rb"(?m)^[ \t]*(?:export[ \t]+)?"
+    rb"(?:public[ \t]+|pub(?:\([^\r\n)]*\))?[ \t]+)?(?:async[ \t]+)?"
+    rb"(?:class|struct|enum|protocol|interface|type|def|func|fn|function)[ \t]+"
+    rb"([A-Za-z_][A-Za-z0-9_]*)"
+)
+EXEMPT_DOC_PARTS = {
+    "adr", "adrs", "archive", "archives", "audit", "audits", "plans", "readiness",
+    "roadmaps", "specs",
+}
+DATED_DOC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[-_.]|$)")
 
 
 @dataclass(frozen=True)
@@ -382,6 +402,125 @@ def load_map(repo: Path) -> tuple[list[ImpactMap], list[str]]:
     return [accepted[key] for key in sorted(accepted)], warnings
 
 
+def _bounded_git_output(repo, arguments):
+    try:
+        process = subprocess.Popen(
+            ["git", *arguments], cwd=repo, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        return None, False
+    output = bytearray()
+    deadline = time.monotonic() + DOC_SEARCH_TIMEOUT_SECONDS
+    assert process.stdout is not None
+    descriptor = process.stdout.fileno()
+    os.set_blocking(descriptor, False)
+    truncated = False
+    try:
+        while True:
+            if time.monotonic() >= deadline:
+                truncated = True
+                process.kill()
+                break
+            try:
+                chunk = os.read(descriptor, min(64 * 1024, MAX_DOC_LIST_BYTES + 1 - len(output)))
+            except BlockingIOError:
+                chunk = None
+            if chunk:
+                output.extend(chunk)
+                if len(output) > MAX_DOC_LIST_BYTES:
+                    truncated = True
+                    process.kill()
+                    break
+            elif chunk == b"" and process.poll() is not None:
+                break
+            elif process.poll() is not None:
+                continue
+            else:
+                time.sleep(0.005)
+        returncode = process.wait(timeout=1)
+    except (OSError, subprocess.TimeoutExpired):
+        process.kill()
+        process.wait()
+        return None, truncated
+    finally:
+        process.stdout.close()
+    if returncode != 0:
+        return None, truncated
+    return bytes(output), truncated
+
+
+def _tracked_living_docs(repo):
+    payload, truncated = _bounded_git_output(
+        repo, ["ls-files", "-z", "--", "*.md", "*.mdx", "*.rst"],
+    )
+    if payload is None:
+        return [], truncated
+    paths = []
+    for encoded in payload.split(b"\0"):
+        if not encoded:
+            continue
+        try:
+            path = encoded.decode("utf-8")
+            pure = PurePosixPath(path)
+        except UnicodeError:
+            continue
+        lower_parts = {part.lower() for part in pure.parts}
+        if (lower_parts & EXEMPT_DOC_PARTS or
+                pure.name.lower().startswith("changelog") or
+                DATED_DOC_RE.match(pure.name)):
+            continue
+        try:
+            paths.append(_path(path, repo, "tracked doc"))
+        except ValueError:
+            continue
+    paths = sorted(set(paths))
+    if len(paths) > MAX_DOC_SEARCH_FILES:
+        truncated = True
+        paths = paths[:max(MAX_DOC_SEARCH_FILES, 0)]
+    return paths, truncated
+
+
+def _bounded_regular_bytes(path, limit):
+    try:
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode) or before.st_size > limit:
+            return None
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        try:
+            opened = os.fstat(descriptor)
+            if ((opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino) or
+                    not stat.S_ISREG(opened.st_mode) or opened.st_size > limit):
+                return None
+            chunks = []
+            remaining = limit + 1
+            while remaining:
+                chunk = os.read(descriptor, min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            payload = b"".join(chunks)
+            return payload if len(payload) <= limit else None
+        finally:
+            os.close(descriptor)
+    except OSError:
+        return None
+
+
+def _contract_symbols(repo, paths):
+    symbols = set()
+    for path in paths:
+        payload = _bounded_regular_bytes(repo / path, MAX_FILE_BYTES)
+        if payload is None:
+            continue
+        symbols.update(match.decode("ascii") for match in DECLARATION_RE.findall(payload))
+        if len(symbols) >= MAX_CONTRACT_SYMBOLS:
+            break
+    return sorted(symbols)[:max(MAX_CONTRACT_SYMBOLS, 0)]
+
+
 def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactReport:
     """Return additive candidates; maps never suppress and limits retain caller-order prefixes."""
     repo = Path(repo)
@@ -492,6 +631,49 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
                     break
             if work_truncated:
                 break
+        if work_truncated:
+            break
+    if work_truncated:
+        warnings.add(f"matching work truncated (maximum {MAX_MATCH_WORK} operations)")
+
+    living_docs, docs_truncated = _tracked_living_docs(repo)
+    if docs_truncated:
+        warnings.add(
+            f"living docs truncated (maximum {MAX_DOC_SEARCH_FILES} files and "
+            f"{MAX_DOC_LIST_BYTES} path bytes)"
+        )
+    symbols = _contract_symbols(repo, changed_paths)
+    search_bytes = 0
+    for doc in living_docs:
+        remaining = MAX_DOC_SEARCH_BYTES - search_bytes
+        if remaining <= 0:
+            warnings.add(f"living doc search truncated (maximum {MAX_DOC_SEARCH_BYTES} bytes)")
+            break
+        try:
+            doc_size = (repo / doc).lstat().st_size
+        except OSError:
+            continue
+        if doc_size > remaining:
+            warnings.add(f"living doc search truncated (maximum {MAX_DOC_SEARCH_BYTES} bytes)")
+            break
+        payload = _bounded_regular_bytes(repo / doc, min(MAX_FILE_BYTES, remaining))
+        if payload is None:
+            continue
+        search_bytes += len(payload)
+        for source in changed_paths:
+            if not spend_work():
+                break
+            if source.encode("utf-8") in payload:
+                add(doc, 80, f"living doc mentions changed path {source}")
+        if work_truncated:
+            break
+        for symbol in symbols:
+            if not spend_work():
+                break
+            encoded = symbol.encode("utf-8")
+            if re.search(rb"(?<![A-Za-z0-9_])" + re.escape(encoded) +
+                         rb"(?![A-Za-z0-9_])", payload):
+                add(doc, 80, f"living doc mentions contract symbol {symbol}")
         if work_truncated:
             break
     if work_truncated:

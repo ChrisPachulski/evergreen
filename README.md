@@ -105,6 +105,10 @@ protocol, dataset provenance, and publication status live in [`eval/bench/`](eva
 
 ## Install
 
+The local CLI requires Python 3.10+ and Git. Host installation is supported on macOS and Linux:
+it relies on POSIX symlinks, file modes, atomic rename, and directory `fsync`. The semantic skill
+remains language-agnostic, but the bundled host-management CLI does not currently support Windows.
+
 ### One-command local use
 
 No host install or provider dependency is required to rank documentation affected by a change:
@@ -119,9 +123,12 @@ Add trusted, passive provider facts when available:
 ./bin/evergreen impact --repo . --evidence examples/provider-evidence.json eval/fixture/config.py
 ```
 
-The command automatically reads a repository-local `.evergreen-map.json`, if present. Human and
-`--json` output contain candidates, reasons, and warnings only—never findings or verdicts—and the
-query does not write project state.
+Without configuration, the command searches bounded, Git-tracked living docs for exact changed
+paths and declaration-shaped contract symbols. It excludes plans, specs, ADRs, archives, audits,
+roadmaps, readiness records, changelogs, and ISO-dated snapshots. A repository-local
+`.evergreen-map.json`, if present, adds explicit relationships. Human and `--json` output contain
+candidates, reasons, and warnings only—never findings or verdicts—and the query does not write
+project state.
 
 ### Reversible Claude and Codex setup
 
@@ -136,9 +143,12 @@ The local CLI can wire the canonical skill into either host while preserving exi
 
 Use `install --dry-run` or `uninstall --dry-run` to preview. Setup records an owned instruction
 block and skill link; uninstall removes only that owned state. It refuses ambiguous, unowned, or
-unsafe paths and rolls back ordinary operation failures across the selected hosts. `doctor` is
+unsafe paths and rolls back ordinary operation failures across the selected hosts. Instruction
+files and transaction snapshots have a 1 MiB byte limit, including sparse files. `doctor` is
 read-only and checks the canonical command, rules, Claude/Codex manifest agreement, ownership, and
-links.
+links; its command smoke test has a five-second timeout and discards command output.
+A replaced skill link aborts the entire selected-host uninstall before any instruction, link, or
+ownership state is changed.
 
 ### Claude Code marketplace
 

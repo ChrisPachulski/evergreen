@@ -172,7 +172,8 @@ and portable container/VM orchestration remain outside this release.
 ## Drift taxonomy (so findings are actionable)
 
 Every finding is one of `in_code_not_docs · in_docs_not_code · name_mismatch ·
-UNVERIFIABLE` (a claim about another system — drop it, don't guess). *(NathanMaine/memoriant-docforce,
+release_identity_drift · UNVERIFIABLE` (a claim about another system — drop it, don't guess).
+*(NathanMaine/memoriant-docforce,
 Tenormusica/doc-freshness-analyzer)*
 
 Prose/comment rot lenses, each verifiable against the code: `contradiction ·

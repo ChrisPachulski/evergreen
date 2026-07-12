@@ -286,8 +286,13 @@ provided = subprocess.run(
 )
 provider_payload = json.loads(provided.stdout)
 assert provider_payload["warnings"] == []
-assert [item["path"] for item in provider_payload["candidates"]] == ["eval/fixture/config.py"]
-assert len(provider_payload["candidates"][0]["reasons"]) == 3
+assert [item["path"] for item in provider_payload["candidates"]] == [
+    "eval/fixture/README.md", "examples/provider-boundary.md", "README.md",
+    "eval/fixture/config.py",
+]
+config_candidate = provider_payload["candidates"][-1]
+assert len(config_candidate["reasons"]) == 3
+assert any("changed path" in reason for reason in config_candidate["reasons"])
 
 with tempfile.TemporaryDirectory() as temporary:
     repo = Path(temporary)

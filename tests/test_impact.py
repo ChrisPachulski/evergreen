@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -52,6 +53,78 @@ class ImpactTests(unittest.TestCase):
         self.assertIn("map src/public-api/** matched src/public-api/client.py",
                       report.candidates[0].reasons)
         self.assertTrue(all(not hasattr(candidate, "verdict") for candidate in report.candidates))
+
+    def test_zero_config_discovers_tracked_living_docs_by_path_and_contract_symbol(self):
+        from evergreen.impact import impact
+
+        (self.repo / "src/public-api").mkdir(parents=True)
+        (self.repo / "src/public-api/client.py").write_text(
+            "class Client:\n    pass\n", encoding="utf-8"
+        )
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs/usage.md").write_text(
+            "Implementation: `src/public-api/client.py`.\n", encoding="utf-8"
+        )
+        (self.repo / "docs/api.md").write_text(
+            "Construct a `Client` for each service.\n", encoding="utf-8"
+        )
+        (self.repo / "docs/2026-07-12-audit.md").write_text(
+            "Snapshot of Client in src/public-api/client.py.\n", encoding="utf-8"
+        )
+        (self.repo / "docs/superpowers/specs").mkdir(parents=True)
+        (self.repo / "docs/superpowers/specs/history.md").write_text(
+            "Historical Client plan for src/public-api/client.py.\n", encoding="utf-8"
+        )
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+
+        report = impact(self.repo, ["src/public-api/client.py"], [])
+
+        self.assertEqual(
+            [(candidate.path, candidate.rank) for candidate in report.candidates],
+            [
+                ("docs/api.md", 80),
+                ("docs/usage.md", 80),
+                ("src/public-api/client.py", 10),
+            ],
+        )
+        self.assertIn("contract symbol Client", report.candidates[0].reasons[0])
+        self.assertIn("changed path src/public-api/client.py", report.candidates[1].reasons[0])
+
+    def test_zero_config_doc_search_has_a_deterministic_file_bound(self):
+        from evergreen import impact as module
+
+        (self.repo / "src").mkdir()
+        (self.repo / "src/client.py").write_text("class Client:\n    pass\n")
+        (self.repo / "docs").mkdir()
+        for name in ("a.md", "b.md"):
+            (self.repo / "docs" / name).write_text("Client\n")
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+
+        with mock.patch.object(module, "MAX_DOC_SEARCH_FILES", 1):
+            report = module.impact(self.repo, ["src/client.py"], [])
+
+        self.assertEqual([item.path for item in report.candidates], [
+            "docs/a.md", "src/client.py",
+        ])
+        self.assertTrue(any("living docs truncated" in item for item in report.warnings))
+
+    def test_zero_config_doc_search_has_a_deterministic_byte_bound(self):
+        from evergreen import impact as module
+
+        (self.repo / "src").mkdir()
+        (self.repo / "src/client.py").write_text("class Client:\n    pass\n")
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs/api.md").write_text("Client\n")
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+
+        with mock.patch.object(module, "MAX_DOC_SEARCH_BYTES", 1):
+            report = module.impact(self.repo, ["src/client.py"], [])
+
+        self.assertEqual([item.path for item in report.candidates], ["src/client.py"])
+        self.assertTrue(any("living doc search truncated" in item for item in report.warnings))
 
     def test_multiple_maps_merge_reasons_dedupe_and_sort_deterministically(self):
         from evergreen.impact import impact, load_map

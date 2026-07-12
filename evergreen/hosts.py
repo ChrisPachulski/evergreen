@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 import tempfile
 
 
@@ -13,6 +14,8 @@ END_MARKER = "<!-- evergreen:end -->"
 OWNERSHIP_FILE = ".evergreen-owned.json"
 MAX_STATE_BYTES = 4096
 MAX_MANIFEST_BYTES = 64 * 1024
+MAX_INSTRUCTION_BYTES = 1024 * 1024
+COMMAND_SMOKE_TIMEOUT_SECONDS = 5
 
 
 @dataclass(frozen=True)
@@ -130,6 +133,13 @@ def doctor(home: Path, plugin_root: Path, host: str = "all") -> OperationResult:
     root = canonical[0] if canonical else _absolute(plugin_root)
     expected_skill = canonical[1] if canonical else root / "skills" / "evergreen"
     expected_block = _block(root)
+    if canonical:
+        smoke_error = _smoke_command(root / "bin" / "evergreen")
+        if smoke_error:
+            healthy = False
+            messages.append(f"error command smoke test failed: {smoke_error}")
+        else:
+            messages.append("ok command smoke test")
     for status in selected:
         state, state_error = _load_ownership(status)
         if state_error:
@@ -171,10 +181,11 @@ def doctor(home: Path, plugin_root: Path, host: str = "all") -> OperationResult:
 
 
 def _canonical(plugin_root):
-    root = _absolute(plugin_root)
+    lexical_root = _normalized_lexical_path(Path(plugin_root))
     errors = []
-    if _kind(root) != "directory":
-        return None, [f"error canonical plugin root must be a real directory: {root}"]
+    if _kind(lexical_root) != "directory":
+        return None, [f"error canonical plugin root must be a real directory: {lexical_root}"]
+    root = lexical_root.resolve()
     required_directories = (
         root / ".claude-plugin", root / ".codex-plugin", root / "skills",
         root / "skills" / "evergreen", root / "bin",
@@ -237,9 +248,10 @@ def _status(home, name, directory, instruction_name):
 
 
 def _select(home, requested):
-    home = Path(home)
+    home = Path(home).expanduser()
     if _kind(home) != "directory":
         return [], f"home must be a real directory: {home}"
+    home = home.resolve()
     statuses = detect_hosts(home)
     if requested == "all":
         selected = [status for status in statuses if status.present]
@@ -265,6 +277,12 @@ def _host_errors(selected):
             errors.append(f"{status.name}: refusing unsafe instructions ({instructions_kind})")
         elif instructions_kind == "regular" and status.instructions.lstat().st_nlink != 1:
             errors.append(f"{status.name}: refusing instruction hard link")
+        elif (instructions_kind == "regular" and
+              status.instructions.lstat().st_size > MAX_INSTRUCTION_BYTES):
+            errors.append(
+                f"{status.name}: refusing instruction byte limit "
+                f"(maximum {MAX_INSTRUCTION_BYTES})"
+            )
         ownership_kind = _kind(status.ownership)
         if ownership_kind not in ("absent", "regular"):
             errors.append(f"{status.name}: refusing unsafe ownership record ({ownership_kind})")
@@ -314,7 +332,7 @@ def _install_plans(status, state, root, target, block):
             errors.append(f"skill path lacks ownership proof ({skill_kind})")
         if errors:
             return [], errors
-        original = status.instructions.read_bytes() if instruction_state == "unowned" else b""
+        original = _read_instruction(status.instructions) if instruction_state == "unowned" else b""
         separator = bool(original)
         state = Ownership(
             schema_version=1,
@@ -336,7 +354,7 @@ def _install_plans(status, state, root, target, block):
             errors.append(f"owned skill path became {skill_kind}")
         if errors:
             return [], errors
-        instruction_value = status.instructions.read_bytes().replace(owned, block, 1)
+        instruction_value = _read_instruction(status.instructions).replace(owned, block, 1)
         instruction_plan = (
             "unchanged" if owned == block else "write",
             f"owned instructions {'unchanged' if owned == block else 'updated'} {status.instructions}",
@@ -389,8 +407,14 @@ def _uninstall_plans(status, state):
         return [], ["owned instruction block was modified"]
     if skill_kind not in ("absent", "symlink"):
         return [], [f"owned skill path became {skill_kind}"]
+    owns_skill_link = (
+        skill_kind == "symlink" and
+        _normalized_link_target(status.skill) == _normalized_lexical_path(Path(state.skill_target))
+    )
+    if skill_kind == "symlink" and not owns_skill_link:
+        return [], ["replacement skill link does not match ownership record"]
 
-    content = status.instructions.read_bytes()
+    content = _read_instruction(status.instructions)
     begin = content.index(BEGIN_MARKER.encode("ascii"))
     remove_from = begin
     if state.instruction_separator:
@@ -408,12 +432,12 @@ def _uninstall_plans(status, state):
             "delete", f"remove owned instructions file {status.instructions}",
             status.instructions, None,
         )
-    skill_plan = (
-        "delete" if skill_kind == "symlink" else "unchanged",
-        f"{'remove' if skill_kind == 'symlink' else 'owned skill link absent'} {status.skill}",
-        status.skill,
-        None,
-    )
+    if owns_skill_link:
+        skill_plan = ("delete", f"remove owned skill link {status.skill}", status.skill, None)
+    else:
+        skill_plan = (
+            "unchanged", f"owned skill link absent {status.skill}", status.skill, None,
+        )
     state_plan = (
         "delete", f"remove ownership record {status.ownership}", status.ownership, None,
     )
@@ -475,9 +499,9 @@ def _snapshot(path, allow_directory=False):
         metadata = path.lstat()
         if metadata.st_nlink != 1:
             raise OSError(f"refusing hard-linked transaction path: {path}")
-        return PathSnapshot(
-            path, kind, data=path.read_bytes(), mode=stat.S_IMODE(metadata.st_mode)
-        )
+        limit = MAX_INSTRUCTION_BYTES if path.name in {"CLAUDE.md", "AGENTS.md"} else None
+        data = _read_regular_bounded(path, limit, "instruction snapshot") if limit else path.read_bytes()
+        return PathSnapshot(path, kind, data=data, mode=stat.S_IMODE(metadata.st_mode))
     if kind == "symlink":
         return PathSnapshot(path, kind, target=os.readlink(path))
     if kind == "directory" and allow_directory:
@@ -575,7 +599,10 @@ def _instruction_state(path):
         return "missing", None
     if _kind(path) != "regular":
         return "malformed", None
-    content = path.read_bytes()
+    try:
+        content = _read_instruction(path)
+    except (OSError, ValueError):
+        return "malformed", None
     begin_marker = BEGIN_MARKER.encode("ascii")
     end_marker = END_MARKER.encode("ascii")
     if content.count(begin_marker) == content.count(end_marker) == 0:
@@ -609,7 +636,78 @@ def _encode_ownership(value):
 
 
 def _absolute(path):
-    return Path(os.path.abspath(os.path.expanduser(str(path))))
+    expanded = Path(os.path.expanduser(str(path)))
+    absolute = expanded if expanded.is_absolute() else Path.cwd() / expanded
+    return absolute.resolve(strict=False)
+
+
+def _normalized_lexical_path(path):
+    return Path(os.path.normpath(os.path.abspath(os.path.expanduser(str(path)))))
+
+
+def _normalized_link_target(path):
+    target = Path(os.readlink(path))
+    return _normalized_lexical_path(target if target.is_absolute() else path.parent / target)
+
+
+def _read_instruction(path):
+    return _read_regular_bounded(path, MAX_INSTRUCTION_BYTES, "instruction file")
+
+
+def _read_regular_bounded(path, limit, label):
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+        raise OSError(f"refusing unsafe {label}: {path}")
+    if before.st_size > limit:
+        raise ValueError(f"{label} exceeds byte limit (maximum {limit})")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if ((opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino) or
+                not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1):
+            raise OSError(f"refusing changed {label}: {path}")
+        if opened.st_size > limit:
+            raise ValueError(f"{label} exceeds byte limit (maximum {limit})")
+        chunks = []
+        remaining = limit + 1
+        while remaining:
+            chunk = os.read(descriptor, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
+        if len(data) > limit:
+            raise ValueError(f"{label} exceeds byte limit (maximum {limit})")
+        return data
+    finally:
+        os.close(descriptor)
+
+
+def _smoke_command(command):
+    env = {
+        "LC_ALL": "C",
+        "PATH": os.environ.get("PATH", os.defpath),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    try:
+        completed = subprocess.run(
+            [str(command), "--help"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=COMMAND_SMOKE_TIMEOUT_SECONDS,
+            env=env,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return f"timed out after {COMMAND_SMOKE_TIMEOUT_SECONDS} seconds"
+    except OSError as error:
+        return str(error)
+    if completed.returncode != 0:
+        return f"exit status {completed.returncode}"
+    return None
 
 
 def _kind(path):

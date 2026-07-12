@@ -60,8 +60,8 @@ to `behavior-asserted — verify manually`.
   from `UNVERIFIABLE` (a claim about another system — still dropped).
 
 For each surviving drift, classify: category (`in_code_not_docs` / `in_docs_not_code` /
-`name_mismatch` / `UNVERIFIABLE`), severity, and whether it's a derivable fix or a human-judgment
-flag.
+`name_mismatch` / `release_identity_drift` / `UNVERIFIABLE`), severity, and whether it's a
+derivable fix or a human-judgment flag.
 
 Report verdict-first, one line per finding:
 `[sev] category  file:line — what's wrong (cited) → fix or flag`.

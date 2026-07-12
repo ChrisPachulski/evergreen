@@ -27,7 +27,9 @@ UNVERIFIED_FIELDS = {"doc_path", "doc_line", "claim", "reason"}
 RUNTIME_FIELDS = {"provider", "model", "cli_version"}
 STATUSES = {"complete", "inconclusive"}
 SEVERITIES = {"high", "med", "low"}
-CATEGORIES = {"in_docs_not_code", "name_mismatch", "in_code_not_docs"}
+CATEGORIES = {
+    "in_docs_not_code", "name_mismatch", "in_code_not_docs", "release_identity_drift",
+}
 FIX_OR_FLAG = {"fix", "flag"}
 FENCE_RE = re.compile(r"```evergreen-result[ \t]*\r?\n(.*?)\r?\n```", re.DOTALL)
 
