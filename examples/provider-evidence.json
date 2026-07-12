@@ -1,0 +1,28 @@
+[
+  {
+    "provider": "drift-shape",
+    "version": "1.0",
+    "type": "return-contract-changed",
+    "path": "eval/fixture/config.py",
+    "line": 10,
+    "span": 1,
+    "symbol": "load_config",
+    "old": "returns null when project is missing",
+    "current": "raises KeyError when project is missing",
+    "confidence": "deterministic",
+    "metadata": { "source": "ast-diff", "interop": "Drift-shaped" }
+  },
+  {
+    "provider": "drift-shape",
+    "version": "1.0",
+    "type": "constant-value-changed",
+    "path": "eval/fixture/config.py",
+    "line": 4,
+    "span": 1,
+    "symbol": "DEFAULT_TIMEOUT",
+    "old": "60",
+    "current": "30",
+    "confidence": "deterministic",
+    "metadata": { "source": "syntax-diff", "interop": "Drift-shaped" }
+  }
+]

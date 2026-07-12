@@ -78,6 +78,22 @@ call that combines staging and commit is rejected conservatively because PreTool
 the index between them: use **separate tool calls**. `EVERGREEN_GUARD=off` remains the explicit
 bypass. Semantic truth findings and CI drift findings do not use this blocking path.
 
+## Hybrid provider boundary
+
+Provider evidence and source maps nominate candidates, never findings or verdicts.
+Re-read every candidate against current code before deciding drift.
+
+The read-only `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` command
+combines changed paths, validated provider facts, and repository-local source maps into a ranked
+candidate list. Provider confidence affects ranking only. A map broadens the candidate set; it
+cannot suppress a document or certify it. Invalid records and maps remain warnings rather than
+semantic conclusions.
+
+This boundary supports Drift-shaped interoperability through adapters that translate mechanical
+facts into the v1 evidence schema. It deliberately does not import an external tool's finding or
+verdict. The fixture demonstrates why: a default changing from 60 to 30 can nominate timeout docs,
+but the per-project override remains true because `setdefault` preserves configured values.
+
 ## Drift taxonomy (so findings are actionable)
 
 Every finding is one of `in_code_not_docs · in_docs_not_code · name_mismatch ·

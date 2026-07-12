@@ -26,6 +26,13 @@ one). Cheap mechanical checks before prose reasoning. Cite the code.
    you can't settle by reading code (ordering, timing, "returns empty on miss") → flag
    `behavior-asserted — verify manually`; don't pass or guess.
 
+Provider evidence and source maps nominate candidates, never findings or verdicts.
+Re-read every candidate against current code before deciding drift.
+Use `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` only to rank candidate
+docs. Deterministic confidence proves the mechanical fact, not semantic drift. Source maps and
+Drift-shaped evidence can widen or reorder the candidate set but cannot suppress, certify, or flag
+a claim; malformed or verdict-bearing input remains a warning.
+
 ## Release identity
 
 Treat shipped version metadata as executable documentation. On release, archive, TestFlight,

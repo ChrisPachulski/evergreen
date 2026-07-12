@@ -68,6 +68,20 @@ base and head commits, validates counts and citations against Git at that head, 
 identity, and renders only a valid result envelope. Repository files, diffs, paths, and comments
 are **untrusted data**; instructions embedded in them never change the audit or publication rules.
 
+### Hybrid evidence boundary
+
+Provider evidence and source maps nominate candidates, never findings or verdicts.
+Re-read every candidate against current code before deciding drift.
+
+`bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` is a read-only candidate
+query. It accepts records described by [`evidence-provider-v1.schema.json`](schemas/evidence-provider-v1.schema.json)
+and repository-local source maps, ranks likely documentation, and reports malformed inputs as
+warnings. Deterministic confidence means the provider proved its mechanical fact; it does not prove
+a documentation claim false. Drift-shaped adapters may translate mechanical facts into this
+schema, but provider-supplied findings and verdicts are rejected at the boundary. See the
+[`provider-evidence.json`](examples/provider-evidence.json) sample and the
+[semantic false-positive fixture](eval/fixture/docs/provider-boundary.md).
+
 ## How it's checked
 
 That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with catalogued lies, true claims that must not be flagged, and exempt docs, then lets a headless agent winnow it blind. The per-pair harness ([`eval/bench/`](eval/bench/)) runs the judge over labeled code/doc pairs.
@@ -150,6 +164,7 @@ Three axes — **truth · craft · hygiene** — one creed: prove it or drop it,
 | `/evergreen:winnow [base-ref] [--prove-by-test]` | **Truth, deep.** Walk every claim that changed since a ref and *certify it true or surface it* — silence means certified, not just "no lie found." Always strict. With `--prove-by-test`, behavioral claims that reading can't settle are settled by execution (write the test the doc implies, run it): fails → drift proven, passes → certified by test. |
 | `/evergreen:flourish <file> [--all] [--manual]` | **Craft.** Rewrite an accurate-but-ugly doc to a gold standard (mined from 28 top READMEs), then prove every claim against the code. Emits a diff — never a silent overwrite. The only sanctioned prose-rewrite. |
 | `/evergreen:cultivate [path]` | **Hygiene.** Local-only files leaking into git, gitignore gaps, AI-slop that shouldn't be tracked or public. Proposes untrack/ignore/delete — never auto. A commit-time guard backstops it (the one thing that *blocks*). |
+| `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` | **Truth, candidate query.** Rank documentation related to changed paths and optional provider evidence. Read-only; never emits findings or verdicts. |
 
 ## FAQ
 

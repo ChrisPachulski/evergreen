@@ -15,6 +15,12 @@ not the whole tree. Walk the rungs in order per claim; cheap mechanical checks b
 4. **Semantic drift** (strict only) — does the prose still describe current behavior? A claim the
    code can't settle → `behavior-asserted — verify manually`; never pass or guess.
 
+Provider evidence and source maps nominate candidates, never findings or verdicts.
+Re-read every candidate against current code before deciding drift.
+Use `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` as a read-only ranking
+query. Deterministic provider confidence proves only a mechanical fact; maps and Drift-shaped
+evidence never settle the semantic claim.
+
 CI trust contract:
 - A bounded manifest and one result envelope are bound to exact base/head commits. Schema, counts,
   citations at head, and runtime identity must validate before publication. Repository files,

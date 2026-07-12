@@ -55,6 +55,19 @@ mechanical checks before semantic reasoning. Cite the code every time.
 
 If rungs 1–3 are clean, most "stale doc" worry is answered. Spend attention on rung 4.
 
+## Passive provider and map boundary
+
+Provider evidence and source maps nominate candidates, never findings or verdicts.
+Re-read every candidate against current code before deciding drift.
+
+When evidence or a source map is available, use
+`bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` to rank likely docs before
+walking the ladder. Treat deterministic confidence as proof of a mechanical fact only; treat
+advisory confidence as a lower-ranked hint. Do not adopt external outcomes. Keep malformed or
+forbidden provider fields as warnings. Drift-shaped adapters may translate fact records into the
+v1 schema, but must discard verdict semantics. Reject tempting semantic leaps: a default-value
+change can nominate timeout docs while a per-project override remains true.
+
 ## Release identity reflex
 
 Treat a shipped app version as executable documentation: it tells users how far the product has

@@ -44,6 +44,59 @@ for tok in "Prove it or drop it" "Vanished path" "Dead contract" "left alone:" \
   fi
 done
 
+# Passive providers and source maps may expand review scope, never decide the review.
+for tok in \
+  "Provider evidence and source maps nominate candidates, never findings or verdicts." \
+  "Re-read every candidate against current code before deciding drift."; do
+  if grep -Fq "$tok" "$ROOT/README.md" \
+     && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
+     && grep -Fq "$tok" "$ROOT/AGENTS.md"; then
+    ok "provider candidate boundary agrees across product/Claude/Codex: $tok"
+  else
+    no "provider candidate boundary agrees across product/Claude/Codex: $tok"
+  fi
+done
+
+for file in "$ROOT/README.md" "$ROOT/docs/DESIGN.md" "$ROOT/skills/evergreen/SKILL.md"; do
+  grep -Fq "Drift-shaped" "$file" \
+    && ok "Drift-shaped interoperability documented in ${file#"$ROOT/"}" \
+    || no "Drift-shaped interoperability documented in ${file#"$ROOT/"}"
+done
+
+if ROOT="$ROOT" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+import sys
+
+root = Path(os.environ["ROOT"])
+sys.path.insert(0, str(root))
+from evergreen.evidence import load_evidence
+
+path = root / "examples/provider-evidence.json"
+records = json.loads(path.read_text())
+assert len(records) == 2
+assert {record["type"] for record in records} == {
+    "constant-value-changed", "return-contract-changed",
+}
+assert all(record["confidence"] == "deterministic" for record in records)
+assert all(not ({"finding", "verdict", "drift", "status"} & set(record)) for record in records)
+loaded, warnings = load_evidence(path, root)
+assert len(loaded) == 2 and warnings == []
+
+fixture = (root / "eval/fixture/docs/provider-boundary.md").read_text()
+assert "Expected: finding" in fixture
+assert "Expected: no finding" in fixture
+assert "per-project timeout override remains true" in fixture
+PY
+then
+  ok "provider evidence and semantic false-positive fixtures"
+else
+  no "provider evidence and semantic false-positive fixtures"
+fi
+
 # The shipped docs and both host instruction surfaces must describe one CI trust contract.
 for tok in "deterministic trust layer" "complete with findings" "complete with unverified" \
            "fail_on_inconclusive" "untrusted data" "separate tool calls"; do
