@@ -18,7 +18,8 @@ mkdir -p "$STUB_BIN"
 cat > "$STUB_BIN/claude" <<'EOF'
 #!/usr/bin/env bash
 set -u
-if [ "${1:-}" = "--version" ]; then
+if [[ " $* " = *' --version '* ]]; then
+  [ ! -e "$HOME/hang-version" ] || sleep 5
   printf '%s\n' '2.1.197 (Claude Code)'
   exit 0
 fi
@@ -34,6 +35,11 @@ while [ "$#" -gt 0 ]; do
   fi
   shift
 done
+[ ! -e "$HOME/hang-model" ] || sleep 5
+if [ -e "$HOME/oversized-model" ]; then
+  python3 -c 'print("x" * 100000)'
+  exit 0
+fi
 cat "$HOME/model.txt"
 exit 0
 EOF
@@ -165,6 +171,11 @@ run_driver() {
   : > "$NPM_ENV_LOG_FILE"
   : > "$CLAUDE_ARGS_FILE_PATH"
   : > "$CLAUDE_ENV_FILE_PATH"
+  case "${TEST_CLAUDE_BEHAVIOR:-}" in
+    hang-version) : > "$CASE_DIR/hang-version" ;;
+    hang-model) : > "$CASE_DIR/hang-model" ;;
+    oversized-model) : > "$CASE_DIR/oversized-model" ;;
+  esac
   set +e
   PATH="$path_prefix:$PYTHON_BIN:/usr/bin:/bin" \
     GITHUB_WORKSPACE="$REPO" \
@@ -177,6 +188,10 @@ run_driver() {
     EVERGREEN_MODEL="${TEST_MODEL-test-model}" \
     EVERGREEN_POST_COMMENT=true \
     EVERGREEN_FAIL_ON_INCONCLUSIVE="$policy" \
+    EVERGREEN_CLI_TIMEOUT_SECONDS="${TEST_CLI_TIMEOUT_SECONDS:-15}" \
+    EVERGREEN_MODEL_TIMEOUT_SECONDS="${TEST_MODEL_TIMEOUT_SECONDS:-600}" \
+    EVERGREEN_MAX_MODEL_OUTPUT_BYTES="${TEST_MAX_MODEL_OUTPUT_BYTES:-262144}" \
+    EVERGREEN_MAX_BUDGET_USD="${TEST_MAX_BUDGET_USD:-5}" \
     EVERGREEN_SETUP_ERROR="${SETUP_ERROR:-}" \
     EVERGREEN_IS_FORK="${TEST_IS_FORK:-false}" \
     ANTHROPIC_API_KEY="${TEST_API_KEY-test-key}" \
@@ -243,8 +258,10 @@ contains "$PROMPT_FILE" '"cli_version":"2.1.197 (Claude Code)"' "prompt does not
 contains "$CLAUDE_ARGS_FILE_PATH" '--bare' "Claude run does not disable project customizations"
 contains "$CLAUDE_ARGS_FILE_PATH" '--safe-mode' "Claude run does not disable all customizations"
 contains "$CLAUDE_ARGS_FILE_PATH" '--no-session-persistence' "Claude run persists an untrusted PR session"
-contains "$CLAUDE_ARGS_FILE_PATH" '--tools Read,Grep,Glob' "Claude built-in tool surface is not explicitly restricted"
-contains "$CLAUDE_ARGS_FILE_PATH" '--allowedTools Read,Grep,Glob' "read-only tools are not explicitly approved"
+contains "$CLAUDE_ARGS_FILE_PATH" '--tools ' "Claude built-in tools are not explicitly disabled"
+not_contains "$CLAUDE_ARGS_FILE_PATH" '--tools Read' "Claude can read outside the commit-bound evidence"
+not_contains "$CLAUDE_ARGS_FILE_PATH" '--allowedTools Read' "Claude read tools are blanket-approved"
+contains "$CLAUDE_ARGS_FILE_PATH" '--max-budget-usd 5' "Claude run lacks the configured cost ceiling"
 contains "$CLAUDE_ENV_FILE_PATH" 'ANTHROPIC_API_KEY=set GITHUB_TOKEN=' "Claude child did not receive only the provider credential"
 not_contains "$CLAUDE_ENV_FILE_PATH" 'GITHUB_TOKEN=set' "Claude child inherited the GitHub token"
 not_contains "$CLAUDE_ENV_FILE_PATH" 'UNRELATED_SECRET=set' "Claude child inherited an unrelated runner secret"
@@ -267,6 +284,25 @@ run_driver dirty-index "$(clean_result)"
 [ "$STATUS" -eq 0 ] || fail "dirty index must not alter commit-bound eligibility"
 contains "$SUMMARY_FILE" 'docs still match the code' "dirty index caused an incorrect nothing-to-check skip"
 pass "prefilter is bound to the head commit"
+
+make_repo version-timeout
+TEST_CLAUDE_BEHAVIOR=hang-version TEST_CLI_TIMEOUT_SECONDS=0.1 \
+  run_driver version-timeout '' true
+[ "$STATUS" -ne 0 ] || fail "hanging Claude identity probe must be inconclusive"
+contains "$SUMMARY_FILE" 'inconclusive' "identity timeout did not render as inconclusive"
+
+make_repo model-timeout
+TEST_CLAUDE_BEHAVIOR=hang-model TEST_MODEL_TIMEOUT_SECONDS=0.1 \
+  run_driver model-timeout '' true
+[ "$STATUS" -ne 0 ] || fail "hanging Claude model run must be inconclusive"
+contains "$SUMMARY_FILE" 'inconclusive' "model timeout did not render as inconclusive"
+
+make_repo model-overflow
+TEST_CLAUDE_BEHAVIOR=oversized-model TEST_MAX_MODEL_OUTPUT_BYTES=1024 \
+  run_driver model-overflow '' true
+[ "$STATUS" -ne 0 ] || fail "oversized Claude output must be inconclusive"
+contains "$SUMMARY_FILE" 'inconclusive' "model output overflow did not render as inconclusive"
+pass "Claude execution is time and output bounded"
 
 make_repo concrete-model
 TEST_MODEL=claude-opus-4-8 run_driver concrete-model "$(clean_result | sed 's/test-model/claude-opus-4-8/')"
@@ -367,7 +403,8 @@ contains "$ROOT/action.yml" 'repo_path:' "Action lacks an explicit reviewed-repo
 contains "$ROOT/action.yml" 'EVERGREEN_REPO_ROOT: ${{ inputs.repo_path }}' "Action does not bind the reviewed repository explicitly"
 contains "$ROOT/action.yml" 'pr_number:' "Action lacks an explicit PR-number input"
 contains "$ROOT/action.yml" 'EVERGREEN_PR_NUMBER: ${{ inputs.pr_number }}' "Action does not bind comment publication to the requested PR"
-contains "$ROOT/action.yml" 'env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN npm install' "npm install inherits audit secrets"
+contains "$ROOT/action.yml" 'ci/bounded_process.py' "Action installation is not wall-clock bounded"
+contains "$ROOT/action.yml" 'env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN' "npm install inherits audit secrets"
 NPM_PROBE_LOG="$TMP_ROOT/npm-probe.log"
 NPM_PROBE_ENV="$TMP_ROOT/npm-probe-env.log"
 : > "$NPM_PROBE_LOG"

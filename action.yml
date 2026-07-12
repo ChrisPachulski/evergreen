@@ -36,6 +36,18 @@ inputs:
     description: "Pull request number for comment publication. Empty falls back to the event ref."
     required: false
     default: ""
+  model_timeout_seconds:
+    description: "Wall-clock ceiling for the semantic review."
+    required: false
+    default: "600"
+  max_model_output_bytes:
+    description: "Maximum Claude stdout accepted by the result protocol."
+    required: false
+    default: "262144"
+  max_budget_usd:
+    description: "Maximum provider spend for one semantic review."
+    required: false
+    default: "5"
 
 runs:
   using: "composite"
@@ -52,11 +64,17 @@ runs:
         EVERGREEN_FAIL_ON_INCONCLUSIVE: ${{ inputs.fail_on_inconclusive }}
         EVERGREEN_REPO_ROOT: ${{ inputs.repo_path }}
         EVERGREEN_PR_NUMBER: ${{ inputs.pr_number }}
+        EVERGREEN_MODEL_TIMEOUT_SECONDS: ${{ inputs.model_timeout_seconds }}
+        EVERGREEN_MAX_MODEL_OUTPUT_BYTES: ${{ inputs.max_model_output_bytes }}
+        EVERGREEN_MAX_BUDGET_USD: ${{ inputs.max_budget_usd }}
         EVERGREEN_IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         # Where SKILL.md and ci/ live, regardless of the consuming repo's checkout.
         EVERGREEN_ACTION_PATH: ${{ github.action_path }}
       run: |
-        if ! env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN npm install -g @anthropic-ai/claude-code@2.1.197; then
+        if ! env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN \
+          python3 "$GITHUB_ACTION_PATH/ci/bounded_process.py" \
+            --timeout-seconds 180 --max-output-bytes 131072 --clean-env -- \
+            npm install -g @anthropic-ai/claude-code@2.1.197; then
           export EVERGREEN_SETUP_ERROR="Claude CLI installation failed."
         fi
         bash "$GITHUB_ACTION_PATH/ci/evergreen-pr.sh"
