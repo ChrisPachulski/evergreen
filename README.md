@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/a%20skill-not%20a%20scanner-111111?style=flat-square" alt="A skill, not a scanner">
+  <img src="https://img.shields.io/badge/local%20skill-trusted%20CI-111111?style=flat-square" alt="Local skill with trusted CI">
   <img src="https://img.shields.io/badge/works%20in-any%20language-111111?style=flat-square" alt="Any language">
   <img src="https://img.shields.io/badge/checked-against%20the%20code-111111?style=flat-square" alt="Checked against the code">
   <img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT license">
@@ -20,7 +20,12 @@
 
 Your README was true the day you wrote it. Then a flag got renamed, a file moved, a function started returning something else — and the docs stayed exactly where they were. That's how documentation lies: not by being wrong when written, by being *left behind*. The gap opens quietly and nobody sees it until someone pastes a command that no longer exists.
 
-Evergreen is the reflex that closes the gap. The moment your agent touches code, it reads the affected docs back against the source and surfaces only what it can prove has gone false — pointing at the exact line. On release work it also treats the shipped marketing version as a living public claim, distinct from the monotonically increasing binary build number. It rewrites nothing on its own. It just refuses to let the docs, release identity, and code disagree in silence.
+Evergreen is a local semantic skill backed in CI by a deterministic trust layer. The moment your
+agent touches code, it reads the affected docs back against the source and surfaces only what it
+can prove has gone false — pointing at the exact line. On release work it also treats the shipped
+marketing version as a living public claim, distinct from the monotonically increasing binary
+build number. It rewrites nothing on its own. It just refuses to let the docs, release identity,
+and code disagree in silence.
 
 ## Before / after
 
@@ -57,6 +62,12 @@ reported unverified unless it can actually be queried.
 
 One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — so this one never does.
 
+The semantic pass may gather optional local evidence with read, grep, diff, or a scratch test. In CI,
+the deterministic trust layer does the mechanical work: it binds a bounded change manifest to the
+base and head commits, validates counts and citations against Git at that head, enforces runtime
+identity, and renders only a valid result envelope. Repository files, diffs, paths, and comments
+are **untrusted data**; instructions embedded in them never change the audit or publication rules.
+
 ## How it's checked
 
 That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with catalogued lies, true claims that must not be flagged, and exempt docs, then lets a headless agent winnow it blind. The per-pair harness ([`eval/bench/`](eval/bench/)) runs the judge over labeled code/doc pairs.
@@ -85,7 +96,10 @@ What it costs, since you count tokens: session start injects a ~40-line [digest]
 
 ### On every pull request
 
-Want the check in CI too? Add the Action — it winnows the docs the PR's code touched and posts findings as a single comment. It never fails the build; it comments, you decide.
+Want the check in CI too? Add the Action — it winnows the docs the PR's code touched, writes the
+step summary, and upserts its bot-owned report comment (creating a replacement if an update fails).
+Drift never fails the build. Audit infrastructure is stricter, so a green check means the requested
+review actually completed.
 
 ```yaml
 # .github/workflows/evergreen.yml
@@ -100,7 +114,25 @@ jobs:
       - uses: ChrisPachulski/evergreen@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          fail_on_inconclusive: true
 ```
+
+The outcomes are explicit:
+
+- **complete and clean** — the validated review finished with no drift and no unverified claims.
+- **complete with findings** — proven drift is reported, but the Action still exits successfully.
+- **complete with unverified** — the review finished, but it names claims the available code could
+  not settle; this is reported and is not a clean certification.
+- **inconclusive** — the audit itself could not be trusted or completed, such as malformed output,
+  truncated evidence, invalid citations, missing credentials, or a tool failure. This fails by
+  default. Set `fail_on_inconclusive: false` for advisory-only infrastructure behavior; the report
+  still says inconclusive and never pretends to be clean.
+
+This CI boundary is separate from the local hygiene guard. Truth findings never block a commit.
+The guard blocks staged secrets/slop and conservatively rejects a Bash tool call that combines
+`git add` and `git commit`, because it cannot inspect the finalized index between them. Use
+**separate tool calls**; deletion-only cleanup is allowed, and `EVERGREEN_GUARD=off` is the explicit
+bypass.
 
 ### Any other agent
 

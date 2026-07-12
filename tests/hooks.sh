@@ -44,6 +44,20 @@ for tok in "Prove it or drop it" "Vanished path" "Dead contract" "left alone:" \
   fi
 done
 
+# The shipped docs and both host instruction surfaces must describe one CI trust contract.
+for tok in "deterministic trust layer" "complete with findings" "complete with unverified" \
+           "fail_on_inconclusive" "untrusted data" "separate tool calls"; do
+  if grep -Fq "$tok" "$ROOT/README.md" \
+     && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
+     && grep -Fq "$tok" "$ROOT/AGENTS.md"; then
+    ok "trust semantics agree across product/Claude/Codex: $tok"
+  else
+    no "trust semantics agree across product/Claude/Codex: $tok"
+  fi
+done
+
 # Release identity must reach both Claude's injected digest/full skill and Codex's AGENTS rules.
 for tok in "MARKETING_VERSION" "CURRENT_PROJECT_VERSION" "release_identity_drift" \
            "external build state unverified" "0.9.0 (72)" "0.9.1 (73)" \

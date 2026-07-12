@@ -1,8 +1,9 @@
 # Evergreen — design & prior-art credits
 
-Evergreen is a **skill**: a prompt that makes the agent *notice* when the docs and the code
-have drifted apart, and prove it before flagging. No scanner, no service — the intelligence is
-the model, using the tools it already has (read, grep, diff).
+Evergreen is a local semantic **skill** that makes the agent *notice* when docs and code have
+drifted apart and prove it before flagging. A deterministic trust layer supports that judgment in
+CI; it does not replace it with a general-purpose scanner or hosted service. The semantic work
+still uses the model's optional local evidence (read, grep, diff, and scratch tests when needed).
 
 This design is synthesized from a survey of **309 repos** (164 directly related, 79 of
 them zero-star — the clever-but-unknown longtail). The repos were an **idea mine**: we
@@ -11,16 +12,16 @@ ruleset. Nothing here is reinvented where an accredited approach already exists;
 idea is credited to the repo it was mined from.
 
 > **Design history (honest note):** an earlier iteration built a deterministic bash
-> engine (grep/git path & contract checks, tree-sitter-style coverage, SARIF/CI). It was
-> removed: it ported the *infrastructure* of the surveyed repos when the goal was to mine
-> their *ideas* for the prompt. Evergreen is the skill; the heuristics below live in the
-> model's head, not in a binary.
+> engine (grep/git path & contract verdicts, tree-sitter-style coverage, SARIF). That verdict
+> engine was removed: it ported the *infrastructure* of the surveyed repos when the goal was to
+> mine their *ideas* for the prompt. Today's smaller deterministic layer prepares and validates
+> evidence; semantic truth judgments remain in the skill rather than a binary.
 
 ## Principles
 
 - **Cheapest check that proves the drift** — mechanical rungs before semantic reasoning.
 - **Intensity `off / light / strict`** — light walks rungs 1–3, strict adds the rung-4 semantic pass.
-- **An anti-doc-staleness reflex**, injected as behavior — not a scanner you run, a habit the agent has.
+- **A local anti-doc-staleness reflex**, injected as behavior, with a deterministic CI boundary.
 
 ## The freshness ladder (the core behavior)
 
@@ -42,7 +43,7 @@ code every time.
 Model routing, for hosts that tier it: cheap models for the mechanical rungs, stronger
 ones for semantic behavior drift. *(xiaolai/docs-guardian)*
 
-## Architecture (skill + hooks + state)
+## Architecture (skill + trust layer + hooks + state)
 
 The intelligence is the skill (`skills/evergreen/SKILL.md`) — the ladder and rules live in the
 model's head. Three thin hooks make it ride along, and they never read or analyze doc *content*:
@@ -57,6 +58,25 @@ model's head. Three thin hooks make it ride along, and they never read or analyz
 State is a per-repo `.evergreen-mode` file (`off|light|strict`, default `light`, gitignored). An
 optional repo-local `.evergreen-ignore` lists patterns the *agent* honors when deciding what to
 flag — there is no hook that parses it; the skill is the enforcement.
+
+The PR Action adds a deterministic trust layer around the semantic reviewer. It produces a bounded
+manifest for exact base/head commits, JSON-escapes boundary characters, labels all repository
+material as **untrusted data**, and rejects any result that fails schema, count, commit, citation,
+or trusted-runtime checks. The validator reads citations from Git at the audited head; model prose
+cannot certify itself. The layer prepares and validates evidence but does not decide whether prose
+is semantically true.
+
+CI outcomes are deliberately distinct: **complete and clean**, **complete with findings**, and
+**complete with unverified** all mean the validated review finished; only the first is a clean
+certification. **inconclusive** means the audit itself failed or could not be trusted. Findings
+never fail the check. Inconclusive runs fail by default, while `fail_on_inconclusive: false` makes
+infrastructure advisory without changing the rendered status.
+
+The commit-time hygiene guard has a narrower boundary. It inspects the finalized staged index on a
+commit-only call, blocks known secret/slop paths, and allows deletion-only cleanup. A single shell
+call that combines staging and commit is rejected conservatively because PreToolUse cannot observe
+the index between them: use **separate tool calls**. `EVERGREEN_GUARD=off` remains the explicit
+bypass. Semantic truth findings and CI drift findings do not use this blocking path.
 
 ## Drift taxonomy (so findings are actionable)
 
