@@ -7,12 +7,18 @@ from pathlib import Path
 import sys
 
 
+sys.dont_write_bytecode = True
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
 from evergreen.evidence import load_evidence  # noqa: E402
 from evergreen.impact import impact  # noqa: E402
+
+
+def error_display(value):
+    rendered = ascii(str(value))
+    return rendered if len(rendered) <= 512 else rendered[:508] + "...'"
 
 
 def parser():
@@ -35,7 +41,7 @@ def parser():
 def run_impact(args):
     repo = Path(args.repo).expanduser()
     if not repo.is_dir():
-        print(f"evergreen: repository must be a directory: {repo}", file=sys.stderr)
+        print(f"evergreen: repository must be a directory: {error_display(repo)}", file=sys.stderr)
         return 2
     repo = repo.resolve()
 
@@ -83,7 +89,7 @@ def main(argv=None):
     try:
         return arguments.run(arguments)
     except (OSError, UnicodeError) as error:
-        print(f"evergreen: {error}", file=sys.stderr)
+        print(f"evergreen: {error_display(error)}", file=sys.stderr)
         return 1
 
 

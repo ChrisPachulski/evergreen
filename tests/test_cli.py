@@ -1,5 +1,7 @@
+import hashlib
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -66,6 +68,15 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertEqual(missing_repo.returncode, 2)
         self.assertIn("repository must be a directory", missing_repo.stderr)
 
+        hostile_repo = "\x1b[31mbad\nrepo\x7f"
+        hostile = self.run_cli("impact", "--repo", hostile_repo, "a.py")
+        self.assertEqual(hostile.returncode, 2)
+        self.assertNotIn("\x1b", hostile.stderr)
+        self.assertEqual(hostile.stderr.count("\n"), 1)
+        self.assertIn("\\x1b", hostile.stderr)
+        self.assertIn("\\n", hostile.stderr)
+        self.assertIn("\\x7f", hostile.stderr)
+
     def test_human_output_is_candidate_only_and_does_not_mutate_project(self):
         self.write_map()
         before = self.snapshot()
@@ -80,6 +91,44 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertNotIn("finding", result.stdout.lower())
         self.assertNotIn("verdict", result.stdout.lower())
         self.assertEqual(self.snapshot(), before)
+
+    def test_fresh_self_repo_query_creates_no_bytecode_or_other_files(self):
+        fresh = Path(self.temporary.name) / "fresh-plugin"
+        shutil.copytree(
+            ROOT,
+            fresh,
+            ignore=shutil.ignore_patterns(".git", ".superpowers", "__pycache__", "*.pyc"),
+        )
+
+        def tree_snapshot():
+            return {
+                path.relative_to(fresh).as_posix(): (
+                    "directory" if path.is_dir()
+                    else hashlib.sha256(path.read_bytes()).hexdigest()
+                )
+                for path in fresh.rglob("*")
+            }
+
+        before = tree_snapshot()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(fresh / "bin" / "evergreen"),
+                "impact",
+                "--json",
+                "--repo",
+                str(fresh),
+                "evergreen/impact.py",
+            ],
+            cwd=fresh,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(tree_snapshot(), before)
+        self.assertFalse(any(path.name == "__pycache__" for path in fresh.rglob("*")))
 
     def test_json_output_and_warnings_are_stable_candidates(self):
         result = self.run_cli(
