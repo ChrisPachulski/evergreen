@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -65,6 +66,13 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(warnings, [])
         self.assertEqual(dict(evidence[0].metadata), {})
 
+        evidence, warnings = self.load([self.record(metadata={
+            "z": {"z": 1, "a": 2}, "a": 0,
+        })])
+        self.assertEqual(warnings, [])
+        self.assertEqual(list(evidence[0].metadata), ["a", "z"])
+        self.assertEqual(list(evidence[0].metadata["z"]), ["a", "z"])
+
     def test_malformed_file_root_and_records_warn_without_raising(self):
         from evergreen.evidence import load_evidence
 
@@ -92,19 +100,25 @@ class EvidenceTests(unittest.TestCase):
             '"provider": "drift-shape"',
             '"provider": "first", "provider": "second"',
         )
-        path.write_text(f"[{duplicate_record}]")
+        valid = json.dumps(self.record(provider="valid"))
+        path.write_text(f"[{duplicate_record},{valid}]")
         evidence, warnings = load_evidence(path, self.repo)
-        self.assertEqual(evidence, [])
-        self.assertEqual(warnings, ["evidence file contains duplicate JSON key: provider"])
+        self.assertEqual([item.provider for item in evidence], ["valid"])
+        self.assertEqual(warnings, ["record 1: duplicate JSON key: provider"])
 
         duplicate_metadata = base.replace(
             '"metadata": {"source": "ast", "tags": ["public"]}',
             '"metadata": {"source": "ast", "source": "tokens"}',
         )
-        path.write_text(f"[{duplicate_metadata}]")
+        path.write_text(f"[{valid},{duplicate_metadata}]")
+        evidence, warnings = load_evidence(path, self.repo)
+        self.assertEqual([item.provider for item in evidence], ["valid"])
+        self.assertEqual(warnings, ["record 2: duplicate JSON key: source"])
+
+        path.write_text('{"version": 1, "version": 2, "evidence": []}')
         evidence, warnings = load_evidence(path, self.repo)
         self.assertEqual(evidence, [])
-        self.assertEqual(warnings, ["evidence file contains duplicate JSON key: source"])
+        self.assertEqual(warnings, ["evidence file contains duplicate JSON key: version"])
 
     def test_rejects_traversal_absolute_and_symlink_escape(self):
         outside = Path(self.temporary.name) / "outside"
@@ -114,10 +128,11 @@ class EvidenceTests(unittest.TestCase):
             self.record(path="../secret"),
             self.record(path=str(outside / "secret")),
             self.record(path="escape/secret"),
+            self.record(path="src/bad\nname.py"),
         ])
 
         self.assertEqual(evidence, [])
-        self.assertEqual(len(warnings), 3)
+        self.assertEqual(len(warnings), 4)
         self.assertTrue(all("path" in warning for warning in warnings))
 
     def test_rejects_symlink_loops_as_invalid_records(self):
@@ -261,6 +276,16 @@ class EvidenceTests(unittest.TestCase):
             "old", "current", "confidence",
         })
         self.assertEqual(item["properties"]["confidence"]["enum"], ["deterministic", "advisory"])
+        path = item["properties"]["path"]
+        self.assertIn("normalized POSIX", path["description"])
+        self.assertEqual(path["x-repositoryContainment"], "resolved-within-repo")
+        self.assertTrue(re.fullmatch(path["pattern"], "src/api.py"))
+        for invalid in ("/abs", "../x", "src/../x", "src//x", "src/./x", "src\\x", "src/x\n"):
+            with self.subTest(path=invalid):
+                self.assertIsNone(re.fullmatch(path["pattern"], invalid))
+        metadata = item["properties"]["metadata"]
+        self.assertEqual(metadata["x-maxUtf8Bytes"], 16384)
+        self.assertEqual(metadata["x-maxDepth"], 8)
 
 
 if __name__ == "__main__":

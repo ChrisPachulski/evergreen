@@ -16,14 +16,22 @@
       "provider": {"type": "string", "minLength": 1, "maxLength": 256, "x-maxUtf8Bytes": 256},
       "version": {"type": "string", "minLength": 1, "maxLength": 256, "x-maxUtf8Bytes": 256},
       "type": {"type": "string", "minLength": 1, "maxLength": 256, "x-maxUtf8Bytes": 256},
-      "path": {"type": "string", "minLength": 1, "maxLength": 4096, "x-maxUtf8Bytes": 4096},
+      "path": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096,
+        "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*[\\u0000-\\u001F\\u007F])[^/]+(?:/[^/]+)*$",
+        "description": "normalized POSIX repository-relative path; runtime resolution must remain inside the repository and reject symlink escapes",
+        "x-maxUtf8Bytes": 4096,
+        "x-repositoryContainment": "resolved-within-repo"
+      },
       "line": {"type": "integer", "minimum": 1, "maximum": 2147483647},
       "span": {"type": ["integer", "null"], "minimum": 1, "maximum": 2147483647},
       "symbol": {"type": ["string", "null"], "minLength": 1, "maxLength": 8192, "x-maxUtf8Bytes": 8192},
       "old": {"type": ["string", "null"], "minLength": 1, "maxLength": 8192, "x-maxUtf8Bytes": 8192},
       "current": {"type": ["string", "null"], "minLength": 1, "maxLength": 8192, "x-maxUtf8Bytes": 8192},
       "confidence": {"enum": ["deterministic", "advisory"]},
-      "metadata": {"type": "object"}
+      "metadata": {"type": "object", "x-maxUtf8Bytes": 16384, "x-maxDepth": 8}
     }
   }
 }

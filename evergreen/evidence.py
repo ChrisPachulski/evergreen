@@ -23,17 +23,33 @@ REQUIRED_FIELDS = FIELDS - {"metadata"}
 VERDICT_FIELDS = {"verdict", "finding", "drift", "status"}
 
 
-class _DuplicateKey(ValueError):
-    pass
+class _DecodedObject(dict):
+    __slots__ = ("duplicate_keys",)
 
 
-def _unique_object(pairs):
-    value = {}
+def _decoded_object(pairs):
+    value = _DecodedObject()
+    duplicates = []
     for key, item in pairs:
         if key in value:
-            raise _DuplicateKey(key)
+            duplicates.append(key)
+            continue
         value[key] = item
+    value.duplicate_keys = tuple(duplicates)
     return value
+
+
+def _duplicate_key(value):
+    stack = [value]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, _DecodedObject) and current.duplicate_keys:
+            return current.duplicate_keys[0]
+        if isinstance(current, dict):
+            stack.extend(reversed(tuple(current.values())))
+        elif isinstance(current, list):
+            stack.extend(reversed(current))
+    return None
 
 
 @dataclass(frozen=True)
@@ -62,7 +78,8 @@ def _text(value, name, *, nullable=False, limit=MAX_VALUE_BYTES):
 def _path(value, repo):
     value = _text(value, "path", limit=MAX_PATH_BYTES)
     pure = PurePosixPath(value)
-    if ("\\" in value or "\0" in value or pure.is_absolute() or value != pure.as_posix() or
+    if ("\\" in value or any(ord(character) < 32 or ord(character) == 127 for character in value) or
+            pure.is_absolute() or value != pure.as_posix() or
             any(part in ("", ".", "..") for part in pure.parts)):
         raise ValueError("path must be normalized and repository-relative")
     try:
@@ -115,13 +132,16 @@ def _metadata(value):
 
 def _freeze(value):
     if isinstance(value, dict):
-        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+        return MappingProxyType({key: _freeze(value[key]) for key in sorted(value)})
     if isinstance(value, list):
         return tuple(_freeze(item) for item in value)
     return value
 
 
 def _record(value, repo):
+    duplicate = _duplicate_key(value)
+    if duplicate is not None:
+        raise ValueError(f"duplicate JSON key: {duplicate}")
     if isinstance(value, dict) and VERDICT_FIELDS & set(value):
         raise ValueError("candidate-only evidence cannot contain verdict fields")
     if (not isinstance(value, dict) or not REQUIRED_FIELDS <= set(value) or
@@ -177,13 +197,13 @@ def load_evidence(path: Path, repo: Path) -> tuple[list[Evidence], list[str]]:
             payload = source.read(MAX_FILE_BYTES + 1)
         if len(payload) > MAX_FILE_BYTES:
             return [], [f"evidence file too large (maximum {MAX_FILE_BYTES} bytes)"]
-        values = json.loads(payload, object_pairs_hook=_unique_object)
-    except _DuplicateKey as error:
-        return [], [f"evidence file contains duplicate JSON key: {error}"]
+        values = json.loads(payload, object_pairs_hook=_decoded_object)
     except (OSError, UnicodeError) as error:
         return [], [f"could not read evidence file: {error}"]
     except (json.JSONDecodeError, RecursionError):
         return [], ["evidence file contains invalid JSON"]
+    if isinstance(values, _DecodedObject) and values.duplicate_keys:
+        return [], [f"evidence file contains duplicate JSON key: {values.duplicate_keys[0]}"]
     if not isinstance(values, list):
         return [], ["evidence file root must be an array"]
     if len(values) > MAX_RECORDS:
