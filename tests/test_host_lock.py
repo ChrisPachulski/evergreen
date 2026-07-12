@@ -1,7 +1,12 @@
 import unittest
 from unittest import mock
+from pathlib import Path
+import tempfile
 
-from evergreen import host_lock, host_transaction
+from evergreen import host_lock, host_transaction, hosts
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class HostTransactionTests(unittest.TestCase):
@@ -34,3 +39,29 @@ class HostTransactionTests(unittest.TestCase):
         self.assertIn("cleanup failed", first)
         self.assertIsNone(second)
         self.assertEqual(release.call_args_list, [mock.call([1, 2])])
+
+    def test_public_operations_return_cleanup_errors_and_release_real_locks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            (home / ".codex").mkdir()
+            real_release = host_lock.release
+
+            def release_with_diagnostic(descriptors):
+                return real_release(descriptors) + ["injected cleanup failure"]
+
+            with mock.patch.object(
+                host_transaction, "_unlock_hosts", side_effect=release_with_diagnostic,
+            ):
+                installed = hosts.install(home, ROOT, "codex")
+            self.assertFalse(installed.ok)
+            self.assertIn("cleanup failed", " ".join(installed.messages))
+
+            with mock.patch.object(
+                host_transaction, "_unlock_hosts", side_effect=release_with_diagnostic,
+            ):
+                removed = hosts.uninstall(home, "codex")
+            self.assertFalse(removed.ok)
+            self.assertIn("cleanup failed", " ".join(removed.messages))
+
+            reacquired = hosts.install(home, ROOT, "codex", dry_run=True)
+            self.assertTrue(reacquired.ok, reacquired.messages)
