@@ -26,7 +26,7 @@ MAX_JUDGE_METADATA_BYTES = 1024 * 1024
 MAX_METADATA_HASH_SECONDS = 30
 VALID_CATEGORIES = {None, "direct-mismatch", "over-promise", "under-promise"}
 JUDGE_MODULES = (
-    "artifact.py", "metrics.py", "run_bench.py", "runner.py", "trial.py",
+    "artifact.py", "metrics.py", "report.py", "run_bench.py", "runner.py", "trial.py",
 )
 
 

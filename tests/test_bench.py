@@ -23,20 +23,23 @@ class ModuleBoundaryTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIsNotNone(importlib.util.find_spec(f"eval.bench.{name}"))
 
-    def test_run_bench_is_an_explicit_compatibility_facade(self):
-        from eval.bench import metrics, runner, trial
+    def test_run_bench_has_no_judge_or_paid_cli_surface(self):
+        for name in ("judge", "claude_json", "bounded_cli_run", "PRONGS"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(run_bench, name))
+                with self.assertRaises(AttributeError):
+                    with mock.patch.object(run_bench, name):
+                        pass
 
-        self.assertIs(run_bench.judge, trial.judge)
-        self.assertIs(run_bench.claude_json, trial.claude_json)
-        self.assertIs(run_bench.score, metrics.score)
-        self.assertIs(run_bench.rows_from_transcript, metrics.rows_from_transcript)
-        self.assertIs(run_bench.load_dataset, runner.load_dataset)
-        self.assertIs(run_bench.bounded_results, runner.bounded_results)
-
-    def test_selftest_is_a_thin_compatible_health_check(self):
+    def test_selftest_checks_metrics_and_trial_without_paid_cli(self):
         output = StringIO()
-        with redirect_stdout(output):
-            self.assertEqual(run_bench.selftest(), 0)
+        with mock.patch.object(trial, "claude_json", side_effect=AssertionError("paid CLI")), \
+             mock.patch.object(metrics, "selftest", wraps=metrics.selftest) as metrics_check, \
+             mock.patch.object(trial, "selftest", wraps=trial.selftest) as trial_check, \
+             redirect_stdout(output):
+            self.assertEqual(runner.selftest(), 0)
+        metrics_check.assert_called_once_with()
+        trial_check.assert_called_once_with()
         self.assertEqual(output.getvalue(), "selftest ok\n")
 
 
@@ -224,6 +227,34 @@ class JudgeAbstentionTests(unittest.TestCase):
         }
         self.models = {"strong": "strong", "cheap": "cheap"}
         self.consistent = {"verdict": "consistent", "category": None, "why": "return 1"}
+
+    def test_stage_stub_covers_unanimous_and_contested_paths_without_cli(self):
+        consistent = ok(self.consistent)
+
+        def unanimous(stage, *_args):
+            return {
+                "snap": consistent,
+                "challenge": ok({"cracks": False}),
+                "prongs": [consistent] * 3,
+                "blindspot": ok({"missed_angle": None}),
+            }[stage]
+
+        clear = trial.judge(self.pair, self.models, run_test=unanimous)
+        self.assertEqual(clear["final_verdict"], "consistent")
+        self.assertNotIn("synthesis", clear["stages"])
+
+        def contested(stage, *_args):
+            return {
+                "snap": consistent,
+                "challenge": ok({"cracks": True}),
+                "prongs": [ok({"verdict": "inconsistent"})] * 3,
+                "blindspot": ok({"missed_angle": None}),
+                "synthesis": ok({"verdict": "inconsistent", "why": "decided"}),
+            }[stage]
+
+        decided = trial.judge(self.pair, self.models, run_test=contested)
+        self.assertEqual(decided["final_verdict"], "inconsistent")
+        self.assertIn("synthesis", decided["stages"])
 
     def test_missing_snap_verdict_abstains_instead_of_defaulting_consistent(self):
         with mock.patch.object(trial, "snap_call", return_value=ok({"why": "missing"})), \

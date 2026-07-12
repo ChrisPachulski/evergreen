@@ -313,13 +313,21 @@ def _abstained(trail, reason):
     }
 
 
-def judge(pair, models, stages=(), run_test=None):
+def judge(pair, models, run_test=None):
     """Put one claim on trial (the 5-step process). models: {strong, cheap}."""
     strong, cheap = models["strong"], models["cheap"]
     trail = {}
+    calls = {
+        "snap": snap_call, "challenge": challenge_call, "prongs": run_prongs,
+        "prongs_escalated": run_prongs, "blindspot": blindspot_call,
+        "synthesis": synthesis_call,
+    }
+
+    def invoke(stage, *args):
+        return run_test(stage, *args) if run_test else calls[stage](*args)
 
     snap_result, snap = _checked_stage(
-        snap_call(pair, strong), "snap", lambda value: value.get("verdict") in VERDICTS
+        invoke("snap", pair, strong), "snap", lambda value: value.get("verdict") in VERDICTS
     )                                                                 # 1. snap (strong)
     trail["snap"] = snap_result
     if snap is None:
@@ -327,7 +335,7 @@ def judge(pair, models, stages=(), run_test=None):
     snap_v = snap["verdict"]
 
     challenge_result, ch = _checked_stage(
-        challenge_call(pair, snap_v, cheap),
+        invoke("challenge", pair, snap_v, cheap),
         "challenge",
         lambda value: type(value.get("cracks")) is bool,
     )                                                                 # 2. challenge (cheap)
@@ -336,7 +344,7 @@ def judge(pair, models, stages=(), run_test=None):
         return _abstained(trail, challenge_result["reason"])
     cracked = ch["cracks"]
 
-    prong_results = run_prongs(pair, strong if cracked else cheap)     # 3. blind prongs
+    prong_results = invoke("prongs", pair, strong if cracked else cheap)  # 3. blind prongs
     checked_prongs = [
         _checked_stage(result, "prong", lambda value: value.get("verdict") in VERDICTS)
         for result in prong_results
@@ -355,7 +363,7 @@ def judge(pair, models, stages=(), run_test=None):
                 _checked_stage(
                     result, "escalated prong", lambda value: value.get("verdict") in VERDICTS
                 )
-                for result in run_prongs(pair, strong)
+                for result in invoke("prongs_escalated", pair, strong)
             ]                                                         # escalate to strong prongs
             trail["prongs_escalated"] = [result for result, _ in escalated]
             if len(escalated) != len(PRONGS) or any(value is None for _, value in escalated):
@@ -366,7 +374,7 @@ def judge(pair, models, stages=(), run_test=None):
             pv = [p["verdict"] for p in prongs]
 
     blindspot_result, bs = _checked_stage(
-        blindspot_call(pair, cheap),
+        invoke("blindspot", pair, cheap),
         "blindspot",
         lambda value: "missed_angle" in value and
         (value["missed_angle"] is None or
@@ -382,7 +390,7 @@ def judge(pair, models, stages=(), run_test=None):
         verdict, category, why = snap_v, (snap or {}).get("category"), (snap or {}).get("why")
     else:                                            # 5. synthesis (strong), only when contested
         synthesis_result, syn = _checked_stage(
-            synthesis_call(pair, snap, ch, prongs, bs, strong),
+            invoke("synthesis", pair, snap, ch, prongs, bs, strong),
             "synthesis",
             lambda value: value.get("verdict") in VERDICTS,
         )
@@ -394,3 +402,31 @@ def judge(pair, models, stages=(), run_test=None):
 
     return {"final_status": "complete", "final_verdict": verdict, "verdict": verdict,
             "category": category, "why": why, "contested": cracked or missed, "stages": trail}
+
+
+def selftest():
+    pair = {"id": "health", "func": "f", "code": "return 1", "doc": "returns 1"}
+    models = {"strong": "stub", "cheap": "stub"}
+    consistent = {"status": "ok", "value": {
+        "verdict": "consistent", "category": None, "why": "return 1",
+    }}
+
+    def run(responses):
+        return judge(pair, models, run_test=lambda stage, *_args: responses[stage])
+
+    clear = run({
+        "snap": consistent, "challenge": {"status": "ok", "value": {"cracks": False}},
+        "prongs": [consistent] * 3,
+        "blindspot": {"status": "ok", "value": {"missed_angle": None}},
+    })
+    contested = run({
+        "snap": consistent, "challenge": {"status": "ok", "value": {"cracks": True}},
+        "prongs": [{"status": "ok", "value": {"verdict": "inconsistent"}}] * 3,
+        "blindspot": {"status": "ok", "value": {"missed_angle": None}},
+        "synthesis": {"status": "ok", "value": {"verdict": "inconsistent"}},
+    })
+    if (clear["final_verdict"] != "consistent" or "synthesis" in clear["stages"] or
+            contested["final_verdict"] != "inconsistent" or
+            "synthesis" not in contested["stages"]):
+        raise RuntimeError("benchmark trial health check failed")
+    return 0

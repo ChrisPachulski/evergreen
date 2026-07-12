@@ -49,6 +49,7 @@ class ArtifactMetadataTests(unittest.TestCase):
             modules = {
                 "artifact.py": b"artifact body\n",
                 "metrics.py": b"metrics body\n",
+                "report.py": b"report body\n",
                 "run_bench.py": b"judge body\n",
                 "runner.py": b"runner body\n",
                 "trial.py": b"trial body\n",
@@ -94,7 +95,9 @@ class ArtifactMetadataTests(unittest.TestCase):
             judge.parent.mkdir(parents=True)
             dataset.write_text("data")
             skill.write_text("skill")
-            for name in ("artifact.py", "metrics.py", "run_bench.py", "runner.py", "trial.py"):
+            for name in (
+                "artifact.py", "metrics.py", "report.py", "run_bench.py", "runner.py", "trial.py",
+            ):
                 (bench / name).write_text(name)
             git = {"commit": "c", "tree": "t", "dirty": False,
                    "status_sha256": hashlib.sha256(b"").hexdigest(),
@@ -124,14 +127,18 @@ class ArtifactMetadataTests(unittest.TestCase):
     def test_judge_identity_changes_with_every_behavior_module(self):
         from eval.bench import artifact
 
+        expected = {
+            "artifact.py", "metrics.py", "report.py", "run_bench.py", "runner.py", "trial.py",
+        }
+        self.assertEqual(set(artifact.JUDGE_MODULES), expected)
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             bench = repo / "eval" / "bench"
             bench.mkdir(parents=True)
-            for name in artifact.JUDGE_MODULES:
+            for name in expected:
                 (bench / name).write_text(name)
             first = artifact.judge_identity(repo)
-            for name in artifact.JUDGE_MODULES:
+            for name in expected:
                 with self.subTest(name=name):
                     path = bench / name
                     original = path.read_text()

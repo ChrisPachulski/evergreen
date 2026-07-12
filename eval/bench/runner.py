@@ -10,19 +10,26 @@ import sys
 import time
 
 try:
+    from . import metrics as metrics_module, trial as trial_module
     from .artifact import (
         artifact_document, artifact_metadata, atomic_write_json, load_json, merge_usage,
         read_bytes, resume_state, validate_benchmark_row, validate_input_hashes, validate_usage,
     )
-    from .metrics import report, rows_from_transcript, score
-    from .trial import _skill_body, _validated_pair_data as validate_pair, bounded_cli_run, judge, set_skill_body
+    from .metrics import report, rows_from_transcript
+    from .trial import (
+        _validated_pair_data as validate_pair, judge, set_skill_body,
+    )
 except ImportError:  # Direct script execution.
+    import metrics as metrics_module
+    import trial as trial_module
     from artifact import (
         artifact_document, artifact_metadata, atomic_write_json, load_json, merge_usage,
         read_bytes, resume_state, validate_benchmark_row, validate_input_hashes, validate_usage,
     )
-    from metrics import report, rows_from_transcript, score
-    from trial import _skill_body, _validated_pair_data as validate_pair, bounded_cli_run, judge, set_skill_body
+    from metrics import report, rows_from_transcript
+    from trial import (
+        _validated_pair_data as validate_pair, judge, set_skill_body,
+    )
 
 HERE = Path(__file__).parent
 SKILL = HERE.parent.parent / "skills" / "evergreen" / "SKILL.md"
@@ -37,15 +44,8 @@ MAX_RESCORE_ROWS = 100_000
 
 
 def selftest():
-    rows = [
-        {"language": "python", "label": "consistent", "category": None,
-         "final_status": "complete", "final_verdict": "consistent"},
-        {"language": "python", "label": "inconsistent", "category": "direct-mismatch",
-         "final_status": "complete", "final_verdict": "inconsistent"},
-    ]
-    metrics = score(rows)
-    if metrics["tp"] != 1 or metrics["tn"] != 1:
-        raise RuntimeError("benchmark health check failed")
+    metrics_module.selftest()
+    trial_module.selftest()
     print("selftest ok")
     return 0
 

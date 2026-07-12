@@ -7,6 +7,23 @@ CORE_CATEGORIES = {None, "direct-mismatch", "over-promise"}
 VERDICTS = {"consistent", "inconsistent"}
 
 
+def selftest():
+    rows = [
+        {"language": "python", "label": "consistent", "category": None,
+         "final_status": "complete", "final_verdict": "consistent"},
+        {"language": "python", "label": "inconsistent", "category": "direct-mismatch",
+         "final_status": "complete", "final_verdict": "inconsistent"},
+        {"language": "python", "label": "inconsistent", "category": "under-promise",
+         "final_status": "complete", "final_verdict": "inconsistent"},
+    ]
+    result = score(rows)
+    sparse = score(rows[:1])
+    if ((result["tp"], result["tn"], result["under_flagged"]) != (1, 1, 1) or
+            sparse["metrics_available"]):
+        raise RuntimeError("benchmark metrics health check failed")
+    return 0
+
+
 def score(rows):
     """Return completed-row metrics, abstention coverage, and the under-promise tally."""
     languages = {row.get("language", "unknown") for row in rows}
