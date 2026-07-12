@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -22,13 +23,14 @@ class EvergreenCLITests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def run_cli(self, *args):
+    def run_cli(self, *args, env=None):
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args],
             cwd=self.repo,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=env,
         )
 
     def write_map(self):
@@ -76,6 +78,59 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertIn("\\x1b", hostile.stderr)
         self.assertIn("\\n", hostile.stderr)
         self.assertIn("\\x7f", hostile.stderr)
+
+    def test_host_commands_have_parallel_selection_and_dry_run_interfaces(self):
+        root_help = self.run_cli("--help")
+        install_help = self.run_cli("install", "--help")
+        uninstall_help = self.run_cli("uninstall", "--help")
+        doctor_help = self.run_cli("doctor", "--help")
+
+        for command in ("install", "uninstall", "doctor"):
+            self.assertIn(command, root_help.stdout)
+        for result in (install_help, uninstall_help):
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("--host", result.stdout)
+            self.assertIn("--dry-run", result.stdout)
+        self.assertIn("--host", doctor_help.stdout)
+        self.assertIn("--repo", doctor_help.stdout)
+
+    def test_host_cli_uses_fake_home_and_dry_run_and_uninstall_are_reversible(self):
+        home = Path(self.temporary.name) / "fake home with spaces"
+        (home / ".claude").mkdir(parents=True)
+        (home / ".codex").mkdir()
+        agents = home / ".codex" / "AGENTS.md"
+        agents.write_text("user-owned\n")
+        env = os.environ.copy()
+        env["HOME"] = str(home)
+
+        preview = self.run_cli("install", "--host", "all", "--dry-run", env=env)
+        self.assertEqual(preview.returncode, 0, preview.stderr)
+        self.assertFalse((home / ".claude" / "CLAUDE.md").exists())
+        self.assertEqual(agents.read_text(), "user-owned\n")
+
+        installed = self.run_cli("install", "--host", "all", env=env)
+        diagnosed = self.run_cli("doctor", "--host", "all", "--repo", str(ROOT), env=env)
+        removed = self.run_cli("uninstall", "--host", "all", env=env)
+
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        self.assertEqual(diagnosed.returncode, 0, diagnosed.stderr)
+        self.assertIn("healthy", diagnosed.stdout.lower())
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertEqual(agents.read_text(), "user-owned\n")
+        self.assertFalse((home / ".claude" / "skills" / "evergreen").is_symlink())
+        self.assertFalse((home / ".codex" / "skills" / "evergreen").is_symlink())
+
+    def test_explicit_absent_host_refuses_without_creating_configuration(self):
+        home = Path(self.temporary.name) / "empty-home"
+        home.mkdir()
+        env = os.environ.copy()
+        env["HOME"] = str(home)
+
+        result = self.run_cli("install", "--host", "codex", env=env)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("not detected", result.stderr)
+        self.assertEqual(list(home.iterdir()), [])
 
     def test_human_output_is_candidate_only_and_does_not_mutate_project(self):
         self.write_map()

@@ -13,6 +13,7 @@ if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
 from evergreen.evidence import load_evidence  # noqa: E402
+from evergreen.hosts import doctor, install, uninstall  # noqa: E402
 from evergreen.impact import impact  # noqa: E402
 
 
@@ -24,7 +25,7 @@ def error_display(value):
 def parser():
     root = argparse.ArgumentParser(
         prog="evergreen",
-        description="Query additive documentation candidates without editing the project.",
+        description="Evergreen candidate queries and reversible host setup.",
     )
     commands = root.add_subparsers(dest="command", required=True)
     query = commands.add_parser(
@@ -35,7 +36,42 @@ def parser():
     query.add_argument("--json", action="store_true", help="emit one JSON object")
     query.add_argument("paths", metavar="PATH", nargs="*", help="changed repository-relative path")
     query.set_defaults(run=run_impact)
+    for name, help_text, runner in (
+        ("install", "install reversible Claude or Codex integration", run_install),
+        ("uninstall", "remove only Evergreen-owned host integration", run_uninstall),
+    ):
+        command = commands.add_parser(name, help=help_text)
+        command.add_argument("--host", choices=("claude", "codex", "all"), default="all")
+        command.add_argument("--dry-run", action="store_true", help="describe changes only")
+        command.set_defaults(run=runner)
+    check = commands.add_parser("doctor", help="check canonical files and host ownership")
+    check.add_argument("--host", choices=("claude", "codex", "all"), default="all")
+    check.add_argument("--repo", default=str(PLUGIN_ROOT), help="canonical Evergreen root")
+    check.set_defaults(run=run_doctor)
     return root
+
+
+def run_install(args):
+    return _print_operation(install(Path.home(), PLUGIN_ROOT, args.host, args.dry_run), 2)
+
+
+def run_uninstall(args):
+    return _print_operation(uninstall(Path.home(), args.host, args.dry_run), 2)
+
+
+def run_doctor(args):
+    result = doctor(Path.home(), Path(args.repo).expanduser(), args.host)
+    code = _print_operation(result, 1)
+    if result.ok:
+        print("Evergreen host setup is healthy.")
+    return code
+
+
+def _print_operation(result, failure_code):
+    stream = sys.stdout if result.ok else sys.stderr
+    for message in result.messages:
+        print(message, file=stream)
+    return 0 if result.ok else failure_code
 
 
 def run_impact(args):
