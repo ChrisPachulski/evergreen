@@ -262,8 +262,9 @@ class HostTests(HostTestCase):
                         os.link(instructions, codex / "concurrent-link")
                     else:
                         content = instructions.read_bytes()
-                        instructions.unlink()
-                        instructions.write_bytes(content)
+                        replacement = instructions.with_name("concurrent-replacement")
+                        replacement.write_bytes(content)
+                        os.replace(replacement, instructions)
                         concurrent_inode = instructions.stat().st_ino
                     return postimage
 

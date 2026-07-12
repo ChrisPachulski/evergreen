@@ -181,11 +181,18 @@ def snapshot_at(path, parent_fd):
     if item_kind == "symlink":
         target = os.readlink(path.name, dir_fd=parent_fd)
         after = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
-        if (after.st_dev, after.st_ino, after.st_mode, after.st_nlink) != (
+        if (
+            after.st_dev, after.st_ino, after.st_mode, after.st_nlink,
+            after.st_uid, after.st_gid, after.st_mtime_ns,
+        ) != (
             metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_nlink,
+            metadata.st_uid, metadata.st_gid, metadata.st_mtime_ns,
         ):
             raise OSError(f"transaction symlink changed: {path}")
-        return PathSnapshot(path, item_kind, target=target, **common)
+        return PathSnapshot(
+            path, item_kind, target=target,
+            **{**common, "atime_ns": after.st_atime_ns, "mtime_ns": after.st_mtime_ns},
+        )
     if item_kind == "directory":
         return PathSnapshot(path, item_kind, **common)
     raise OSError(f"refusing unsafe transaction path ({item_kind}): {path}")
