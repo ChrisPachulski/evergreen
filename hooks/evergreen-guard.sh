@@ -14,13 +14,39 @@ set -u
 
 STDIN="$(cat 2>/dev/null || true)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || exit 0
-command -v python3 >/dev/null 2>&1 || exit 0
-intent="$(printf '%s' "$STDIN" | python3 "$SCRIPT_DIR/evergreen-guard-command.py" 2>/dev/null)" || exit 0
 
-# The hook runs before the entire Bash tool call. If add and commit share that call, the index
-# cannot be inspected in its finalized state, so require the normal two-call workflow.
+fallback_has_git_intent() {
+  local wanted="$1"
+  printf '%s' "$STDIN" | grep -Eq \
+    "(^|[^[:alnum:]_-])git.*${wanted}([^[:alnum:]_-]|$)"
+}
+
+fallback_intent() {
+  local add=false commit=false
+  fallback_has_git_intent add && add=true
+  fallback_has_git_intent commit && commit=true
+  if $add && $commit; then
+    echo compound
+  elif $add || $commit; then
+    echo git
+  else
+    echo none
+  fi
+}
+
+intent=""
+if command -v python3 >/dev/null 2>&1; then
+  intent="$(printf '%s' "$STDIN" | python3 "$SCRIPT_DIR/evergreen-guard-command.py" 2>/dev/null)" || intent=""
+fi
+case "$intent" in
+  compound|git|none) ;;
+  *) intent="$(fallback_intent)" ;;
+esac
+
+# Any call containing both intents is deliberately rejected. Shell grammar is too broad to prove
+# ordering or exclusivity safely at this trust boundary.
 if [ "$intent" = "compound" ]; then
-  echo "evergreen guard: run git add and git commit in separate Bash tool calls so the finalized staged index can be inspected." >&2
+  echo "evergreen guard: run git add and git commit in separate Bash tool calls so the finalized staged index can be inspected, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
   exit 2
 fi
 

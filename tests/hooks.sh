@@ -145,8 +145,8 @@ git -C "$TMP" rm -q --cached SUMMARY.md; rm -f "$TMP/SUMMARY.md"
 printf 'k\n' > "$TMP/.env"; git -C "$TMP" add -f .env
 empty "$(printf '{"tool_input":{"command":"ls -la"}}' | bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
   "guard: non-git command -> pass-through despite staged secret"
-empty "$(guard_cmd "echo git add && echo git commit")" \
-  "guard: non-git mentions of add and commit pass through"
+has "$(guard_cmd "echo git add && echo git commit")" "separate" \
+  "guard: conservative policy blocks recognizable Git intents in one call"
 git -C "$TMP" rm -q --cached .env; rm -f "$TMP/.env"
 
 # Staging and committing in one Bash call must be split: the PreToolUse hook cannot inspect the
@@ -165,7 +165,12 @@ for case_row in \
   "sh -c 'git add . && git commit -m x'|sh -c wrapper" \
   "git -C '/tmp/my repo' add . && git -C '/tmp/my repo' commit -m x|single-quoted git -C" \
   "git -C \"/tmp/my repo\" add . && git -C \"/tmp/my repo\" commit -m x|double-quoted git -C" \
-  "git -C /tmp/my\\ repo add . && git -C /tmp/my\\ repo commit -m x|escaped git -C"; do
+  "git -C /tmp/my\\ repo add . && git -C /tmp/my\\ repo commit -m x|escaped git -C" \
+  "git add . && { git commit -m x; }|brace group" \
+  "stage(){ git add .; }; stage && git commit -m x|shell function" \
+  "git add . && if true; then git commit -m x; fi|conditional" \
+  "eval 'git add .' && git commit -m x|eval wrapper" \
+  "git add . & wait; git commit -m x|background and wait"; do
   cmd="${case_row%|*}"
   label="${case_row##*|}"
   has "$(guard_cmd "$cmd")" "separate" "guard: compound $label stage-and-commit is blocked"
@@ -175,10 +180,15 @@ spaced_json='{ "tool_input": { "command": "git add . && git commit -m x" } }'
 has "$(guard_input "$spaced_json")" "separate" "guard: JSON whitespace serialization is classified"
 eq "$(printf '%s' "$spaced_json" | bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?")" "2" \
   "guard: JSON whitespace serialization exits 2"
-empty "$(guard_cmd "git commit -m x && git add .")" \
-  "guard: reverse commit-then-add order is not blocked"
-empty "$(guard_cmd "git add . || git commit -m x")" \
-  "guard: mutually exclusive add-or-commit branches are not blocked"
+for case_row in \
+  "git commit -m x && git add .|reverse commit-then-add" \
+  "git add . || git commit -m x|mutually exclusive add-or-commit"; do
+  cmd="${case_row%|*}"
+  label="${case_row##*|}"
+  has "$(guard_cmd "$cmd")" "separate" "guard: conservative policy blocks $label"
+  has "$(guard_cmd "$cmd")" "EVERGREEN_GUARD=off" "guard: $label rejection names bypass"
+  eq "$(guard_rc "$cmd")" "2" "guard: conservative $label exits 2"
+done
 empty "$(EVERGREEN_GUARD=off guard_cmd "git add -f .env && git commit -m x")" \
   "guard: EVERGREEN_GUARD=off bypasses compound rejection"
 
@@ -188,6 +198,16 @@ chmod +x "$TMP/no-python/python3"
 plain_payload="$(guard_payload "ls -la")"
 empty "$(printf '%s' "$plain_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
   "guard: unavailable Python does not block unrelated commands"
+compound_payload="$(guard_payload "git add . && git commit -m x")"
+has "$(printf '%s' "$compound_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "separate" "guard: unavailable Python still blocks obvious compound Git"
+eq "$(printf '%s' "$compound_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?")" \
+  "2" "guard: unavailable Python compound Git exits 2"
+git -C "$TMP" add -f .env
+commit_payload="$(guard_payload "git commit -m x")"
+has "$(printf '%s' "$commit_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "secret/credential" "guard: unavailable Python commit still inspects staged index"
+git -C "$TMP" rm -q --cached .env
 rm -rf "$TMP/no-python"
 rm -f "$TMP/.env"
 
