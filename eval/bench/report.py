@@ -22,7 +22,9 @@ MAX_TOTAL_ARTIFACT_BYTES = 128 * 1024 * 1024
 MAX_ROWS = 100_000
 MAX_LANGUAGES = 64
 MAX_LANGUAGE_CHARS = 128
-REQUIRED_METADATA = ("dataset", "skill", "judge", "git", "cli_version", "settings")
+REQUIRED_METADATA = (
+    "dataset", "provider", "skill", "judge", "git", "cli_version", "settings",
+)
 
 
 def _safe_text(value):
@@ -86,6 +88,8 @@ def _validate_metadata(metadata):
         raise ValueError("invalid provenance: CLI version")
     if not isinstance(metadata["settings"], dict):
         raise ValueError("unavailable provenance: settings")
+    if metadata["provider"] not in ("claude", "codex"):
+        raise ValueError("invalid provenance: provider")
 
 
 def _compatibility_identity(metadata):
@@ -218,6 +222,7 @@ def _build_report(paths, required_languages, coverage_threshold):
         f"| Git status SHA-256 | `{_safe_text(git['status_sha256'])}` |",
         f"| Git diff SHA-256 | `{_safe_text(git['diff_sha256'])}` |",
         f"| Git untracked SHA-256 | `{_safe_text(git['untracked_sha256'])}` |",
+        f"| Provider | {_safe_text(provenance['provider'])} |",
         f"| CLI version | {_safe_text(provenance['cli_version'])} |",
         "| Settings SHA-256 | `"
         + hashlib.sha256(json.dumps(

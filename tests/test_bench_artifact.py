@@ -49,6 +49,7 @@ class ArtifactMetadataTests(unittest.TestCase):
             modules = {
                 "artifact.py": b"artifact body\n",
                 "metrics.py": b"metrics body\n",
+                "model-output.schema.json": b"{}\n",
                 "report.py": b"report body\n",
                 "run_bench.py": b"judge body\n",
                 "runner.py": b"runner body\n",
@@ -79,6 +80,7 @@ class ArtifactMetadataTests(unittest.TestCase):
             metadata["judge"]["sha256"], hashlib.sha256(b"judge body\n").hexdigest()
         )
         self.assertEqual(metadata["git"], git)
+        self.assertEqual(metadata["provider"], "claude")
         self.assertEqual(metadata["cli_version"], "2.7.1 (Claude Code)")
         self.assertEqual(metadata["settings"], settings)
 
@@ -96,7 +98,8 @@ class ArtifactMetadataTests(unittest.TestCase):
             dataset.write_text("data")
             skill.write_text("skill")
             for name in (
-                "artifact.py", "metrics.py", "report.py", "run_bench.py", "runner.py", "trial.py",
+                "artifact.py", "metrics.py", "model-output.schema.json", "report.py",
+                "run_bench.py", "runner.py", "trial.py",
             ):
                 (bench / name).write_text(name)
             git = {"commit": "c", "tree": "t", "dirty": False,
@@ -124,11 +127,44 @@ class ArtifactMetadataTests(unittest.TestCase):
         self.assertEqual(with_usage["provider_usage"], {"input_tokens": 11, "output_tokens": 7})
         self.assertEqual(with_usage["timing"]["elapsed_seconds"], 1.25)
 
+    def test_cli_provenance_uses_the_declared_provider(self):
+        from eval.bench import artifact
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            dataset = repo / "dataset.jsonl"
+            skill = repo / "skills" / "evergreen" / "SKILL.md"
+            bench = repo / "eval" / "bench"
+            skill.parent.mkdir(parents=True)
+            bench.mkdir(parents=True)
+            dataset.write_text("data")
+            skill.write_text("skill")
+            for name in artifact.JUDGE_MODULES:
+                (bench / name).write_text(name)
+            commands = []
+
+            def version(command):
+                commands.append(command)
+                return "codex-cli 0.144.1"
+
+            with mock.patch("eval.bench.artifact._command_output", side_effect=version), \
+                 mock.patch("eval.bench.artifact.git_identity", return_value={"commit": "c"}):
+                metadata = artifact.artifact_metadata(
+                    dataset, repo,
+                    {"provider": "codex", "models": {"strong": "gpt", "cheap": "gpt"}},
+                )
+
+        self.assertEqual(commands, [["codex", "--version"]])
+        self.assertEqual(metadata["provider"], "codex")
+        self.assertEqual(metadata["cli_version"], "codex-cli 0.144.1")
+        self.assertEqual(metadata["settings"]["provider"], "codex")
+
     def test_judge_identity_changes_with_every_behavior_module(self):
         from eval.bench import artifact
 
         expected = {
-            "artifact.py", "metrics.py", "report.py", "run_bench.py", "runner.py", "trial.py",
+            "artifact.py", "metrics.py", "model-output.schema.json", "report.py",
+            "run_bench.py", "runner.py", "trial.py",
         }
         self.assertEqual(set(artifact.JUDGE_MODULES), expected)
         with tempfile.TemporaryDirectory() as directory:
@@ -428,6 +464,7 @@ class ArtifactReportTests(unittest.TestCase):
         digest = hashlib.sha256(dataset.encode()).hexdigest()
         return {
             "dataset": {"path": f"{dataset}.jsonl", "sha256": digest},
+            "provider": "claude",
             "skill": {"path": "skills/evergreen/SKILL.md", "sha256": "1" * 64},
             "judge": {"path": "eval/bench/run_bench.py", "sha256": "2" * 64},
             "git": {"commit": "c" * 40, "tree": "d" * 40, "dirty": False,
@@ -472,6 +509,7 @@ class ArtifactReportTests(unittest.TestCase):
         self.assertNotIn("all languages", first.lower())
         self.assertNotIn("aggregate", first.lower())
         self.assertIn("### Provenance", first)
+        self.assertIn("| Provider | claude |", first)
         self.assertIn("claude 1.0", first)
         self.assertIn("Required languages: **go, python**.", first)
 
@@ -674,6 +712,17 @@ class ArtifactReportTests(unittest.TestCase):
                 "--require-language", "python",
             ]), 2)
             self.assertIn("invalid", markdown.read_text().lower())
+
+            missing_provider = self.metadata("missing-provider")
+            del missing_provider["provider"]
+            artifact_path = self.write_artifact(
+                directory, "missing-provider.json", rows, missing_provider
+            )
+            self.assertEqual(report.main([
+                str(artifact_path), "--markdown", str(markdown),
+                "--require-language", "python",
+            ]), 2)
+            self.assertIn("required metadata", markdown.read_text().lower())
 
     def test_report_bounds_artifact_count_size_and_rows(self):
         from eval.bench import report

@@ -1,4 +1,4 @@
-"""Prompt isolation, bounded Claude calls, and the benchmark trial state machine."""
+"""Prompt isolation, bounded model calls, and the benchmark trial state machine."""
 
 import hashlib
 import json
@@ -6,11 +6,13 @@ import os
 from pathlib import Path
 import selectors
 import subprocess
+import tempfile
 import time
 from types import SimpleNamespace
 
 HERE = Path(__file__).parent
 SKILL = HERE.parent.parent / "skills" / "evergreen" / "SKILL.md"
+MODEL_OUTPUT_SCHEMA = HERE / "model-output.schema.json"
 MAX_MODEL_STDOUT_BYTES = 1024 * 1024
 MAX_MODEL_STDERR_BYTES = 256 * 1024
 MAX_PAIR_ID_BYTES = 16 * 1024
@@ -24,6 +26,17 @@ UNTRUSTED_DATA_INSTRUCTION = (
 )
 UNTRUSTED_PAIR_PREFIX = "UNTRUSTED_BENCHMARK_DATA_JSON="
 UNTRUSTED_TRIAL_PREFIX = "UNTRUSTED_TRIAL_RECORD_JSON="
+CODEX_NO_TOOLS = (
+    "Do not call or use any tools. Judge only the evidence embedded in this prompt and return "
+    "the requested JSON object. Your final response must be an object with exactly one string "
+    "field named \"payload\"; encode the requested JSON object as that string's value."
+)
+CODEX_DISABLED_FEATURES = (
+    "plugins", "apps", "browser_use", "browser_use_external",
+    "browser_use_full_cdp_access", "computer_use", "image_generation", "multi_agent",
+    "unified_exec", "shell_tool", "goals", "hooks", "code_mode_host", "tool_suggest",
+    "workspace_dependencies", "in_app_browser",
+)
 
 
 def set_skill_body(text):
@@ -91,9 +104,16 @@ def _trial_envelope(record):
     return _data_envelope("untrusted_trial_record", record, UNTRUSTED_TRIAL_PREFIX)
 
 
-def bounded_cli_run(command, capture_output=True, text=True, timeout=300):
+def bounded_cli_run(command, capture_output=True, text=True, timeout=300, input=None):
     """Capture model CLI output with independent stdout/stderr byte ceilings."""
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    prompt_file = None
+    if input is not None:
+        prompt_file = tempfile.TemporaryFile()
+        prompt_file.write(input.encode() if isinstance(input, str) else input)
+        prompt_file.seek(0)
+    process = subprocess.Popen(
+        command, stdin=prompt_file, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
     selector = selectors.DefaultSelector()
     streams = {
         process.stdout: (bytearray(), MAX_MODEL_STDOUT_BYTES),
@@ -128,6 +148,8 @@ def bounded_cli_run(command, capture_output=True, text=True, timeout=300):
         selector.close()
         process.stdout.close()
         process.stderr.close()
+        if prompt_file is not None:
+            prompt_file.close()
     stdout = bytes(streams[process.stdout][0]).decode("utf-8", "replace")
     stderr = bytes(streams[process.stderr][0]).decode("utf-8", "replace")
     return SimpleNamespace(returncode=return_code, stdout=stdout, stderr=stderr)
@@ -170,6 +192,86 @@ def claude_json(prompt, model, tools="", timeout=300, max_retries=2, runner=None
     return {"status": "abstain", "reason": reason}
 
 
+def codex_json(prompt, model, timeout=300, max_retries=2, runner=None):
+    """Run one isolated Codex CLI call and return the shared explicit result status."""
+    cmd = [
+        "codex", "exec", "--strict-config", "--ephemeral", "--ignore-user-config",
+        "--ignore-rules", "--skip-git-repo-check", "-c", 'approval_policy="never"',
+        "-c", "skills.include_instructions=false", "--sandbox", "read-only",
+        "--output-schema", str(MODEL_OUTPUT_SCHEMA.resolve()),
+        "--color", "never", "--json",
+    ]
+    for feature in CODEX_DISABLED_FEATURES:
+        cmd += ["--disable", feature]
+    if model:
+        cmd += ["--model", model]
+    runner = runner or bounded_cli_run
+    reason = "malformed response"
+    with tempfile.TemporaryDirectory(prefix="evergreen-codex-") as empty_cwd:
+        isolated_cmd = [*cmd, "-C", empty_cwd, "-"]
+        for _ in range(max_retries + 1):
+            try:
+                completed = runner(
+                    isolated_cmd, capture_output=True, text=True, timeout=timeout,
+                    input=f"{CODEX_NO_TOOLS}\n\n{prompt}",
+                )
+            except subprocess.TimeoutExpired:
+                reason = "timeout"
+                continue
+            except OSError as error:
+                return {"status": "abstain", "reason": str(error)}
+            if (len(getattr(completed, "stdout", "").encode()) > MAX_MODEL_STDOUT_BYTES or
+                    len(getattr(completed, "stderr", "").encode()) > MAX_MODEL_STDERR_BYTES):
+                return {"status": "abstain", "reason": "model CLI output limit exceeded"}
+            if getattr(completed, "returncode", 0):
+                reason = f"CLI exited {completed.returncode}"
+                continue
+            agent_message = None
+            turn_completed = False
+            used_tool = False
+            malformed = False
+            for line in completed.stdout.splitlines():
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    malformed = True
+                    continue
+                if not isinstance(event, dict):
+                    malformed = True
+                    continue
+                if event.get("type") == "turn.completed":
+                    turn_completed = True
+                if event.get("type", "").startswith("item."):
+                    item = event.get("item")
+                    if isinstance(item, dict):
+                        item_type = item.get("type")
+                        if item_type == "agent_message" and event["type"] == "item.completed":
+                            agent_message = item.get("text")
+                        elif item_type not in ("reasoning", "error"):
+                            used_tool = True
+            if used_tool:
+                return {"status": "abstain", "reason": "Codex attempted a tool call"}
+            if turn_completed and isinstance(agent_message, str) and not malformed:
+                try:
+                    wrapper = json.loads(agent_message)
+                    value = json.loads(wrapper["payload"]) if set(wrapper) == {"payload"} else None
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    value = None
+                if isinstance(value, dict):
+                    return {"status": "ok", "value": value}
+            reason = "malformed or incomplete Codex response"
+    return {"status": "abstain", "reason": reason}
+
+
+def model_json(prompt, model, provider="claude", **kwargs):
+    """Dispatch a model call through one of the two reproducible CLI adapters."""
+    if provider == "claude":
+        return claude_json(prompt, model, **kwargs)
+    if provider == "codex":
+        return codex_json(prompt, model, **kwargs)
+    raise ValueError("EVAL_PROVIDER must be claude or codex")
+
+
 # ── The trial ────────────────────────────────────────────────────────────────
 # A documentation claim is put on trial against the real code. No single call is trusted:
 #   1. snap    (strong)  — first-instinct verdict, logged; a weighted vote, never the last word.
@@ -184,7 +286,7 @@ def claude_json(prompt, model, tools="", timeout=300, max_retries=2, runner=None
 #                          unanimous. This is where "did the accusation beat its defense?" is
 #                          judged — there is no separate immune rule (needs iterations we lack).
 
-def snap_call(pair, model):
+def snap_call(pair, model, provider="claude"):
     prompt = f"""{skill_body()}
 
 # Task
@@ -196,10 +298,10 @@ contradicts or fails to deliver; extra undocumented behavior is NOT an inconsist
 
 Reply with exactly one line of JSON and nothing else:
 {{"id": "<copy data.id exactly>", "verdict": "consistent" | "inconsistent", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "why": "<cite the code>"}}"""
-    return claude_json(prompt, model)
+    return model_json(prompt, model, provider)
 
 
-def challenge_call(pair, snap_verdict, model):
+def challenge_call(pair, snap_verdict, model, provider="claude"):
     attack = ("Argue the documentation is actually INCONSISTENT — find the specific code that "
               "breaks its claim." if snap_verdict == "consistent" else
               "Argue the documentation is actually CONSISTENT — give the reading of the code "
@@ -217,7 +319,7 @@ either way; most first verdicts survive a decent attack. When unsure, cracks=fal
 Reply with exactly one line of JSON and nothing else:
 {{"cracks": true | false, "why": "<your strongest case, citing the code>"}}"""
     # cracks=true  → the first verdict does NOT survive the challenge (it was contestable)
-    return claude_json(prompt, model)
+    return model_json(prompt, model, provider)
 
 
 PRONGS = {
@@ -227,7 +329,7 @@ PRONGS = {
 }
 
 
-def prong_call(pair, role, model):
+def prong_call(pair, role, model, provider="claude"):
     # BLIND: the prong sees only the claim + code + its assigned angle — never the snap, the
     # challenge, or its tier. That blindness is what stops a "confirming" prong rubber-stamping.
     prompt = f"""{skill_body()}
@@ -240,16 +342,16 @@ consistent with the code? Code doing MORE than the doc says is consistent (infor
 
 Reply with exactly one line of JSON and nothing else:
 {{"role": "{role}", "verdict": "consistent" | "inconsistent", "why": "<cite the code>"}}"""
-    return claude_json(prompt, model)
+    return model_json(prompt, model, provider)
 
 
-def run_prongs(pair, model):
+def run_prongs(pair, model, provider="claude"):
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=3) as pool:
-        return list(pool.map(lambda r: prong_call(pair, r, model), PRONGS))
+        return list(pool.map(lambda r: prong_call(pair, r, model, provider), PRONGS))
 
 
-def blindspot_call(pair, model):
+def blindspot_call(pair, model, provider="claude"):
     prompt = f"""Three reviewers just judged whether this documentation matches the code. Your
 only job: name ONE angle they could ALL have missed — a reading of the code, an edge case, a
 claim in the doc — strong enough to FLIP the verdict. The bar is HIGH: the angle must rest on
@@ -261,10 +363,10 @@ expected answer is null. You are surfacing a candidate, not deciding.
 
 Reply with exactly one line of JSON and nothing else:
 {{"missed_angle": "<the verdict-flipping angle, or null>"}}"""
-    return claude_json(prompt, model)
+    return model_json(prompt, model, provider)
 
 
-def synthesis_call(pair, snap, challenge, prongs, blindspot, model):
+def synthesis_call(pair, snap, challenge, prongs, blindspot, model, provider="claude"):
     ev = {"snap": snap, "challenge": challenge, "prongs": prongs, "blindspot": blindspot}
     prompt = f"""{skill_body()}
 
@@ -284,7 +386,7 @@ the picture, account for it. Code doing more than the doc says is consistent, no
 
 Reply with exactly one line of JSON and nothing else:
 {{"verdict": "consistent" | "inconsistent", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "why": "<the deciding reasoning, citing the code>"}}"""
-    return claude_json(prompt, model)
+    return model_json(prompt, model, provider)
 
 
 VERDICTS = {"consistent", "inconsistent"}
@@ -316,6 +418,7 @@ def _abstained(trail, reason):
 def judge(pair, models, run_test=None):
     """Put one claim on trial (the 5-step process). models: {strong, cheap}."""
     strong, cheap = models["strong"], models["cheap"]
+    provider = models.get("provider", "claude")
     trail = {}
     calls = {
         "snap": snap_call, "challenge": challenge_call, "prongs": run_prongs,
@@ -324,7 +427,7 @@ def judge(pair, models, run_test=None):
     }
 
     def invoke(stage, *args):
-        return run_test(stage, *args) if run_test is not None else calls[stage](*args)
+        return run_test(stage, *args) if run_test is not None else calls[stage](*args, provider)
 
     snap_result, snap = _checked_stage(
         invoke("snap", pair, strong), "snap", lambda value: value.get("verdict") in VERDICTS

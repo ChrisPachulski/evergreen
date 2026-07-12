@@ -70,6 +70,17 @@ def eval_concurrency(environment=os.environ):
     return value
 
 
+def eval_provider(environment=os.environ):
+    provider = environment.get("EVAL_PROVIDER", "claude")
+    if provider not in ("claude", "codex"):
+        raise ValueError("EVAL_PROVIDER must be claude or codex")
+    return provider
+
+
+def artifact_filename(dataset, strong_model, provider):
+    return f"bench-{Path(dataset).stem}-trial-{provider}-{strong_model}.json"
+
+
 def provider_usage(environment=os.environ):
     raw = environment.get("EVAL_PROVIDER_USAGE_JSON")
     if raw is None:
@@ -149,16 +160,20 @@ def main():
         else Path(os.environ.get("EVAL_DATASET", HERE / "dataset.jsonl"))
     # Two tiers: strong (snap + escalated prongs + synthesis) and cheap (challenge, prongs,
     # blind-spot). Fable is banned from every role in this project.
-    strong = os.environ.get("EVAL_MODEL_STRONG", "claude-opus-4-8")
-    cheap = os.environ.get("EVAL_MODEL_CHEAP", "claude-sonnet-5")
+    provider = eval_provider()
+    default_strong = "claude-opus-4-8" if provider == "claude" else "gpt-5.6-sol"
+    default_cheap = "claude-sonnet-5" if provider == "claude" else "gpt-5.6-sol"
+    strong = os.environ.get("EVAL_MODEL_STRONG", default_strong)
+    cheap = os.environ.get("EVAL_MODEL_CHEAP", default_cheap)
     for role, m in (("strong", strong), ("cheap", cheap)):
         assert "fable" not in m.lower(), f"Fable is banned from this project ({role}={m})"
     dataset_payload, pairs = load_dataset(ds)
     skill_payload = read_bytes(SKILL, MAX_SKILL_BYTES, label="skill input")
     set_skill_body(skill_payload.decode())
-    models = {"strong": strong, "cheap": cheap}
+    models = {"strong": strong, "cheap": cheap, "provider": provider}
     workers = eval_concurrency()
-    settings = {"models": models, "concurrency": workers}
+    settings = {"provider": provider, "models": {"strong": strong, "cheap": cheap},
+                "concurrency": workers}
     metadata = artifact_metadata(ds, HERE.parent.parent, settings)
     if hashlib.sha256(dataset_payload).hexdigest() != metadata["dataset"]["sha256"]:
         raise ValueError("dataset changed while provenance was captured")
@@ -167,7 +182,7 @@ def main():
     new_started_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     start = time.monotonic()
     out_dir = HERE / "out"; out_dir.mkdir(exist_ok=True)
-    out_path = out_dir / f"bench-{ds.stem}-trial-{strong}.json"
+    out_path = out_dir / artifact_filename(ds, strong, provider)
     if out_path.exists():
         state = resume_state(load_json(out_path, MAX_RESUME_BYTES), metadata, dataset_rows=pairs)
     else:

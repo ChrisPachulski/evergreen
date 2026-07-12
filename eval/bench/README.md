@@ -53,24 +53,24 @@ python3 eval/bench/run_bench.py --rescore out/bench-default.json
 ```
 
 The eventual current-judge publication will record one clean implementation commit and tree in
-every compatible artifact, together with Claude Code CLI `2.1.197`, strong model
-`claude-opus-4-8`, cheap model
-`claude-sonnet-5`, and `EVAL_CONCURRENCY=8`. The final implementation commit is frozen before any
-language starts. The report gate is declared before scoring: every language artifact must finish
-and individually meet the threshold passed to `report.py`. A provider interruption is resumed only
-when the validated atomic artifacts share that exact provenance; partial or incompatible matrices
-are never promoted as current results.
+every compatible artifact, together with provider `codex`, Codex CLI `0.144.1`, strong and cheap
+model `gpt-5.6-sol`, and `EVAL_CONCURRENCY=4`. The final implementation commit is frozen before any
+language starts. Language processes may be serialized to stay within local scratch-space limits.
+The report gate is declared before scoring: every language artifact must finish and individually
+meet the threshold passed to `report.py`. A provider interruption is resumed only when validated
+atomic artifacts share that exact provider and provenance; partial, mixed-provider, or otherwise
+incompatible matrices are never promoted as current results.
 
 After all five runs complete, generate the current report with the publication set declared
 explicitly:
 
 ```sh
 python3 eval/bench/report.py \
-  eval/bench/out/bench-codocbench-validated-trial-claude-opus-4-8.json \
-  eval/bench/out/bench-cascade-java-trial-claude-opus-4-8.json \
-  eval/bench/out/bench-codocbench-ts-validated-trial-claude-opus-4-8.json \
-  eval/bench/out/bench-codocbench-rust-validated-trial-claude-opus-4-8.json \
-  eval/bench/out/bench-codocbench-go-validated-trial-claude-opus-4-8.json \
+  eval/bench/out/bench-codocbench-validated-trial-codex-gpt-5.6-sol.json \
+  eval/bench/out/bench-cascade-java-trial-codex-gpt-5.6-sol.json \
+  eval/bench/out/bench-codocbench-ts-validated-trial-codex-gpt-5.6-sol.json \
+  eval/bench/out/bench-codocbench-rust-validated-trial-codex-gpt-5.6-sol.json \
+  eval/bench/out/bench-codocbench-go-validated-trial-codex-gpt-5.6-sol.json \
   --require-language Python \
   --require-language Java \
   --require-language typescript \
@@ -141,11 +141,18 @@ rather than dragging down recall, and names the asymmetry instead of hiding it.
 ## Run
 
 ```sh
-python3 eval/bench/run_bench.py            # CLI default model
+python3 eval/bench/run_bench.py            # Claude defaults (backward compatible)
 EVAL_MODEL_STRONG=claude-opus-4-8 EVAL_MODEL_CHEAP=claude-sonnet-5 \
   python3 eval/bench/run_bench.py
+EVAL_PROVIDER=codex EVAL_MODEL_STRONG=gpt-5.6-sol EVAL_MODEL_CHEAP=gpt-5.6-sol \
+  EVAL_CONCURRENCY=4 python3 eval/bench/run_bench.py
 python3 eval/bench/run_bench.py --selftest # prove the scoring math, no API calls
 ```
+
+`EVAL_PROVIDER` accepts `claude` or `codex`. A resumable run and a publication set use one provider
+only; provider identity, CLI version, models, judge, repository state, and dataset hashes are bound
+into every artifact. Codex runs are ephemeral, read-only, schema-constrained, instructed not to use
+tools, and abstain if a tool event appears.
 
 The run prints precision/recall/F1 at both splits. Measured Evergreen numbers appear in
 [Results](#results--how-it-compares) only after the declared publication gate passes.

@@ -26,7 +26,8 @@ MAX_JUDGE_METADATA_BYTES = 1024 * 1024
 MAX_METADATA_HASH_SECONDS = 30
 VALID_CATEGORIES = {None, "direct-mismatch", "over-promise", "under-promise"}
 JUDGE_MODULES = (
-    "artifact.py", "metrics.py", "report.py", "run_bench.py", "runner.py", "trial.py",
+    "artifact.py", "metrics.py", "model-output.schema.json", "report.py", "run_bench.py",
+    "runner.py", "trial.py",
 )
 
 
@@ -260,16 +261,18 @@ def artifact_metadata(dataset: Path, repo: Path, settings: dict) -> dict:
     repo = Path(repo)
     skill = repo / "skills" / "evergreen" / "SKILL.md"
     deadline = time.monotonic() + MAX_METADATA_HASH_SECONDS
+    provider = settings.get("provider", "claude")
     return {
         "dataset": {"path": _display_path(dataset, repo), "sha256": sha256_file(
             dataset, MAX_DATASET_METADATA_BYTES, deadline
         )},
+        "provider": provider,
         "skill": {"path": _display_path(skill, repo), "sha256": sha256_file(
             skill, MAX_SKILL_METADATA_BYTES, deadline
         )},
         "judge": judge_identity(repo, deadline),
         "git": git_identity(repo),
-        "cli_version": _command_output(["claude", "--version"]),
+        "cli_version": _command_output([provider, "--version"]),
         "settings": _canonical(settings),
     }
 
