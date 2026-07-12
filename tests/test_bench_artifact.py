@@ -459,8 +459,12 @@ class ArtifactReportTests(unittest.TestCase):
                 completed("g2", "go", "consistent", None, "consistent"),
                 completed("g1", "go", "inconsistent", "over-promise", "inconsistent"),
             ])
-            first = report.render_markdown([python, go], coverage_threshold=1.0)
-            second = report.render_markdown([go, python], coverage_threshold=1.0)
+            first = report.render_markdown(
+                [python, go], required_languages=["python", "go"], coverage_threshold=1.0
+            )
+            second = report.render_markdown(
+                [go, python], required_languages=["go", "python"], coverage_threshold=1.0
+            )
 
         self.assertEqual(first, second)
         self.assertLess(first.index("## go"), first.index("## python"))
@@ -469,6 +473,7 @@ class ArtifactReportTests(unittest.TestCase):
         self.assertNotIn("aggregate", first.lower())
         self.assertIn("### Provenance", first)
         self.assertIn("claude 1.0", first)
+        self.assertIn("Required languages: **go, python**.", first)
 
     def test_cli_writes_report_and_fails_below_coverage_threshold(self):
         from eval.bench import report
@@ -484,7 +489,8 @@ class ArtifactReportTests(unittest.TestCase):
             artifact_path = self.write_artifact(directory, "artifact.json", rows)
             markdown = Path(directory) / "report.md"
             status = report.main([
-                str(artifact_path), "--markdown", str(markdown), "--coverage-threshold", "0.75"
+                str(artifact_path), "--markdown", str(markdown),
+                "--require-language", "python", "--coverage-threshold", "0.75"
             ])
             text = markdown.read_text()
 
@@ -499,9 +505,79 @@ class ArtifactReportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             artifact_path = self.write_artifact(directory, "artifact.json", rows)
             markdown = Path(directory) / "report.md"
-            status = report.main([str(artifact_path), "--markdown", str(markdown)])
+            status = report.main([
+                str(artifact_path), "--markdown", str(markdown),
+                "--require-language", "python",
+            ])
 
         self.assertEqual(status, 0)
+
+    def test_report_requires_exact_predeclared_languages(self):
+        from eval.bench import report
+
+        with tempfile.TemporaryDirectory() as directory:
+            python = self.write_artifact(directory, "python.json", [
+                completed("p1", "Python", "consistent", None, "consistent")
+            ])
+            go = self.write_artifact(directory, "go.json", [
+                completed("g1", "go", "consistent", None, "consistent")
+            ])
+
+            with self.assertRaisesRegex(ValueError, "missing artifacts.*go"):
+                report.render_markdown([python], required_languages=["Python", "go"])
+            with self.assertRaisesRegex(ValueError, "undeclared artifacts.*go"):
+                report.render_markdown([python, go], required_languages=["Python"])
+
+    def test_required_language_declaration_is_explicit_unique_and_bounded(self):
+        from eval.bench import report
+
+        rows = [completed("p1", "Python", "consistent", None, "consistent")]
+        with tempfile.TemporaryDirectory() as directory:
+            artifact_path = self.write_artifact(directory, "python.json", rows)
+            for declared, phrase in (
+                ([], "explicitly declared"),
+                (["Python", "Python"], "duplicate"),
+                ([""], "non-empty"),
+                ([" "], "non-empty"),
+                (["x" * 129], "128"),
+                ([f"lang-{index}" for index in range(65)], "maximum 64"),
+            ):
+                with self.subTest(declared=declared), self.assertRaisesRegex(ValueError, phrase):
+                    report.render_markdown(
+                        [artifact_path], required_languages=declared
+                    )
+
+    def test_cli_requires_language_declarations_and_rejects_unknown_ones(self):
+        from eval.bench import report
+
+        rows = [completed("p1", "Python", "consistent", None, "consistent")]
+        with tempfile.TemporaryDirectory() as directory:
+            artifact_path = self.write_artifact(directory, "python.json", rows)
+            markdown = Path(directory) / "report.md"
+            missing_status = report.main([
+                str(artifact_path), "--markdown", str(markdown)
+            ])
+            missing_text = markdown.read_text()
+            unknown_status = report.main([
+                str(artifact_path), "--markdown", str(markdown),
+                "--require-language", "Python", "--require-language", "go",
+            ])
+            unknown_text = markdown.read_text()
+
+        self.assertEqual(missing_status, 2)
+        self.assertIn("explicitly declared", missing_text)
+        self.assertEqual(unknown_status, 2)
+        self.assertIn("missing artifacts", unknown_text)
+
+    def test_documented_current_report_declares_all_five_languages(self):
+        readme = (
+            Path(__file__).parents[1] / "eval" / "bench" / "README.md"
+        ).read_text()
+
+        self.assertIn("python3 eval/bench/report.py", readme)
+        for language in ("Python", "Java", "typescript", "rust", "go"):
+            with self.subTest(language=language):
+                self.assertIn(f"--require-language {language}", readme)
 
     def test_report_rejects_incompatible_provenance(self):
         from eval.bench import report
@@ -516,7 +592,10 @@ class ArtifactReportTests(unittest.TestCase):
                 [completed("p2", "go", "consistent", None, "consistent")], changed,
             )
             markdown = Path(directory) / "report.md"
-            status = report.main([str(first), str(second), "--markdown", str(markdown)])
+            status = report.main([
+                str(first), str(second), "--markdown", str(markdown),
+                "--require-language", "python", "--require-language", "go",
+            ])
             text = markdown.read_text()
 
         self.assertEqual(status, 2)
@@ -538,7 +617,10 @@ class ArtifactReportTests(unittest.TestCase):
                 completed("p2", "go", "consistent", None, "consistent")
             ], two)
             markdown = Path(directory) / "report.md"
-            status = report.main([str(first), str(second), "--markdown", str(markdown)])
+            status = report.main([
+                str(first), str(second), "--markdown", str(markdown),
+                "--require-language", "python", "--require-language", "go",
+            ])
 
         self.assertEqual(status, 2)
 
@@ -553,7 +635,10 @@ class ArtifactReportTests(unittest.TestCase):
                 completed("same", "go", "consistent", None, "consistent")
             ], self.metadata("two"))
             markdown = Path(directory) / "report.md"
-            status = report.main([str(first), str(second), "--markdown", str(markdown)])
+            status = report.main([
+                str(first), str(second), "--markdown", str(markdown),
+                "--require-language", "python", "--require-language", "go",
+            ])
             text = markdown.read_text()
 
         self.assertEqual(status, 2)
@@ -567,14 +652,17 @@ class ArtifactReportTests(unittest.TestCase):
             legacy = Path(directory) / "legacy.json"
             legacy.write_text(json.dumps(rows))
             markdown = Path(directory) / "legacy.md"
-            self.assertEqual(report.main([str(legacy), "--markdown", str(markdown)]), 2)
+            self.assertEqual(report.main([
+                str(legacy), "--markdown", str(markdown), "--require-language", "python",
+            ]), 2)
             self.assertIn("legacy", markdown.read_text().lower())
 
             bad = self.metadata("bad")
             bad["cli_version"] = "unavailable"
             artifact_path = self.write_artifact(directory, "bad.json", rows, bad)
             self.assertEqual(report.main([
-                str(artifact_path), "--markdown", str(markdown)
+                str(artifact_path), "--markdown", str(markdown),
+                "--require-language", "python",
             ]), 2)
             self.assertIn("unavailable", markdown.read_text().lower())
 
@@ -582,7 +670,8 @@ class ArtifactReportTests(unittest.TestCase):
             bad_hash["skill"]["sha256"] = "not-a-hash"
             artifact_path = self.write_artifact(directory, "bad-hash.json", rows, bad_hash)
             self.assertEqual(report.main([
-                str(artifact_path), "--markdown", str(markdown)
+                str(artifact_path), "--markdown", str(markdown),
+                "--require-language", "python",
             ]), 2)
             self.assertIn("invalid", markdown.read_text().lower())
 
@@ -594,13 +683,13 @@ class ArtifactReportTests(unittest.TestCase):
             path = self.write_artifact(directory, "one.json", rows)
             with mock.patch.object(report, "MAX_ARTIFACTS", 1):
                 with self.assertRaisesRegex(ValueError, "too many artifacts"):
-                    report.render_markdown([path, path])
+                    report.render_markdown([path, path], required_languages=["python"])
             with mock.patch.object(report, "MAX_ARTIFACT_BYTES", 10):
                 with self.assertRaisesRegex(ValueError, "too large"):
-                    report.render_markdown([path])
+                    report.render_markdown([path], required_languages=["python"])
             with mock.patch.object(report, "MAX_ROWS", 0):
                 with self.assertRaisesRegex(ValueError, "too many rows"):
-                    report.render_markdown([path])
+                    report.render_markdown([path], required_languages=["python"])
 
     def test_report_rejects_cumulative_bytes_before_loading_any_artifact(self):
         from eval.bench import report
@@ -615,7 +704,9 @@ class ArtifactReportTests(unittest.TestCase):
             with mock.patch.object(report, "MAX_TOTAL_ARTIFACT_BYTES", budget), \
                  mock.patch.object(report, "load_json") as loader:
                 with self.assertRaisesRegex(ValueError, "total artifact bytes"):
-                    report.render_markdown([first, second])
+                    report.render_markdown(
+                        [first, second], required_languages=["python", "go"]
+                    )
             loader.assert_not_called()
 
     def test_deep_json_and_provider_metadata_fail_publication_deterministically(self):
@@ -626,7 +717,10 @@ class ArtifactReportTests(unittest.TestCase):
             deep.write_text("{}")
             markdown = Path(directory) / "report.md"
             with mock.patch.object(report, "load_json", side_effect=RecursionError):
-                self.assertEqual(report.main([str(deep), "--markdown", str(markdown)]), 2)
+                self.assertEqual(report.main([
+                    str(deep), "--markdown", str(markdown),
+                    "--require-language", "python",
+                ]), 2)
             self.assertIn("artifact nesting exceeds safe limit", markdown.read_text())
 
             holder = leaf = {}
@@ -646,7 +740,8 @@ class ArtifactReportTests(unittest.TestCase):
             placeholder.write_text("{}")
             with mock.patch.object(report, "load_json", return_value=document):
                 self.assertEqual(report.main([
-                    str(placeholder), "--markdown", str(markdown)
+                    str(placeholder), "--markdown", str(markdown),
+                    "--require-language", "python",
                 ]), 2)
             self.assertIn("artifact nesting exceeds safe limit", markdown.read_text())
 
@@ -657,7 +752,7 @@ class ArtifactReportTests(unittest.TestCase):
         rows = [completed("p1", malicious, "consistent", None, "consistent")]
         with tempfile.TemporaryDirectory() as directory:
             path = self.write_artifact(directory, "one.json", rows)
-            text = report.render_markdown([path])
+            text = report.render_markdown([path], required_languages=[malicious])
 
         self.assertNotIn("\n# injected", text)
         self.assertNotIn("<script>", text)
@@ -674,13 +769,17 @@ class ArtifactReportTests(unittest.TestCase):
             document.pop("timing")
             path.write_text(json.dumps(document))
             markdown = Path(directory) / "report.md"
-            self.assertEqual(report.main([str(path), "--markdown", str(markdown)]), 2)
+            self.assertEqual(report.main([
+                str(path), "--markdown", str(markdown), "--require-language", "python",
+            ]), 2)
             self.assertIn("timing", markdown.read_text().lower())
 
             document["timing"] = {"started_at": "2026-01-01T00:00:00Z", "elapsed_seconds": 1}
             document["rows"][0]["language"] = ["python"]
             path.write_text(json.dumps(document))
-            self.assertEqual(report.main([str(path), "--markdown", str(markdown)]), 2)
+            self.assertEqual(report.main([
+                str(path), "--markdown", str(markdown), "--require-language", "python",
+            ]), 2)
             self.assertIn("language", markdown.read_text().lower())
 
     def test_metadata_types_iso_time_and_finite_elapsed_are_strict(self):
@@ -702,18 +801,23 @@ class ArtifactReportTests(unittest.TestCase):
                     document["timing"] = timing
                     path.write_text(json.dumps(document))
                     self.assertEqual(report.main([
-                        str(path), "--markdown", str(markdown)
+                        str(path), "--markdown", str(markdown),
+                        "--require-language", "python",
                     ]), 2)
             path = self.write_artifact(directory, "usage.json", rows, self.metadata("usage"))
             document = json.loads(path.read_text())
             document["provider_usage"] = {"input_tokens": "many"}
             path.write_text(json.dumps(document))
-            self.assertEqual(report.main([str(path), "--markdown", str(markdown)]), 2)
+            self.assertEqual(report.main([
+                str(path), "--markdown", str(markdown), "--require-language", "python",
+            ]), 2)
             path = self.write_artifact(directory, "settings.json", rows, self.metadata("settings"))
             document = json.loads(path.read_text())
             document["metadata"]["settings"] = {"temperature": float("nan")}
             path.write_text(json.dumps(document))
-            self.assertEqual(report.main([str(path), "--markdown", str(markdown)]), 2)
+            self.assertEqual(report.main([
+                str(path), "--markdown", str(markdown), "--require-language", "python",
+            ]), 2)
 
 
 class RunBenchArtifactIntegrationTests(unittest.TestCase):

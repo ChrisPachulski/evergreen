@@ -20,6 +20,7 @@ MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 # Keep aggregate ingestion well below the 64-artifact theoretical maximum (4 GiB).
 MAX_TOTAL_ARTIFACT_BYTES = 128 * 1024 * 1024
 MAX_ROWS = 100_000
+MAX_LANGUAGES = 64
 MAX_LANGUAGE_CHARS = 128
 REQUIRED_METADATA = ("dataset", "skill", "judge", "git", "cli_version", "settings")
 
@@ -158,12 +159,43 @@ def _metric(value):
     return "unavailable" if value is None else f"{value:.3f}"
 
 
-def _build_report(paths, coverage_threshold):
+def _required_languages(values):
+    if type(values) not in (list, tuple) or not values:
+        raise ValueError("required languages must be explicitly declared as a non-empty list")
+    if any(not isinstance(value, str) or not value.strip() for value in values):
+        raise ValueError("required languages must contain non-empty strings")
+    if any(len(value) > MAX_LANGUAGE_CHARS for value in values):
+        raise ValueError(
+            f"required language exceeds {MAX_LANGUAGE_CHARS} characters"
+        )
+    if len(values) > MAX_LANGUAGES:
+        raise ValueError(f"too many required languages (maximum {MAX_LANGUAGES})")
+    if len(set(values)) != len(values):
+        raise ValueError("required languages must not contain duplicates")
+    return set(values)
+
+
+def _build_report(paths, required_languages, coverage_threshold):
     if not 0 <= coverage_threshold <= 1:
         raise ValueError("coverage threshold must be between 0 and 1")
+    required = _required_languages(required_languages)
     artifacts = _load_artifacts(paths)
     rows = [row for artifact in artifacts for row in artifact["rows"]]
     languages = sorted({row.get("language", "unknown") for row in rows})
+    observed = set(languages)
+    mismatch = []
+    if required - observed:
+        mismatch.append(
+            "missing artifacts for required languages: "
+            + ", ".join(_safe_text(value) for value in sorted(required - observed))
+        )
+    if observed - required:
+        mismatch.append(
+            "undeclared artifacts for languages: "
+            + ", ".join(_safe_text(value) for value in sorted(observed - required))
+        )
+    if mismatch:
+        raise ValueError("; ".join(mismatch))
     provenance = artifacts[0]["metadata"]
     git = provenance["git"]
     lines = [
@@ -172,6 +204,7 @@ def _build_report(paths, coverage_threshold):
         "Publication status: **PASS**.",
         "",
         f"Required completion coverage: **{_percent(coverage_threshold)}**.",
+        f"Required languages: **{', '.join(_safe_text(value) for value in sorted(required))}**.",
         "",
         "### Provenance",
         "",
@@ -240,22 +273,25 @@ def _build_report(paths, coverage_threshold):
     return "\n".join(lines) + "\n", passed_all
 
 
-def render_markdown(paths, coverage_threshold=1.0):
-    return _build_report(paths, coverage_threshold)[0]
+def render_markdown(paths, required_languages, coverage_threshold=1.0):
+    return _build_report(paths, required_languages, coverage_threshold)[0]
 
 
-def coverage_passes(paths, coverage_threshold):
-    return _build_report(paths, coverage_threshold)[1]
+def coverage_passes(paths, required_languages, coverage_threshold):
+    return _build_report(paths, required_languages, coverage_threshold)[1]
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("artifacts", nargs="+")
     parser.add_argument("--markdown", type=Path, required=True)
+    parser.add_argument("--require-language", action="append")
     parser.add_argument("--coverage-threshold", type=float, default=1.0)
     args = parser.parse_args(argv)
     try:
-        markdown, passed = _build_report(args.artifacts, args.coverage_threshold)
+        markdown, passed = _build_report(
+            args.artifacts, args.require_language, args.coverage_threshold
+        )
     except RecursionError:
         markdown = (
             "# Evergreen benchmark report\n\nPublication status: **FAIL**.\n\n"

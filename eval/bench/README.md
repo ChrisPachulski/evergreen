@@ -61,6 +61,29 @@ and individually meet the threshold passed to `report.py`. A provider interrupti
 when the validated atomic artifacts share that exact provenance; partial or incompatible matrices
 are never promoted as current results.
 
+After all five runs complete, generate the current report with the publication set declared
+explicitly:
+
+```sh
+python3 eval/bench/report.py \
+  eval/bench/out/bench-codocbench-validated-trial-claude-opus-4-8.json \
+  eval/bench/out/bench-cascade-java-trial-claude-opus-4-8.json \
+  eval/bench/out/bench-codocbench-ts-validated-trial-claude-opus-4-8.json \
+  eval/bench/out/bench-codocbench-rust-validated-trial-claude-opus-4-8.json \
+  eval/bench/out/bench-codocbench-go-validated-trial-claude-opus-4-8.json \
+  --require-language Python \
+  --require-language Java \
+  --require-language typescript \
+  --require-language rust \
+  --require-language go \
+  --coverage-threshold 1.0 \
+  --markdown eval/bench/results-current.md
+```
+
+The declared set must exactly match the artifact languages. Generic or single-language reports use
+the same command with their own explicit `--require-language` set; missing, duplicate, empty, or
+undeclared languages fail publication.
+
 The checked-in CASCADE conversion is derived from upstream commit
 `4dc5a8d525c8967ea8dd11ae46cfe5834dbda156` under its MIT license. The upstream
 `PaperEvaluation/dataset.zip` SHA-256 is
