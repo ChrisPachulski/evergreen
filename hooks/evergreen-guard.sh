@@ -13,31 +13,18 @@ set -u
 [ "${EVERGREEN_GUARD:-on}" = "off" ] && exit 0
 
 STDIN="$(cat 2>/dev/null || true)"
-COMMAND="$(printf '%s' "$STDIN" | sed 's/\\"/"/g')"
-
-# Git accepts global options before its subcommand. Options with separate operands need explicit
-# handling; other ordinary global options are a single dash-prefixed token.
-GIT_OPERAND='("[^"]*"|[^[:space:];&|"]+)'
-GIT_OPTION="((-C|-c|--git-dir|--work-tree|--namespace|--config-env|--exec-path)[[:space:]]+${GIT_OPERAND}|-[^[:space:];&|]+)"
-has_git_intent() {
-  local intent="$1"
-  printf '%s' "$COMMAND" | grep -Eq \
-    "(^|[;&|][[:space:]]*|\"command\":\"[[:space:]]*)git[[:space:]]+((${GIT_OPTION})[[:space:]]+)*${intent}([[:space:];&|\"]|$)"
-}
-
-has_add=false
-has_commit=false
-has_git_intent add && has_add=true
-has_git_intent commit && has_commit=true
+SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || exit 0
+command -v python3 >/dev/null 2>&1 || exit 0
+intent="$(printf '%s' "$STDIN" | python3 "$SCRIPT_DIR/evergreen-guard-command.py" 2>/dev/null)" || exit 0
 
 # The hook runs before the entire Bash tool call. If add and commit share that call, the index
 # cannot be inspected in its finalized state, so require the normal two-call workflow.
-if $has_add && $has_commit; then
+if [ "$intent" = "compound" ]; then
   echo "evergreen guard: run git add and git commit in separate Bash tool calls so the finalized staged index can be inspected." >&2
   exit 2
 fi
 
-$has_add || $has_commit || exit 0
+[ "$intent" = "git" ] || exit 0
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$ROOT" 2>/dev/null || exit 0

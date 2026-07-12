@@ -116,13 +116,16 @@ has "$(bash "$HOOKS/evergreen-stop.sh")" "freshness pass" "stop: further edit ->
 git -C "$TMP" checkout -q -- app.py
 
 # --- guard (PreToolUse commit backstop) ---
-guard_cmd(){ printf '{"tool_input":{"command":"%s"}}' "$1" | bash "$HOOKS/evergreen-guard.sh" 2>&1; }
+PYTHON3="$(command -v python3)"
+guard_payload(){ "$PYTHON3" -c 'import json, sys; print(json.dumps({"tool_input": {"command": sys.argv[1]}}))' "$1"; }
+guard_input(){ printf '%s' "$1" | bash "$HOOKS/evergreen-guard.sh" 2>&1; }
+guard_cmd(){ guard_input "$(guard_payload "$1")"; }
 guard(){ guard_cmd "git commit -m x"; }
-guard_rc(){ printf '{"tool_input":{"command":"%s"}}' "$1" | bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?"; }
+guard_rc(){ payload="$(guard_payload "$1")"; printf '%s' "$payload" | bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?"; }
 printf 'k\n' > "$TMP/.env"; git -C "$TMP" add -f .env
 has "$(guard)" "secret/credential" "guard: staged .env -> blocked"
 has "$(guard_cmd "git -C $TMP commit -m x")" "secret/credential" "guard: git -C commit inspects staged index"
-has "$(guard_cmd "git -C \\\"$TMP\\\" commit -m x")" "secret/credential" "guard: git -C quoted path inspects staged index"
+has "$(guard_cmd "git -C \"$TMP\" commit -m x")" "secret/credential" "guard: git -C quoted path inspects staged index"
 has "$(guard_cmd "git -c color.ui=false commit -m x")" "secret/credential" "guard: git -c commit inspects staged index"
 has "$(guard_cmd "git --no-pager commit -m x")" "secret/credential" "guard: ordinary global option commit inspects staged index"
 printf '.env\n' > "$TMP/.evergreen-keep"
@@ -153,16 +156,39 @@ for case_row in \
   "git add -f .env && git commit -m x|ampersand" \
   "git add -f .env; git commit -m x|semicolon" \
   "git -C $TMP add -f .env && git -C $TMP commit -m x|git -C" \
-  "git -C \\\"$TMP\\\" add -f .env && git -C \\\"$TMP\\\" commit -m x|quoted git -C" \
+  "git -C \"$TMP\" add -f .env && git -C \"$TMP\" commit -m x|quoted git -C" \
   "git -c color.ui=false add -f .env && git -c color.ui=false commit -m x|git -c" \
-  "git --no-pager add -f .env && git --no-pager commit -m x|global option"; do
+  "git --no-pager add -f .env && git --no-pager commit -m x|global option" \
+  "git add . && (git commit -m x)|parenthesized commit" \
+  "command git add . && command git commit -m x|command wrapper" \
+  "git add . && env X=1 git commit -m x|env wrapper" \
+  "sh -c 'git add . && git commit -m x'|sh -c wrapper" \
+  "git -C '/tmp/my repo' add . && git -C '/tmp/my repo' commit -m x|single-quoted git -C" \
+  "git -C \"/tmp/my repo\" add . && git -C \"/tmp/my repo\" commit -m x|double-quoted git -C" \
+  "git -C /tmp/my\\ repo add . && git -C /tmp/my\\ repo commit -m x|escaped git -C"; do
   cmd="${case_row%|*}"
   label="${case_row##*|}"
   has "$(guard_cmd "$cmd")" "separate" "guard: compound $label stage-and-commit is blocked"
   eq "$(guard_rc "$cmd")" "2" "guard: compound $label exits 2"
 done
+spaced_json='{ "tool_input": { "command": "git add . && git commit -m x" } }'
+has "$(guard_input "$spaced_json")" "separate" "guard: JSON whitespace serialization is classified"
+eq "$(printf '%s' "$spaced_json" | bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?")" "2" \
+  "guard: JSON whitespace serialization exits 2"
+empty "$(guard_cmd "git commit -m x && git add .")" \
+  "guard: reverse commit-then-add order is not blocked"
+empty "$(guard_cmd "git add . || git commit -m x")" \
+  "guard: mutually exclusive add-or-commit branches are not blocked"
 empty "$(EVERGREEN_GUARD=off guard_cmd "git add -f .env && git commit -m x")" \
   "guard: EVERGREEN_GUARD=off bypasses compound rejection"
+
+mkdir -p "$TMP/no-python"
+printf '#!/bin/sh\nexit 127\n' > "$TMP/no-python/python3"
+chmod +x "$TMP/no-python/python3"
+plain_payload="$(guard_payload "ls -la")"
+empty "$(printf '%s' "$plain_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "guard: unavailable Python does not block unrelated commands"
+rm -rf "$TMP/no-python"
 rm -f "$TMP/.env"
 
 # A commit that DELETES slop is the guard doing its job — must never be blocked (--diff-filter=d).
