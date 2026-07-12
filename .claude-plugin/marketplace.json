@@ -1,11 +1,13 @@
 {
   "name": "evergreen",
+  "description": "Evergreen 0.4.0 ships read-only impact discovery, reversible host install, and generalized release identity checks.",
   "owner": { "name": "Chris Pachulski", "url": "https://github.com/ChrisPachulski" },
   "plugins": [
     {
       "name": "evergreen",
       "source": "./",
-      "description": "Keeps documentation and shipped release identity honest with current code. The agent proves doc drift and audits marketing versions versus monotonically increasing build numbers, including multi-target Apple releases. Three axes — truth (flag / winnow), craft (flourish), hygiene (cultivate). The reflex rewrites nothing unasked. Language-agnostic."
+      "version": "0.4.0",
+      "description": "Ships read-only impact discovery, passive evidence and source maps, reversible Claude/Codex install, doctor, and uninstall, trusted CI semantics, and generalized release identity checks. Three axes — truth, craft, and hygiene — remain language-agnostic and rewrite nothing unasked."
     }
   ]
 }

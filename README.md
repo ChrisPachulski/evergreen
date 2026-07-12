@@ -97,17 +97,50 @@ schema, but provider-supplied findings and verdicts are rejected at the boundary
 
 That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with catalogued lies, true claims that must not be flagged, and exempt docs, then lets a headless agent winnow it blind. The per-pair harness ([`eval/bench/`](eval/bench/)) runs the judge over labeled code/doc pairs.
 
-The corrected judge's current publication requires complete Python, Java, TypeScript, Rust, and Go
-artifacts to individually clear one declared generated-report coverage threshold. That run was
-interrupted by a provider session limit, and implementation commits landed between language starts.
-Those diagnostic checkpoints have incompatible provenance and will not be resumed or published, so
-no partial matrix is presented as a current result. The fresh five-language run will start from one
-stabilized commit; protocol, dataset provenance, and publication status are in
-[`eval/bench/`](eval/bench/).
+Current five-language benchmark metrics remain unpublished until one compatible run clears every declared coverage gate.
+Python, Java, TypeScript, Rust, and Go must each pass independently. The interrupted diagnostic
+checkpoints have incompatible implementation provenance and will not be resumed, combined, or
+presented as current results. The fresh run starts only after this release commit is stable;
+protocol, dataset provenance, and publication status live in [`eval/bench/`](eval/bench/).
 
 ## Install
 
-### Claude Code
+### One-command local use
+
+No host install or provider dependency is required to rank documentation affected by a change:
+
+```sh
+./bin/evergreen impact --repo . path/to/changed-source.py
+```
+
+Add trusted, passive provider facts when available:
+
+```sh
+./bin/evergreen impact --repo . --evidence examples/provider-evidence.json eval/fixture/config.py
+```
+
+The command automatically reads a repository-local `.evergreen-map.json`, if present. Human and
+`--json` output contain candidates, reasons, and warnings only—never findings or verdicts—and the
+query does not write project state.
+
+### Reversible Claude and Codex setup
+
+The local CLI can wire the canonical skill into either host while preserving existing instructions:
+
+```sh
+./bin/evergreen install --host claude
+./bin/evergreen install --host codex
+./bin/evergreen doctor --host all --repo .
+./bin/evergreen uninstall --host all
+```
+
+Use `install --dry-run` or `uninstall --dry-run` to preview. Setup records an owned instruction
+block and skill link; uninstall removes only that owned state. It refuses ambiguous, unowned, or
+unsafe paths and rolls back ordinary operation failures across the selected hosts. `doctor` is
+read-only and checks the canonical command, rules, Claude/Codex manifest agreement, ownership, and
+links.
+
+### Claude Code marketplace
 
 ```
 /plugin marketplace add ChrisPachulski/evergreen
@@ -165,6 +198,22 @@ The whole skill is [`skills/evergreen/SKILL.md`](skills/evergreen/SKILL.md). Dro
 
 That's it. From the next change on, the docs answer to the code.
 
+## Trust and safe execution
+
+Evidence providers and source maps are passive candidate inputs; Evergreen never executes provider commands or accepts their verdicts.
+Executable proof is local and explicit; CI never executes pull-request code, and unsafe or unavailable isolation is inconclusive.
+
+Local `--prove-by-test` work uses a repository-declared test command, a bounded timeout, and a
+disposable scratch location. It does not forward new secrets, refuses privileged, destructive,
+deployment, upload, publication, and portal-mutation commands, and disables network access when
+the host can do so safely. The classifier is only a conservative first filter: “allowed” does not
+replace isolation, timeout, dependency, and permission checks. Setup failures and timeouts are
+inconclusive, not proof of drift.
+
+CI has a different boundary: it supplies delimited untrusted evidence to the semantic reviewer,
+then independently validates schema, commit binding, counts, citations, and runtime identity.
+Repository content cannot change those instructions or the publication policy.
+
 ## Commands
 
 Three axes — **truth · craft · hygiene** — one creed: prove it or drop it, you keep the final call.
@@ -176,6 +225,18 @@ Three axes — **truth · craft · hygiene** — one creed: prove it or drop it,
 | `/evergreen:flourish <file> [--all] [--manual]` | **Craft.** Rewrite an accurate-but-ugly doc to a gold standard (mined from 28 top READMEs), then prove every claim against the code. Emits a diff — never a silent overwrite. The only sanctioned prose-rewrite. |
 | `/evergreen:cultivate [path]` | **Hygiene.** Local-only files leaking into git, gitignore gaps, AI-slop that shouldn't be tracked or public. Proposes untrack/ignore/delete — never auto. A commit-time guard backstops it (the one thing that *blocks*). |
 | `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` | **Truth, candidate query.** Rank documentation related to changed paths and optional provider evidence. Read-only; never emits findings or verdicts. |
+
+## Non-goals
+
+Evergreen is not a hosted index, AST engine, dashboard, or automatic truth-path prose rewriter.
+
+- It does not ship language-specific parser suites, embeddings, a SaaS backend, or chat integrations.
+- It does not turn checksums, changed constants, provider confidence, or source maps into semantic
+  verdicts.
+- It does not run commands supplied by provider files or untrusted pull requests.
+- It does not publish partial benchmark matrices or claim category leadership before the declared
+  five-language gate passes.
+- It does not publish, deploy, upload, or mutate registries and portals without explicit authority.
 
 ## FAQ
 

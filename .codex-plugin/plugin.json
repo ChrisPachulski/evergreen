@@ -1,7 +1,7 @@
 {
   "name": "evergreen",
-  "version": "0.3.2",
-  "description": "Keeps documentation and shipped release identity honest with current code.",
+  "version": "0.4.0",
+  "description": "Ships read-only impact discovery, passive evidence and source maps, reversible Claude/Codex install, doctor, and uninstall, trusted CI semantics, and generalized release identity checks.",
   "author": {
     "name": "Chris Pachulski",
     "url": "https://github.com/ChrisPachulski"
@@ -14,7 +14,7 @@
   "interface": {
     "displayName": "Evergreen",
     "shortDescription": "Keep docs and release versions honest",
-    "longDescription": "Proves documentation drift and audits marketing-version/build-number identity against the product that ships.",
+    "longDescription": "Proves documentation drift, ranks impact candidates from passive evidence, and audits package, CLI, documentation, and Apple release identity.",
     "developerName": "Chris Pachulski",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],

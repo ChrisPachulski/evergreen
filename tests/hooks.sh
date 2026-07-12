@@ -195,6 +195,122 @@ else
   no "package release example parses ownership-aware version claims and compares them"
 fi
 
+# Final product docs and release identity must agree across every shipped host surface.
+for tok in \
+  "Evidence providers and source maps are passive candidate inputs; Evergreen never executes provider commands or accepts their verdicts." \
+  "Executable proof is local and explicit; CI never executes pull-request code, and unsafe or unavailable isolation is inconclusive." \
+  "Current five-language benchmark metrics remain unpublished until one compatible run clears every declared coverage gate." \
+  "Evergreen is not a hosted index, AST engine, dashboard, or automatic truth-path prose rewriter."; do
+  if grep -Fq "$tok" "$ROOT/README.md" && grep -Fq "$tok" "$ROOT/docs/DESIGN.md"; then
+    ok "final product boundary agrees across README/design: $tok"
+  else
+    no "final product boundary agrees across README/design: $tok"
+  fi
+done
+
+for tok in \
+  "./bin/evergreen impact --repo ." \
+  "./bin/evergreen install --host claude" \
+  "./bin/evergreen install --host codex" \
+  "./bin/evergreen doctor --host all --repo ." \
+  "./bin/evergreen uninstall --host all"; do
+  grep -Fq "$tok" "$ROOT/README.md" \
+    && ok "README documents shipped local/host command: $tok" \
+    || no "README documents shipped local/host command: $tok"
+done
+
+if ROOT="$ROOT" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+root = Path(os.environ["ROOT"])
+claude = json.loads((root / ".claude-plugin/plugin.json").read_text())
+codex = json.loads((root / ".codex-plugin/plugin.json").read_text())
+marketplace = json.loads((root / ".claude-plugin/marketplace.json").read_text())
+entry = next(item for item in marketplace["plugins"] if item["name"] == "evergreen")
+
+assert {claude["version"], codex["version"], entry["version"]} == {"0.4.0"}
+assert all("build" not in item and "build_number" not in item for item in (claude, codex, entry))
+assert "0.4.0" in marketplace["description"]
+for description in (
+    claude["description"], codex["description"], marketplace["description"], entry["description"],
+):
+    lowered = description.lower()
+    assert "impact" in lowered and "install" in lowered and "release identity" in lowered
+PY
+then
+  ok "release 0.4.0 agrees across Claude/Codex/marketplace without a build counter"
+else
+  no "release 0.4.0 agrees across Claude/Codex/marketplace without a build counter"
+fi
+
+# Execute both passive-input examples and both semantic branches they nominate.
+if ROOT="$ROOT" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+import runpy
+import subprocess
+import sys
+import tempfile
+
+root = Path(os.environ["ROOT"])
+command = root / "bin/evergreen"
+
+provided = subprocess.run(
+    [sys.executable, str(command), "impact", "--json", "--repo", str(root),
+     "--evidence", str(root / "examples/provider-evidence.json"),
+     "eval/fixture/config.py"],
+    check=True, capture_output=True, text=True,
+)
+provider_payload = json.loads(provided.stdout)
+assert provider_payload["warnings"] == []
+assert [item["path"] for item in provider_payload["candidates"]] == ["eval/fixture/config.py"]
+assert len(provider_payload["candidates"][0]["reasons"]) == 3
+
+with tempfile.TemporaryDirectory() as temporary:
+    repo = Path(temporary)
+    (repo / "src/public-api").mkdir(parents=True)
+    (repo / "docs").mkdir()
+    (repo / "src/public-api/client.py").write_text("value = 1\n")
+    (repo / "docs/api.md").write_text("# API\n")
+    (repo / "README.md").write_text("# Example\n")
+    (repo / ".evergreen-map.json").write_text(
+        (root / "examples/evergreen-map.json").read_text()
+    )
+    mapped = subprocess.run(
+        [sys.executable, str(command), "impact", "--json", "--repo", str(repo),
+         "src/public-api/client.py"],
+        check=True, capture_output=True, text=True,
+    )
+    map_payload = json.loads(mapped.stdout)
+    assert map_payload["warnings"] == []
+    assert [item["path"] for item in map_payload["candidates"][:2]] == [
+        "docs/api.md", "README.md",
+    ]
+
+load_config = runpy.run_path(str(root / "eval/fixture/config.py"))["load_config"]
+with tempfile.TemporaryDirectory() as temporary:
+    missing = Path(temporary) / "missing.json"
+    missing.write_text("{}")
+    try:
+        load_config(missing)
+    except KeyError:
+        pass
+    else:
+        raise AssertionError("missing project must raise KeyError")
+
+    override = Path(temporary) / "override.json"
+    override.write_text(json.dumps({"project": "demo", "timeout": 45}))
+    assert load_config(override)["timeout"] == 45
+PY
+then
+  ok "provider evidence, source map, mismatch, and false-positive branches execute directly"
+else
+  no "provider evidence, source map, mismatch, and false-positive branches execute directly"
+fi
+
 printf 'strict' > "$TMP/.evergreen-mode"
 out="$(bash "$HOOKS/evergreen-activate.sh")"
 has "$out" "all four rungs" "activate: strict includes the full semantic pass"

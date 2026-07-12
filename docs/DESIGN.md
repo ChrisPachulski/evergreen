@@ -78,6 +78,18 @@ call that combines staging and commit is rejected conservatively because PreTool
 the index between them: use **separate tool calls**. `EVERGREEN_GUARD=off` remains the explicit
 bypass. Semantic truth findings and CI drift findings do not use this blocking path.
 
+## Shipped local and host surface
+
+`bin/evergreen impact` is the dependency-free, read-only entry point for changed paths, optional
+evidence JSON, and repository-local `.evergreen-map.json` mappings. Its human and JSON forms expose
+ranked candidates, reasons, and warnings; they do not expose semantic findings or verdicts.
+
+The same CLI provides reversible `install`, `doctor`, and `uninstall` operations for Claude and
+Codex. Install owns only a marked instruction block, a skill link, and a bounded ownership record;
+uninstall requires that proof and preserves user-owned text. Multi-host preflight and ordinary
+rollback are atomic. Doctor reads canonical command/rules/manifests plus host ownership and links;
+it never repairs or installs. Provider dependencies are never installed.
+
 ## Release identity boundary
 
 Release identity spans package manifests, registry versions, and version-reporting CLI output.
@@ -98,6 +110,15 @@ published packages do not receive synchronized bumps merely because they share a
 apps retain the distinct marketing-version/build-number rules, monotonic binary builds, Universal
 Purchase alignment, and external-store uncertainty described by the skill.
 
+### 0.4.0 release decision
+
+The Claude manifest, Codex manifest, and marketplace entry are one coupled plugin release stream.
+Since `0.3.2`, that stream gained the impact CLI, passive provider and source-map inputs, reversible
+Claude/Codex setup and diagnostics, bounded executable proof, generalized release identity, and
+execution-policy hardening. These are backward-compatible pre-1.0 features, so the repository's
+SemVer policy justifies minor `0.4.0`, not patch `0.3.3` or stable `1.0.0`. This plugin stream has
+no binary build-number field, and the release invents none.
+
 ## Hybrid provider boundary
 
 Provider evidence and source maps nominate candidates, never findings or verdicts.
@@ -109,10 +130,44 @@ candidate list. Provider confidence affects ranking only. A map broadens the can
 cannot suppress changed-path or normal grep baseline candidates, and it cannot certify a document.
 Invalid records and maps remain warnings rather than semantic conclusions.
 
+Evidence providers and source maps are passive candidate inputs; Evergreen never executes provider commands or accepts their verdicts.
+
 This boundary supports Drift-shaped interoperability through adapters that translate mechanical
 facts into the v1 evidence schema. It deliberately does not import an external tool's finding or
 verdict. The fixture demonstrates why: a default changing from 60 to 30 can nominate timeout docs,
 but the per-project override remains true because `setdefault` preserves configured values.
+
+## Safe executable proof boundary
+
+Executable proof is local and explicit; CI never executes pull-request code, and unsafe or unavailable isolation is inconclusive.
+
+Local execution uses only repository-declared tests with a bounded timeout and disposable scratch
+state. It refuses privileged, destructive, cleanup, deployment, upload, publication, and portal
+mutation; it does not add or forward secrets. Network access is disabled when the host can do so
+safely. A classifier may reject a command early, but an allowed shape still requires trusted
+isolation, permissions, dependencies, and setup. Timeout or setup failure never becomes drift.
+
+The PR Action reviews pull-request evidence as untrusted data but does not execute the changed
+project. Its deterministic boundary validates the model's result before rendering or applying the
+configured inconclusive policy.
+
+## Evaluation status
+
+Current five-language benchmark metrics remain unpublished until one compatible run clears every declared coverage gate.
+
+Python, Java, TypeScript, Rust, and Go each require a complete compatible artifact tied to the same
+implementation, judge, dataset hashes, model/CLI identity, protocol, and settings. Interrupted or
+cross-commit diagnostics remain diagnostic; no partial matrix is promoted. Task 4 runs only the
+benchmark self-test, not provider-backed scoring or publication.
+
+## Non-goals
+
+Evergreen is not a hosted index, AST engine, dashboard, or automatic truth-path prose rewriter.
+
+It does not bundle language parser suites, accept provider verdicts, infer truth from checksums,
+execute untrusted provider or pull-request commands, automatically rewrite semantic prose, or
+publish incomplete evaluation results. Hosted services, embeddings, dashboards, chat integrations,
+and portable container/VM orchestration remain outside this release.
 
 ## Drift taxonomy (so findings are actionable)
 

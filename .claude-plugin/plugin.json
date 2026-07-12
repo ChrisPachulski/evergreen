@@ -1,7 +1,7 @@
 {
   "name": "evergreen",
-  "version": "0.3.2",
-  "description": "Keeps documentation and shipped release identity honest with the code they describe. The reflex proves doc drift and audits marketing-version/build-number truth before flagging; winnow certifies every claim, flourish crafts and verifies docs, and cultivate keeps the repo clear of slop and leaked-local files.",
+  "version": "0.4.0",
+  "description": "Ships read-only impact discovery, passive evidence and source maps, reversible Claude/Codex install, doctor, and uninstall, trusted CI semantics, and generalized release identity checks.",
   "author": { "name": "Chris Pachulski", "url": "https://github.com/ChrisPachulski" },
   "homepage": "https://github.com/ChrisPachulski/evergreen",
   "repository": "https://github.com/ChrisPachulski/evergreen",
