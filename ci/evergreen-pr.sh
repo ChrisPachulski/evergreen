@@ -21,6 +21,8 @@ CLI_TIMEOUT_SECONDS="${EVERGREEN_CLI_TIMEOUT_SECONDS:-15}"
 MODEL_TIMEOUT_SECONDS="${EVERGREEN_MODEL_TIMEOUT_SECONDS:-600}"
 MAX_MODEL_OUTPUT_BYTES="${EVERGREEN_MAX_MODEL_OUTPUT_BYTES:-262144}"
 MAX_BUDGET_USD="${EVERGREEN_MAX_BUDGET_USD:-5}"
+GIT_TIMEOUT_SECONDS="${EVERGREEN_GIT_TIMEOUT_SECONDS:-15}"
+GIT_MAX_OUTPUT_BYTES="${EVERGREEN_GIT_MAX_OUTPUT_BYTES:-1048576}"
 
 emit_summary() {
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then cat >> "$GITHUB_STEP_SUMMARY"; else cat; fi
@@ -41,7 +43,7 @@ finish_fallback() {
 }
 
 post_comment() {
-  local markdown="$1" marker='<!-- evergreen-report -->' pr repo bot_login existing tmp
+  local markdown="$1" marker='<!-- evergreen-report -->' pr repo bot_login existing tmp comments
   [ "$POST_COMMENT" = "false" ] && return 0
   [ -n "${GITHUB_BASE_REF:-}" ] || return 0
   command -v gh >/dev/null 2>&1 || return 0
@@ -49,7 +51,11 @@ post_comment() {
   pr="${pr%%/*}"
   repo="${GITHUB_REPOSITORY:-}"
   [ -n "$pr" ] && [ -n "$repo" ] || return 0
-  bot_login="$(gh api user --jq '.login' 2>/dev/null || true)"
+  bot_login="$(gh api user --jq '.login' 2>/dev/null)"
+  if [ $? -ne 0 ] || [ -z "$bot_login" ]; then
+    echo "evergreen: comment ownership lookup failed; no comment was created (non-fatal)." >&2
+    return 0
+  fi
 
   tmp="$(mktemp 2>/dev/null)" || {
     echo "evergreen: secure temporary file creation failed (non-fatal)." >&2
@@ -57,11 +63,20 @@ post_comment() {
   }
   printf '%s\n' "$markdown" > "$tmp"
   existing=""
-  if [ -n "$bot_login" ]; then
-    existing="$(gh api --paginate "repos/$repo/issues/$pr/comments" --jq \
-      ".[] | select(.user.type == \"Bot\" and .user.login == \"$bot_login\" and \
-      (.body | startswith(\"$marker\"))) | .id" 2>/dev/null | sort -n | tail -n1 || true)"
+  comments="$(mktemp 2>/dev/null)" || {
+    echo "evergreen: secure comment-list temporary file creation failed (non-fatal)." >&2
+    rm -f "$tmp" 2>/dev/null || true
+    return 0
+  }
+  if ! gh api --paginate "repos/$repo/issues/$pr/comments" --jq \
+    ".[] | select(.user.type == \"Bot\" and .user.login == \"$bot_login\" and \
+    (.body | startswith(\"$marker\"))) | .id" >"$comments" 2>/dev/null; then
+    echo "evergreen: comment ownership lookup failed; no comment was created (non-fatal)." >&2
+    rm -f "$tmp" "$comments" 2>/dev/null || true
+    return 0
   fi
+  existing="$(sort -n "$comments" | tail -n1)"
+  rm -f "$comments" 2>/dev/null || true
   if [ -n "$existing" ]; then
     if gh api -X PATCH "repos/$repo/issues/comments/$existing" -F body=@"$tmp" >/dev/null 2>&1; then
       echo "evergreen: updated PR comment $existing." >&2
@@ -140,7 +155,10 @@ fi
 
 changed_file="$(mktemp 2>/dev/null)" || \
   finish_inconclusive "Secure temporary file creation failed during change detection."
-if ! git diff --name-only -z "$BASE_SHA" "$HEAD_SHA" >"$changed_file" 2>/dev/null; then
+if ! python3 "$BOUNDED_PY" \
+  --timeout-seconds "$GIT_TIMEOUT_SECONDS" --max-output-bytes "$GIT_MAX_OUTPUT_BYTES" \
+  --clean-env -- git --no-replace-objects -C "$REPO_ROOT" \
+  diff --name-only -z "$BASE_SHA" "$HEAD_SHA" >"$changed_file" 2>/dev/null; then
   rm -f "$changed_file" 2>/dev/null || true
   finish_inconclusive "Git change detection failed."
 fi
@@ -157,7 +175,10 @@ rm -f "$changed_file" 2>/dev/null || true
 has_docs=0
 docs_file="$(mktemp 2>/dev/null)" || \
   finish_inconclusive "Secure temporary file creation failed during documentation detection."
-if ! git ls-tree -r -z --name-only "$HEAD_SHA" >"$docs_file" 2>/dev/null; then
+if ! python3 "$BOUNDED_PY" \
+  --timeout-seconds "$GIT_TIMEOUT_SECONDS" --max-output-bytes "$GIT_MAX_OUTPUT_BYTES" \
+  --clean-env -- git --no-replace-objects -C "$REPO_ROOT" \
+  ls-tree -r -z --name-only "$HEAD_SHA" >"$docs_file" 2>/dev/null; then
   rm -f "$docs_file" 2>/dev/null || true
   finish_inconclusive "Git documentation detection failed."
 fi
@@ -186,7 +207,8 @@ command -v claude >/dev/null 2>&1 || {
   finish_review ""
 }
 
-MANIFEST="$(python3 "$MANIFEST_PY" --base "$BASE_SHA" --head "$HEAD_SHA" --repo "$REPO_ROOT" 2>/dev/null)"
+MANIFEST="$(python3 "$MANIFEST_PY" --base "$BASE_SHA" --head "$HEAD_SHA" \
+  --repo "$REPO_ROOT" --timeout-seconds "$GIT_TIMEOUT_SECONDS" 2>/dev/null)"
 if [ $? -ne 0 ] || [ -z "$MANIFEST" ]; then
   echo "evergreen: change manifest failed; review is inconclusive." >&2
   finish_inconclusive "Change manifest generation failed."
@@ -200,6 +222,10 @@ if [ "$MANIFEST_COMPLETE" != "yes" ]; then
 fi
 MANIFEST_SAFE="$(printf '%s' "$MANIFEST" | python3 -c \
   'import sys; value=sys.stdin.read(); print(value.replace("&", r"\u0026").replace("<", r"\u003c").replace(">", r"\u003e"), end="")')"
+MANIFEST_SAFE_STATUS=$?
+if [ "$MANIFEST_SAFE_STATUS" -ne 0 ] || [ -z "$MANIFEST_SAFE" ]; then
+  finish_inconclusive "Change manifest evidence encoding failed."
+fi
 
 CONTEXT="$(printf '%s' "$MANIFEST" | python3 "$CONTEXT_PY" \
   --repo "$REPO_ROOT" --head "$HEAD_SHA" 2>/dev/null)"
@@ -210,6 +236,10 @@ if [ "$CONTEXT_STATUS" -ne 0 ] || [ -z "$CONTEXT" ]; then
 fi
 CONTEXT_SAFE="$(printf '%s' "$CONTEXT" | python3 -c \
   'import sys; value=sys.stdin.read(); print(value.replace("&", r"\u0026").replace("<", r"\u003c").replace(">", r"\u003e"), end="")')"
+CONTEXT_SAFE_STATUS=$?
+if [ "$CONTEXT_SAFE_STATUS" -ne 0 ] || [ -z "$CONTEXT_SAFE" ]; then
+  finish_inconclusive "Commit-derived review context encoding failed."
+fi
 
 CLAUDE_BIN="$(command -v claude)"
 CLI_VERSION_RAW="$(python3 "$BOUNDED_PY" \

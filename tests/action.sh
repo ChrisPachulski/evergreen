@@ -50,9 +50,11 @@ set -u
 printf '%s\n' "$*" >> "$GH_LOG"
 case "$*" in
   'api user --jq .login')
+    [ "${GH_USER_FAIL:-false}" != "true" ] || exit 70
     printf '%s\n' 'evergreen-bot[bot]'
     ;;
   *'/comments --jq'*)
+    [ "${GH_LIST_FAIL:-false}" != "true" ] || exit 71
     if [ -n "${GH_PAGINATED_IDS:-}" ]; then
       printf '%s\n' "$GH_PAGINATED_IDS"
     elif [ -n "${GH_EXISTING_ID:-}" ]; then
@@ -81,11 +83,16 @@ mkdir -p "$FAIL_GIT_BIN"
 cat > "$FAIL_GIT_BIN/git" <<'EOF'
 #!/usr/bin/env bash
 set -u
-case "${TEST_GIT_FAIL_MODE:-}:$*" in
-  diff:'diff --name-only'*|tree:'ls-tree -r -z --name-only'*) exit 70 ;;
+mode="$(cat "$HOME/git-fail-mode" 2>/dev/null || true)"
+case "$mode:$*" in
+  diff:*'diff --name-only'*|tree:*'ls-tree -r -z --name-only'*) exit 70 ;;
+  hang-diff:*'diff --name-only'*|hang-tree:*'ls-tree -r -z --name-only'*) sleep 5 ;;
+  hang-manifest:*'diff --name-status'*) sleep 5 ;;
 esac
-exec "$REAL_GIT_BIN" "$@"
+exec "$(dirname "$0")/actual/git" "$@"
 EOF
+mkdir -p "$FAIL_GIT_BIN/actual"
+ln -s "$REAL_GIT_BIN" "$FAIL_GIT_BIN/actual/git"
 ln -s "$STUB_BIN/claude" "$FAIL_GIT_BIN/claude"
 ln -s "$STUB_BIN/gh" "$FAIL_GIT_BIN/gh"
 ln -s "$STUB_BIN/npm" "$FAIL_GIT_BIN/npm"
@@ -179,6 +186,7 @@ run_driver() {
     hang-model) : > "$CASE_DIR/hang-model" ;;
     oversized-model) : > "$CASE_DIR/oversized-model" ;;
   esac
+  printf '%s' "${TEST_GIT_FAIL_MODE:-}" > "$CASE_DIR/git-fail-mode"
   set +e
   PATH="$path_prefix:$PYTHON_BIN:/usr/bin:/bin" \
     GITHUB_WORKSPACE="$REPO" \
@@ -195,6 +203,8 @@ run_driver() {
     EVERGREEN_MODEL_TIMEOUT_SECONDS="${TEST_MODEL_TIMEOUT_SECONDS:-600}" \
     EVERGREEN_MAX_MODEL_OUTPUT_BYTES="${TEST_MAX_MODEL_OUTPUT_BYTES:-262144}" \
     EVERGREEN_MAX_BUDGET_USD="${TEST_MAX_BUDGET_USD:-5}" \
+    EVERGREEN_GIT_TIMEOUT_SECONDS="${TEST_GIT_TIMEOUT_SECONDS:-15}" \
+    EVERGREEN_GIT_MAX_OUTPUT_BYTES="${TEST_GIT_MAX_OUTPUT_BYTES:-1048576}" \
     EVERGREEN_SETUP_ERROR="${SETUP_ERROR:-}" \
     EVERGREEN_IS_FORK="${TEST_IS_FORK:-false}" \
     ANTHROPIC_API_KEY="${TEST_API_KEY-test-key}" \
@@ -209,6 +219,8 @@ run_driver() {
     GH_PAGINATED_IDS="${GH_PAGINATED_IDS:-}" \
     GH_HOSTILE_ID="${GH_HOSTILE_ID:-}" \
     GH_PATCH_FAIL="${GH_PATCH_FAIL:-false}" \
+    GH_USER_FAIL="${GH_USER_FAIL:-false}" \
+    GH_LIST_FAIL="${GH_LIST_FAIL:-false}" \
     bash "$ROOT/ci/evergreen-pr.sh" >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"
   STATUS=$?
   set -e
@@ -292,29 +304,65 @@ git -C "$REPO" commit -qm symlink-doc
 HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
 run_driver symlink-context ''
 [ "$STATUS" -ne 0 ] || fail "tracked documentation symlink must make context inconclusive"
-contains "$SUMMARY_FILE" 'inconclusive' "documentation symlink did not fail closed"
+contains "$SUMMARY_FILE" 'Commit-derived review context is truncated or contains deterministic errors.' "documentation symlink did not report the exact context failure"
+[ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "documentation symlink still invoked Claude"
 
 make_repo oversized-context
 python3 -c 'from pathlib import Path; Path(__import__("sys").argv[1]).write_text("workers\\n" * 200000)' \
   "$REPO/README.md"
 git -C "$REPO" add README.md
 git -C "$REPO" commit -qm oversized-doc
+BASE_SHA="$(git -C "$REPO" rev-parse HEAD)"
+printf '%s\n' 'parallelism = 4' > "$REPO/app.py"
+git -C "$REPO" add app.py
+git -C "$REPO" commit -qm code-after-oversized-doc
 HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
 run_driver oversized-context ''
 [ "$STATUS" -ne 0 ] || fail "oversized documentation corpus must make context inconclusive"
-contains "$SUMMARY_FILE" 'inconclusive' "oversized context did not fail closed"
+contains "$SUMMARY_FILE" 'Commit-derived review context is truncated or contains deterministic errors.' "oversized context did not report the exact context failure"
+[ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "oversized context still invoked Claude"
 pass "review context bounds fail closed"
 
 make_repo diff-prefilter-failure
 TEST_GIT_FAIL_MODE=diff run_driver diff-prefilter-failure '' true "$FAIL_GIT_BIN"
 [ "$STATUS" -ne 0 ] || fail "git diff prefilter failure must be inconclusive"
-contains "$SUMMARY_FILE" 'inconclusive' "git diff prefilter failure was reported as a clean skip"
+contains "$SUMMARY_FILE" 'Git change detection failed.' "git diff prefilter failure lost its exact reason"
+[ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "git diff prefilter failure still invoked Claude"
 
 make_repo tree-prefilter-failure
 TEST_GIT_FAIL_MODE=tree run_driver tree-prefilter-failure '' true "$FAIL_GIT_BIN"
 [ "$STATUS" -ne 0 ] || fail "git tree prefilter failure must be inconclusive"
-contains "$SUMMARY_FILE" 'inconclusive' "git tree prefilter failure was reported as a clean skip"
+contains "$SUMMARY_FILE" 'Git documentation detection failed.' "git tree prefilter failure lost its exact reason"
+[ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "git tree prefilter failure still invoked Claude"
 pass "prefilter failures fail closed"
+
+make_repo diff-prefilter-timeout
+TEST_GIT_FAIL_MODE=hang-diff TEST_GIT_TIMEOUT_SECONDS=0.1 \
+  run_driver diff-prefilter-timeout '' true "$FAIL_GIT_BIN"
+[ "$STATUS" -ne 0 ] || fail "hanging git diff prefilter must be inconclusive"
+contains "$SUMMARY_FILE" 'Git change detection failed.' "git diff timeout lost its exact reason"
+[ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "git diff timeout still invoked Claude"
+
+make_repo tree-prefilter-timeout
+TEST_GIT_FAIL_MODE=hang-tree TEST_GIT_TIMEOUT_SECONDS=0.1 \
+  run_driver tree-prefilter-timeout '' true "$FAIL_GIT_BIN"
+[ "$STATUS" -ne 0 ] || fail "hanging git tree prefilter must be inconclusive"
+contains "$SUMMARY_FILE" 'Git documentation detection failed.' "git tree timeout lost its exact reason"
+[ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "git tree timeout still invoked Claude"
+
+make_repo prefilter-overflow
+TEST_GIT_MAX_OUTPUT_BYTES=4 run_driver prefilter-overflow '' true
+[ "$STATUS" -ne 0 ] || fail "prefilter output overflow must be inconclusive"
+contains "$SUMMARY_FILE" 'Git change detection failed.' "prefilter overflow lost its exact reason"
+[ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "prefilter overflow still invoked Claude"
+
+make_repo manifest-timeout
+TEST_GIT_FAIL_MODE=hang-manifest TEST_GIT_TIMEOUT_SECONDS=0.1 \
+  run_driver manifest-timeout '' true "$FAIL_GIT_BIN"
+[ "$STATUS" -ne 0 ] || fail "hanging manifest git call must be inconclusive"
+contains "$SUMMARY_FILE" 'Change manifest is truncated or contains deterministic errors.' "manifest timeout lost its exact reason"
+[ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "manifest timeout still invoked Claude"
+pass "Git preparation is time and output bounded"
 
 make_repo dirty-index
 git -C "$REPO" rm --cached -q README.md
@@ -424,6 +472,21 @@ contains "$GH_LOG_FILE" 'issues/comments/987' "comment lookup did not determinis
 not_contains "$GH_LOG_FILE" 'pr comment' "paginated upsert created a duplicate comment"
 pass "comment upsert is paginated and deterministic"
 
+make_repo identity-failure
+GH_USER_FAIL=true run_driver identity-failure "$(clean_result)"
+unset GH_USER_FAIL
+[ "$STATUS" -eq 0 ] || fail "comment identity failure must remain nonfatal"
+not_contains "$GH_LOG_FILE" 'pr comment' "uncertain bot identity created a duplicate comment"
+contains "$CASE_DIR/stderr" 'comment ownership lookup failed' "identity failure was not logged"
+
+make_repo list-failure
+GH_LIST_FAIL=true run_driver list-failure "$(clean_result)"
+unset GH_LIST_FAIL
+[ "$STATUS" -eq 0 ] || fail "comment list failure must remain nonfatal"
+not_contains "$GH_LOG_FILE" 'pr comment' "uncertain comment list created a duplicate comment"
+contains "$CASE_DIR/stderr" 'comment ownership lookup failed' "comment list failure was not logged"
+pass "uncertain comment ownership never creates duplicates"
+
 make_repo hostile-marker
 GH_HOSTILE_ID=666 run_driver hostile-marker "$(clean_result)"
 [ "$STATUS" -eq 0 ] || fail "hostile marker case should remain advisory"
@@ -474,6 +537,8 @@ contains "$ROOT/.github/workflows/evergreen-pr.yml" 'repo_path: ${{ github.works
 contains "$ROOT/.github/workflows/evergreen-pr.yml" 'base_ref: ${{ github.event.pull_request.base.sha }}' "workflow does not bind the requested base commit"
 contains "$ROOT/.github/workflows/evergreen-pr.yml" 'pr_number: ${{ github.event.pull_request.number }}' "workflow does not bind publication to the triggering PR"
 not_contains "$ROOT/ci/evergreen-pr.sh" '/tmp/evergreen-comment.md' "driver uses a predictable temporary-file fallback"
+contains "$ROOT/ci/evergreen-pr.sh" 'MANIFEST_SAFE_STATUS=$?' "manifest sanitizer status is unchecked"
+contains "$ROOT/ci/evergreen-pr.sh" 'CONTEXT_SAFE_STATUS=$?' "context sanitizer status is unchecked"
 pass "Action contract"
 
 echo "all action integration tests passed"

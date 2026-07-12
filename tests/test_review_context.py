@@ -90,6 +90,26 @@ class ReviewContextTests(unittest.TestCase):
         self.assertTrue(any("symlink" in error for error in context["errors"]))
         self.assertEqual(context["candidates"], [])
 
+    def test_rejects_document_paths_the_result_protocol_cannot_cite(self):
+        object_id = "a" * 40
+        invalid = (
+            "line\nbreak.md", "carriage\rreturn.md", r"back\slash.md",
+            "C:/absolute.md", "/absolute.md", "docs//bad.md", "a" * 1022 + ".md",
+        )
+        for path in invalid:
+            with self.subTest(path=path):
+                context = review_context._empty("b" * 40)
+                payload = f"100644 blob {object_id} 1\t{path}\0".encode()
+                self.assertEqual(review_context._tree_docs(payload, context), [])
+                self.assertTrue(context["errors"])
+
+    def test_rejects_invalid_utf8_document_paths(self):
+        context = review_context._empty("b" * 40)
+        payload = b"100644 blob " + b"a" * 40 + b" 1\tinvalid-\xff.md\0"
+
+        self.assertEqual(review_context._tree_docs(payload, context), [])
+        self.assertTrue(context["errors"])
+
     @unittest.skipUnless(__import__("os").name == "posix", "Git byte paths are POSIX-specific")
     def test_ignores_invalid_utf8_non_document_paths(self):
         _base, head, manifest = self.fixture()
@@ -120,7 +140,26 @@ class ReviewContextTests(unittest.TestCase):
 
         self.assertTrue(scan_limited["truncated"])
         self.assertTrue(output_limited["truncated"])
-        self.assertLessEqual(len(review_context.encode_context(output_limited)), 180)
+        self.assertLessEqual(len(review_context.encode_context(output_limited)) + 1, 180)
+
+    def test_term_document_candidate_and_list_bounds_are_explicit(self):
+        _base, head, manifest = self.fixture("workers\n\n\nworkers\n")
+        with mock.patch.object(review_context, "MAX_TERMS", 1):
+            terms = review_context.build_context(self.repo, head, manifest)
+        self.write("docs/second.md", "workers\n")
+        head = self.commit("second doc")
+        manifest["head"] = head
+        with mock.patch.object(review_context, "MAX_DOC_FILES", 1):
+            docs = review_context.build_context(self.repo, head, manifest)
+        with mock.patch.object(review_context, "MAX_CANDIDATES", 1):
+            candidates = review_context.build_context(self.repo, head, manifest)
+        with mock.patch.object(review_context, "MAX_DOC_LIST_BYTES", 16):
+            listing = review_context.build_context(self.repo, head, manifest)
+
+        self.assertTrue(terms["truncated"])
+        self.assertTrue(docs["truncated"])
+        self.assertTrue(candidates["truncated"])
+        self.assertTrue(listing["errors"])
 
     def test_wall_clock_expiry_during_scan_is_an_error(self):
         _base, head, manifest = self.fixture()

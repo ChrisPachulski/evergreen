@@ -3,7 +3,7 @@
 
 import argparse
 import json
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import sys
 import time
 
@@ -22,6 +22,7 @@ MAX_TERMS = 1000
 MAX_CANDIDATES = 200
 MAX_OUTPUT_BYTES = 120_000
 MAX_ERRORS = 100
+MAX_PATH = 1024
 TIMEOUT_SECONDS = 3
 CONTEXT_LINES = 2
 EXEMPT_DOC_PARTS = {
@@ -69,6 +70,22 @@ def _living_doc(path: str) -> bool:
         pure.suffix.casefold() in {".md", ".markdown", ".rst"}
         and not lower_parts & EXEMPT_DOC_PARTS
         and not pure.name.casefold().startswith("changelog")
+    )
+
+
+def _protocol_path(path: str) -> bool:
+    pure = PurePosixPath(path)
+    return not (
+        not path
+        or len(path) > MAX_PATH
+        or "\n" in path
+        or "\r" in path
+        or "\x00" in path
+        or PureWindowsPath(path).is_absolute()
+        or pure.is_absolute()
+        or "\\" in path
+        or path != pure.as_posix()
+        or any(part in {".", ".."} for part in pure.parts)
     )
 
 
@@ -123,6 +140,9 @@ def _tree_docs(payload: bytes, context: dict) -> list[tuple[str, str, int]]:
             context["errors"].append("Git tree contains invalid documentation metadata")
             continue
         if not _living_doc(path):
+            continue
+        if not _protocol_path(path):
+            context["errors"].append(f"tracked documentation path is not citable: {path}")
             continue
         if mode == "120000":
             context["errors"].append(f"tracked documentation symlink is not reviewable: {path}")
@@ -187,7 +207,7 @@ def _fit(context: dict, candidate: dict) -> bool:
         context["truncated"] = True
         return False
     context["candidates"].append(candidate)
-    if len(encode_context(context)) <= MAX_OUTPUT_BYTES:
+    if len(encode_context(context)) + 1 <= MAX_OUTPUT_BYTES:
         return True
     context["candidates"].pop()
     context["truncated"] = True
@@ -246,7 +266,7 @@ def build_context(repo: Path, head: str, manifest: dict) -> dict:
                 break
         if context["truncated"]:
             break
-    if len(context["errors"]) > MAX_ERRORS or len(encode_context(context)) > MAX_OUTPUT_BYTES:
+    if len(context["errors"]) > MAX_ERRORS or len(encode_context(context)) + 1 > MAX_OUTPUT_BYTES:
         context["candidates"] = []
         context["errors"] = ["review context errors exceed output bound"]
         context["truncated"] = True

@@ -25,14 +25,17 @@ def _stop(process: subprocess.Popen[bytes]) -> None:
         else:
             process.terminate()
         process.wait(timeout=0.25)
-    except (ProcessLookupError, subprocess.TimeoutExpired):
+    except (PermissionError, ProcessLookupError, subprocess.TimeoutExpired):
         try:
+            if process.poll() is not None:
+                return
             if os.name == "posix":
                 os.killpg(process.pid, signal.SIGKILL)
             else:
                 process.kill()
-        except ProcessLookupError:
-            pass
+        except (PermissionError, ProcessLookupError):
+            if process.poll() is None:
+                process.kill()
         process.wait()
 
 
@@ -43,6 +46,7 @@ def run_bounded(
     max_output_bytes: int,
     clean_env: bool,
     keep_env: list[str],
+    preserve_partial: bool = False,
 ) -> tuple[int, bytes, str | None]:
     if clean_env:
         names = set(DEFAULT_ENV) | set(keep_env)
@@ -83,6 +87,8 @@ def run_bounded(
                     selector.unregister(key.fd)
                     continue
                 if len(output) + len(chunk) > max_output_bytes:
+                    if preserve_partial:
+                        output.extend(chunk[:max_output_bytes - len(output)])
                     failure = (
                         OUTPUT_EXIT,
                         f"command output exceeded {max_output_bytes} bytes",
@@ -93,7 +99,7 @@ def run_bounded(
                 break
         if failure:
             _stop(process)
-            return failure[0], b"", failure[1]
+            return failure[0], bytes(output) if preserve_partial else b"", failure[1]
         returncode = process.wait(timeout=max(0.01, deadline - time.monotonic()))
         return returncode, bytes(output), None
     except subprocess.TimeoutExpired:

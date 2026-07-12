@@ -7,12 +7,18 @@ import json
 import os
 from pathlib import Path
 import re
-import subprocess
+import time
+
+try:
+    from .bounded_process import OUTPUT_EXIT, TIMEOUT_EXIT, run_bounded
+except ImportError:  # Direct script execution.
+    from bounded_process import OUTPUT_EXIT, TIMEOUT_EXIT, run_bounded
 
 
 SCHEMA_VERSION = 1
 MAX_FILES = 4096
 DIFF_HEADER_ALLOWANCE = 16_384
+DEFAULT_TIMEOUT_SECONDS = 15
 HUNK_RE = re.compile(r"(?ms)^@@ .*?(?=^@@ |\Z)")
 SEED_RES = (
     re.compile(r"--[A-Za-z0-9][A-Za-z0-9_-]*"),
@@ -22,37 +28,45 @@ SEED_RES = (
 )
 
 
-def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        ["git", "-C", str(repo), *args],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+def _git(repo: Path, deadline: float, limit: int, *args: str) -> tuple[int, bytes, str | None]:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return TIMEOUT_EXIT, b"", "change manifest exceeded wall-clock limit"
+    return run_bounded(
+        ["git", "--no-replace-objects", "-C", str(repo), *args],
+        timeout_seconds=remaining,
+        max_output_bytes=limit,
+        clean_env=True,
+        keep_env=[],
     )
 
 
-def _resolve(repo: Path, ref: str, label: str, errors: list[str]) -> str | None:
-    result = _git(repo, "rev-parse", "--verify", f"{ref}^{{commit}}")
-    if result.returncode:
-        errors.append(f"invalid {label} ref: {ref}")
+def _resolve(
+    repo: Path, ref: str, label: str, errors: list[str], deadline: float
+) -> str | None:
+    status, output, error = _git(repo, deadline, 256, "rev-parse", "--verify", f"{ref}^{{commit}}")
+    if status:
+        errors.append(error or f"invalid {label} ref: {ref}")
         return None
-    return result.stdout.decode("utf-8", errors="replace").strip()
+    return output.decode("utf-8", errors="replace").strip()
 
 
-def _git_limited(repo: Path, limit: int, *args: str) -> tuple[bytes, int, bool]:
-    process = subprocess.Popen(
-        ["git", "-C", str(repo), *args],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+def _git_limited(
+    repo: Path, deadline: float, limit: int, *args: str
+) -> tuple[bytes, int, bool, str | None]:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return b"", TIMEOUT_EXIT, False, "change manifest exceeded wall-clock limit"
+    status, output, error = run_bounded(
+        ["git", "--no-replace-objects", "-C", str(repo), *args],
+        timeout_seconds=remaining,
+        max_output_bytes=limit + 1,
+        clean_env=True,
+        keep_env=[],
+        preserve_partial=True,
     )
-    assert process.stdout is not None
-    output = process.stdout.read(limit + 1)
-    truncated = len(output) > limit
-    if truncated:
-        output = output[:limit]
-        process.terminate()
-    process.stdout.close()
-    return output, process.wait(), truncated
+    truncated = status == OUTPUT_EXIT or len(output) > limit
+    return output[:limit], status, truncated, error
 
 
 def _raw_path(value: bytes) -> bytes:
@@ -80,9 +94,11 @@ def _changed_files(
     head: str,
     max_bytes: int,
     errors: list[str],
+    deadline: float,
 ) -> tuple[list[dict], bool]:
-    output, returncode, truncated = _git_limited(
+    output, returncode, truncated, failure = _git_limited(
         repo,
+        deadline,
         max(4096, min(1_000_000, max_bytes * 2)),
         "diff",
         "--name-status",
@@ -92,7 +108,7 @@ def _changed_files(
         head,
     )
     if returncode and not truncated:
-        errors.append("git diff --name-status failed")
+        errors.append(failure or "git diff --name-status failed")
         return [], truncated
 
     fields = output.split(b"\0")
@@ -134,12 +150,14 @@ def _patch(
     file: dict,
     limit: int,
     errors: list[str],
+    deadline: float,
 ) -> tuple[str, bool]:
     paths = [os.fsdecode(file["_path"])]
     if "_old_path" in file:
         paths.insert(0, os.fsdecode(file["_old_path"]))
-    output, returncode, truncated = _git_limited(
+    output, returncode, truncated, failure = _git_limited(
         repo,
+        deadline,
         limit,
         "diff",
         "--unified=3",
@@ -152,7 +170,7 @@ def _patch(
     )
     if returncode and not truncated:
         display = file["_path"].decode("utf-8", errors="replace")
-        errors.append(f"git diff failed for {display}")
+        errors.append(failure or f"git diff failed for {display}")
         return "", truncated
     return output.decode("utf-8", errors="replace"), truncated
 
@@ -188,6 +206,7 @@ def build_manifest(
     base: str,
     head: str = "HEAD",
     max_bytes: int = 120000,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict:
     """Return changed files, bounded unified hunks, and deterministic contract seeds."""
     repo = Path(repo).resolve()
@@ -201,12 +220,15 @@ def build_manifest(
         "truncated": False,
         "errors": errors,
     }
-    base_sha = _resolve(repo, base, "base", errors)
-    head_sha = _resolve(repo, head, "head", errors)
+    deadline = time.monotonic() + timeout_seconds
+    base_sha = _resolve(repo, base, "base", errors, deadline)
+    head_sha = _resolve(repo, head, "head", errors, deadline)
     if not base_sha or not head_sha:
         return manifest
 
-    files, names_truncated = _changed_files(repo, base_sha, head_sha, max_bytes, errors)
+    files, names_truncated = _changed_files(
+        repo, base_sha, head_sha, max_bytes, errors, deadline
+    )
     manifest["truncated"] = names_truncated
     seed_candidates: set[str] = set()
     remaining = max(0, max_bytes)
@@ -222,6 +244,7 @@ def build_manifest(
             file,
             remaining + DIFF_HEADER_ALLOWANCE,
             errors,
+            deadline,
         )
         hunks = HUNK_RE.findall(patch)
         if capture_truncated and hunks:
@@ -258,8 +281,11 @@ def main() -> None:
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--max-bytes", type=int, default=120000)
+    parser.add_argument("--timeout-seconds", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     args = parser.parse_args()
-    manifest = build_manifest(args.repo, args.base, args.head, args.max_bytes)
+    manifest = build_manifest(
+        args.repo, args.base, args.head, args.max_bytes, args.timeout_seconds
+    )
     print(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")))
 
 

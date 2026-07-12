@@ -1,5 +1,4 @@
 import base64
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -7,14 +6,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+
+
+from ci import change_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "ci" / "change_manifest.py"
-SPEC = importlib.util.spec_from_file_location("change_manifest", SCRIPT)
-change_manifest = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(change_manifest)
 
 
 class ChangeManifestTests(unittest.TestCase):
@@ -179,6 +178,22 @@ class ChangeManifestTests(unittest.TestCase):
         self.assertFalse(manifest["truncated"])
         self.assertEqual(len(manifest["errors"]), 1)
         self.assertIn("invalid base ref", manifest["errors"][0])
+
+    def test_git_deadline_failure_is_a_manifest_error(self):
+        self.write("file.py", "value = 1\n")
+        head = self.commit("base")
+
+        with mock.patch.object(
+            change_manifest, "run_bounded",
+            return_value=(124, b"", "command timed out after 0.1 seconds"),
+            create=True,
+        ):
+            manifest = change_manifest.build_manifest(
+                self.repo, head, head, timeout_seconds=0.1
+            )
+
+        self.assertTrue(manifest["errors"])
+        self.assertTrue(any("timed out" in error for error in manifest["errors"]))
 
     def test_cli_prints_one_json_object(self):
         self.write("file.py", "value = 1\n")
