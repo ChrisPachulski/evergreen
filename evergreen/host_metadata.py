@@ -201,18 +201,22 @@ def _acl_bytes(library, descriptor: int, deadline: float) -> bytes | None:
     _check_deadline(deadline)
     _configure_acl_api(library)
     acl = library.acl_get_fd_np(descriptor, 0x100)
-    _check_deadline(deadline)
     if not acl:
+        _check_deadline(deadline)
         if ctypes.get_errno() == errno.ENOENT:
             return None
         raise OSError(ctypes.get_errno(), "cannot read file ACL")
     try:
+        _check_deadline(deadline)
         length = ctypes.c_ssize_t()
         text = library.acl_to_text(acl, ctypes.byref(length))
-        _check_deadline(deadline)
-        if not text or length.value < 0 or length.value > MAX_XATTR_BYTES:
+        if not text:
+            _check_deadline(deadline)
             raise OSError(ctypes.get_errno(), "cannot serialize file ACL")
         try:
+            _check_deadline(deadline)
+            if length.value < 0 or length.value > MAX_XATTR_BYTES:
+                raise OSError(ctypes.get_errno(), "cannot serialize file ACL")
             value = ctypes.string_at(text, length.value)
             _check_deadline(deadline)
             return value

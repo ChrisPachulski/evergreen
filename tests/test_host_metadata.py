@@ -15,6 +15,47 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class HostMetadataTests(unittest.TestCase):
+    def test_acl_pointers_are_freed_when_native_calls_cross_deadline(self):
+        class Function:
+            def __init__(self, implementation):
+                self.implementation = implementation
+
+            def __call__(self, *args):
+                return self.implementation(*args)
+
+        for crossing_call, expected_frees in (
+            ("get", [101]),
+            ("text", [202, 101]),
+        ):
+            with self.subTest(crossing_call=crossing_call):
+                clock = [0]
+                freed = []
+
+                class Library:
+                    pass
+
+                library = Library()
+
+                def get_acl(_descriptor, _type):
+                    if crossing_call == "get":
+                        clock[0] = 2
+                    return 101
+
+                def to_text(_acl, _length):
+                    if crossing_call == "text":
+                        clock[0] = 2
+                    return 202
+
+                library.acl_get_fd_np = Function(get_acl)
+                library.acl_to_text = Function(to_text)
+                library.acl_free = Function(lambda pointer: freed.append(pointer) or 0)
+                with mock.patch.object(
+                    host_metadata.time, "monotonic", side_effect=lambda: clock[0],
+                ):
+                    with self.assertRaises(TimeoutError):
+                        host_metadata._acl_bytes(library, 1, deadline=1)
+                self.assertEqual(freed, expected_frees)
+
     def test_deadline_crossing_inside_final_value_fetch_is_rejected(self):
         clock = [0]
 
