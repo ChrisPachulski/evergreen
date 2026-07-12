@@ -116,11 +116,17 @@ has "$(bash "$HOOKS/evergreen-stop.sh")" "freshness pass" "stop: further edit ->
 git -C "$TMP" checkout -q -- app.py
 
 # --- guard (PreToolUse commit backstop) ---
-guard(){ printf '{"tool_input":{"command":"git commit -m x"}}' | bash "$HOOKS/evergreen-guard.sh" 2>&1; }
+guard_cmd(){ printf '{"tool_input":{"command":"%s"}}' "$1" | bash "$HOOKS/evergreen-guard.sh" 2>&1; }
+guard(){ guard_cmd "git commit -m x"; }
+guard_rc(){ printf '{"tool_input":{"command":"%s"}}' "$1" | bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?"; }
 printf 'k\n' > "$TMP/.env"; git -C "$TMP" add -f .env
 has "$(guard)" "secret/credential" "guard: staged .env -> blocked"
+has "$(guard_cmd "git -C $TMP commit -m x")" "secret/credential" "guard: git -C commit inspects staged index"
+has "$(guard_cmd "git -C \\\"$TMP\\\" commit -m x")" "secret/credential" "guard: git -C quoted path inspects staged index"
+has "$(guard_cmd "git -c color.ui=false commit -m x")" "secret/credential" "guard: git -c commit inspects staged index"
+has "$(guard_cmd "git --no-pager commit -m x")" "secret/credential" "guard: ordinary global option commit inspects staged index"
 printf '.env\n' > "$TMP/.evergreen-keep"
-empty "$(guard)" "guard: .evergreen-keep suppresses the block"
+empty "$(guard_cmd "git -C $TMP commit -m x")" "guard: .evergreen-keep suppresses the block"
 rm -f "$TMP/.evergreen-keep"
 empty "$(EVERGREEN_GUARD=off guard)" "guard: EVERGREEN_GUARD=off bypasses"
 git -C "$TMP" rm -q --cached .env; rm -f "$TMP/.env"
@@ -136,13 +142,35 @@ git -C "$TMP" rm -q --cached SUMMARY.md; rm -f "$TMP/SUMMARY.md"
 printf 'k\n' > "$TMP/.env"; git -C "$TMP" add -f .env
 empty "$(printf '{"tool_input":{"command":"ls -la"}}' | bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
   "guard: non-git command -> pass-through despite staged secret"
+empty "$(guard_cmd "echo git add && echo git commit")" \
+  "guard: non-git mentions of add and commit pass through"
 git -C "$TMP" rm -q --cached .env; rm -f "$TMP/.env"
+
+# Staging and committing in one Bash call must be split: the PreToolUse hook cannot inspect the
+# index after the add but before the commit. This applies through supported Git global options.
+printf 'k\n' > "$TMP/.env"
+for case_row in \
+  "git add -f .env && git commit -m x|ampersand" \
+  "git add -f .env; git commit -m x|semicolon" \
+  "git -C $TMP add -f .env && git -C $TMP commit -m x|git -C" \
+  "git -C \\\"$TMP\\\" add -f .env && git -C \\\"$TMP\\\" commit -m x|quoted git -C" \
+  "git -c color.ui=false add -f .env && git -c color.ui=false commit -m x|git -c" \
+  "git --no-pager add -f .env && git --no-pager commit -m x|global option"; do
+  cmd="${case_row%|*}"
+  label="${case_row##*|}"
+  has "$(guard_cmd "$cmd")" "separate" "guard: compound $label stage-and-commit is blocked"
+  eq "$(guard_rc "$cmd")" "2" "guard: compound $label exits 2"
+done
+empty "$(EVERGREEN_GUARD=off guard_cmd "git add -f .env && git commit -m x")" \
+  "guard: EVERGREEN_GUARD=off bypasses compound rejection"
+rm -f "$TMP/.env"
 
 # A commit that DELETES slop is the guard doing its job — must never be blocked (--diff-filter=d).
 printf 's\n' > "$TMP/AUDIT-2026-01-01.md"; git -C "$TMP" add -f AUDIT-2026-01-01.md
 git -C "$TMP" commit -qm "add slop to be removed"
 git -C "$TMP" rm -q AUDIT-2026-01-01.md   # stage a pure deletion of the slop file
-empty "$(guard)" "guard: deletion-only commit of slop -> allowed (cleanup enforced, not blocked)"
+empty "$(guard_cmd "git -C $TMP commit -m cleanup")" \
+  "guard: deletion-only option-prefixed commit of slop -> allowed (cleanup enforced, not blocked)"
 git -C "$TMP" commit -qm "remove slop"
 
 # --- companion python selftests (comment renderer + benchmark scorer) ---
