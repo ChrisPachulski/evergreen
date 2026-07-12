@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -18,6 +19,33 @@ class HostTests(unittest.TestCase):
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def set_test_xattr(self, path, suffix, value):
+        if hasattr(os, "setxattr"):
+            name = f"user.{suffix}"
+            try:
+                os.setxattr(path, name, value)
+            except OSError:
+                return None
+            return name
+        tool = shutil.which("xattr")
+        if tool:
+            name = f"com.evergreen.{suffix}"
+            result = subprocess.run(
+                [tool, "-w", name, value.decode("ascii"), str(path)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+            return name if result.returncode == 0 else None
+        return None
+
+    def get_test_xattr(self, path, name):
+        if hasattr(os, "getxattr"):
+            return os.getxattr(path, name)
+        result = subprocess.run(
+            [shutil.which("xattr"), "-p", name, str(path)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
+        )
+        return result.stdout.rstrip(b"\n")
 
     def test_detect_hosts_reports_absent_and_present_in_stable_order(self):
         from evergreen.hosts import detect_hosts
@@ -477,7 +505,7 @@ class HostTests(unittest.TestCase):
                 else:
                     self.assertEqual(instructions.stat().st_ino, concurrent_inode)
 
-    def test_existing_instruction_write_and_rollback_preserve_inode_metadata(self):
+    def test_existing_instruction_backup_rollback_restores_inode_and_metadata(self):
         from evergreen import hosts
 
         codex = self.home / ".codex"
@@ -486,13 +514,10 @@ class HostTests(unittest.TestCase):
         instructions.write_bytes(b"original")
         instructions.chmod(0o640)
         before = instructions.stat()
-        attribute = "user.evergreen-test"
-        xattr_supported = hasattr(os, "setxattr")
-        if xattr_supported:
-            try:
-                os.setxattr(instructions, attribute, b"preserve")
-            except OSError:
-                xattr_supported = False
+        attribute = self.set_test_xattr(instructions, "write-test", b"preserve")
+        timestamp = 1_700_000_000_123_456_789
+        os.utime(instructions, ns=(timestamp, timestamp))
+        before = instructions.stat()
         real_action = hosts._perform_action
         forward = None
 
@@ -501,8 +526,10 @@ class HostTests(unittest.TestCase):
             postimage = real_action(action, path, value, *args, **kwargs)
             if path.name == instructions.name:
                 forward = instructions.stat()
-                if xattr_supported:
-                    self.assertEqual(os.getxattr(instructions, attribute), b"preserve")
+                if attribute:
+                    self.assertEqual(
+                        self.get_test_xattr(instructions, attribute), b"preserve"
+                    )
                 raise OSError("force rollback after instruction write")
             return postimage
 
@@ -514,14 +541,18 @@ class HostTests(unittest.TestCase):
         after = instructions.stat()
         self.assertFalse(result.ok)
         self.assertEqual(instructions.read_bytes(), b"original")
+        self.assertIsNotNone(forward, result.messages)
+        self.assertNotEqual(forward.st_ino, before.st_ino)
+        self.assertEqual((after.st_dev, after.st_ino), (before.st_dev, before.st_ino))
         for metadata in (forward, after):
-            self.assertEqual((metadata.st_dev, metadata.st_ino), (before.st_dev, before.st_ino))
             self.assertEqual((metadata.st_uid, metadata.st_gid), (before.st_uid, before.st_gid))
             self.assertEqual(metadata.st_mode, before.st_mode)
-        if xattr_supported:
-            self.assertEqual(os.getxattr(instructions, attribute), b"preserve")
+            self.assertEqual(metadata.st_mtime_ns, before.st_mtime_ns)
+        if attribute:
+            self.assertEqual(self.get_test_xattr(instructions, attribute), b"preserve")
+        self.assertFalse(any("evergreen-backup" in path.name for path in codex.iterdir()))
 
-    def test_partial_in_place_write_restores_same_inode_preimage(self):
+    def test_persistent_temp_write_failure_leaves_original_untouched(self):
         from evergreen import hosts
 
         codex = self.home / ".codex"
@@ -529,19 +560,7 @@ class HostTests(unittest.TestCase):
         instructions = codex / "AGENTS.md"
         instructions.write_bytes(b"original")
         before = instructions.stat()
-        real_write = hosts.os.write
-        calls = 0
-
-        def partial_then_fail(descriptor, data):
-            nonlocal calls
-            calls += 1
-            if calls == 1:
-                return real_write(descriptor, bytes(data[:4]))
-            if calls == 2:
-                raise OSError("injected partial write")
-            return real_write(descriptor, data)
-
-        with mock.patch.object(hosts.os, "write", side_effect=partial_then_fail):
+        with mock.patch.object(hosts.os, "write", side_effect=OSError("persistent write failure")):
             result = hosts.install(self.home, ROOT, "codex")
 
         after = instructions.stat()
@@ -551,6 +570,158 @@ class HostTests(unittest.TestCase):
         self.assertEqual((after.st_uid, after.st_gid, after.st_mode), (
             before.st_uid, before.st_gid, before.st_mode,
         ))
+        self.assertEqual(
+            [path.name for path in codex.iterdir()],
+            ["AGENTS.md"],
+        )
+
+    def test_uninstall_delete_rollback_restores_inode_xattr_and_timestamp(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        self.assertTrue(hosts.install(self.home, ROOT, "codex").ok)
+        instructions = codex / "AGENTS.md"
+        instructions.chmod(0o640)
+        attribute = self.set_test_xattr(
+            instructions, "delete-test", b"preserve-delete"
+        )
+        timestamp = 1_700_000_100_987_654_321
+        os.utime(instructions, ns=(timestamp, timestamp))
+        before = instructions.stat()
+        real_action = hosts._perform_action
+
+        def fail_after_instruction_delete(action, path, value, *args, **kwargs):
+            postimage = real_action(action, path, value, *args, **kwargs)
+            if path.name == instructions.name:
+                self.assertFalse(instructions.exists())
+                raise OSError("force rollback after instruction delete")
+            return postimage
+
+        with mock.patch.object(
+            hosts, "_perform_action", side_effect=fail_after_instruction_delete
+        ):
+            result = hosts.uninstall(self.home, "codex")
+
+        after = instructions.stat()
+        self.assertFalse(result.ok)
+        self.assertEqual((after.st_dev, after.st_ino), (before.st_dev, before.st_ino))
+        self.assertEqual((after.st_uid, after.st_gid, after.st_mode), (
+            before.st_uid, before.st_gid, before.st_mode,
+        ))
+        self.assertEqual(after.st_mtime_ns, before.st_mtime_ns)
+        if attribute:
+            self.assertEqual(
+                self.get_test_xattr(instructions, attribute), b"preserve-delete"
+            )
+        self.assertFalse(any("evergreen-backup" in path.name for path in codex.iterdir()))
+
+    def test_successful_existing_write_preserves_metadata_and_cleans_backup(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        instructions.chmod(0o640)
+        attribute = self.set_test_xattr(instructions, "success-test", b"preserve")
+        timestamp = 1_700_000_200_111_222_333
+        os.utime(instructions, ns=(timestamp, timestamp))
+        before = instructions.stat()
+
+        result = hosts.install(self.home, ROOT, "codex")
+
+        after = instructions.stat()
+        self.assertTrue(result.ok, result.messages)
+        self.assertNotEqual(after.st_ino, before.st_ino)
+        self.assertEqual((after.st_uid, after.st_gid, after.st_mode), (
+            before.st_uid, before.st_gid, before.st_mode,
+        ))
+        self.assertEqual((after.st_atime_ns, after.st_mtime_ns), (
+            before.st_atime_ns, before.st_mtime_ns,
+        ))
+        if attribute:
+            self.assertEqual(self.get_test_xattr(instructions, attribute), b"preserve")
+        self.assertFalse(any("evergreen-backup" in path.name for path in codex.iterdir()))
+
+    def test_publication_failure_leaves_original_and_cleans_all_artifacts(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        before = instructions.stat()
+        real_replace = hosts.os.replace
+
+        def fail_publication(source, destination, *args, **kwargs):
+            if "evergreen-" in os.fspath(source):
+                raise OSError("injected publication failure")
+            return real_replace(source, destination, *args, **kwargs)
+
+        with mock.patch.object(hosts.os, "replace", side_effect=fail_publication):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        after = instructions.stat()
+        self.assertFalse(result.ok)
+        self.assertEqual(instructions.read_bytes(), b"original")
+        self.assertEqual((after.st_dev, after.st_ino), (before.st_dev, before.st_ino))
+        self.assertEqual([path.name for path in codex.iterdir()], ["AGENTS.md"])
+
+    def test_rollback_failure_retains_and_reports_original_backup(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        real_action = hosts._perform_action
+        real_replace = hosts.os.replace
+
+        def fail_after_instruction(action, path, value, *args, **kwargs):
+            postimage = real_action(action, path, value, *args, **kwargs)
+            if path.name == instructions.name:
+                raise OSError("force rollback")
+            return postimage
+
+        def fail_backup_restore(source, destination, *args, **kwargs):
+            if "evergreen-backup" in os.fspath(source):
+                raise OSError("injected restore failure")
+            return real_replace(source, destination, *args, **kwargs)
+
+        with mock.patch.object(
+            hosts, "_perform_action", side_effect=fail_after_instruction
+        ), mock.patch.object(hosts.os, "replace", side_effect=fail_backup_restore):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        backups = [path for path in codex.iterdir() if "evergreen-backup" in path.name]
+        self.assertFalse(result.ok)
+        self.assertEqual(len(backups), 1)
+        self.assertIn(str(backups[0]), " ".join(result.messages))
+        self.assertIn("manual recovery", " ".join(result.messages).lower())
+
+    def test_commit_cleanup_failure_retains_and_reports_backup(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        real_unlink = hosts.os.unlink
+
+        def fail_backup_cleanup(path, *args, **kwargs):
+            if "evergreen-backup" in os.fspath(path):
+                raise OSError("injected cleanup failure")
+            return real_unlink(path, *args, **kwargs)
+
+        with mock.patch.object(hosts.os, "unlink", side_effect=fail_backup_cleanup):
+            result = hosts.install(self.home, ROOT, "codex")
+
+        backups = [path for path in codex.iterdir() if "evergreen-backup" in path.name]
+        self.assertFalse(result.ok)
+        self.assertEqual(len(backups), 1)
+        self.assertIn(str(backups[0]), " ".join(result.messages))
+        self.assertIn("manual recovery", " ".join(result.messages).lower())
 
     def test_path_snapshot_records_link_count(self):
         from evergreen import hosts
@@ -971,7 +1142,7 @@ class HostTests(unittest.TestCase):
         accepted = (
             "/usr/bin/env python",
             "/usr/bin/env python3",
-            "/usr/bin/env python3.12.1",
+            "/usr/bin/env python3.12",
             "/usr/bin/python",
             "/usr/local/bin/python3",
             "/opt/python3.12",
@@ -984,6 +1155,9 @@ class HostTests(unittest.TestCase):
             "/usr/bin/env notpython3",
             "/usr/bin/env python3-evil",
             "/usr/bin/env -S python3 -I",
+            "/usr/bin/env python3.12.1",
+            "/usr/bin/env python3.1234",
+            "/usr/bin/env python3.001",
             "python3",
         )
 

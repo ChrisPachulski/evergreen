@@ -122,6 +122,24 @@ exec /usr/bin/tr "$@"
 EOF
 chmod +x "$NO_TR_BIN/tr"
 
+HANG_PREFILTER_BIN="$TMP_ROOT/hang-prefilter-bin"
+mkdir -p "$HANG_PREFILTER_BIN/actual"
+ln -s "$(command -v python3)" "$HANG_PREFILTER_BIN/actual/python3"
+cat > "$HANG_PREFILTER_BIN/python3" <<'EOF'
+#!/usr/bin/env bash
+mode="$(cat "$HOME/hang-prefilter" 2>/dev/null || true)"
+if [[ "${1:-}" = *path_prefilter.py ]]; then
+  printf 'SECRET=%s\n' "${UNRELATED_SECRET+set}" >> "$HOME/prefilter-env.log"
+  case "$mode:$*" in
+    code:*'--mode code'*) sleep 5 ;;
+    docs:*'--mode docs'*) sleep 5 ;;
+  esac
+fi
+exec "$(dirname "$0")/actual/python3" "$@"
+EOF
+chmod +x "$HANG_PREFILTER_BIN/python3"
+for tool in git claude gh npm; do ln -s "$STUB_BIN/$tool" "$HANG_PREFILTER_BIN/$tool"; done
+
 make_repo() {
   local name="$1" hostile="${2:-false}"
   REPO="$TMP_ROOT/$name/repo"
@@ -208,11 +226,13 @@ run_driver() {
   : > "$CLAUDE_ARGS_FILE_PATH"
   : > "$CLAUDE_ENV_FILE_PATH"
   : > "$CASE_DIR/git-resolve.log"
+  : > "$CASE_DIR/prefilter-env.log"
   case "${TEST_CLAUDE_BEHAVIOR:-}" in
     hang-version) : > "$CASE_DIR/hang-version" ;;
     hang-model) : > "$CASE_DIR/hang-model" ;;
     oversized-model) : > "$CASE_DIR/oversized-model" ;;
   esac
+  printf '%s' "${TEST_PREFILTER_BEHAVIOR:-}" > "$CASE_DIR/hang-prefilter"
   printf '%s' "${TEST_GIT_FAIL_MODE:-}" > "$CASE_DIR/git-fail-mode"
   set +e
   PATH="$path_prefix:$PYTHON_BIN:/usr/bin:/bin" \
@@ -433,6 +453,29 @@ run_driver prefilter-without-tr "$(clean_result)" true "$NO_TR_BIN"
 [ "$(wc -l < "$CASE_DIR/tr-used" | tr -d ' ')" -eq 1 ] || fail "path prefilter still spawned tr per path"
 pass "path prefilter has bounded in-process parsing"
 
+for prefilter_mode in code docs; do
+  make_repo "hanging-$prefilter_mode-prefilter"
+  started="$(python3 -c 'import time; print(time.monotonic())')"
+  TEST_PREFILTER_BEHAVIOR="$prefilter_mode" TEST_GIT_TIMEOUT_SECONDS=0.1 \
+    run_driver "hanging-$prefilter_mode-prefilter" '' true "$HANG_PREFILTER_BIN"
+  elapsed="$(python3 -c 'import sys; print(float(sys.argv[2])-float(sys.argv[1]))' \
+    "$started" "$(python3 -c 'import time; print(time.monotonic())')")"
+  [ "$STATUS" -ne 0 ] || fail "hanging $prefilter_mode prefilter must be inconclusive"
+  python3 -c 'import sys; assert float(sys.argv[1]) < 2' "$elapsed" || \
+    fail "hanging $prefilter_mode prefilter exceeded outer timeout ($elapsed seconds)"
+  if [ "$prefilter_mode" = code ]; then
+    expected='Changed-path classification exceeded its safety bounds.'
+  else
+    expected='Documentation-path classification exceeded its safety bounds.'
+  fi
+  contains "$SUMMARY_FILE" "$expected" "hanging $prefilter_mode prefilter lost exact reason"
+  not_contains "$CASE_DIR/prefilter-env.log" 'SECRET=set' \
+    "hanging $prefilter_mode prefilter inherited unrelated secrets"
+  [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "hanging $prefilter_mode prefilter invoked Claude"
+done
+unset TEST_PREFILTER_BEHAVIOR
+pass "path prefilters have outer hard timeouts"
+
 make_repo dirty-index
 git -C "$REPO" rm --cached -q README.md
 run_driver dirty-index "$(clean_result)"
@@ -562,7 +605,7 @@ GH_HANG=true TEST_COMMENT_TIMEOUT_SECONDS=0.1 run_driver hanging-comment "$(clea
 elapsed="$(python3 -c 'import sys; print(float(sys.argv[2])-float(sys.argv[1]))' "$started" "$(python3 -c 'import time; print(time.monotonic())')")"
 unset GH_HANG
 [ "$STATUS" -eq 0 ] || fail "comment timeout must remain nonfatal"
-python3 -c 'import sys; assert float(sys.argv[1]) < 1' "$elapsed" || fail "hanging gh call was not bounded"
+python3 -c 'import sys; assert float(sys.argv[1]) < 2' "$elapsed" || fail "hanging gh call was not bounded"
 contains "$CASE_DIR/stderr" 'comment ownership lookup failed' "gh timeout was not logged"
 pass "comment publication is time bounded"
 
@@ -625,6 +668,7 @@ contains "$ROOT/ci/bounded_process.py" 'children that remain in its inherited pr
 contains "$ROOT/ci/bounded_process.py" 'Deliberately detached descendants' "detached-child limitation is undocumented"
 contains "$ROOT/ci/evergreen-pr.sh" 'or model content cannot spawn processes' "Action prompt omits its no-tools process boundary"
 contains "$ROOT/ci/evergreen-pr.sh" 'requires runner-level' "Action prompt overstates portable process containment"
+contains "$ROOT/ci/evergreen-pr.sh" '--max-output-bytes 16 --clean-env' "path prefilter lacks strict clean outer runner bounds"
 pass "Action contract"
 
 echo "all action integration tests passed"

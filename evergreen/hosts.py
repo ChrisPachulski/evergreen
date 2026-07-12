@@ -1,13 +1,19 @@
 """Reversible Claude and Codex host integration."""
 
 import ast
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+import errno
 import json
 import os
 from pathlib import Path
 import stat
 import time
 import uuid
+
+try:
+    import posix as _posix
+except ImportError:  # pragma: no cover - POSIX hosts are required by the CLI.
+    _posix = None
 
 
 BEGIN_MARKER = "<!-- evergreen:begin -->"
@@ -17,6 +23,8 @@ MAX_STATE_BYTES = 4096
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_INSTRUCTION_BYTES = 1024 * 1024
 MAX_COMMAND_BYTES = 1024 * 1024
+MAX_XATTRS = 100
+MAX_XATTR_BYTES = 1024 * 1024
 # Elapsed-time detection only: regular-file syscalls are not portably interruptible.
 READ_ELAPSED_LIMIT_SECONDS = 3
 
@@ -58,6 +66,10 @@ class PathSnapshot:
     dev: int | None = None
     ino: int | None = None
     nlink: int | None = None
+    uid: int | None = None
+    gid: int | None = None
+    atime_ns: int | None = field(default=None, compare=False)
+    mtime_ns: int | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -65,6 +77,7 @@ class RollbackEntry:
     before: PathSnapshot
     after: PathSnapshot
     parent: PathSnapshot
+    backup: str | None = None
 
 
 def detect_hosts(home: Path) -> list[HostStatus]:
@@ -512,6 +525,9 @@ def _apply(plans, dry_run, captured):
                     postimage = _perform_action(
                         action, path, value, parent_fd=parent_fd,
                         expected=captured[path],
+                        parent_snapshot=captured[path.parent],
+                        rollback_entries=rollback_entries,
+                        conflicts=conflicts,
                     )
                 except Exception:
                     try:
@@ -525,9 +541,10 @@ def _apply(plans, dry_run, captured):
                     if current == captured[path]:
                         pass
                     elif _matches_postimage(action, value, current, captured[path]):
-                        rollback_entries.append(RollbackEntry(
-                            captured[path], current, captured[path.parent]
-                        ))
+                        if not _entry_for_path(rollback_entries, path):
+                            rollback_entries.append(RollbackEntry(
+                                captured[path], current, captured[path.parent]
+                            ))
                     else:
                         conflicts.append(f"{path}: preserved concurrent state")
                     raise
@@ -542,9 +559,10 @@ def _apply(plans, dry_run, captured):
                 if current != postimage:
                     conflicts.append(f"{path}: preserved concurrent state")
                     raise OSError(f"transaction postimage mismatch: {path}")
-                rollback_entries.append(RollbackEntry(
-                    captured[path], postimage, captured[path.parent]
-                ))
+                if not _entry_for_path(rollback_entries, path):
+                    rollback_entries.append(RollbackEntry(
+                        captured[path], postimage, captured[path.parent]
+                    ))
                 _verify_open_directory_path(path.parent, parent_fd)
             finally:
                 os.close(parent_fd)
@@ -566,7 +584,24 @@ def _apply(plans, dry_run, captured):
             f"error: apply failed: {error}; ordinary recovery completed under the "
             "exclusive-access requirement"
         ]))
+    cleanup_errors = []
+    for entry in rollback_entries:
+        if entry.backup is None:
+            continue
+        try:
+            _commit_entry(entry)
+        except Exception as cleanup_error:
+            cleanup_errors.append(f"{entry.before.path}: {cleanup_error}")
+    if cleanup_errors:
+        return OperationResult(False, tuple(messages + [
+            "error: changes applied but transaction backup cleanup failed; "
+            "manual recovery required: " + "; ".join(cleanup_errors)
+        ]))
     return OperationResult(True, tuple(messages))
+
+
+def _entry_for_path(entries, path):
+    return next((entry for entry in reversed(entries) if entry.before.path == path), None)
 
 
 def _capture_preflight(selected):
@@ -611,6 +646,8 @@ def _snapshot(path, allow_directory=False):
         return PathSnapshot(
             path, kind, data=data, mode=stat.S_IMODE(metadata.st_mode),
             dev=metadata.st_dev, ino=metadata.st_ino, nlink=metadata.st_nlink,
+            uid=metadata.st_uid, gid=metadata.st_gid,
+            atime_ns=before.st_atime_ns, mtime_ns=before.st_mtime_ns,
         )
     if kind == "symlink":
         before = path.lstat()
@@ -622,12 +659,16 @@ def _snapshot(path, allow_directory=False):
         return PathSnapshot(
             path, kind, target=target, mode=stat.S_IMODE(after.st_mode),
             dev=after.st_dev, ino=after.st_ino, nlink=after.st_nlink,
+            uid=after.st_uid, gid=after.st_gid,
+            atime_ns=before.st_atime_ns, mtime_ns=before.st_mtime_ns,
         )
     if kind == "directory" and allow_directory:
         metadata = path.lstat()
         return PathSnapshot(
             path, kind, mode=stat.S_IMODE(metadata.st_mode),
             dev=metadata.st_dev, ino=metadata.st_ino, nlink=metadata.st_nlink,
+            uid=metadata.st_uid, gid=metadata.st_gid,
+            atime_ns=metadata.st_atime_ns, mtime_ns=metadata.st_mtime_ns,
         )
     raise OSError(f"refusing unsafe transaction path ({kind}): {path}")
 
@@ -701,6 +742,8 @@ def _snapshot_at(path, parent_fd):
     common = {
         "mode": mode, "dev": metadata.st_dev, "ino": metadata.st_ino,
         "nlink": metadata.st_nlink,
+        "uid": metadata.st_uid, "gid": metadata.st_gid,
+        "atime_ns": metadata.st_atime_ns, "mtime_ns": metadata.st_mtime_ns,
     }
     if kind == "regular":
         limit = MAX_STATE_BYTES if path.name == OWNERSHIP_FILE else MAX_INSTRUCTION_BYTES
@@ -776,14 +819,20 @@ def _matches_postimage(action, value, snapshot, expected):
     return False
 
 
-def _perform_action(action, path, value, *, parent_fd, expected):
+def _perform_action(
+    action, path, value, *, parent_fd, expected, parent_snapshot,
+    rollback_entries, conflicts,
+):
     _verify_snapshot_at(expected, parent_fd)
     if action == "write":
         if expected.kind == "absent":
             mode = 0o600 if path.name == OWNERSHIP_FILE else 0o644
             _create_write_at(parent_fd, path.name, value, mode)
         else:
-            _write_existing_at(parent_fd, path.name, value, expected)
+            return _replace_regular_at(
+                parent_fd, path, value, expected, parent_snapshot,
+                rollback_entries, conflicts,
+            )
     elif action == "link":
         if expected.kind == "absent":
             os.symlink(value, path.name, target_is_directory=True, dir_fd=parent_fd)
@@ -793,6 +842,11 @@ def _perform_action(action, path, value, *, parent_fd, expected):
     elif action == "delete":
         if expected.kind == "absent":
             return expected
+        if expected.kind == "regular":
+            return _delete_regular_at(
+                parent_fd, path, expected, parent_snapshot,
+                rollback_entries, conflicts,
+            )
         try:
             os.unlink(path.name, dir_fd=parent_fd)
         except FileNotFoundError:
@@ -804,36 +858,83 @@ def _perform_action(action, path, value, *, parent_fd, expected):
     return postimage
 
 
-def _write_existing_at(parent_fd, name, data, expected):
-    flags = os.O_RDWR | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(name, flags, dir_fd=parent_fd)
+def _replace_regular_at(
+    parent_fd, path, data, expected, parent_snapshot, rollback_entries, conflicts,
+):
+    temporary = f".{path.name}.evergreen-{uuid.uuid4().hex}"
+    backup = f".{path.name}.evergreen-backup-{uuid.uuid4().hex}"
+    temp_fd = None
+    source_fd = None
+    backup_created = False
+    published = False
+    entry = None
     try:
+        temp_fd = os.open(
+            temporary, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600,
+            dir_fd=parent_fd,
+        )
+        _replace_descriptor_bytes(temp_fd, data, path)
+        source_fd = os.open(
+            path.name,
+            os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) |
+            getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=parent_fd,
+        )
         _verify_snapshot_at(expected, parent_fd)
-        opened = os.fstat(descriptor)
-        current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
-        identity = lambda item: (
-            _kind_from_mode(item.st_mode), item.st_dev, item.st_ino,
-            stat.S_IMODE(item.st_mode), item.st_nlink,
-        )
-        expected_identity = (
-            expected.kind, expected.dev, expected.ino, expected.mode, expected.nlink,
-        )
-        if identity(opened) != expected_identity or identity(current) != expected_identity:
+        source = os.fstat(source_fd)
+        current = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+        if (_metadata_identity(source) != _snapshot_identity(expected) or
+                _metadata_identity(current) != _snapshot_identity(expected)):
             raise OSError(f"transaction path changed before in-place write: {expected.path}")
-        try:
-            _replace_descriptor_bytes(descriptor, data, expected.path)
-        except BaseException as error:
-            try:
-                _replace_descriptor_bytes(descriptor, expected.data, expected.path)
-            except BaseException as recovery_error:
-                raise OSError(
-                    f"in-place write and preimage recovery failed: {expected.path}: "
-                    f"{recovery_error}"
-                ) from error
-            raise
+        os.utime(source_fd, ns=(expected.atime_ns, expected.mtime_ns))
+        source = os.fstat(source_fd)
+        _clone_regular_metadata(source_fd, temp_fd, source, expected)
+        temp_metadata = os.fstat(temp_fd)
+        postimage = PathSnapshot(
+            path, "regular", data=data, mode=stat.S_IMODE(temp_metadata.st_mode),
+            dev=temp_metadata.st_dev, ino=temp_metadata.st_ino,
+            nlink=temp_metadata.st_nlink, uid=temp_metadata.st_uid,
+            gid=temp_metadata.st_gid, atime_ns=expected.atime_ns,
+            mtime_ns=expected.mtime_ns,
+        )
+        if not _matches_postimage("write", data, postimage, expected):
+            raise OSError(f"transaction temporary metadata mismatch: {path}")
+        os.link(
+            path.name, backup, src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+        backup_created = True
         os.fsync(parent_fd)
+        entry = RollbackEntry(expected, postimage, parent_snapshot, backup)
+        rollback_entries.append(entry)
+        try:
+            os.replace(temporary, path.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+            published = True
+        except BaseException:
+            rollback_entries.remove(entry)
+            entry = None
+            raise
+        _verify_snapshot_at(postimage, parent_fd)
+        os.fsync(parent_fd)
+        return postimage
     finally:
-        os.close(descriptor)
+        close_errors = []
+        for descriptor, label in ((source_fd, "source"), (temp_fd, "temporary")):
+            if descriptor is None:
+                continue
+            try:
+                os.close(descriptor)
+            except OSError as error:
+                close_errors.append(f"{label} descriptor: {error}")
+        _cleanup_artifact(parent_fd, temporary, path, "temporary", conflicts)
+        if backup_created and not published:
+            _cleanup_artifact(parent_fd, backup, path, "backup", conflicts)
+        if close_errors:
+            conflicts.append(
+                f"{path}: manual recovery required after descriptor cleanup failure: "
+                + "; ".join(close_errors)
+            )
+            raise OSError(f"transaction descriptor cleanup failed: {path}")
 
 
 def _replace_descriptor_bytes(descriptor, data, path):
@@ -846,6 +947,121 @@ def _replace_descriptor_bytes(descriptor, data, path):
             raise OSError(f"short in-place write: {path}")
         remaining = remaining[written:]
     os.fsync(descriptor)
+
+
+def _metadata_identity(metadata):
+    return (
+        _kind_from_mode(metadata.st_mode), metadata.st_dev, metadata.st_ino,
+        stat.S_IMODE(metadata.st_mode), metadata.st_nlink,
+        metadata.st_uid, metadata.st_gid,
+    )
+
+
+def _snapshot_identity(snapshot):
+    return (
+        snapshot.kind, snapshot.dev, snapshot.ino, snapshot.mode, snapshot.nlink,
+        snapshot.uid, snapshot.gid,
+    )
+
+
+def _clone_regular_metadata(source_fd, destination_fd, source, expected):
+    native_metadata = (
+        _posix is not None and hasattr(_posix, "_fcopyfile") and
+        all(hasattr(_posix, name) for name in (
+            "_COPYFILE_STAT", "_COPYFILE_ACL", "_COPYFILE_XATTR",
+        ))
+    )
+    if native_metadata:
+        _posix._fcopyfile(
+            source_fd,
+            destination_fd,
+            _posix._COPYFILE_STAT | _posix._COPYFILE_ACL | _posix._COPYFILE_XATTR,
+        )
+    destination = os.fstat(destination_fd)
+    if (destination.st_uid, destination.st_gid) != (source.st_uid, source.st_gid):
+        os.fchown(destination_fd, source.st_uid, source.st_gid)
+    if not native_metadata:
+        _clone_xattrs(source_fd, destination_fd)
+    os.fchmod(destination_fd, stat.S_IMODE(source.st_mode))
+    os.utime(destination_fd, ns=(expected.atime_ns, expected.mtime_ns))
+    os.fsync(destination_fd)
+
+
+def _clone_xattrs(source_fd, destination_fd):
+    if not all(hasattr(os, name) for name in ("listxattr", "getxattr", "setxattr")):
+        raise OSError("extended-attribute APIs are unavailable")
+    unsupported = {
+        errno.ENODATA, getattr(errno, "ENOATTR", errno.ENODATA),
+        errno.ENOTSUP, getattr(errno, "EOPNOTSUPP", errno.ENOTSUP),
+    }
+    try:
+        names = set(os.listxattr(source_fd))
+    except OSError as error:
+        if error.errno in unsupported:
+            names = set()
+        else:
+            raise
+    acl_name = "com.apple.acl.text"
+    if acl_name not in names:
+        try:
+            os.getxattr(source_fd, acl_name)
+            names.add(acl_name)
+        except OSError as error:
+            if error.errno not in unsupported:
+                raise
+    if len(names) > MAX_XATTRS:
+        raise OSError(f"file has more than {MAX_XATTRS} extended attributes")
+    used = 0
+    for name in sorted(names):
+        value = os.getxattr(source_fd, name)
+        used += len(name.encode("utf-8")) + len(value)
+        if used > MAX_XATTR_BYTES:
+            raise OSError(f"extended attributes exceed {MAX_XATTR_BYTES} bytes")
+        os.setxattr(destination_fd, name, value)
+
+
+def _delete_regular_at(
+    parent_fd, path, expected, parent_snapshot, rollback_entries, conflicts,
+):
+    backup = f".{path.name}.evergreen-backup-{uuid.uuid4().hex}"
+    backup_created = False
+    deleted = False
+    entry = RollbackEntry(
+        expected, PathSnapshot(path, "absent"), parent_snapshot, backup
+    )
+    try:
+        _verify_snapshot_at(expected, parent_fd)
+        os.link(
+            path.name, backup, src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+        backup_created = True
+        os.fsync(parent_fd)
+        rollback_entries.append(entry)
+        try:
+            os.unlink(path.name, dir_fd=parent_fd)
+            deleted = True
+        except BaseException:
+            rollback_entries.remove(entry)
+            raise
+        os.fsync(parent_fd)
+        return entry.after
+    finally:
+        if backup_created and not deleted:
+            _cleanup_artifact(parent_fd, backup, path, "backup", conflicts)
+
+
+def _cleanup_artifact(parent_fd, name, path, label, conflicts):
+    try:
+        os.unlink(name, dir_fd=parent_fd)
+        os.fsync(parent_fd)
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        conflicts.append(
+            f"{path}: manual recovery required; {label} retained at "
+            f"{path.parent / name}: {error}"
+        )
 
 
 def _create_write_at(parent_fd, name, data, mode):
@@ -894,9 +1110,31 @@ def _restore_entry(entry):
     try:
         actual = _snapshot_at(entry.after.path, parent_fd)
         if actual != entry.after:
+            backup = f"; backup retained at {_backup_path(entry)}" if entry.backup else ""
             raise OSError(
-                f"preserved concurrent state; rollback postimage changed: {entry.after.path}"
+                f"preserved concurrent state; rollback postimage changed: "
+                f"{entry.after.path}{backup}"
             )
+        if entry.backup is not None:
+            _verify_backup(parent_fd, entry)
+            try:
+                os.replace(
+                    entry.backup, entry.before.path.name,
+                    src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
+                )
+            except OSError as error:
+                raise OSError(
+                    f"backup restore failed; backup retained at {_backup_path(entry)}: "
+                    f"{error}"
+                ) from error
+            try:
+                os.fsync(parent_fd)
+            except OSError as error:
+                raise OSError(
+                    f"backup restored to {entry.before.path}, but directory durability "
+                    f"failed; inspect former backup path {_backup_path(entry)}: {error}"
+                ) from error
+            return
         before = entry.before
         if before.kind == "absent":
             if entry.after.kind == "directory":
@@ -914,21 +1152,61 @@ def _restore_entry(entry):
                 os.unlink(entry.after.path.name, dir_fd=parent_fd)
                 os.fsync(parent_fd)
         elif before.kind == "regular":
-            if entry.after.kind == "regular":
-                _write_existing_at(
-                    parent_fd, before.path.name, before.data, entry.after
-                )
-            elif entry.after.kind == "absent":
-                _verify_snapshot_at(entry.after, parent_fd)
-                _create_write_at(parent_fd, before.path.name, before.data, before.mode)
-            else:
-                raise OSError(f"unsupported regular rollback postimage: {before.path}")
+            raise OSError(f"regular rollback lacks transaction backup: {before.path}")
         elif before.kind == "symlink":
             _atomic_link_at(parent_fd, before.path.name, before.target, entry.after)
         else:
             raise OSError(f"unsupported rollback preimage: {before.path}")
     finally:
         os.close(parent_fd)
+
+
+def _commit_entry(entry):
+    parent_fd = _open_directory(entry.parent)
+    try:
+        _verify_backup(parent_fd, entry)
+        if entry.after.kind == "regular":
+            _verify_snapshot_at(entry.after, parent_fd)
+            descriptor = os.open(
+                entry.after.path.name,
+                os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) |
+                getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=parent_fd,
+            )
+            try:
+                if _metadata_identity(os.fstat(descriptor)) != _snapshot_identity(entry.after):
+                    raise OSError(f"transaction postimage changed: {entry.after.path}")
+                os.utime(
+                    descriptor,
+                    ns=(entry.before.atime_ns, entry.before.mtime_ns),
+                )
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        try:
+            os.unlink(entry.backup, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        except OSError as error:
+            raise OSError(
+                f"backup cleanup failed at {_backup_path(entry)}: {error}"
+            ) from error
+    finally:
+        os.close(parent_fd)
+
+
+def _verify_backup(parent_fd, entry):
+    if entry.backup is None:
+        raise OSError("transaction backup is missing")
+    try:
+        metadata = os.stat(entry.backup, dir_fd=parent_fd, follow_symlinks=False)
+    except OSError as error:
+        raise OSError(f"transaction backup unavailable at {_backup_path(entry)}: {error}") from error
+    if _metadata_identity(metadata) != _snapshot_identity(entry.before):
+        raise OSError(f"transaction backup changed at {_backup_path(entry)}")
+
+
+def _backup_path(entry):
+    return entry.before.path.parent / entry.backup
 
 
 def _instruction_state(path):
@@ -1090,9 +1368,10 @@ def _is_python_shebang(line):
 def _is_python_name(name):
     if name in ("python", "python3"):
         return True
+    minor = name.removeprefix("python3.") if name.startswith("python3.") else ""
     return (
-        name.startswith("python3.") and
-        all(part and part.isdigit() for part in name.removeprefix("python3.").split("."))
+        1 <= len(minor) <= 3 and minor.isdigit() and
+        (minor == "0" or not minor.startswith("0"))
     )
 
 

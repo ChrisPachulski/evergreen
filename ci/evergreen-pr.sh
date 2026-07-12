@@ -32,6 +32,15 @@ run_gh() {
     --max-output-bytes "$COMMENT_MAX_OUTPUT_BYTES" -- gh "$@"
 }
 
+run_prefilter() {
+  local mode="$1" input="$2"
+  "$PYTHON3_BIN" "$BOUNDED_PY" --timeout-seconds "$GIT_TIMEOUT_SECONDS" \
+    --max-output-bytes 16 --clean-env -- \
+    "$PYTHON3_BIN" "$PREFILTER_PY" --mode "$mode" \
+    --timeout-seconds "$GIT_TIMEOUT_SECONDS" --max-bytes "$GIT_MAX_OUTPUT_BYTES" \
+    "$input"
+}
+
 resolve_commit() {
   local ref="$1" value status length
   value="$(python3 "$BOUNDED_PY" --timeout-seconds "$GIT_TIMEOUT_SECONDS" \
@@ -152,7 +161,9 @@ cd "$REPO_ROOT" 2>/dev/null || {
   finish_fallback "the repository root could not be opened."
 }
 
-command -v python3 >/dev/null 2>&1 || finish_fallback "python3 is unavailable."
+PYTHON3_BIN="$(type -P python3 2>/dev/null)"
+[ -n "$PYTHON3_BIN" ] && [ -x "$PYTHON3_BIN" ] || \
+  finish_fallback "python3 is unavailable."
 [ -r "$COMMENT_PY" ] && [ -r "$BOUNDED_PY" ] && [ -r "$PREFILTER_PY" ] || \
   finish_fallback "a trusted Action helper is missing."
 
@@ -180,9 +191,7 @@ if ! python3 "$BOUNDED_PY" \
   rm -f "$changed_file" 2>/dev/null || true
   finish_inconclusive "Git change detection failed."
 fi
-code_changed="$(python3 "$PREFILTER_PY" --mode code \
-  --timeout-seconds "$GIT_TIMEOUT_SECONDS" --max-bytes "$GIT_MAX_OUTPUT_BYTES" \
-  "$changed_file" 2>/dev/null)"
+code_changed="$(run_prefilter code "$changed_file" 2>/dev/null)"
 if [ $? -ne 0 ] || { [ "$code_changed" != yes ] && [ "$code_changed" != no ]; }; then
   rm -f "$changed_file" 2>/dev/null || true
   finish_inconclusive "Changed-path classification exceeded its safety bounds."
@@ -198,9 +207,7 @@ if ! python3 "$BOUNDED_PY" \
   rm -f "$docs_file" 2>/dev/null || true
   finish_inconclusive "Git documentation detection failed."
 fi
-has_docs="$(python3 "$PREFILTER_PY" --mode docs \
-  --timeout-seconds "$GIT_TIMEOUT_SECONDS" --max-bytes "$GIT_MAX_OUTPUT_BYTES" \
-  "$docs_file" 2>/dev/null)"
+has_docs="$(run_prefilter docs "$docs_file" 2>/dev/null)"
 if [ $? -ne 0 ] || { [ "$has_docs" != yes ] && [ "$has_docs" != no ]; }; then
   rm -f "$docs_file" 2>/dev/null || true
   finish_inconclusive "Documentation-path classification exceeded its safety bounds."
