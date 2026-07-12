@@ -15,20 +15,44 @@ except ImportError:  # Direct script execution.
 MARKER = "<!-- evergreen-report -->"
 MAX_RENDER_TEXT = 500
 MARKDOWN_CONTROLS = "\\`*_[]()|"
+BIDI_CONTROLS = {
+    0x061C,
+    0x200E,
+    0x200F,
+    *range(0x202A, 0x202F),
+    *range(0x2066, 0x206A),
+}
 
 
 def _safe(value: object, limit: int = MAX_RENDER_TEXT) -> str:
-    text = str(value if value is not None else "").replace("\r", " ").replace("\n", " ")
+    raw = str(value if value is not None else "")
+    visible = []
+    for char in raw:
+        codepoint = ord(char)
+        if char in "\r\n":
+            visible.append(" ")
+        elif char == "\t":
+            visible.append(r"\t")
+        elif codepoint in BIDI_CONTROLS:
+            visible.append(f"\\u{codepoint:04x}")
+        elif codepoint < 0x20 or 0x7F <= codepoint <= 0x9F:
+            visible.append(f"\\x{codepoint:02x}")
+        else:
+            visible.append(char)
+    text = "".join(visible)
     if len(text) > limit:
         text = text[: limit - 1] + "…"
-    text = html.escape(text, quote=False)
+    text = html.escape(text, quote=False).replace("@", "&#64;")
     for char in MARKDOWN_CONTROLS:
         text = text.replace(char, f"\\{char}")
     return text
 
 
-def _counts(result: dict) -> list[str]:
-    claims = result["claims"]
+def _counts(result: dict | None) -> list[str]:
+    claims = result["claims"] if result is not None else dict.fromkeys(
+        ("certified", "drift", "unverified", "total"),
+        "unknown",
+    )
     return [
         "| certified | drift | unverified | total |",
         "|---:|---:|---:|---:|",
@@ -36,21 +60,27 @@ def _counts(result: dict) -> list[str]:
     ]
 
 
-def render_result(result: dict | None, errors: list[str]) -> str:
+def render_result(
+    result: dict | None,
+    errors: list[str],
+    *,
+    expected_base: str | None = None,
+    expected_head: str | None = None,
+) -> str:
     """Render a validated result or validation errors as bounded Markdown."""
     inconclusive = result is None or bool(errors) or result.get("status") == "inconclusive"
     lines = [MARKER, "## 🌲 evergreen — documentation review", ""]
     lines.append(f"**Status:** {'⚠️ inconclusive' if inconclusive else '✅ complete'}")
-
-    if result is not None:
-        lines.extend(
-            [
-                f"**Range:** {_safe(result['base'])} → {_safe(result['head'])}",
-                "",
-                *_counts(result),
-                "",
-            ]
-        )
+    base = expected_base or (result["base"] if result is not None else "unavailable")
+    head = expected_head or (result["head"] if result is not None else "unavailable")
+    lines.extend(
+        [
+            f"**Range:** {_safe(base)} → {_safe(head)}",
+            "",
+            *_counts(result),
+            "",
+        ]
+    )
 
     if inconclusive:
         lines.append("⚠️ evergreen: review inconclusive — no clean certification was issued.")
@@ -138,7 +168,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     result, errors = load_validated_result(sys.stdin.read(), args.repo, args.base, args.head)
-    sys.stdout.write(render_result(result, errors))
+    sys.stdout.write(
+        render_result(
+            result,
+            errors,
+            expected_base=args.base,
+            expected_head=args.head,
+        )
+    )
     return 2 if result is None or errors or result["status"] == "inconclusive" else 0
 
 

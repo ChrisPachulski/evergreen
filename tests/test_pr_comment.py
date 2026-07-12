@@ -137,9 +137,19 @@ class PRCommentTests(unittest.TestCase):
             (self.result(status="inconclusive", errors=["model refused"]), []),
         ]:
             with self.subTest(result=result, errors=errors):
-                output = pr_comment.render_result(result, errors)
+                output = pr_comment.render_result(
+                    result,
+                    errors,
+                    expected_base=self.base,
+                    expected_head=self.head,
+                )
                 self.assertIn("inconclusive", output.lower())
                 self.assertNotIn("docs still match", output)
+                self.assertIn(self.base, output)
+                self.assertIn(self.head, output)
+                self.assertIn("certified", output)
+                if result is None:
+                    self.assertIn("unknown", output)
 
     def test_escapes_markdown_html_pipes_newlines_and_bounds_fields(self):
         unsafe = "<script>*bold* [link](https://example.test) | break\nnext " + "x" * 5000
@@ -158,12 +168,32 @@ class PRCommentTests(unittest.TestCase):
         self.assertNotIn("break\nnext", output)
         self.assertLess(len(output), 5000)
 
+    def test_neutralizes_mentions_bidi_tabs_and_unsafe_controls(self):
+        unsafe = "@octocat\talert\x07safe\u202eesrever"
+        result = self.result(
+            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            findings=[self.finding(claim=unsafe, why=unsafe)],
+        )
+
+        output = pr_comment.render_result(result, [])
+
+        self.assertNotIn("@octocat", output)
+        self.assertIn("&#64;octocat", output)
+        self.assertNotIn("\t", output)
+        self.assertNotIn("\x07", output)
+        self.assertNotIn("\u202e", output)
+        self.assertIn("u202e", output)
+        self.assertIn("x07", output)
+
     def test_cli_prose_only_is_inconclusive(self):
         result = self.run_cli("the docs look fine")
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("inconclusive", result.stdout.lower())
         self.assertNotIn("docs still match", result.stdout)
+        self.assertIn(self.base, result.stdout)
+        self.assertIn(self.head, result.stdout)
+        self.assertIn("| unknown | unknown | unknown | unknown |", result.stdout)
         self.assertEqual(result.stderr, "")
 
     def test_cli_returns_zero_for_valid_complete_result(self):
@@ -184,6 +214,9 @@ class PRCommentTests(unittest.TestCase):
         self.assertIn("inconclusive", result.stdout.lower())
         self.assertIn("claim does not occur", result.stdout)
         self.assertNotIn("docs still match", result.stdout)
+        self.assertIn(self.base, result.stdout)
+        self.assertIn(self.head, result.stdout)
+        self.assertIn("| unknown | unknown | unknown | unknown |", result.stdout)
 
 
 if __name__ == "__main__":
