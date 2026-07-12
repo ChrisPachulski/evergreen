@@ -7,7 +7,6 @@ import os
 import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
 from .evidence import Evidence
@@ -141,23 +140,23 @@ def _pattern(value):
 
 
 def _glob_match(pattern, path):
-    pattern_parts = tuple(pattern.split("/"))
+    pattern_parts = []
+    for part in pattern.split("/"):
+        if part != "**" or not pattern_parts or pattern_parts[-1] != "**":
+            pattern_parts.append(part)
     path_parts = tuple(path.split("/"))
-
-    @lru_cache(maxsize=None)
-    def matches(pattern_index, path_index):
-        if pattern_index == len(pattern_parts):
-            return path_index == len(path_parts)
-        part = pattern_parts[pattern_index]
+    reachable = {0}
+    for part in pattern_parts:
         if part == "**":
-            return matches(pattern_index + 1, path_index) or (
-                path_index < len(path_parts) and matches(pattern_index, path_index + 1)
-            )
-        return (path_index < len(path_parts) and
-                fnmatch.fnmatchcase(path_parts[path_index], part) and
-                matches(pattern_index + 1, path_index + 1))
-
-    return matches(0, 0)
+            reachable = set(range(min(reachable), len(path_parts) + 1))
+        else:
+            reachable = {
+                index + 1 for index in reachable
+                if index < len(path_parts) and fnmatch.fnmatchcase(path_parts[index], part)
+            }
+        if not reachable:
+            return False
+    return len(path_parts) in reachable
 
 
 def _evidence_text(value, name, *, nullable=False, limit=8192):
@@ -366,7 +365,7 @@ def load_map(repo: Path) -> tuple[list[ImpactMap], list[str]]:
 
 
 def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactReport:
-    """Return additive candidates only; mappings never suppress or decide drift."""
+    """Return additive candidates; maps never suppress and limits retain caller-order prefixes."""
     repo = Path(repo)
     mappings, map_warnings = load_map(repo)
     warnings = _WarningCollector(map_warnings)

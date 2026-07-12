@@ -137,6 +137,17 @@ class ImpactTests(unittest.TestCase):
         self.assertIn("docs/shallow.md", direct_paths)
         self.assertIn("docs/client.md", direct_paths)
 
+    def test_many_globstars_do_not_crash_or_suppress_bounded_baseline(self):
+        from evergreen import impact as module
+
+        hostile_pattern = "/".join(["**"] * 1200)
+        self.write_map([self.mapping([hostile_pattern], ["docs/hostile.md"])])
+        with mock.patch.object(module, "MAX_MATCH_WORK", 1):
+            report = module.impact(self.repo, ["src/a.py"], [])
+
+        self.assertEqual([candidate.path for candidate in report.candidates], ["src/a.py"])
+        self.assertTrue(any("matching work truncated" in warning for warning in report.warnings))
+
     def test_deleted_source_and_missing_doc_targets_are_valid_candidates(self):
         from evergreen.impact import impact
 
@@ -284,6 +295,34 @@ class ImpactTests(unittest.TestCase):
         self.assertTrue(any("changed paths truncated" in warning for warning in bounded.warnings))
         self.assertTrue(any("evidence items truncated" in warning for warning in bounded.warnings))
 
+    def test_over_limit_inputs_retain_caller_order_prefix(self):
+        from evergreen import impact as module
+
+        self.assertIn("caller-order prefix", module.impact.__doc__)
+        self.assertIn("never suppress", module.impact.__doc__)
+
+        with mock.patch.object(module, "MAX_CHANGED_PATHS", 1), \
+             mock.patch.object(module, "MAX_EVIDENCE_ITEMS", 1):
+            first = module.impact(
+                self.repo,
+                ["first.py", "second.py"],
+                [self.evidence(path="first-evidence.py"),
+                 self.evidence(path="second-evidence.py")],
+            )
+            reversed_input = module.impact(
+                self.repo,
+                ["second.py", "first.py"],
+                [self.evidence(path="second-evidence.py"),
+                 self.evidence(path="first-evidence.py")],
+            )
+
+        self.assertEqual({candidate.path for candidate in first.candidates}, {
+            "first.py", "first-evidence.py",
+        })
+        self.assertEqual({candidate.path for candidate in reversed_input.candidates}, {
+            "second.py", "second-evidence.py",
+        })
+
     def test_mapped_doc_additions_consume_matching_work_budget(self):
         from evergreen import impact as module
 
@@ -349,6 +388,16 @@ class ImpactTests(unittest.TestCase):
         self.assertIn("candidate", schema["description"].lower())
         self.assertNotIn("commands", schema["properties"])
         self.assertEqual(schema["x-duplicateKeyBehavior"], "reject-file")
+        self.assertEqual(schema["x-impactInputBounds"], {
+            "changedPaths": {
+                "maxItems": 10000,
+                "overLimit": "retain-caller-order-prefix",
+            },
+            "evidence": {
+                "maxItems": 10000,
+                "overLimit": "retain-caller-order-prefix",
+            },
+        })
         source = schema["properties"]["maps"]["items"]["properties"]["sources"]["items"]
         self.assertEqual(source["x-globSemantics"], "segment-aware")
         self.assertTrue(source["x-runtimeConstraints"]["balancedBracketClasses"])

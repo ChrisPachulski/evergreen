@@ -6,6 +6,10 @@
   "type": "object",
   "additionalProperties": false,
   "x-duplicateKeyBehavior": "reject-file",
+  "x-impactInputBounds": {
+    "changedPaths": {"maxItems": 10000, "overLimit": "retain-caller-order-prefix"},
+    "evidence": {"maxItems": 10000, "overLimit": "retain-caller-order-prefix"}
+  },
   "required": ["version", "maps"],
   "properties": {
     "version": {"const": 1},
