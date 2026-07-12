@@ -21,7 +21,7 @@ inputs:
     required: false
     default: "claude-opus-4-8"
   post_comment:
-    description: "Upsert a PR comment with the findings ('true'/'false'). The step summary is always written."
+    description: "Upsert the validated Evergreen report as a PR comment ('true'/'false'). The step summary is always written."
     required: false
     default: "true"
   fail_on_inconclusive:
@@ -41,7 +41,7 @@ inputs:
     required: false
     default: "600"
   max_model_output_bytes:
-    description: "Maximum Claude stdout accepted by the result protocol."
+    description: "Maximum Claude stdout captured before the review becomes inconclusive."
     required: false
     default: "262144"
   max_budget_usd:

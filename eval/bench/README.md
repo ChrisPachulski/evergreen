@@ -52,8 +52,9 @@ baselines. Rerun any committed transcript without API calls:
 python3 eval/bench/run_bench.py --rescore out/bench-default.json
 ```
 
-The current-judge publication records one clean implementation commit and tree in every compatible
-artifact, together with Claude Code CLI `2.1.197`, strong model `claude-opus-4-8`, cheap model
+The eventual current-judge publication will record one clean implementation commit and tree in
+every compatible artifact, together with Claude Code CLI `2.1.197`, strong model
+`claude-opus-4-8`, cheap model
 `claude-sonnet-5`, and `EVAL_CONCURRENCY=8`. The final implementation commit is frozen before any
 language starts. The report gate is declared before scoring: every language artifact must finish
 and individually meet the threshold passed to `report.py`. A provider interruption is resumed only
@@ -116,7 +117,8 @@ rather than dragging down recall, and names the asymmetry instead of hiding it.
 
 ```sh
 python3 eval/bench/run_bench.py            # CLI default model
-EVAL_MODEL=claude-haiku-4-5-20251001 python3 eval/bench/run_bench.py
+EVAL_MODEL_STRONG=claude-opus-4-8 EVAL_MODEL_CHEAP=claude-sonnet-5 \
+  python3 eval/bench/run_bench.py
 python3 eval/bench/run_bench.py --selftest # prove the scoring math, no API calls
 ```
 

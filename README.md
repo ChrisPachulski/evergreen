@@ -74,10 +74,11 @@ while leaving registry and deployment state deliberately unverified.
 One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — so this one never does.
 
 The semantic pass may gather optional local evidence with read, grep, diff, or a scratch test. In CI,
-the deterministic trust layer does the mechanical work: it binds a bounded change manifest to the
-base and head commits, validates counts and citations against Git at that head, enforces runtime
-identity, and renders only a valid result envelope. Repository files, diffs, paths, and comments
-are **untrusted data**; instructions embedded in them never change the audit or publication rules.
+the deterministic trust layer does the mechanical work: it binds a bounded change manifest and
+matched documentation excerpts to the exact base/head commits, validates counts and citations
+against Git at that head, enforces runtime identity, and renders only a valid result envelope. The
+CI model has no file or shell tools. Repository files, diffs, paths, excerpts, and comments are
+**untrusted data**; instructions embedded in them never change the audit or publication rules.
 
 ### Hybrid evidence boundary
 
@@ -100,14 +101,15 @@ That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo wi
 Current five-language benchmark metrics remain unpublished until one compatible run clears every declared coverage gate.
 Python, Java, TypeScript, Rust, and Go must each pass independently. The interrupted diagnostic
 checkpoints have incompatible implementation provenance and will not be resumed, combined, or
-presented as current results. The fresh run starts only after this release commit is stable;
+presented as current results. The fresh run starts only from a frozen implementation commit;
 protocol, dataset provenance, and publication status live in [`eval/bench/`](eval/bench/).
 
 ## Install
 
-The local CLI requires Python 3.10+ and Git. Host installation is supported on macOS and Linux:
-it relies on POSIX symlinks, file modes, atomic rename, and directory `fsync`. The semantic skill
-remains language-agnostic, but the bundled host-management CLI does not currently support Windows.
+Candidate queries require Python 3.10+ and Git. Host management requires Python 3.11+ and is
+supported on macOS and Linux: install, doctor, and uninstall rely on POSIX locks, symlinks, file
+modes, atomic rename, metadata copying, and directory `fsync`. The semantic skill remains
+language-agnostic, but the bundled host-management CLI does not currently support Windows.
 
 ### One-command local use
 
@@ -124,9 +126,12 @@ Add trusted, passive provider facts when available:
 ```
 
 Without configuration, the command searches bounded, Git-tracked living docs for exact changed
-paths and declaration-shaped contract symbols. It excludes plans, specs, ADRs, archives, audits,
-roadmaps, readiness records, changelogs, and ISO-dated snapshots. A repository-local
-`.evergreen-map.json`, if present, adds explicit relationships. Human and `--json` output contain
+paths and declaration-shaped contract symbols. It excludes docs inside directory components named
+`plans`, `specs`, `adr`/`adrs`, `archive`/`archives`, `audit`/`audits`, `roadmaps`, or `readiness`, plus
+changelog and ISO-dated filenames. A repository-local
+`.evergreen-map.json`, if present, adds explicit relationships; use the
+[`evergreen-map-v1` schema](schemas/evergreen-map-v1.schema.json) and the shipped
+[`evergreen-map.json` example](examples/evergreen-map.json). Human and `--json` output contain
 candidates, reasons, and warnings only—never findings or verdicts—and the query does not write
 project state.
 
@@ -143,10 +148,18 @@ The local CLI can wire the canonical skill into either host while preserving exi
 
 Use `install --dry-run` or `uninstall --dry-run` to preview. Setup records an owned instruction
 block and skill link; uninstall removes only that owned state. It refuses ambiguous, unowned, or
-unsafe paths and rolls back ordinary operation failures across the selected hosts. Instruction
-files and transaction snapshots have a 1 MiB byte limit, including sparse files. `doctor` is
-read-only and checks the canonical command, rules, Claude/Codex manifest agreement, ownership, and
-links; its command smoke test has a five-second timeout and discards command output.
+unsafe paths and rolls back ordinary operation failures across the selected hosts. Host mutation
+requires exclusive access: preflight and postimage checks refuse detected conflicts, preserve
+concurrent state, and report manual recovery instead of claiming a false rollback. Instruction
+files and their rollback snapshots are limited to 1 MiB, ownership records to 4 KiB, and each
+plugin manifest to 64 KiB; sparse files are checked by logical size. `doctor` makes no configuration
+changes or executes plugin code: it validates the canonical command, rules, manifest agreement,
+ownership, and links, then performs bounded UTF-8, shebang, and Python AST validation of canonical
+`bin/evergreen`.
+A typed transaction engine acquires every selected-host lock before recovery or mutation and
+journals every create, replace, link, and delete. It automatically resolves only exact bounded
+crash states; malformed, conflicting, or unverifiable journals fail closed with bounded manual
+recovery paths.
 A replaced skill link aborts the entire selected-host uninstall before any instruction, link, or
 ownership state is changed.
 
@@ -166,7 +179,8 @@ not on every turn while the tree sits dirty.
 ### On every pull request
 
 Want the check in CI too? Add the Action — it winnows the docs the PR's code touched, writes the
-step summary, and upserts its bot-owned report comment (creating a replacement if an update fails).
+step summary, and upserts its bot-owned report comment. An uncertain update failure is logged
+without creating a duplicate.
 Drift never fails the build. Under the default fail-closed policy, a green check means the requested
 review actually completed; advisory `fail_on_inconclusive: false` runs can be green while still
 reporting an inconclusive audit.
@@ -179,9 +193,9 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with: { fetch-depth: 0 }
-      - uses: ChrisPachulski/evergreen@v1
+      - uses: ChrisPachulski/evergreen@58c48b47ae1c8972f36d65cb844cd5f085156d5e # v0.4.0
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           fail_on_inconclusive: true
@@ -197,6 +211,19 @@ The outcomes are explicit:
   truncated evidence, invalid citations, missing credentials, or a tool failure. This fails by
   default. Set `fail_on_inconclusive: false` for advisory-only infrastructure behavior; the report
   still says inconclusive and never pretends to be clean.
+
+The pinned provider process runs with project customizations disabled, an allowlisted environment,
+no model tools, no session persistence, a 600-second wall-clock ceiling, a 262,144-byte output
+ceiling, and a USD 5 default budget. Override the last three with `model_timeout_seconds`,
+`max_model_output_bytes`, and `max_budget_usd`. Context generation reads only regular tracked
+documentation blobs from the audited Git head; a symlink, invalid blob, deadline, scan/output
+limit, or truncated manifest makes the audit inconclusive. Fork PRs without repository secrets are
+reported as inconclusive before the provider runs.
+
+On POSIX, timeouts stop the pinned CLI and children that remain in its inherited process group.
+Deliberately detached descendants are outside portable standard-library containment and require
+runner-level OS isolation. Here, bare/safe/no-tools/no-session flags prevent repository or model
+content from spawning them; the hosted runner remains the outer isolation boundary.
 
 This CI boundary is separate from the local hygiene guard. Truth findings never block a commit.
 The guard blocks staged secrets/slop and conservatively rejects a Bash tool call that combines
@@ -222,8 +249,9 @@ the host can do so safely. The classifier is only a conservative first filter: �
 replace isolation, timeout, dependency, and permission checks. Setup failures and timeouts are
 inconclusive, not proof of drift.
 
-CI has a different boundary: it supplies delimited untrusted evidence to the semantic reviewer,
-then independently validates schema, commit binding, counts, citations, and runtime identity.
+CI has a different boundary: it supplies delimited, bounded, exact-commit evidence to a semantic
+reviewer with no tools, then independently validates schema, commit binding, counts, citations,
+and runtime identity.
 Repository content cannot change those instructions or the publication policy.
 
 ## Commands

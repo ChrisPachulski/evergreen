@@ -60,11 +60,17 @@ optional repo-local `.evergreen-ignore` lists patterns the *agent* honors when d
 flag — there is no hook that parses it; the skill is the enforcement.
 
 The PR Action adds a deterministic trust layer around the semantic reviewer. It produces a bounded
-manifest for exact base/head commits, JSON-escapes boundary characters, labels all repository
-material as **untrusted data**, and rejects any result that fails schema, count, commit, citation,
-or trusted-runtime checks. The validator reads citations from Git at the audited head; model prose
-cannot certify itself. The layer prepares and validates evidence but does not decide whether prose
-is semantically true.
+manifest plus matched living-document excerpts from regular Git blobs at the exact head,
+JSON-escapes boundary characters, labels all repository material as **untrusted data**, and rejects
+any result that fails schema, count, commit, citation, or trusted-runtime checks. The CI model has
+no tools or project customizations and receives only its provider credential. The validator reads
+citations from Git at the audited head; model prose cannot certify itself. The layer prepares and
+validates evidence but does not decide whether prose is semantically true.
+
+POSIX timeouts terminate the pinned CLI's inherited process group. Portable standard-library code
+cannot contain a deliberately detached descendant; runner-level OS isolation owns that boundary.
+The Action's bare, safe, no-tools, and no-session modes prevent repository or model content from
+creating such a descendant.
 
 CI outcomes are deliberately distinct: **complete and clean**, **complete with findings**, and
 **complete with unverified** all mean the validated review finished; only the first is a clean
@@ -87,8 +93,17 @@ ranked candidates, reasons, and warnings; they do not expose semantic findings o
 The same CLI provides reversible `install`, `doctor`, and `uninstall` operations for Claude and
 Codex. Install owns only a marked instruction block, a skill link, and a bounded ownership record;
 uninstall requires that proof and preserves user-owned text. Multi-host preflight and ordinary
-rollback are atomic. Doctor reads canonical command/rules/manifests plus host ownership and links;
-it never repairs or installs. Provider dependencies are never installed.
+rollback are transactional under the required exclusive-access contract. Detected concurrent
+changes are preserved and reported for manual recovery rather than overwritten. Doctor never
+repairs, installs, or executes plugin code: it validates canonical files and host state, then
+performs bounded UTF-8, shebang, and Python AST validation of canonical `bin/evergreen`. Provider
+dependencies are never installed.
+
+Host policy and planning stay in `hosts.py`; typed identities live in `host_types.py`; bounded
+metadata integrity lives in `host_metadata.py`; `host_lock.py`, `host_snapshot.py`, and
+`host_journal.py` isolate those transaction responsibilities; and one `TransactionEngine` in
+`host_transaction.py` coordinates publication, crash recovery, rollback, and commit. Every
+mutation uses the same prepared-to-published protocol rather than a per-action state machine.
 
 ## Release identity boundary
 
@@ -147,9 +162,9 @@ mutation; it does not add or forward secrets. Network access is disabled when th
 safely. A classifier may reject a command early, but an allowed shape still requires trusted
 isolation, permissions, dependencies, and setup. Timeout or setup failure never becomes drift.
 
-The PR Action reviews pull-request evidence as untrusted data but does not execute the changed
-project. Its deterministic boundary validates the model's result before rendering or applying the
-configured inconclusive policy.
+The PR Action reviews bounded, exact-head pull-request evidence as untrusted data but does not
+execute the changed project or give the model repository tools. Its deterministic boundary
+validates the model's result before rendering or applying the configured inconclusive policy.
 
 ## Evaluation status
 

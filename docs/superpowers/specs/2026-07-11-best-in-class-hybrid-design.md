@@ -1,6 +1,7 @@
 # Evergreen best-in-class hybrid design
 
-**Status:** Approved product direction; implementation design awaiting written-spec review
+**Status:** Implemented in the 0.4.0 release line; final verification and benchmark publication
+pending
 
 **Date:** 2026-07-11
 
@@ -57,9 +58,11 @@ contains:
 - symbol and contract seeds mechanically extracted from changed lines;
 - truncation indicators and deterministic errors.
 
-The Action passes this manifest to the reviewer as a delimited **untrusted evidence block**. The
-reviewer may read candidate documentation and current source files to prove claims, but it no
-longer has to infer the diff through unavailable tools.
+Implementation note (`ce27ea3`): the Action passes this manifest plus bounded, term-matched
+documentation excerpts from regular blobs at the audited Git head as delimited **untrusted
+evidence blocks**. The CI reviewer has no file or shell tools; source evidence comes from manifest
+hunks and documentation evidence comes from exact-head context. Any context bound, invalid blob,
+or deterministic read failure makes the audit inconclusive.
 
 Repository documentation, source comments, filenames, and provider evidence are always data. They
 cannot change the audit instructions, output schema, file scope, or publication policy.

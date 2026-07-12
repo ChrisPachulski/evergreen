@@ -7,6 +7,6 @@
   "repository": "https://github.com/ChrisPachulski/evergreen",
   "license": "MIT",
   "keywords": ["documentation", "drift", "freshness", "staleness", "docs-as-code", "ai-agent-skill"],
-  "commands": ["./commands/impact.md"],
+  "commands": ["./commands/"],
   "skills": ["./skills/evergreen"]
 }

@@ -515,6 +515,7 @@ class HostTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         self.assertIn("Python 3.10+", readme)
+        self.assertIn("Python 3.11+", readme)
         self.assertIn("macOS and Linux", readme)
         self.assertIn("POSIX", readme)
         self.assertIn(f"{MAX_INSTRUCTION_BYTES // (1024 * 1024)} MiB", readme)

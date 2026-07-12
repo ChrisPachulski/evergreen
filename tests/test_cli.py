@@ -275,7 +275,7 @@ runpy.run_path({str(SCRIPT)!r}, run_name='__main__')
         self.assertEqual([item["path"] for item in payload["candidates"]], ["valid.py"])
         self.assertTrue(any("invalid JSON" in warning for warning in payload["warnings"]))
 
-    def test_agent_commands_and_manifests_register_one_candidate_contract(self):
+    def test_agent_commands_and_manifests_preserve_claude_discovery(self):
         claude_command = (ROOT / "commands" / "impact.md").read_text()
         codex_command = tomllib.loads((ROOT / "commands" / "impact.toml").read_text())
         claude_manifest = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
@@ -286,7 +286,7 @@ runpy.run_path({str(SCRIPT)!r}, run_name='__main__')
             self.assertIn("--json", content)
             self.assertIn("candidate", content.lower())
             self.assertIn("Do not edit", content)
-        self.assertEqual(claude_manifest["commands"], ["./commands/impact.md"])
+        self.assertEqual(claude_manifest["commands"], ["./commands/"])
         self.assertNotIn("commands", codex_manifest)
         self.assertTrue(any(
             "impact" in prompt.lower()
