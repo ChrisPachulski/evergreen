@@ -191,7 +191,11 @@ def snapshot_at(path, parent_fd):
             raise OSError(f"transaction symlink changed: {path}")
         return PathSnapshot(
             path, item_kind, target=target,
-            **{**common, "atime_ns": after.st_atime_ns, "mtime_ns": after.st_mtime_ns},
+            # Reading either name of a hard-linked symlink may advance the
+            # shared inode's atime on Linux. It is observation state, not an
+            # integrity signal; target, inode, ownership, mode, nlink, and
+            # mtime remain verified above.
+            **{**common, "atime_ns": None, "mtime_ns": after.st_mtime_ns},
         )
     if item_kind == "directory":
         return PathSnapshot(path, item_kind, **common)

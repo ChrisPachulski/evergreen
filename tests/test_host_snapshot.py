@@ -20,7 +20,7 @@ class HostSnapshotTests(unittest.TestCase):
             captured = host_snapshot.snapshot_at(Path("/host/link"), 7)
 
         self.assertEqual(captured.target, "target")
-        self.assertEqual(captured.atime_ns, 30)
+        self.assertIsNone(captured.atime_ns)
 
 
 if __name__ == "__main__":
