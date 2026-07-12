@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "maps": [
+    {
+      "sources": ["src/public-api/**"],
+      "docs": ["README.md", "docs/api.md"]
+    }
+  ]
+}

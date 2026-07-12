@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evergreen.local/schemas/evergreen-map-v1.schema.json",
+  "title": "Evergreen source-to-document map v1",
+  "description": "Additive candidate mappings only; maps cannot suppress discovery or express findings, verdicts, or commands.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "maps"],
+  "properties": {
+    "version": {"const": 1},
+    "maps": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sources", "docs"],
+        "properties": {
+          "sources": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1, "maxLength": 4096, "x-maxUtf8Bytes": 4096}
+          },
+          "docs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "x-maxUtf8Bytes": 4096,
+              "x-repositoryContainment": "resolved-within-repo"
+            }
+          }
+        }
+      }
+    }
+  }
+}
