@@ -1,111 +1,146 @@
 #!/usr/bin/env python3
-"""Render a headless winnow run's raw output into a Markdown PR comment.
+"""Validate an Evergreen result envelope and render its PR comment."""
 
-Reads `claude -p` output on stdin, extracts the fenced jsonl findings block (tolerant,
-line-by-line — same parse shape as eval/score.py), and writes Markdown to stdout, led by a
-hidden marker so the driver can upsert one comment. Stdlib only.
-
-Self-check: python3 ci/pr_comment.py --selftest
-"""
-import json
+import argparse
+import html
+from pathlib import Path
 import sys
 
+try:
+    from .result_protocol import load_validated_result
+except ImportError:  # Direct script execution.
+    from result_protocol import load_validated_result
+
+
 MARKER = "<!-- evergreen-report -->"
+MAX_RENDER_TEXT = 500
+MARKDOWN_CONTROLS = "\\`*_[]()|"
 
 
-def load_findings(text):
-    """Every stripped line that parses as a JSON object with a 'file' is a finding. A line that
-    doesn't parse is skipped — same tolerance as eval/score.py, so a stray prose line never breaks
-    the render."""
-    findings = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict) and obj.get("file"):
-            findings.append(obj)
-    return findings
+def _safe(value: object, limit: int = MAX_RENDER_TEXT) -> str:
+    text = str(value if value is not None else "").replace("\r", " ").replace("\n", " ")
+    if len(text) > limit:
+        text = text[: limit - 1] + "…"
+    text = html.escape(text, quote=False)
+    for char in MARKDOWN_CONTROLS:
+        text = text.replace(char, f"\\{char}")
+    return text
 
 
-def _cell(s):
-    # Keep table cells single-line and pipe-safe.
-    return str(s if s is not None else "").replace("|", "\\|").replace("\n", " ").strip()
+def _counts(result: dict) -> list[str]:
+    claims = result["claims"]
+    return [
+        "| certified | drift | unverified | total |",
+        "|---:|---:|---:|---:|",
+        f"| {claims['certified']} | {claims['drift']} | {claims['unverified']} | {claims['total']} |",
+    ]
 
 
-def render(text):
-    findings = load_findings(text)
-    out = [MARKER, "## 🌲 evergreen — doc-drift check", ""]
+def render_result(result: dict | None, errors: list[str]) -> str:
+    """Render a validated result or validation errors as bounded Markdown."""
+    inconclusive = result is None or bool(errors) or result.get("status") == "inconclusive"
+    lines = [MARKER, "## 🌲 evergreen — documentation review", ""]
+    lines.append(f"**Status:** {'⚠️ inconclusive' if inconclusive else '✅ complete'}")
 
-    if not findings:
-        out.append("✅ evergreen: docs still match the code.")
-        out.append("")
-        return "\n".join(out)
+    if result is not None:
+        lines.extend(
+            [
+                f"**Range:** {_safe(result['base'])} → {_safe(result['head'])}",
+                "",
+                *_counts(result),
+                "",
+            ]
+        )
 
-    docs = sorted({_cell(f.get("file")) for f in findings if f.get("file")})
-    n, m = len(findings), len(docs)
-    out.append(
-        f"**{n} finding{'s' if n != 1 else ''} across {m} doc{'s' if m != 1 else ''}** — "
-        "each proven against the code. Nothing was rewritten; you keep the call."
-    )
-    out.append("")
-    out.append("| severity | where | what's wrong (cited) | |")
-    out.append("|---|---|---|---|")
+    if inconclusive:
+        lines.append("⚠️ evergreen: review inconclusive — no clean certification was issued.")
+    elif result["claims"]["drift"] == 0 and result["claims"]["unverified"] == 0:
+        lines.append("✅ evergreen: docs still match the code.")
+    else:
+        lines.append("Evergreen completed the review; findings or unverified claims require attention.")
 
-    order = {"high": 0, "med": 1, "medium": 1, "low": 2}
-    for f in sorted(findings, key=lambda x: order.get(str(x.get("severity", "")).lower(), 3)):
-        sev = _cell(f.get("severity", "?"))
-        line = f.get("line")
-        where = _cell(f.get("file"))
-        if line not in (None, ""):
-            where = f"`{where}:{_cell(line)}`"
-        else:
-            where = f"`{where}`"
-        claim = _cell(f.get("claim"))
-        why = _cell(f.get("why"))
-        what = f"{claim} — {why}" if claim and why else (claim or why)
-        action = _cell(f.get("fix_or_flag", "flag")) or "flag"
-        out.append(f"| {sev} | {where} | {what} | {action} |")
+    all_errors = list(errors)
+    if result is not None:
+        all_errors.extend(result.get("errors", []))
+    if all_errors:
+        lines.extend(["", "### Errors"])
+        lines.extend(f"- {_safe(error)}" for error in all_errors[:100])
 
-    out.append("")
-    out.append("<sub>evergreen flags what it can prove; it never fails your build.</sub>")
-    out.append("")
-    return "\n".join(out)
+    if result is not None and result.get("findings"):
+        lines.extend(
+            [
+                "",
+                "### Findings",
+                "",
+                "| severity | citations | claim | why | action |",
+                "|---|---|---|---|---|",
+            ]
+        )
+        for finding in result["findings"]:
+            citations = (
+                f"{finding['doc_path']}:{finding['doc_line']} ↔ "
+                f"{finding['code_path']}:{finding['code_line']}"
+            )
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _safe(finding["severity"]),
+                        _safe(citations),
+                        _safe(finding["claim"]),
+                        _safe(finding["why"]),
+                        _safe(finding["fix_or_flag"]),
+                    ]
+                )
+                + " |"
+            )
+
+    if result is not None and result.get("unverified"):
+        lines.extend(
+            [
+                "",
+                "### Unverified claims",
+                "",
+                "| citation | claim | reason |",
+                "|---|---|---|",
+            ]
+        )
+        for item in result["unverified"]:
+            citation = f"{item['doc_path']}:{item['doc_line']}"
+            lines.append(
+                f"| {_safe(citation)} | {_safe(item['claim'])} | {_safe(item['reason'])} |"
+            )
+
+    if result is not None:
+        runtime = result["runtime"]
+        lines.extend(
+            [
+                "",
+                "---",
+                f"<sub>provider: {_safe(runtime['provider'])} · model: {_safe(runtime['model'])} · "
+                f"CLI: {_safe(runtime['cli_version'])}</sub>",
+            ]
+        )
+    lines.append("")
+    return "\n".join(lines)
 
 
-def _selftest():
-    two = """
-here is some model preamble that should be ignored
-{"severity":"high","category":"in_docs_not_code","file":"README.md","line":42,"claim":"--workers 8","why":"cli.py:12 defines --concurrency, not --workers","fix_or_flag":"fix"}
-not json, skip me
-{"severity":"low","category":"name_mismatch","file":"docs/usage.md","line":3,"claim":"utils.py","why":"file is helpers.py per helpers.py:1","fix_or_flag":"flag"}
-```
-"""
-    md = render(two)
-    assert md.startswith(MARKER), "must lead with the hidden marker"
-    assert "2 findings across 2 docs" in md, "summary count wrong:\n" + md
-    assert "`README.md:42`" in md and "`docs/usage.md:3`" in md, "rows missing:\n" + md
-    assert md.index("high") < md.index("low"), "severity ordering wrong (high before low)"
-    assert "\\|" not in md or "|" in md  # sanity: rendered as a table
-    assert md.count("\n|") >= 4, "expected a header, divider, and two data rows"
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv == ["--selftest"]:
+        print("pr_comment selftest moved to tests.test_pr_comment")
+        return 0
 
-    clean = render("the docs all check out\nno json here")
-    assert clean.startswith(MARKER), "clean case must still carry the marker"
-    assert "docs still match" in clean, "clean summary wrong:\n" + clean
-    assert "| severity |" not in clean, "clean case must not emit a table"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo", type=Path, required=True)
+    parser.add_argument("--base", required=True)
+    parser.add_argument("--head", required=True)
+    args = parser.parse_args(argv)
 
-    # pipe-injection in a claim must not break the table
-    inj = '{"severity":"med","file":"a.md","line":1,"claim":"a | b","why":"c | d","fix_or_flag":"fix"}'
-    assert "a \\| b" in render(inj), "pipe not escaped"
-
-    print("pr_comment selftest: ok")
+    result, errors = load_validated_result(sys.stdin.read(), args.repo, args.base, args.head)
+    sys.stdout.write(render_result(result, errors))
+    return 2 if result is None or errors or result["status"] == "inconclusive" else 0
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--selftest":
-        _selftest()
-    else:
-        sys.stdout.write(render(sys.stdin.read()))
+    raise SystemExit(main())
