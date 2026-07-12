@@ -220,7 +220,23 @@ EOF
 PROMPT="$SKILL_BODY
 
 $TASK"
-RAW="$(claude -p "$PROMPT" --model "$MODEL" --allowedTools "Read,Grep,Glob" 2>/dev/null)"
+CLAUDE_BIN="$(command -v claude)"
+RAW="$(env -i \
+  PATH="$PATH" \
+  HOME="${HOME:-}" \
+  TMPDIR="${TMPDIR:-/tmp}" \
+  LANG="${LANG:-C.UTF-8}" \
+  ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+  "$CLAUDE_BIN" \
+  --bare \
+  --safe-mode \
+  --disable-slash-commands \
+  --no-session-persistence \
+  -p "$PROMPT" \
+  --model "$MODEL" \
+  --tools "Read,Grep,Glob" \
+  --allowedTools "Read,Grep,Glob" \
+  2>/dev/null)"
 CLAUDE_STATUS=$?
 if [ "$CLAUDE_STATUS" -ne 0 ]; then
   echo "evergreen: Claude CLI failed; review is inconclusive." >&2

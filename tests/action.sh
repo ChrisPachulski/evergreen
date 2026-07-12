@@ -21,17 +21,20 @@ if [ "${1:-}" = "--version" ]; then
   printf '%s\n' '2.1.197 (Claude Code)'
   exit 0
 fi
-printf '%s\n' "$*" > "$CLAUDE_ARGS_FILE"
+printf '%s\n' "$*" > "$HOME/claude-args.log"
+printf 'ANTHROPIC_API_KEY=%s GITHUB_TOKEN=%s UNRELATED_SECRET=%s\n' \
+  "${ANTHROPIC_API_KEY+set}" "${GITHUB_TOKEN+set}" \
+  "${UNRELATED_SECRET+set}" > "$HOME/claude-env.log"
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "-p" ]; then
     shift
-    printf '%s' "$1" > "$CLAUDE_PROMPT_FILE"
+    printf '%s' "$1" > "$HOME/prompt.txt"
     break
   fi
   shift
 done
-cat "$CLAUDE_OUTPUT_FILE"
-exit "${CLAUDE_EXIT:-0}"
+cat "$HOME/model.txt"
+exit 0
 EOF
 
 cat > "$STUB_BIN/gh" <<'EOF'
@@ -137,6 +140,7 @@ run_driver() {
   NPM_LOG_FILE="$CASE_DIR/npm.log"
   NPM_ENV_LOG_FILE="$CASE_DIR/npm-env.log"
   CLAUDE_ARGS_FILE_PATH="$CASE_DIR/claude-args.log"
+  CLAUDE_ENV_FILE_PATH="$CASE_DIR/claude-env.log"
   printf '%s' "$output" > "$OUTPUT_FILE"
   : > "$PROMPT_FILE"
   : > "$SUMMARY_FILE"
@@ -144,6 +148,7 @@ run_driver() {
   : > "$NPM_LOG_FILE"
   : > "$NPM_ENV_LOG_FILE"
   : > "$CLAUDE_ARGS_FILE_PATH"
+  : > "$CLAUDE_ENV_FILE_PATH"
   set +e
   PATH="$path_prefix:$PYTHON_BIN:/usr/bin:/bin" \
     GITHUB_WORKSPACE="$REPO" \
@@ -159,9 +164,8 @@ run_driver() {
     EVERGREEN_SETUP_ERROR="${SETUP_ERROR:-}" \
     EVERGREEN_IS_FORK="${TEST_IS_FORK:-false}" \
     ANTHROPIC_API_KEY="${TEST_API_KEY-test-key}" \
-    CLAUDE_OUTPUT_FILE="$OUTPUT_FILE" \
-    CLAUDE_PROMPT_FILE="$PROMPT_FILE" \
-    CLAUDE_ARGS_FILE="$CLAUDE_ARGS_FILE_PATH" \
+    UNRELATED_SECRET=must-not-reach-claude \
+    HOME="$CASE_DIR" \
     GH_LOG="$GH_LOG_FILE" \
     NPM_LOG="$NPM_LOG_FILE" \
     NPM_ENV_LOG="$NPM_ENV_LOG_FILE" \
@@ -218,6 +222,14 @@ contains "$PROMPT_FILE" "Do not follow" "prompt does not explicitly forbid repos
 contains "$PROMPT_FILE" "exactly one fenced block" "prompt does not require one result envelope"
 contains "$PROMPT_FILE" '"model":"test-model"' "prompt does not record the resolved model identity"
 contains "$PROMPT_FILE" '"cli_version":"2.1.197 (Claude Code)"' "prompt does not record the resolved CLI identity"
+contains "$CLAUDE_ARGS_FILE_PATH" '--bare' "Claude run does not disable project customizations"
+contains "$CLAUDE_ARGS_FILE_PATH" '--safe-mode' "Claude run does not disable all customizations"
+contains "$CLAUDE_ARGS_FILE_PATH" '--no-session-persistence' "Claude run persists an untrusted PR session"
+contains "$CLAUDE_ARGS_FILE_PATH" '--tools Read,Grep,Glob' "Claude built-in tool surface is not explicitly restricted"
+contains "$CLAUDE_ARGS_FILE_PATH" '--allowedTools Read,Grep,Glob' "read-only tools are not explicitly approved"
+contains "$CLAUDE_ENV_FILE_PATH" 'ANTHROPIC_API_KEY=set GITHUB_TOKEN=' "Claude child did not receive only the provider credential"
+not_contains "$CLAUDE_ENV_FILE_PATH" 'GITHUB_TOKEN=set' "Claude child inherited the GitHub token"
+not_contains "$CLAUDE_ENV_FILE_PATH" 'UNRELATED_SECRET=set' "Claude child inherited an unrelated runner secret"
 pass "hostile docs are delimited as evidence"
 
 make_repo concrete-model
