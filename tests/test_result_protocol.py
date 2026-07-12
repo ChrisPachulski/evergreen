@@ -123,6 +123,22 @@ class ResultProtocolTests(unittest.TestCase):
         self.write("src/cli.py", "working tree has only one line\n")
         self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
 
+    def test_hanging_citation_git_is_a_bounded_validation_error(self):
+        finding = self.finding()
+        result = self.result(
+            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            findings=[finding],
+        )
+        with mock.patch.object(
+            result_protocol, "run_bounded",
+            return_value=(124, b"", "command timed out after 0.1 seconds"),
+            create=True,
+        ) as run:
+            errors = validate_result(result, self.repo, self.base, self.head)
+
+        self.assertTrue(any("timed out" in error for error in errors))
+        self.assertTrue(run.called)
+
     def test_accepts_release_identity_drift_findings(self):
         finding = self.finding(category="release_identity_drift")
         result = self.result(
@@ -417,11 +433,11 @@ class ResultProtocolTests(unittest.TestCase):
             claims={"total": 2, "certified": 0, "drift": 2, "unverified": 0},
             findings=findings,
         )
-        real_popen = subprocess.Popen
-        with mock.patch.object(result_protocol.subprocess, "Popen", wraps=real_popen) as popen:
+        real_run = result_protocol.run_bounded
+        with mock.patch.object(result_protocol, "run_bounded", wraps=real_run) as run:
             self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
         cat_file_calls = [
-            call for call in popen.call_args_list
+            call for call in run.call_args_list
             if "cat-file" in call.args[0]
         ]
         self.assertEqual(len(cat_file_calls), 2)

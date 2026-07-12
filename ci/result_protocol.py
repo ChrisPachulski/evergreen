@@ -2,17 +2,23 @@
 """Parse and validate one Evergreen CI result envelope."""
 
 import json
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
 import re
-import subprocess
+
+try:
+    from .bounded_process import OUTPUT_EXIT, run_bounded
+    from .path_policy import MAX_PATH, is_protocol_path
+except ImportError:  # Direct script execution.
+    from bounded_process import OUTPUT_EXIT, run_bounded
+    from path_policy import MAX_PATH, is_protocol_path
 
 
 SCHEMA_VERSION = 1
 MAX_ITEMS = 100
-MAX_PATH = 1024
 MAX_TEXT = 4096
 MAX_RUNTIME_TEXT = 256
 MAX_CITATION_BYTES = 1_048_576
+CITATION_TIMEOUT_SECONDS = 3
 
 RESULT_FIELDS = {
     "schema_version", "status", "base", "head", "claims", "findings",
@@ -112,14 +118,7 @@ def _repo_path(value: object, label: str, repo: Path, errors: list[str]) -> str 
     if not _text(value, label, errors, limit=MAX_PATH, single_line=True):
         return None
     path = str(value)
-    pure = PurePosixPath(path)
-    if (
-        PureWindowsPath(path).is_absolute()
-        or pure.is_absolute()
-        or "\\" in path
-        or path != pure.as_posix()
-        or any(part in {".", ".."} for part in pure.parts)
-    ):
+    if not is_protocol_path(path):
         errors.append(f"{label} must be a normalized repository-relative path")
         return None
     return path
@@ -130,16 +129,18 @@ def _head_blob(
     head: str,
     path: str,
 ) -> tuple[list[str] | None, str | None]:
-    entry = subprocess.run(
-        ["git", "-C", str(repo), "ls-tree", "-z", head, "--", f":(literal){path}"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+    status, entry, failure = run_bounded(
+        ["git", "--no-replace-objects", "-C", str(repo), "ls-tree", "-z", head,
+         "--", f":(literal){path}"],
+        timeout_seconds=CITATION_TIMEOUT_SECONDS,
+        max_output_bytes=4096,
+        clean_env=True,
+        keep_env=[],
     )
-    if entry.returncode or not entry.stdout:
-        return None, f"does not exist at head: {path}"
+    if status or not entry:
+        return None, failure or f"does not exist at head: {path}"
     try:
-        record = entry.stdout.rstrip(b"\0")
+        record = entry.rstrip(b"\0")
         metadata, raw_path = record.split(b"\t", 1)
         mode, kind, object_id = metadata.decode("ascii").split()
         tree_path = raw_path.decode("utf-8")
@@ -152,22 +153,17 @@ def _head_blob(
     if kind != "blob":
         return None, f"is not a file blob at head: {path}"
 
-    process = subprocess.Popen(
-        ["git", "-C", str(repo), "cat-file", "blob", object_id],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+    status, content, failure = run_bounded(
+        ["git", "--no-replace-objects", "-C", str(repo), "cat-file", "blob", object_id],
+        timeout_seconds=CITATION_TIMEOUT_SECONDS,
+        max_output_bytes=MAX_CITATION_BYTES,
+        clean_env=True,
+        keep_env=[],
     )
-    assert process.stdout is not None
-    content = process.stdout.read(MAX_CITATION_BYTES + 1)
-    oversized = len(content) > MAX_CITATION_BYTES
-    if oversized:
-        process.terminate()
-    process.stdout.close()
-    returncode = process.wait()
-    if oversized:
+    if status == OUTPUT_EXIT:
         return None, f"citation exceeds {MAX_CITATION_BYTES} bytes at head: {path}"
-    if returncode:
-        return None, f"could not read file blob at head: {path}"
+    if status:
+        return None, failure or f"could not read file blob at head: {path}"
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError:

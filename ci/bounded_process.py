@@ -17,22 +17,25 @@ DEFAULT_ENV = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL")
 
 
 def _stop(process: subprocess.Popen[bytes]) -> None:
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (PermissionError, ProcessLookupError):
+            if process.poll() is None:
+                process.kill()
+        if process.poll() is None:
+            process.wait()
+        return
     if process.poll() is not None:
         return
     try:
-        if os.name == "posix":
-            os.killpg(process.pid, signal.SIGTERM)
-        else:
-            process.terminate()
+        process.terminate()
         process.wait(timeout=0.25)
     except (PermissionError, ProcessLookupError, subprocess.TimeoutExpired):
         try:
             if process.poll() is not None:
                 return
-            if os.name == "posix":
-                os.killpg(process.pid, signal.SIGKILL)
-            else:
-                process.kill()
+            process.kill()
         except (PermissionError, ProcessLookupError):
             if process.poll() is None:
                 process.kill()

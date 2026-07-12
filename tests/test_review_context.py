@@ -192,6 +192,14 @@ class ReviewContextTests(unittest.TestCase):
         self.assertTrue(invalid["errors"])
         self.assertEqual(invalid["candidates"], [])
 
+    def test_excludes_iso_dated_snapshot_filenames(self):
+        self.write("docs/2026-07-12-audit.md", "workers\n")
+        _base, head, manifest = self.fixture("workers\n")
+
+        context = review_context.build_context(self.repo, head, manifest)
+
+        self.assertEqual([item["path"] for item in context["candidates"]], ["README.md"])
+
     def test_cli_emits_one_versioned_json_object(self):
         _base, head, manifest = self.fixture()
         script = Path(review_context.__file__)

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 
@@ -47,6 +48,26 @@ class BoundedProcessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 124)
         self.assertLess(time.monotonic() - started, 2)
         self.assertIn(b"timed out", result.stderr)
+
+    def test_timeout_kills_descendant_after_parent_has_exited(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            marker = Path(temporary) / "descendant-survived"
+            child = (
+                "import pathlib,time; time.sleep(.3); "
+                f"pathlib.Path({str(marker)!r}).write_text('alive')"
+            )
+            result = self.run_runner(
+                "--timeout-seconds", "0.1",
+                "--max-output-bytes", "100",
+                code=(
+                    "import subprocess,sys; "
+                    f"subprocess.Popen([sys.executable, '-c', {child!r}])"
+                ),
+            )
+            time.sleep(0.4)
+
+            self.assertEqual(result.returncode, 124)
+            self.assertFalse(marker.exists())
 
     def test_stops_when_output_exceeds_the_ceiling(self):
         result = self.run_runner(

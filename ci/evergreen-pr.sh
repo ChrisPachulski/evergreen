@@ -10,6 +10,7 @@ MANIFEST_PY="$ACTION_PATH/ci/change_manifest.py"
 CONTEXT_PY="$ACTION_PATH/ci/review_context.py"
 COMMENT_PY="$ACTION_PATH/ci/pr_comment.py"
 BOUNDED_PY="$ACTION_PATH/ci/bounded_process.py"
+PREFILTER_PY="$ACTION_PATH/ci/path_prefilter.py"
 REPO_ROOT="${EVERGREEN_REPO_ROOT:-${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}"
 MODE="${EVERGREEN_MODE:-winnow}"
 MODEL="${EVERGREEN_MODEL:-claude-opus-4-8}"
@@ -23,6 +24,13 @@ MAX_MODEL_OUTPUT_BYTES="${EVERGREEN_MAX_MODEL_OUTPUT_BYTES:-262144}"
 MAX_BUDGET_USD="${EVERGREEN_MAX_BUDGET_USD:-5}"
 GIT_TIMEOUT_SECONDS="${EVERGREEN_GIT_TIMEOUT_SECONDS:-15}"
 GIT_MAX_OUTPUT_BYTES="${EVERGREEN_GIT_MAX_OUTPUT_BYTES:-1048576}"
+COMMENT_TIMEOUT_SECONDS="${EVERGREEN_COMMENT_TIMEOUT_SECONDS:-15}"
+COMMENT_MAX_OUTPUT_BYTES="${EVERGREEN_COMMENT_MAX_OUTPUT_BYTES:-1048576}"
+
+run_gh() {
+  python3 "$BOUNDED_PY" --timeout-seconds "$COMMENT_TIMEOUT_SECONDS" \
+    --max-output-bytes "$COMMENT_MAX_OUTPUT_BYTES" -- gh "$@"
+}
 
 emit_summary() {
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then cat >> "$GITHUB_STEP_SUMMARY"; else cat; fi
@@ -51,7 +59,7 @@ post_comment() {
   pr="${pr%%/*}"
   repo="${GITHUB_REPOSITORY:-}"
   [ -n "$pr" ] && [ -n "$repo" ] || return 0
-  bot_login="$(gh api user --jq '.login' 2>/dev/null)"
+  bot_login="$(run_gh api user --jq '.login' 2>/dev/null)"
   if [ $? -ne 0 ] || [ -z "$bot_login" ]; then
     echo "evergreen: comment ownership lookup failed; no comment was created (non-fatal)." >&2
     return 0
@@ -68,7 +76,7 @@ post_comment() {
     rm -f "$tmp" 2>/dev/null || true
     return 0
   }
-  if ! gh api --paginate "repos/$repo/issues/$pr/comments" --jq \
+  if ! run_gh api --paginate "repos/$repo/issues/$pr/comments" --jq \
     ".[] | select(.user.type == \"Bot\" and .user.login == \"$bot_login\" and \
     (.body | startswith(\"$marker\"))) | .id" >"$comments" 2>/dev/null; then
     echo "evergreen: comment ownership lookup failed; no comment was created (non-fatal)." >&2
@@ -78,16 +86,13 @@ post_comment() {
   existing="$(sort -n "$comments" | tail -n1)"
   rm -f "$comments" 2>/dev/null || true
   if [ -n "$existing" ]; then
-    if gh api -X PATCH "repos/$repo/issues/comments/$existing" -F body=@"$tmp" >/dev/null 2>&1; then
+    if run_gh api -X PATCH "repos/$repo/issues/comments/$existing" -F body=@"$tmp" >/dev/null 2>&1; then
       echo "evergreen: updated PR comment $existing." >&2
     else
-      echo "evergreen: comment update failed; creating a replacement." >&2
-      gh pr comment "$pr" --body-file "$tmp" >/dev/null 2>&1 \
-        && echo "evergreen: posted replacement PR comment." >&2 \
-        || echo "evergreen: replacement comment failed (non-fatal)." >&2
+      echo "evergreen: comment update failed; no replacement was created (non-fatal)." >&2
     fi
   else
-    gh pr comment "$pr" --body-file "$tmp" >/dev/null 2>&1 \
+    run_gh pr comment "$pr" --body-file "$tmp" >/dev/null 2>&1 \
       && echo "evergreen: posted PR comment." >&2 \
       || echo "evergreen: comment post failed (non-fatal)." >&2
   fi
@@ -135,7 +140,7 @@ cd "$REPO_ROOT" 2>/dev/null || {
 }
 
 command -v python3 >/dev/null 2>&1 || finish_fallback "python3 is unavailable."
-[ -r "$COMMENT_PY" ] && [ -r "$BOUNDED_PY" ] || \
+[ -r "$COMMENT_PY" ] && [ -r "$BOUNDED_PY" ] && [ -r "$PREFILTER_PY" ] || \
   finish_fallback "a trusted Action helper is missing."
 
 BASE="${EVERGREEN_BASE_REF:-}"
@@ -162,17 +167,15 @@ if ! python3 "$BOUNDED_PY" \
   rm -f "$changed_file" 2>/dev/null || true
   finish_inconclusive "Git change detection failed."
 fi
-code_changed=0
-while IFS= read -r -d '' file; do
-  [ -z "$file" ] && continue
-  lower="$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')"
-  case "$lower" in *.md|*.markdown|*.rst) continue ;; esac
-  code_changed=1
-  break
-done <"$changed_file"
+code_changed="$(python3 "$PREFILTER_PY" --mode code \
+  --timeout-seconds "$GIT_TIMEOUT_SECONDS" --max-bytes "$GIT_MAX_OUTPUT_BYTES" \
+  "$changed_file" 2>/dev/null)"
+if [ $? -ne 0 ] || { [ "$code_changed" != yes ] && [ "$code_changed" != no ]; }; then
+  rm -f "$changed_file" 2>/dev/null || true
+  finish_inconclusive "Changed-path classification exceeded its safety bounds."
+fi
 rm -f "$changed_file" 2>/dev/null || true
 
-has_docs=0
 docs_file="$(mktemp 2>/dev/null)" || \
   finish_inconclusive "Secure temporary file creation failed during documentation detection."
 if ! python3 "$BOUNDED_PY" \
@@ -182,12 +185,15 @@ if ! python3 "$BOUNDED_PY" \
   rm -f "$docs_file" 2>/dev/null || true
   finish_inconclusive "Git documentation detection failed."
 fi
-while IFS= read -r -d '' file; do
-  lower="$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')"
-  case "$lower" in *.md|*.markdown|*.rst) has_docs=1; break ;; esac
-done <"$docs_file"
+has_docs="$(python3 "$PREFILTER_PY" --mode docs \
+  --timeout-seconds "$GIT_TIMEOUT_SECONDS" --max-bytes "$GIT_MAX_OUTPUT_BYTES" \
+  "$docs_file" 2>/dev/null)"
+if [ $? -ne 0 ] || { [ "$has_docs" != yes ] && [ "$has_docs" != no ]; }; then
+  rm -f "$docs_file" 2>/dev/null || true
+  finish_inconclusive "Documentation-path classification exceeded its safety bounds."
+fi
 rm -f "$docs_file" 2>/dev/null || true
-if [ "$code_changed" -eq 0 ] || [ "$has_docs" -eq 0 ]; then
+if [ "$code_changed" = no ] || [ "$has_docs" = no ]; then
   printf '### 🌲 evergreen\n\nNo code-with-docs changes in this PR — nothing to check.\n' | emit_summary
   exit 0
 fi
@@ -293,7 +299,7 @@ EOF
 PROMPT="$SKILL_BODY
 
 $TASK"
-RAW="$(python3 "$BOUNDED_PY" \
+RAW="$(printf '%s' "$PROMPT" | python3 "$BOUNDED_PY" \
   --timeout-seconds "$MODEL_TIMEOUT_SECONDS" \
   --max-output-bytes "$MAX_MODEL_OUTPUT_BYTES" \
   --clean-env \
@@ -304,7 +310,7 @@ RAW="$(python3 "$BOUNDED_PY" \
   --disable-slash-commands \
   --no-session-persistence \
   --max-turns 1 \
-  -p "$PROMPT" \
+  -p \
   --model "$MODEL" \
   --max-budget-usd "$MAX_BUDGET_USD" \
   --tools "" \

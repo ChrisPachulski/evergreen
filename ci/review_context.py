@@ -3,14 +3,17 @@
 
 import argparse
 import json
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath
+import re
 import sys
 import time
 
 try:
     from .bounded_process import run_bounded
+    from .path_policy import is_protocol_path
 except ImportError:  # Direct script execution.
     from bounded_process import run_bounded
+    from path_policy import is_protocol_path
 
 
 SCHEMA_VERSION = 1
@@ -22,13 +25,13 @@ MAX_TERMS = 1000
 MAX_CANDIDATES = 200
 MAX_OUTPUT_BYTES = 120_000
 MAX_ERRORS = 100
-MAX_PATH = 1024
 TIMEOUT_SECONDS = 3
 CONTEXT_LINES = 2
 EXEMPT_DOC_PARTS = {
     "adr", "adrs", "archive", "archives", "audit", "audits", "plans", "readiness",
     "roadmaps", "specs",
 }
+DATED_DOC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[-_.]|$)")
 
 
 def encode_context(context: dict) -> bytes:
@@ -70,22 +73,7 @@ def _living_doc(path: str) -> bool:
         pure.suffix.casefold() in {".md", ".markdown", ".rst"}
         and not lower_parts & EXEMPT_DOC_PARTS
         and not pure.name.casefold().startswith("changelog")
-    )
-
-
-def _protocol_path(path: str) -> bool:
-    pure = PurePosixPath(path)
-    return not (
-        not path
-        or len(path) > MAX_PATH
-        or "\n" in path
-        or "\r" in path
-        or "\x00" in path
-        or PureWindowsPath(path).is_absolute()
-        or pure.is_absolute()
-        or "\\" in path
-        or path != pure.as_posix()
-        or any(part in {".", ".."} for part in pure.parts)
+        and DATED_DOC_RE.match(pure.name) is None
     )
 
 
@@ -141,7 +129,7 @@ def _tree_docs(payload: bytes, context: dict) -> list[tuple[str, str, int]]:
             continue
         if not _living_doc(path):
             continue
-        if not _protocol_path(path):
+        if not is_protocol_path(path):
             context["errors"].append(f"tracked documentation path is not citable: {path}")
             continue
         if mode == "120000":

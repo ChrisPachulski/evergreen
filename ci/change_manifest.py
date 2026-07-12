@@ -11,8 +11,10 @@ import time
 
 try:
     from .bounded_process import OUTPUT_EXIT, TIMEOUT_EXIT, run_bounded
+    from .path_policy import is_protocol_path
 except ImportError:  # Direct script execution.
     from bounded_process import OUTPUT_EXIT, TIMEOUT_EXIT, run_bounded
+    from path_policy import is_protocol_path
 
 
 SCHEMA_VERSION = 1
@@ -82,6 +84,8 @@ def _display_path(raw: bytes, errors: list[str], seen: dict[str, bytes]) -> dict
         result = {"path": display, "path_bytes_b64": base64.b64encode(raw).decode("ascii")}
         errors.append(f"path contains invalid UTF-8; display uses replacement characters: {display}")
     previous = seen.get(display)
+    if not is_protocol_path(display):
+        errors.append(f"changed path is not citable by the result protocol: {display}")
     if previous is not None and previous != raw:
         errors.append(f"path display collision after UTF-8 replacement: {display}")
     seen[display] = raw

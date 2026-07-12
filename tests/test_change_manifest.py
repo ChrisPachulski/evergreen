@@ -74,7 +74,7 @@ class ChangeManifestTests(unittest.TestCase):
         self.assertEqual(first["base"], base)
         self.assertEqual(first["head"], head)
         self.assertFalse(first["truncated"])
-        self.assertEqual(first["errors"], [])
+        self.assertTrue(any("not citable" in error for error in first["errors"]))
         self.assertEqual(
             [(item["status"], item.get("old_path"), item["path"]) for item in first["files"]],
             [
@@ -178,6 +178,16 @@ class ChangeManifestTests(unittest.TestCase):
         self.assertFalse(manifest["truncated"])
         self.assertEqual(len(manifest["errors"]), 1)
         self.assertIn("invalid base ref", manifest["errors"][0])
+
+    def test_protocol_incompatible_changed_path_makes_manifest_incomplete(self):
+        self.write("base.txt", "base\n")
+        base = self.commit("base")
+        self.write("line\nbreak.py", "value = 1\n")
+        head = self.commit("unquotable path")
+
+        manifest = change_manifest.build_manifest(self.repo, base, head)
+
+        self.assertTrue(any("not citable" in error for error in manifest["errors"]))
 
     def test_git_deadline_failure_is_a_manifest_error(self):
         self.write("file.py", "value = 1\n")

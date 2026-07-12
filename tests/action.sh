@@ -30,7 +30,13 @@ printf 'ANTHROPIC_API_KEY=%s GITHUB_TOKEN=%s UNRELATED_SECRET=%s\n' \
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "-p" ]; then
     shift
-    printf '%s' "$1" > "$HOME/prompt.txt"
+    if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then
+      printf '%s' "$1" > "$HOME/prompt.txt"
+      printf '%s' argv > "$HOME/prompt-mode.txt"
+    else
+      cat > "$HOME/prompt.txt"
+      printf '%s' stdin > "$HOME/prompt-mode.txt"
+    fi
     break
   fi
   shift
@@ -50,6 +56,7 @@ set -u
 printf '%s\n' "$*" >> "$GH_LOG"
 case "$*" in
   'api user --jq .login')
+    [ "${GH_HANG:-false}" != "true" ] || sleep 2
     [ "${GH_USER_FAIL:-false}" != "true" ] || exit 70
     printf '%s\n' 'evergreen-bot[bot]'
     ;;
@@ -97,6 +104,18 @@ ln -s "$STUB_BIN/claude" "$FAIL_GIT_BIN/claude"
 ln -s "$STUB_BIN/gh" "$FAIL_GIT_BIN/gh"
 ln -s "$STUB_BIN/npm" "$FAIL_GIT_BIN/npm"
 chmod +x "$FAIL_GIT_BIN/git"
+
+NO_TR_BIN="$TMP_ROOT/no-tr-bin"
+mkdir -p "$NO_TR_BIN"
+for tool in git claude gh npm; do ln -s "$STUB_BIN/$tool" "$NO_TR_BIN/$tool" 2>/dev/null || true; done
+rm -f "$NO_TR_BIN/git"
+ln -s "$REAL_GIT_BIN" "$NO_TR_BIN/git"
+cat > "$NO_TR_BIN/tr" <<'EOF'
+#!/usr/bin/env bash
+printf 'used\n' >> "$HOME/tr-used"
+exec /usr/bin/tr "$@"
+EOF
+chmod +x "$NO_TR_BIN/tr"
 
 make_repo() {
   local name="$1" hostile="${2:-false}"
@@ -167,6 +186,7 @@ run_driver() {
   mkdir -p "$CASE_DIR"
   OUTPUT_FILE="$CASE_DIR/model.txt"
   PROMPT_FILE="$CASE_DIR/prompt.txt"
+  PROMPT_MODE_FILE="$CASE_DIR/prompt-mode.txt"
   SUMMARY_FILE="$CASE_DIR/summary.md"
   GH_LOG_FILE="$CASE_DIR/gh.log"
   NPM_LOG_FILE="$CASE_DIR/npm.log"
@@ -175,6 +195,7 @@ run_driver() {
   CLAUDE_ENV_FILE_PATH="$CASE_DIR/claude-env.log"
   printf '%s' "$output" > "$OUTPUT_FILE"
   : > "$PROMPT_FILE"
+  : > "$PROMPT_MODE_FILE"
   : > "$SUMMARY_FILE"
   : > "$GH_LOG_FILE"
   : > "$NPM_LOG_FILE"
@@ -205,6 +226,7 @@ run_driver() {
     EVERGREEN_MAX_BUDGET_USD="${TEST_MAX_BUDGET_USD:-5}" \
     EVERGREEN_GIT_TIMEOUT_SECONDS="${TEST_GIT_TIMEOUT_SECONDS:-15}" \
     EVERGREEN_GIT_MAX_OUTPUT_BYTES="${TEST_GIT_MAX_OUTPUT_BYTES:-1048576}" \
+    EVERGREEN_COMMENT_TIMEOUT_SECONDS="${TEST_COMMENT_TIMEOUT_SECONDS:-15}" \
     EVERGREEN_SETUP_ERROR="${SETUP_ERROR:-}" \
     EVERGREEN_IS_FORK="${TEST_IS_FORK:-false}" \
     ANTHROPIC_API_KEY="${TEST_API_KEY-test-key}" \
@@ -221,6 +243,7 @@ run_driver() {
     GH_PATCH_FAIL="${GH_PATCH_FAIL:-false}" \
     GH_USER_FAIL="${GH_USER_FAIL:-false}" \
     GH_LIST_FAIL="${GH_LIST_FAIL:-false}" \
+    GH_HANG="${GH_HANG:-false}" \
     bash "$ROOT/ci/evergreen-pr.sh" >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"
   STATUS=$?
   set -e
@@ -255,6 +278,7 @@ make_repo hostile true
 run_driver hostile "$(clean_result)"
 [ "$STATUS" -eq 0 ] || fail "hostile repository text should remain data"
 contains "$PROMPT_FILE" '<untrusted_repository_evidence encoding="json">' "prompt lacks readable JSON evidence delimiter"
+contains "$PROMPT_MODE_FILE" 'stdin' "Claude prompt was passed as one argv value"
 contains "$PROMPT_FILE" "</untrusted_repository_evidence>" "prompt lacks closing evidence delimiter"
 EXPECTED_MANIFEST="$(python3 "$ROOT/ci/change_manifest.py" --base "$BASE_SHA" --head "$HEAD_SHA" --repo "$REPO")"
 CLOSE_COUNT="$(grep -Fo '</untrusted_repository_evidence>' "$PROMPT_FILE" | wc -l | tr -d ' ')"
@@ -294,6 +318,17 @@ run_driver dirty-context "$(clean_result)"
 not_contains "$PROMPT_FILE" 'dirty worktree must not reach the prompt' "review context read the worktree"
 contains "$PROMPT_FILE" 'Run `demo --workers 4`.' "review context omitted the unchanged HEAD documentation"
 pass "review context is bound to HEAD"
+
+make_repo expanded-prompt
+python3 -c 'from pathlib import Path; p=Path(__import__("sys").argv[1]); p.write_text("workers " + "<" * 100000 + "\n")' "$REPO/README.md"
+git -C "$REPO" add README.md
+git -C "$REPO" commit -qm expanded-prompt-doc
+HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
+run_driver expanded-prompt "$(clean_result)"
+[ "$STATUS" -eq 0 ] || fail "sanitizer-expanded bounded prompt did not reach Claude over stdin"
+contains "$PROMPT_MODE_FILE" 'stdin' "expanded prompt was passed through argv"
+contains "$PROMPT_FILE" '\u003c' "expanded prompt lost sanitized evidence"
+pass "sanitizer-expanded prompt uses stdin"
 
 make_repo symlink-context
 printf '%s\n' 'outside workers secret' > "$REPO/outside.txt"
@@ -363,6 +398,13 @@ TEST_GIT_FAIL_MODE=hang-manifest TEST_GIT_TIMEOUT_SECONDS=0.1 \
 contains "$SUMMARY_FILE" 'Change manifest is truncated or contains deterministic errors.' "manifest timeout lost its exact reason"
 [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "manifest timeout still invoked Claude"
 pass "Git preparation is time and output bounded"
+
+make_repo prefilter-without-tr
+run_driver prefilter-without-tr "$(clean_result)" true "$NO_TR_BIN"
+[ "$STATUS" -eq 0 ] || fail "bounded path prefilter failed without per-path tr"
+[ -s "$PROMPT_FILE" ] || fail "path prefilter did not reach the model"
+[ "$(wc -l < "$CASE_DIR/tr-used" | tr -d ' ')" -eq 1 ] || fail "path prefilter still spawned tr per path"
+pass "path prefilter has bounded in-process parsing"
 
 make_repo dirty-index
 git -C "$REPO" rm --cached -q README.md
@@ -487,6 +529,16 @@ not_contains "$GH_LOG_FILE" 'pr comment' "uncertain comment list created a dupli
 contains "$CASE_DIR/stderr" 'comment ownership lookup failed' "comment list failure was not logged"
 pass "uncertain comment ownership never creates duplicates"
 
+make_repo hanging-comment
+started="$(python3 -c 'import time; print(time.monotonic())')"
+GH_HANG=true TEST_COMMENT_TIMEOUT_SECONDS=0.1 run_driver hanging-comment "$(clean_result)"
+elapsed="$(python3 -c 'import sys; print(float(sys.argv[2])-float(sys.argv[1]))' "$started" "$(python3 -c 'import time; print(time.monotonic())')")"
+unset GH_HANG
+[ "$STATUS" -eq 0 ] || fail "comment timeout must remain nonfatal"
+python3 -c 'import sys; assert float(sys.argv[1]) < 1' "$elapsed" || fail "hanging gh call was not bounded"
+contains "$CASE_DIR/stderr" 'comment ownership lookup failed' "gh timeout was not logged"
+pass "comment publication is time bounded"
+
 make_repo hostile-marker
 GH_HOSTILE_ID=666 run_driver hostile-marker "$(clean_result)"
 [ "$STATUS" -eq 0 ] || fail "hostile marker case should remain advisory"
@@ -497,8 +549,9 @@ make_repo patch-fallback
 GH_EXISTING_ID=123 GH_PATCH_FAIL=true run_driver patch-fallback "$(clean_result)"
 [ "$STATUS" -eq 0 ] || fail "patch failure should not fail a conclusive audit"
 contains "$GH_LOG_FILE" "issues/comments/123" "patch fallback case did not attempt the update"
-contains "$GH_LOG_FILE" "pr comment 42" "patch failure did not fall back to comment creation"
-pass "bot-owned upsert and patch fallback"
+not_contains "$GH_LOG_FILE" "pr comment 42" "uncertain patch failure created a duplicate comment"
+contains "$CASE_DIR/stderr" "comment update failed" "patch uncertainty was not logged"
+pass "bot-owned update never duplicates on uncertainty"
 
 contains "$ROOT/action.yml" '@anthropic-ai/claude-code@2.1.197' "Action does not pin the tested Claude CLI"
 contains "$ROOT/action.yml" 'model:' "Action lacks a model input"
