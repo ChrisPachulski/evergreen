@@ -30,19 +30,24 @@ VALID_CATEGORIES = {None, "direct-mismatch", "over-promise", "under-promise"}
 @contextmanager
 def _regular_descriptor(path, max_bytes, label):
     path = Path(path)
+    nonblocking = getattr(os, "O_NONBLOCK", None)
+    if not isinstance(nonblocking, int) or not nonblocking:
+        raise ValueError(f"{label} requires a nonblocking open")
     before = os.lstat(path)
     if not stat.S_ISREG(before.st_mode):
         raise ValueError(f"{label} must be a regular file")
     if max_bytes is not None and before.st_size > max_bytes:
         raise ValueError(f"{label} too large")
-    flags = os.O_RDONLY
-    for name in ("O_CLOEXEC", "O_NOFOLLOW", "O_NONBLOCK"):
+    flags = os.O_RDONLY | nonblocking
+    for name in ("O_CLOEXEC", "O_NOFOLLOW"):
         flags |= getattr(os, name, 0)
     descriptor = os.open(path, flags)
     try:
         opened = os.fstat(descriptor)
-        if (not stat.S_ISREG(opened.st_mode) or opened.st_dev != before.st_dev or
-                opened.st_ino != before.st_ino):
+        after = os.lstat(path)
+        if (not stat.S_ISREG(opened.st_mode) or not stat.S_ISREG(after.st_mode) or
+                opened.st_dev != before.st_dev or opened.st_ino != before.st_ino or
+                after.st_dev != opened.st_dev or after.st_ino != opened.st_ino):
             raise ValueError(f"{label} must be a regular file")
         if max_bytes is not None and opened.st_size > max_bytes:
             raise ValueError(f"{label} too large")
@@ -68,7 +73,7 @@ def _regular_chunks(path, max_bytes, deadline, label):
 
 
 def sha256_file(path, max_bytes=None, deadline=None):
-    """Hash a regular file without loading it into memory."""
+    """Hash a regular file; deadlines are checked between uninterruptible filesystem calls."""
     digest = hashlib.sha256()
     try:
         for chunk in _regular_chunks(path, max_bytes, deadline, "file"):
@@ -83,7 +88,10 @@ def sha256_file(path, max_bytes=None, deadline=None):
 
 
 def read_bytes(path, max_bytes, timeout=30, label="artifact"):
-    """Read a file with byte and wall-clock ceilings, including growth races."""
+    """Read a regular file with limits checked between filesystem calls.
+
+    The elapsed-time deadline cannot preempt a blocking filesystem syscall.
+    """
     deadline = time.monotonic() + timeout
     payload = bytearray()
     for chunk in _regular_chunks(path, max_bytes, deadline, label):

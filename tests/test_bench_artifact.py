@@ -147,6 +147,48 @@ class ArtifactMetadataTests(unittest.TestCase):
                          self.assertRaisesRegex(ValueError, "regular file"):
                         operation(Path("/dev/null"))
 
+    def test_post_open_identity_check_rejects_same_inode_symlink_swap(self):
+        from eval.bench import artifact
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "input"
+            moved = root / "moved"
+            path.write_bytes(b"payload")
+            real_lstat = os.lstat
+            calls = 0
+
+            def swapping_lstat(candidate):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    before = real_lstat(candidate)
+                    path.rename(moved)
+                    path.symlink_to(moved)
+                    return before
+                return real_lstat(candidate)
+
+            with mock.patch.object(artifact.os, "lstat", side_effect=swapping_lstat), \
+                 mock.patch.object(artifact.os, "O_NOFOLLOW", 0), \
+                 self.assertRaisesRegex(ValueError, "regular file"):
+                artifact.read_bytes(path, 100, label="dataset")
+
+    def test_read_refuses_when_nonblocking_open_is_unavailable(self):
+        from eval.bench import artifact
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "input"
+            path.write_bytes(b"payload")
+            with mock.patch.object(artifact.os, "O_NONBLOCK", None), \
+                 self.assertRaisesRegex(ValueError, "nonblocking"):
+                artifact.read_bytes(path, 100, label="dataset")
+
+    def test_deadline_contract_names_uninterruptible_filesystem_calls(self):
+        from eval.bench import artifact
+
+        self.assertIn("between filesystem calls", artifact.read_bytes.__doc__)
+        self.assertIn("cannot preempt", artifact.read_bytes.__doc__)
+
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO is unavailable")
     def test_fifo_rejection_never_blocks(self):
         with tempfile.TemporaryDirectory() as directory:

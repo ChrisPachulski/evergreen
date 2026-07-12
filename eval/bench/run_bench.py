@@ -99,7 +99,7 @@ def _data_envelope(kind, data, prefix):
     return f"{UNTRUSTED_DATA_INSTRUCTION}\n{prefix}{json.dumps(envelope, separators=(',', ':'), sort_keys=True)}"
 
 
-def _pair_envelope(pair):
+def _validated_pair_data(pair):
     data = {
         "id": pair.get("id"),
         "func": pair.get("func"),
@@ -120,6 +120,11 @@ def _pair_envelope(pair):
             raise ValueError(f"benchmark pair {field} must be a non-empty string")
         if len(value.encode()) > limit:
             raise ValueError(f"benchmark pair {field} exceeds {limit} bytes")
+    return data
+
+
+def _pair_envelope(pair):
+    data = _validated_pair_data(pair)
     return _data_envelope("untrusted_benchmark_pair", data, UNTRUSTED_PAIR_PREFIX)
 
 
@@ -694,6 +699,7 @@ def load_dataset(path):
         validate_benchmark_row(row, require_result=False)
         if any(not isinstance(row.get(key), str) for key in ("func", "code", "doc")):
             raise ValueError("dataset func, code, and doc must be strings")
+        _validated_pair_data(row)
     if len({row["id"] for row in rows}) != len(rows):
         raise ValueError("dataset contains duplicate pair ids")
     return payload, rows
