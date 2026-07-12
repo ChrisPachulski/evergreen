@@ -82,6 +82,24 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertIn("\\n", hostile.stderr)
         self.assertIn("\\x7f", hostile.stderr)
 
+    def test_candidate_cli_does_not_import_posix_host_stack(self):
+        script = f"""
+import importlib.abc, runpy, sys
+class Block(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'fcntl' or fullname.startswith('evergreen.host'):
+            raise ImportError('blocked host stack: ' + fullname)
+sys.meta_path.insert(0, Block())
+sys.argv = [{str(SCRIPT)!r}, 'impact', '--json', '--repo', {str(self.repo)!r}, 'a.py']
+runpy.run_path({str(SCRIPT)!r}, run_name='__main__')
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script], cwd=self.repo,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["candidates"][0]["path"], "a.py")
+
     def test_host_commands_have_parallel_selection_and_dry_run_interfaces(self):
         root_help = self.run_cli("--help")
         install_help = self.run_cli("install", "--help")

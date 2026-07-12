@@ -2,26 +2,19 @@
 
 import ast
 from dataclasses import asdict
-import errno
-import hashlib
 import json
 import os
 from pathlib import Path
-import stat
-import sys
-import time
-import uuid
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - POSIX hosts are required by the CLI.
-    fcntl = None
-
-try:
-    import posix as _posix
-except ImportError:  # pragma: no cover - POSIX hosts are required by the CLI.
-    _posix = None
-
+from .host_lock import runtime_error as _runtime_error
+from .host_metadata import native_copy_available as _native_copy_available
+from .host_snapshot import (
+    capture_preflight as _capture_preflight, kind as _kind,
+    read_regular_bounded as _read_regular_bounded,
+    snapshot as _snapshot,
+)
+from .host_transaction import TransactionEngine
+from .host_types import HostStatus, OperationResult, Ownership
 
 BEGIN_MARKER = "<!-- evergreen:begin -->"
 END_MARKER = "<!-- evergreen:end -->"
@@ -30,18 +23,10 @@ MAX_STATE_BYTES = 4096
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_INSTRUCTION_BYTES = 1024 * 1024
 MAX_COMMAND_BYTES = 1024 * 1024
-MAX_XATTRS = 100
-MAX_XATTR_BYTES = 1024 * 1024
-# Elapsed-time detection only: regular-file syscalls are not portably interruptible.
-READ_ELAPSED_LIMIT_SECONDS = 3
 
 
-from .host_types import HostStatus, OperationResult, Ownership, PathSnapshot
-from .host_transaction import (
-    TransactionEngine, _capture_preflight, _host_runtime_error,
-    _kind, _open_directory, _perform_action, _read_regular_bounded,
-    _snapshot, _snapshot_at, _verify_preflight, _write_journal_at,
-)
+def _host_runtime_error():
+    return _runtime_error(_native_copy_available)
 
 
 def detect_hosts(home: Path) -> list[HostStatus]:
@@ -66,6 +51,12 @@ def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> 
     engine, lock_error = TransactionEngine.acquire(selected)
     if lock_error:
         return OperationResult(False, (lock_error,))
+    return _with_engine_close(engine, lambda: _install_acquired(
+        engine, selected, root, target, dry_run,
+    ))
+
+
+def _install_acquired(engine, selected, root, target, dry_run):
     try:
         try:
             recovery_errors = engine.recover()
@@ -77,8 +68,8 @@ def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> 
         if errors:
             return OperationResult(False, tuple(errors))
         return _install_locked(selected, root, target, dry_run, engine)
-    finally:
-        engine.close()
+    except Exception as error:
+        return OperationResult(False, (f"error: host operation failed: {error}",))
 
 
 def _install_locked(selected, root, target, dry_run, engine):
@@ -120,6 +111,12 @@ def uninstall(home: Path, host: str, dry_run: bool = False) -> OperationResult:
     engine, lock_error = TransactionEngine.acquire(selected)
     if lock_error:
         return OperationResult(False, (lock_error,))
+    return _with_engine_close(engine, lambda: _uninstall_acquired(
+        engine, selected, dry_run,
+    ))
+
+
+def _uninstall_acquired(engine, selected, dry_run):
     try:
         try:
             recovery_errors = engine.recover()
@@ -131,8 +128,19 @@ def uninstall(home: Path, host: str, dry_run: bool = False) -> OperationResult:
         if errors:
             return OperationResult(False, tuple(errors))
         return _uninstall_locked(selected, dry_run, engine)
-    finally:
-        engine.close()
+    except Exception as error:
+        return OperationResult(False, (f"error: host operation failed: {error}",))
+
+
+def _with_engine_close(engine, operation):
+    try:
+        result = operation()
+    except Exception as error:
+        result = OperationResult(False, (f"error: host operation failed: {error}",))
+    close_error = engine.close()
+    if close_error:
+        return OperationResult(False, result.messages + (close_error,))
+    return result
 
 
 def _uninstall_locked(selected, dry_run, engine):

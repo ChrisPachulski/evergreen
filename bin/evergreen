@@ -13,7 +13,6 @@ if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
 from evergreen.evidence import load_evidence  # noqa: E402
-from evergreen.hosts import doctor, install, uninstall  # noqa: E402
 from evergreen.impact import impact  # noqa: E402
 
 
@@ -67,14 +66,17 @@ def parser():
 
 
 def run_install(args):
+    from evergreen.hosts import install
     return _print_operation(install(Path.home(), PLUGIN_ROOT, args.host, args.dry_run), 2)
 
 
 def run_uninstall(args):
+    from evergreen.hosts import uninstall
     return _print_operation(uninstall(Path.home(), args.host, args.dry_run), 2)
 
 
 def run_doctor(args):
+    from evergreen.hosts import doctor
     result = doctor(Path.home(), Path(args.repo).expanduser(), args.host)
     code = _print_operation(result, 1)
     if result.ok:

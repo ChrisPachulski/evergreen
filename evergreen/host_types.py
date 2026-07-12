@@ -96,6 +96,7 @@ class MutationKind(str, Enum):
 class JournalPhase(str, Enum):
     PREPARED = "prepared"
     PUBLISHED = "published"
+    RECOVERING = "recovering"
 
 
 @dataclass(frozen=True)
