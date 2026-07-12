@@ -2,6 +2,8 @@
 
 import json
 import math
+import os
+import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
@@ -18,6 +20,20 @@ FIELDS = {
     "old", "current", "confidence", "metadata",
 }
 REQUIRED_FIELDS = FIELDS - {"metadata"}
+VERDICT_FIELDS = {"verdict", "finding", "drift", "status"}
+
+
+class _DuplicateKey(ValueError):
+    pass
+
+
+def _unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise _DuplicateKey(key)
+        value[key] = item
+    return value
 
 
 @dataclass(frozen=True)
@@ -49,8 +65,20 @@ def _path(value, repo):
     if ("\\" in value or "\0" in value or pure.is_absolute() or value != pure.as_posix() or
             any(part in ("", ".", "..") for part in pure.parts)):
         raise ValueError("path must be normalized and repository-relative")
-    root = repo.resolve()
-    resolved = (root / value).resolve(strict=False)
+    try:
+        root = repo.resolve()
+        current = root
+        for part in pure.parts:
+            current /= part
+            try:
+                current.lstat()
+            except FileNotFoundError:
+                break
+            if current.is_symlink():
+                current.resolve(strict=True)
+        resolved = (root / value).resolve(strict=False)
+    except (OSError, RuntimeError):
+        raise ValueError("path cannot be resolved") from None
     if resolved != root and root not in resolved.parents:
         raise ValueError("path escapes repository")
     return value
@@ -94,6 +122,8 @@ def _freeze(value):
 
 
 def _record(value, repo):
+    if isinstance(value, dict) and VERDICT_FIELDS & set(value):
+        raise ValueError("candidate-only evidence cannot contain verdict fields")
     if (not isinstance(value, dict) or not REQUIRED_FIELDS <= set(value) or
             not set(value) <= FIELDS):
         raise ValueError("record must be an object with exactly the version 1 fields")
@@ -132,13 +162,24 @@ def load_evidence(path: Path, repo: Path) -> tuple[list[Evidence], list[str]]:
     """Load valid passive facts, returning warnings for every rejected input."""
     path, repo = Path(path), Path(repo)
     try:
-        if path.stat().st_size > MAX_FILE_BYTES:
+        if not stat.S_ISREG(path.lstat().st_mode):
+            return [], ["evidence input must be a regular file"]
+        flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            os.close(descriptor)
+            return [], ["evidence input must be a regular file"]
+        if info.st_size > MAX_FILE_BYTES:
+            os.close(descriptor)
             return [], [f"evidence file too large (maximum {MAX_FILE_BYTES} bytes)"]
-        with path.open("rb") as source:
+        with os.fdopen(descriptor, "rb") as source:
             payload = source.read(MAX_FILE_BYTES + 1)
         if len(payload) > MAX_FILE_BYTES:
             return [], [f"evidence file too large (maximum {MAX_FILE_BYTES} bytes)"]
-        values = json.loads(payload)
+        values = json.loads(payload, object_pairs_hook=_unique_object)
+    except _DuplicateKey as error:
+        return [], [f"evidence file contains duplicate JSON key: {error}"]
     except (OSError, UnicodeError) as error:
         return [], [f"could not read evidence file: {error}"]
     except (json.JSONDecodeError, RecursionError):

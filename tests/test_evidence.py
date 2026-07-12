@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -82,6 +83,29 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(len(evidence), 1)
         self.assertTrue(any("record 1" in warning for warning in warnings))
 
+    def test_rejects_duplicate_json_keys_at_record_and_metadata_depths(self):
+        from evergreen.evidence import load_evidence
+
+        path = Path(self.temporary.name) / "evidence.json"
+        base = json.dumps(self.record())
+        duplicate_record = base.replace(
+            '"provider": "drift-shape"',
+            '"provider": "first", "provider": "second"',
+        )
+        path.write_text(f"[{duplicate_record}]")
+        evidence, warnings = load_evidence(path, self.repo)
+        self.assertEqual(evidence, [])
+        self.assertEqual(warnings, ["evidence file contains duplicate JSON key: provider"])
+
+        duplicate_metadata = base.replace(
+            '"metadata": {"source": "ast", "tags": ["public"]}',
+            '"metadata": {"source": "ast", "source": "tokens"}',
+        )
+        path.write_text(f"[{duplicate_metadata}]")
+        evidence, warnings = load_evidence(path, self.repo)
+        self.assertEqual(evidence, [])
+        self.assertEqual(warnings, ["evidence file contains duplicate JSON key: source"])
+
     def test_rejects_traversal_absolute_and_symlink_escape(self):
         outside = Path(self.temporary.name) / "outside"
         outside.mkdir()
@@ -95,6 +119,14 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(evidence, [])
         self.assertEqual(len(warnings), 3)
         self.assertTrue(all("path" in warning for warning in warnings))
+
+    def test_rejects_symlink_loops_as_invalid_records(self):
+        (self.repo / "loop").symlink_to("loop")
+        evidence, warnings = self.load([self.record(path="loop/file.py")])
+
+        self.assertEqual(evidence, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("path cannot be resolved", warnings[0])
 
     def test_rejects_invalid_lines_spans_field_types_and_confidence(self):
         invalid = [
@@ -152,6 +184,71 @@ class EvidenceTests(unittest.TestCase):
         evidence, warnings = self.load([self.record(metadata=["not", "an", "object"])])
         self.assertEqual(evidence, [])
         self.assertTrue(any("metadata" in warning for warning in warnings))
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO test requires POSIX")
+    def test_rejects_non_regular_evidence_files_before_reading(self):
+        from evergreen.evidence import load_evidence
+
+        fifo = Path(self.temporary.name) / "evidence.fifo"
+        os.mkfifo(fifo)
+        evidence, warnings = load_evidence(fifo, self.repo)
+
+        self.assertEqual(evidence, [])
+        self.assertEqual(warnings, ["evidence input must be a regular file"])
+
+        if Path("/dev/null").exists():
+            evidence, warnings = load_evidence(Path("/dev/null"), self.repo)
+            self.assertEqual(evidence, [])
+            self.assertEqual(warnings, ["evidence input must be a regular file"])
+
+        regular = Path(self.temporary.name) / "regular.json"
+        regular.write_text("[]")
+        linked = Path(self.temporary.name) / "linked.json"
+        linked.symlink_to(regular)
+        evidence, warnings = load_evidence(linked, self.repo)
+        self.assertEqual(evidence, [])
+        self.assertEqual(warnings, ["evidence input must be a regular file"])
+
+    def test_utf8_byte_limits_and_schema_annotations_match(self):
+        schema = json.loads(
+            (Path(__file__).parents[1] / "schemas/evidence-provider-v1.schema.json").read_text()
+        )
+        properties = schema["items"]["properties"]
+        expected = {
+            "provider": 256, "version": 256, "type": 256, "path": 4096,
+            "symbol": 8192, "old": 8192, "current": 8192,
+        }
+        for name, byte_limit in expected.items():
+            with self.subTest(name=name):
+                self.assertEqual(properties[name]["x-maxUtf8Bytes"], byte_limit)
+                self.assertEqual(properties[name]["maxLength"], byte_limit)
+
+        evidence, warnings = self.load([self.record(provider="a" * 256)])
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(warnings, [])
+        evidence, warnings = self.load([self.record(provider="é" * 256)])
+        self.assertEqual(evidence, [])
+        self.assertTrue(any("provider" in warning for warning in warnings))
+
+    def test_verdict_fields_are_absent_rejected_and_schema_is_candidate_only(self):
+        from evergreen.evidence import Evidence
+
+        self.assertFalse(any(name in Evidence.__dataclass_fields__ for name in (
+            "verdict", "finding", "drift", "status",
+        )))
+        for field in ("verdict", "finding", "drift", "status"):
+            with self.subTest(field=field):
+                evidence, warnings = self.load([self.record(**{field: "inconsistent"})])
+                self.assertEqual(evidence, [])
+                self.assertTrue(any("candidate-only" in warning for warning in warnings))
+
+        schema = json.loads(
+            (Path(__file__).parents[1] / "schemas/evidence-provider-v1.schema.json").read_text()
+        )
+        self.assertIn("candidate-only", schema["description"])
+        self.assertTrue({"verdict", "finding", "drift", "status"}.isdisjoint(
+            schema["items"]["properties"]
+        ))
 
     def test_schema_describes_the_same_strict_record_contract(self):
         schema = json.loads((Path(__file__).parents[1] / "schemas/evidence-provider-v1.schema.json").read_text())
