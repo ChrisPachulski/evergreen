@@ -145,5 +145,5 @@ EVAL_MODEL_STRONG=claude-opus-4-8 EVAL_MODEL_CHEAP=claude-sonnet-5 \
 python3 eval/bench/run_bench.py --selftest # prove the scoring math, no API calls
 ```
 
-The run prints precision/recall/F1 at both splits. Current measured numbers and the peer
-comparison are in [Results](#results--how-it-compares) above.
+The run prints precision/recall/F1 at both splits. Measured Evergreen numbers appear in
+[Results](#results--how-it-compares) only after the declared publication gate passes.

@@ -5,6 +5,19 @@ on:
 permissions:
   contents: read
 jobs:
+  candidate-python310:
+    name: ubuntu-latest / Python 3.10 candidate query
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.10"
+      - name: Candidate-query compatibility
+        run: |
+          python3 -m unittest tests.test_evidence tests.test_impact
+          python3 bin/evergreen impact --json --repo . README.md
   test:
     name: ${{ matrix.os }} / Python 3.11
     runs-on: ${{ matrix.os }}

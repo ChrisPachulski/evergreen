@@ -570,6 +570,7 @@ workflow="$(cat "$ROOT/.github/workflows/test.yml")"
 for token in \
   "ubuntu-latest" \
   "macos-latest" \
+  "python-version: \"3.10\"" \
   "python3 -m unittest discover" \
   "bash tests/hooks.sh" \
   "bash tests/action.sh" \
