@@ -1,6 +1,6 @@
 ---
 name: evergreen
-description: Keeps documentation honest with the code it describes. A ride-along reflex that, whenever code changes, asks "does any doc now lie?" and proves the answer against the code before flagging. Use when editing code that has docs, writing/reviewing docs, on "is this doc still right", "doc drift", "stale docs", "keep docs fresh", or before committing changes that touch documented surfaces.
+description: Keeps documentation and shipped release identity honest with the code they describe. A ride-along reflex that proves drift before flagging it. Use when editing documented code, writing/reviewing docs, checking doc drift, or doing release, version-bump, archive, TestFlight, App Store, or ship work involving marketing versions and build numbers.
 ---
 
 # Evergreen
@@ -52,6 +52,44 @@ mechanical checks before semantic reasoning. Cite the code every time.
    miss") → flag `behavior-asserted — verify manually`; never pass or guess.
 
 If rungs 1–3 are clean, most "stale doc" worry is answered. Spend attention on rung 4.
+
+## Release identity reflex
+
+Treat a shipped app version as executable documentation: it tells users how far the product has
+moved. On release, archive, upload, TestFlight/App Store, or version-bump work, inspect it even when
+no prose doc mentions the number.
+
+1. **Find the source of truth.** Prefer the checked-in manifest. For Xcode/XcodeGen this is usually
+   `MARKETING_VERSION` (`CFBundleShortVersionString`) plus `CURRENT_PROJECT_VERSION`
+   (`CFBundleVersion`). Never edit a generated `.xcodeproj` when a generator manifest owns it.
+2. **Keep the two counters distinct.** The marketing version is a SemVer product milestone; the
+   project/build version is a monotonically increasing integer for each uploaded binary. Rebuilds
+   and ordinary commits do not inherently change either.
+   - Another candidate for the same unreleased product version: keep the marketing version and
+     increment only the build (`0.9.0 (72)` → `0.9.0 (73)`).
+   - A declared patch-only release: increment patch and build (`0.9.0 (72)` → `0.9.1 (73)`).
+   - A backward-compatible feature milestone: increment minor, reset patch, and increment build.
+   - A breaking or evidenced stable/public milestone: increment major according to repository
+     policy; do not equate “uploaded” with “1.0”.
+3. **Derive the next build safely.** Use `max(local build, latest published build for every related
+   platform) + 1`. If App Store Connect/TestFlight cannot be queried, use the local build + 1 and
+   state `external build state unverified`; never claim the number is upload-safe.
+4. **Audit milestone drift.** Compare the current product with the commit where the marketing
+   version last changed: elapsed releases, feature/fix scope, architecture, supported platforms,
+   and test surface. Do not bump from commit count alone. A material milestone judgment goes
+   through the trial harness before calling the version stale.
+5. **Keep related targets aligned.** A Universal Purchase app and its extensions use one marketing
+   version and, unless the repository explicitly documents otherwise, one build number.
+6. **Verify the resolved result.** Regenerate from the source manifest, inspect build settings for
+   every shippable target, run the repository's release preflight, and scan living docs/release
+   notes for stale version claims. Do not upload, push, or mutate a portal without explicit
+   authority from the user.
+
+Report proven drift as `release_identity_drift`. Example: a product that remained `0.1.0` while
+moving from an initial shell through eight evidenced pre-1.0 milestone waves may warrant
+`0.9.0`; its next binary after build `71` is `0.9.0 (72)`. This is a worked application of the
+rules, not a universal eight-waves formula. Reserve `1.0.0` for the repository's evidenced stable
+or public-release gate.
 
 ## Two depths: flag vs winnow
 
@@ -118,10 +156,10 @@ own, once.)
 
 ## Taxonomy
 
-Category: `in_code_not_docs · in_docs_not_code · name_mismatch · UNVERIFIABLE` (another system —
-drop, don't guess). Prose/comment rot lenses: `contradiction · stale-reference · signature-mismatch
-· outdated-example · resolved-marker · orphaned-comment`. Each finding carries a severity and a
-fix-or-flag call.
+Category: `in_code_not_docs · in_docs_not_code · name_mismatch · release_identity_drift ·
+UNVERIFIABLE` (another system — drop, don't guess). Prose/comment rot lenses: `contradiction ·
+stale-reference · signature-mismatch · outdated-example · resolved-marker · orphaned-comment`.
+Each finding carries a severity and a fix-or-flag call.
 
 ## Rules
 

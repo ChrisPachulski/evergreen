@@ -1,7 +1,7 @@
 {
   "name": "evergreen",
-  "version": "0.3.1",
-  "description": "Keeps documentation honest with the code it describes. Three axes, one creed (prove it or drop it): the reflex asks 'does any doc still match the code?' and proves it before flagging; winnow certifies every claim in a deep pass; flourish crafts ugly-but-true docs to a gold standard then verifies them; cultivate keeps the repo clear of slop and leaked-local files.",
+  "version": "0.3.2",
+  "description": "Keeps documentation and shipped release identity honest with the code they describe. The reflex proves doc drift and audits marketing-version/build-number truth before flagging; winnow certifies every claim, flourish crafts and verifies docs, and cultivate keeps the repo clear of slop and leaked-local files.",
   "author": { "name": "Chris Pachulski", "url": "https://github.com/ChrisPachulski" },
   "homepage": "https://github.com/ChrisPachulski/evergreen",
   "repository": "https://github.com/ChrisPachulski/evergreen",

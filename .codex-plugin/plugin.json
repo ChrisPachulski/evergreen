@@ -1,0 +1,26 @@
+{
+  "name": "evergreen",
+  "version": "0.3.2",
+  "description": "Keeps documentation and shipped release identity honest with current code.",
+  "author": {
+    "name": "Chris Pachulski",
+    "url": "https://github.com/ChrisPachulski"
+  },
+  "homepage": "https://github.com/ChrisPachulski/evergreen",
+  "repository": "https://github.com/ChrisPachulski/evergreen",
+  "license": "MIT",
+  "keywords": ["documentation", "drift", "release-versioning", "ai-agent-skill"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Evergreen",
+    "shortDescription": "Keep docs and release versions honest",
+    "longDescription": "Proves documentation drift and audits marketing-version/build-number identity against the product that ships.",
+    "developerName": "Chris Pachulski",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/ChrisPachulski/evergreen",
+    "defaultPrompt": [
+      "Check whether my docs and release version still match the code."
+    ]
+  }
+}

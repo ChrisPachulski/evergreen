@@ -14,6 +14,23 @@ not the whole tree. Walk the rungs in order per claim; cheap mechanical checks b
 4. **Semantic drift** (strict only) — does the prose still describe current behavior? A claim the
    code can't settle → `behavior-asserted — verify manually`; never pass or guess.
 
+Release identity is a living claim. On release/version/TestFlight/App Store work:
+- Find the checked-in source of truth; for Xcode/XcodeGen, distinguish `MARKETING_VERSION`
+  (`CFBundleShortVersionString`) from monotonically increasing `CURRENT_PROJECT_VERSION`
+  (`CFBundleVersion`). Never patch a generated project when a manifest owns it.
+- Ordinary commits/rebuilds change neither counter. Same-version candidate → build only
+  (`0.9.0 (72)` → `0.9.0 (73)`); declared patch-only release → patch + build
+  (`0.9.0 (72)` → `0.9.1 (73)`); feature milestone → minor + build.
+- Audit product milestones since the marketing version last changed. Do not decide from commit
+  count alone; put the milestone judgment on trial. Proven staleness is `release_identity_drift`.
+- Next build = max(local, every related platform's published build) + 1. Without portal evidence,
+  use local + 1, say `external build state unverified`, and never call it upload-safe.
+- Keep related Universal Purchase app/extension targets aligned, regenerate, inspect every target's
+  resolved settings, and run release preflight. Never upload, push, or mutate a portal without
+  explicit authority.
+- Worked behavior: eight evidenced pre-1.0 milestone waves can justify `0.1.0 (71)` →
+  `0.9.0 (72)`; this is evidence-guided, not a fixed arithmetic formula.
+
 Rules:
 - **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. Every
   judgment-call verdict in the family — a rung-3/4 drift flag, cultivate's delete/block, flourish's

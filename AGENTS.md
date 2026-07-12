@@ -25,6 +25,34 @@ one). Cheap mechanical checks before prose reasoning. Cite the code.
    you can't settle by reading code (ordering, timing, "returns empty on miss") → flag
    `behavior-asserted — verify manually`; don't pass or guess.
 
+## Release identity
+
+Treat shipped version metadata as executable documentation. On release, archive, TestFlight,
+App Store, ship, or version-bump work:
+
+1. Find the checked-in source of truth. In Xcode/XcodeGen projects, keep `MARKETING_VERSION`
+   (`CFBundleShortVersionString`) separate from `CURRENT_PROJECT_VERSION` (`CFBundleVersion`), and
+   never edit a generated project when a manifest owns it.
+2. Use the marketing version for SemVer product milestones and the project version as a
+   monotonically increasing binary build number. Normal commits and rebuilds change neither.
+   Another candidate for the same product version increments only build (`0.9.0 (72)` →
+   `0.9.0 (73)`). A declared patch-only release increments patch and build (`0.9.0 (72)` →
+   `0.9.1 (73)`). A backward-compatible feature milestone increments minor and build; a breaking
+   or evidenced stable/public milestone follows repository major-version policy.
+3. Compute the next build as max(local build, published builds for every related platform) + 1.
+   If portal state is unavailable, use local + 1, state `external build state unverified`, and
+   never claim the number is upload-safe.
+4. Audit milestone drift from the commit where the marketing version last changed. Weigh product,
+   platform, architecture, and test-surface change—not commit count alone—and put the judgment on
+   trial. Report proven staleness as `release_identity_drift`.
+5. Keep related Universal Purchase app and extension targets aligned unless the repository
+   explicitly documents another policy. Regenerate, inspect every target's resolved settings, and
+   run release preflight. Never upload, push, or mutate a portal without explicit authority.
+
+Worked behavior: eight evidenced pre-1.0 milestone waves can justify `0.1.0 (71)` →
+`0.9.0 (72)`. This is evidence-guided, not a fixed eight-waves formula; reserve `1.0.0` for the
+repository's evidenced stable/public-release gate.
+
 ## Two depths
 
 - **flag** (default) — report the drift you can cite, every turn.
@@ -57,8 +85,9 @@ Point at the line. One-line read of what changed, one line per finding, one-line
 docs on a trailing `left alone:` line, never as a finding.
 
 Per finding: `[high|med|low] category  file:line — what's wrong (cite the code) → fix | flag`
-Categories: `in_code_not_docs · in_docs_not_code · name_mismatch · UNVERIFIABLE` (drop the last). In
-a deep pass also report `unverified` (this code, couldn't settle) — surface, don't drop.
+Categories: `in_code_not_docs · in_docs_not_code · name_mismatch · release_identity_drift ·
+UNVERIFIABLE` (drop the last). In a deep pass also report `unverified` (this code, couldn't settle)
+— surface, don't drop.
 
 Surface still matches → one line: `evergreen: docs still match`.
 

@@ -20,7 +20,7 @@
 
 Your README was true the day you wrote it. Then a flag got renamed, a file moved, a function started returning something else — and the docs stayed exactly where they were. That's how documentation lies: not by being wrong when written, by being *left behind*. The gap opens quietly and nobody sees it until someone pastes a command that no longer exists.
 
-Evergreen is the reflex that closes the gap. The moment your agent touches code, it reads the affected docs back against the source and surfaces only what it can prove has gone false — pointing at the exact line. It rewrites nothing on its own. It just refuses to let the docs and the code disagree in silence.
+Evergreen is the reflex that closes the gap. The moment your agent touches code, it reads the affected docs back against the source and surfaces only what it can prove has gone false — pointing at the exact line. On release work it also treats the shipped marketing version as a living public claim, distinct from the monotonically increasing binary build number. It rewrites nothing on its own. It just refuses to let the docs, release identity, and code disagree in silence.
 
 ## Before / after
 
@@ -49,6 +49,11 @@ When code changes, it stops at the first rung that catches:
 3. A shown snippet drifted from source? → read both, compare
 4. Does the prose still tell the truth? → only then, reason
 ```
+
+For app releases, it also finds the checked-in version source of truth, audits product milestones
+since the marketing version last changed, advances the binary build monotonically, and verifies
+every related app/extension target resolves the same release identity. External store state is
+reported unverified unless it can actually be queried.
 
 One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — so this one never does.
 

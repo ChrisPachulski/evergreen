@@ -43,6 +43,19 @@ for tok in "Prove it or drop it" "Vanished path" "Dead contract" "left alone:" \
     no "digest/skill agree on: $tok"
   fi
 done
+
+# Release identity must reach both Claude's injected digest/full skill and Codex's AGENTS rules.
+for tok in "MARKETING_VERSION" "CURRENT_PROJECT_VERSION" "release_identity_drift" \
+           "external build state unverified" "0.9.0 (72)" "0.9.1 (73)" \
+           "upload-safe" "Universal Purchase" "upload, push"; do
+  if grep -q "$tok" "$ROOT/skills/evergreen/SKILL.md" \
+     && grep -q "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
+     && grep -q "$tok" "$ROOT/AGENTS.md"; then
+    ok "release identity agrees across Claude/Codex: $tok"
+  else
+    no "release identity agrees across Claude/Codex: $tok"
+  fi
+done
 printf 'strict' > "$TMP/.evergreen-mode"
 out="$(bash "$HOOKS/evergreen-activate.sh")"
 has "$out" "all four rungs" "activate: strict includes the full semantic pass"
