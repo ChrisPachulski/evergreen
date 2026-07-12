@@ -1,6 +1,6 @@
 import hashlib
-import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -108,21 +108,71 @@ class ArtifactMetadataTests(unittest.TestCase):
         from eval.bench import artifact
 
         reads = []
+        real_read = os.read
 
-        class RecordingBytesIO(io.BytesIO):
-            def read(self, size=-1):
-                reads.append(size)
-                return super().read(size)
+        def recording_read(descriptor, size):
+            reads.append(size)
+            return real_read(descriptor, size)
 
-        path = mock.MagicMock()
-        path.open.return_value.__enter__.return_value = RecordingBytesIO(b"abcdef")
-        with mock.patch.object(artifact, "HASH_CHUNK_BYTES", 2):
-            digest = artifact.sha256_file(path)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "input"
+            path.write_bytes(b"abcdef")
+            with mock.patch.object(artifact, "HASH_CHUNK_BYTES", 2), \
+                 mock.patch.object(artifact.os, "read", side_effect=recording_read):
+                digest = artifact.sha256_file(path)
 
         self.assertEqual(digest, hashlib.sha256(b"abcdef").hexdigest())
         self.assertTrue(reads)
         self.assertNotIn(-1, reads)
         self.assertLessEqual(max(reads), 2)
+
+    def test_reads_and_hashes_reject_symlinks_and_special_files(self):
+        from eval.bench import artifact
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "target"
+            target.write_bytes(b"payload")
+            link = root / "link"
+            link.symlink_to(target)
+            for operation in (
+                lambda path: artifact.read_bytes(path, 100, label="dataset"),
+                lambda path: artifact.sha256_file(path, 100),
+            ):
+                with self.subTest(operation=operation, kind="symlink"), \
+                     self.assertRaisesRegex(ValueError, "regular file"):
+                    operation(link)
+                if Path("/dev/null").exists():
+                    with self.subTest(operation=operation, kind="device"), \
+                         self.assertRaisesRegex(ValueError, "regular file"):
+                        operation(Path("/dev/null"))
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO is unavailable")
+    def test_fifo_rejection_never_blocks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fifo = Path(directory) / "input.fifo"
+            os.mkfifo(fifo)
+            script = """
+from pathlib import Path
+import sys
+from eval.bench import artifact
+path = Path(sys.argv[2])
+if sys.argv[1] == 'read':
+    artifact.read_bytes(path, 100, timeout=0.1, label='dataset')
+else:
+    artifact.sha256_file(path, 100, deadline=0)
+"""
+            for operation in ("read", "hash"):
+                with self.subTest(operation=operation):
+                    completed = subprocess.run(
+                        [sys.executable, "-c", script, operation, str(fifo)],
+                        cwd=Path(__file__).parent.parent,
+                        capture_output=True,
+                        text=True,
+                        timeout=1,
+                    )
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertIn("regular file", completed.stderr)
 
     def test_bounded_read_enforces_byte_and_time_limits(self):
         from eval.bench import artifact

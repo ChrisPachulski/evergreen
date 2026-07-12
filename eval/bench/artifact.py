@@ -5,9 +5,11 @@ import json
 import math
 import os
 import selectors
+import stat
 import subprocess
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -18,41 +20,74 @@ MAX_UNTRACKED_BYTES = 1024 * 1024 * 1024
 MAX_UNTRACKED_FILES = 100_000
 MAX_UNTRACKED_SECONDS = 30
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
+MAX_DATASET_METADATA_BYTES = 64 * 1024 * 1024
+MAX_SKILL_METADATA_BYTES = 1024 * 1024
+MAX_JUDGE_METADATA_BYTES = 1024 * 1024
+MAX_METADATA_HASH_SECONDS = 30
 VALID_CATEGORIES = {None, "direct-mismatch", "over-promise", "under-promise"}
 
 
-def sha256_file(path, max_bytes=None, deadline=None):
-    """Hash a file without loading it into memory."""
-    digest = hashlib.sha256()
+@contextmanager
+def _regular_descriptor(path, max_bytes, label):
+    path = Path(path)
+    before = os.lstat(path)
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError(f"{label} must be a regular file")
+    if max_bytes is not None and before.st_size > max_bytes:
+        raise ValueError(f"{label} too large")
+    flags = os.O_RDONLY
+    for name in ("O_CLOEXEC", "O_NOFOLLOW", "O_NONBLOCK"):
+        flags |= getattr(os, name, 0)
+    descriptor = os.open(path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_dev != before.st_dev or
+                opened.st_ino != before.st_ino):
+            raise ValueError(f"{label} must be a regular file")
+        if max_bytes is not None and opened.st_size > max_bytes:
+            raise ValueError(f"{label} too large")
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _regular_chunks(path, max_bytes, deadline, label):
     total = 0
-    with path.open("rb") as source:
-        while chunk := source.read(HASH_CHUNK_BYTES):
+    with _regular_descriptor(path, max_bytes, label) as descriptor:
+        while True:
+            if deadline is not None and time.monotonic() > deadline:
+                raise ValueError(f"{label} read exceeded time limit")
+            remaining = HASH_CHUNK_BYTES if max_bytes is None else max_bytes + 1 - total
+            chunk = os.read(descriptor, min(HASH_CHUNK_BYTES, remaining))
+            if not chunk:
+                break
             total += len(chunk)
             if max_bytes is not None and total > max_bytes:
-                raise ValueError(f"file exceeds {max_bytes} bytes")
-            if deadline is not None and time.monotonic() > deadline:
-                raise ValueError("file hashing exceeded time limit")
+                raise ValueError(f"{label} too large")
+            yield chunk
+
+
+def sha256_file(path, max_bytes=None, deadline=None):
+    """Hash a regular file without loading it into memory."""
+    digest = hashlib.sha256()
+    try:
+        for chunk in _regular_chunks(path, max_bytes, deadline, "file"):
             digest.update(chunk)
+    except ValueError as error:
+        if str(error) == "file read exceeded time limit":
+            raise ValueError("file hashing exceeded time limit") from None
+        if str(error) == "file too large" and max_bytes is not None:
+            raise ValueError(f"file exceeds {max_bytes} bytes") from None
+        raise
     return digest.hexdigest()
 
 
 def read_bytes(path, max_bytes, timeout=30, label="artifact"):
     """Read a file with byte and wall-clock ceilings, including growth races."""
-    path = Path(path)
-    if path.stat().st_size > max_bytes:
-        raise ValueError(f"{label} too large")
     deadline = time.monotonic() + timeout
     payload = bytearray()
-    with path.open("rb") as source:
-        while True:
-            if time.monotonic() > deadline:
-                raise ValueError(f"{label} read exceeded time limit")
-            chunk = source.read(min(HASH_CHUNK_BYTES, max_bytes + 1 - len(payload)))
-            if not chunk:
-                break
-            payload.extend(chunk)
-            if len(payload) > max_bytes:
-                raise ValueError(f"{label} too large")
+    for chunk in _regular_chunks(path, max_bytes, deadline, label):
+        payload.extend(chunk)
     return bytes(payload)
 
 
@@ -188,10 +223,17 @@ def artifact_metadata(dataset: Path, repo: Path, settings: dict) -> dict:
     repo = Path(repo)
     skill = repo / "skills" / "evergreen" / "SKILL.md"
     judge = repo / "eval" / "bench" / "run_bench.py"
+    deadline = time.monotonic() + MAX_METADATA_HASH_SECONDS
     return {
-        "dataset": {"path": _display_path(dataset, repo), "sha256": sha256_file(dataset)},
-        "skill": {"path": _display_path(skill, repo), "sha256": sha256_file(skill)},
-        "judge": {"path": _display_path(judge, repo), "sha256": sha256_file(judge)},
+        "dataset": {"path": _display_path(dataset, repo), "sha256": sha256_file(
+            dataset, MAX_DATASET_METADATA_BYTES, deadline
+        )},
+        "skill": {"path": _display_path(skill, repo), "sha256": sha256_file(
+            skill, MAX_SKILL_METADATA_BYTES, deadline
+        )},
+        "judge": {"path": _display_path(judge, repo), "sha256": sha256_file(
+            judge, MAX_JUDGE_METADATA_BYTES, deadline
+        )},
         "git": git_identity(repo),
         "cli_version": _command_output(["claude", "--version"]),
         "settings": _canonical(settings),
