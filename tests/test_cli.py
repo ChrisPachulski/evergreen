@@ -197,6 +197,19 @@ class EvergreenCLITests(unittest.TestCase):
             for prompt in codex_manifest["interface"]["defaultPrompt"]
         ))
 
+    def test_cultivate_frontmatter_description_is_a_parseable_quoted_scalar(self):
+        command = (ROOT / "commands" / "cultivate.md").read_text()
+        description_line = next(
+            line for line in command.splitlines() if line.startswith("description:")
+        )
+
+        encoded = description_line.partition(":")[2].strip()
+        self.assertTrue(encoded.startswith('"') and encoded.endswith('"'))
+        description = json.loads(encoded)
+
+        self.assertIn("Cultivate repo hygiene", description)
+        self.assertIn("never auto, never \"clean\"", description)
+
 
 if __name__ == "__main__":
     unittest.main()

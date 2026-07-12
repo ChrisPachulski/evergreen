@@ -1,5 +1,5 @@
 ---
-description: Cultivate repo hygiene — find what's committed or on disk that shouldn't be: files nothing references, leaked-local files, gitignore gaps, misplaced cross-repo artifacts, the repo's own exposure. Reference-graph first. Proposes untrack/ignore/delete — never auto, never "clean".
+description: "Cultivate repo hygiene — find what's committed or on disk that shouldn't be: files nothing references, leaked-local files, gitignore gaps, misplaced cross-repo artifacts, the repo's own exposure. Reference-graph first. Proposes untrack/ignore/delete — never auto, never \"clean\"."
 ---
 
 Run **cultivate** using the **evergreen skill** — the hygiene axis. Hygiene = what's in the repo
