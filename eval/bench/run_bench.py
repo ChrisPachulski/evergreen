@@ -276,7 +276,8 @@ def judge(pair, models, stages=(), run_test=None):
         blindspot_call(pair, cheap),
         "blindspot",
         lambda value: "missed_angle" in value and
-        (value["missed_angle"] is None or isinstance(value["missed_angle"], str)),
+        (value["missed_angle"] is None or
+         (isinstance(value["missed_angle"], str) and bool(value["missed_angle"].strip()))),
     )                                                                 # 4. blind-spot (cheap)
     trail["blindspot"] = blindspot_result
     if bs is None:
@@ -325,17 +326,27 @@ def score(rows):
     fp = sum(r["label"] == "consistent" and verdict(r) == "inconsistent" for r in core)
     fn = sum(r["label"] == "inconsistent" and verdict(r) == "consistent" for r in core)
     tn = sum(r["label"] == "consistent" and verdict(r) == "consistent" for r in core)
-    n = len(core) or 1
-    precision = tp / (tp + fp) if (tp + fp) else 1.0
-    recall = tp / (tp + fn) if (tp + fn) else 1.0
+    metrics_available = any(r["label"] == "inconsistent" for r in core) and \
+        any(r["label"] == "consistent" for r in core)
+    if metrics_available:
+        n = len(core)
+        precision = tp / (tp + fp) if (tp + fp) else 1.0
+        recall = tp / (tp + fn) if (tp + fn) else 1.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+        specificity = tn / (tn + fp)
+        accuracy = (tp + tn) / n
+        flag_rate = (tp + fp) / n
+    else:
+        precision = recall = f1 = specificity = accuracy = flag_rate = None
     return {
         "tp": tp, "fp": fp, "fn": fn, "tn": tn,
+        "metrics_available": metrics_available,
         "precision": precision,
         "recall": recall,
-        "f1": 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0,
-        "specificity": tn / (tn + fp) if (tn + fp) else 1.0,
-        "accuracy": (tp + tn) / n,
-        "flag_rate": (tp + fp) / n,
+        "f1": f1,
+        "specificity": specificity,
+        "accuracy": accuracy,
+        "flag_rate": flag_rate,
         "attempted": attempted,
         "completed": len(completed_rows),
         "abstained": attempted - len(completed_rows),
@@ -357,35 +368,44 @@ def split_metrics(rows, pos_frac, resamples=1000, seed=0):
              (r.get("final_status") == "complete" and r.get("final_verdict") in VERDICTS))]
     pos = [r for r in core if r["label"] == "inconsistent"]
     neg = [r for r in core if r["label"] == "consistent"]
+    if not pos or not neg:
+        return {"metrics_available": False, "n_pos": len(pos), "n_neg": len(neg),
+                "resamples": 0, "with_replacement": False,
+                **dict.fromkeys(("precision", "recall", "f1", "specificity", "flag_rate"))}
     n_neg = round(len(pos) * (1 - pos_frac) / pos_frac)
     with_repl = n_neg > len(neg)  # tiny sets can't seat 9x consistent pairs; bootstrap instead
     rng = random.Random(seed)
     samples = [score(pos + (rng.choices(neg, k=n_neg) if with_repl
                             else rng.sample(neg, n_neg))) for _ in range(resamples)]
     med = lambda k: statistics.median(s[k] for s in samples)
-    return {"n_pos": len(pos), "n_neg": n_neg, "resamples": resamples, "with_replacement": with_repl,
+    return {"metrics_available": True, "n_pos": len(pos), "n_neg": n_neg,
+            "resamples": resamples, "with_replacement": with_repl,
             **{k: med(k) for k in ("precision", "recall", "f1", "specificity", "flag_rate")}}
 
 
 def _report_language(rows, label):
     m = score(rows)
     n = m["tp"] + m["fp"] + m["fn"] + m["tn"]
-    nat = split_metrics(rows, 0.10)
-    bal = split_metrics(rows, 0.50)
     print(f"\ncompletion: {m['completed']}/{m['attempted']} completed, {m['abstained']} abstained"
           f" ({m['completion_rate']:.1%})")
     print(f"\ncore set (consistent + direct-mismatch + over-promise), n={n}{label}")
-    print(f"  NATURAL 10/90 split (headline; {nat['n_pos']} inconsistent + {nat['n_neg']} consistent"
-          f"{', consistent bootstrapped WITH replacement' if nat['with_replacement'] else ''},"
-          f" medians over {nat['resamples']} resamples):")
-    print(f"    precision {nat['precision']:.2f}  recall {nat['recall']:.2f}  F1 {nat['f1']:.2f}"
-          f"  specificity {nat['specificity']:.2f}  flag-rate {nat['flag_rate']:.2f}")
-    print(f"  balanced 50/50 split ({bal['n_pos']}+{bal['n_neg']}, medians over {bal['resamples']} resamples):")
-    print(f"    precision {bal['precision']:.2f}  recall {bal['recall']:.2f}  F1 {bal['f1']:.2f}"
-          f"  specificity {bal['specificity']:.2f}  flag-rate {bal['flag_rate']:.2f}")
-    print(f"  raw full set: precision {m['precision']:.2f}  recall {m['recall']:.2f}"
-          f"  accuracy {m['accuracy']:.2f}  flag-rate {m['flag_rate']:.2f}"
-          f"  |  TP {m['tp']}  FP {m['fp']}  FN {m['fn']}  TN {m['tn']}")
+    if m["metrics_available"]:
+        nat = split_metrics(rows, 0.10)
+        bal = split_metrics(rows, 0.50)
+        print(f"  NATURAL 10/90 split (headline; {nat['n_pos']} inconsistent + {nat['n_neg']} consistent"
+              f"{', consistent bootstrapped WITH replacement' if nat['with_replacement'] else ''},"
+              f" medians over {nat['resamples']} resamples):")
+        print(f"    precision {nat['precision']:.2f}  recall {nat['recall']:.2f}  F1 {nat['f1']:.2f}"
+              f"  specificity {nat['specificity']:.2f}  flag-rate {nat['flag_rate']:.2f}")
+        print(f"  balanced 50/50 split ({bal['n_pos']}+{bal['n_neg']}, medians over {bal['resamples']} resamples):")
+        print(f"    precision {bal['precision']:.2f}  recall {bal['recall']:.2f}  F1 {bal['f1']:.2f}"
+              f"  specificity {bal['specificity']:.2f}  flag-rate {bal['flag_rate']:.2f}")
+        print(f"  raw full set: precision {m['precision']:.2f}  recall {m['recall']:.2f}"
+              f"  accuracy {m['accuracy']:.2f}  flag-rate {m['flag_rate']:.2f}"
+              f"  |  TP {m['tp']}  FP {m['fp']}  FN {m['fn']}  TN {m['tn']}")
+    else:
+        print("  metrics unavailable: completed core rows must include both label classes")
+        print(f"  raw counts: TP {m['tp']}  FP {m['fp']}  FN {m['fn']}  TN {m['tn']}")
     print(f"under-promise (informational by design, not scored as drift): "
           f"flagged {m['under_flagged']}/{m['under_completed']} completed; completion "
           f"{m['under_completed']}/{m['under_attempted']}, {m['under_abstained']} abstained "
@@ -416,8 +436,9 @@ def selftest():
     assert m["precision"] == 1.0 and m["recall"] == 0.5, m
     assert abs(m["f1"] - 2/3) < 1e-9 and m["specificity"] == 1.0, m
     assert m["under_flagged"] == 1 and m["under_total"] == 1, m
-    # No-false-positive edge: no flags at all → precision defined as 1.0.
-    assert score([{"label": "consistent", "category": None, "verdict": "consistent"}])["precision"] == 1.0
+    # A one-class slice cannot support confusion-matrix rates.
+    sparse = score([{"label": "consistent", "category": None, "verdict": "consistent"}])
+    assert not sparse["metrics_available"] and sparse["precision"] is None, sparse
     # Natural-split resampling: 2 flagged positives + 18 clean negatives at 10/90 is exact.
     clean = [{"label": "inconsistent", "category": None, "verdict": "inconsistent"}] * 2 + \
             [{"label": "consistent", "category": None, "verdict": "consistent"}] * 18

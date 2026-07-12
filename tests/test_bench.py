@@ -128,8 +128,14 @@ class JudgeAbstentionTests(unittest.TestCase):
             self.assertEqual(result["final_status"], "abstain")
             self.assertEqual(result["stages"]["challenge"]["status"], "abstain")
 
-    def test_missing_or_non_string_blindspot_abstains(self):
-        for blindspot_value in ({}, {"missed_angle": 42}, {"missed_angle": False}):
+    def test_missing_or_non_meaningful_blindspot_abstains(self):
+        for blindspot_value in (
+            {},
+            {"missed_angle": 42},
+            {"missed_angle": False},
+            {"missed_angle": ""},
+            {"missed_angle": "  \t"},
+        ):
             with self.subTest(blindspot=blindspot_value), \
                  mock.patch.object(run_bench, "snap_call", return_value=ok(self.consistent)), \
                  mock.patch.object(
@@ -254,6 +260,53 @@ class ScoringTests(unittest.TestCase):
         self.assertIn("language=python", text)
         self.assertEqual(text.count("core set"), 2)
         self.assertNotIn("core set (consistent + direct-mismatch + over-promise), n=4", text)
+
+    def test_class_emptied_by_abstention_returns_and_prints_metrics_unavailable(self):
+        for completed_label, completed_verdict in (
+            ("consistent", "consistent"),
+            ("inconsistent", "inconsistent"),
+        ):
+            other_label = "inconsistent" if completed_label == "consistent" else "consistent"
+            rows = [
+                {"language": "python", "label": completed_label, "category": None,
+                 "final_status": "complete", "final_verdict": completed_verdict},
+                {"language": "python", "label": other_label, "category": None,
+                 "final_status": "abstain", "final_verdict": None},
+            ]
+            with self.subTest(completed_label=completed_label):
+                result = run_bench.score(rows)
+                output = StringIO()
+                with redirect_stdout(output):
+                    run_bench.report(rows)
+
+                self.assertFalse(result["metrics_available"])
+                self.assertIsNone(result["precision"])
+                self.assertEqual(
+                    (result["attempted"], result["completed"], result["abstained"]),
+                    (2, 1, 1),
+                )
+                self.assertIn("metrics unavailable", output.getvalue().lower())
+                self.assertIn("1/2 completed", output.getvalue())
+
+    def test_all_core_abstentions_retain_coverage_without_perfect_metrics(self):
+        rows = [
+            {"language": "python", "label": "consistent", "category": None,
+             "final_status": "abstain", "final_verdict": None},
+            {"language": "python", "label": "inconsistent", "category": "direct-mismatch",
+             "final_status": "abstain", "final_verdict": None},
+        ]
+
+        result = run_bench.score(rows)
+        output = StringIO()
+        with redirect_stdout(output):
+            run_bench.report(rows)
+
+        self.assertFalse(result["metrics_available"])
+        for name in ("precision", "recall", "f1", "specificity", "accuracy", "flag_rate"):
+            self.assertIsNone(result[name])
+        self.assertEqual((result["attempted"], result["completed"], result["abstained"]), (2, 0, 2))
+        self.assertIn("0/2 completed", output.getvalue())
+        self.assertIn("metrics unavailable", output.getvalue().lower())
 
     def test_direct_and_rescored_rows_have_identical_scores(self):
         transcript = [
