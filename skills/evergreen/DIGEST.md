@@ -34,14 +34,15 @@ CI trust contract:
 
 Release identity is a living claim for packages, CLIs, apps, and deployed documentation.
 Release identity spans package manifests, registry versions, and version-reporting CLI output.
-Audit badges, installed-command examples, generated API docs, and deployed docs labels as linked release claims.
+Audit version-bearing badges, version-reporting installed-command examples, generated API version labels or headers, and deployed docs version labels as linked release claims.
+Interpret each claim's meaning: current source and latest published release may legitimately differ.
 Keep independently versioned packages and platforms as independent release streams unless repository policy explicitly couples them.
 Without direct registry, store, or deployment evidence, report external release state unverified.
 Never publish, upload, push, deploy, or mutate a portal or registry without explicit user authority.
 
-- Find every stream's checked-in manifest, reconcile its CLI and living/generated doc claims, and
-  regenerate owned output. A local mismatch can prove `release_identity_drift`; a tag or local
-  manifest cannot prove registry/store/deployment state.
+- Find every stream's checked-in manifest, classify version-bearing claims as current-source or
+  latest-published, and compare each with the source that owns that meaning. A mismatch proves
+  `release_identity_drift` only within one meaning; local evidence cannot prove external state.
 - On release/version/TestFlight/App Store work, preserve the Apple-specific rules:
 - Find the checked-in source of truth; for Xcode/XcodeGen, distinguish `MARKETING_VERSION`
   (`CFBundleShortVersionString`) from monotonically increasing `CURRENT_PROJECT_VERSION`

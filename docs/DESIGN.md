@@ -81,16 +81,17 @@ bypass. Semantic truth findings and CI drift findings do not use this blocking p
 ## Release identity boundary
 
 Release identity spans package manifests, registry versions, and version-reporting CLI output.
-Audit badges, installed-command examples, generated API docs, and deployed docs labels as linked release claims.
+Audit version-bearing badges, version-reporting installed-command examples, generated API version labels or headers, and deployed docs version labels as linked release claims.
+Interpret each claim's meaning: current source and latest published release may legitimately differ.
 Keep independently versioned packages and platforms as independent release streams unless repository policy explicitly couples them.
 Without direct registry, store, or deployment evidence, report external release state unverified.
 Never publish, upload, push, deploy, or mutate a portal or registry without explicit user authority.
 
-The checked-in manifest owns a release stream unless the repository declares another source.
-Version-reporting code and living documentation are local claims that can be proved from the tree.
-Registry/store versions and deployed documentation labels are external facts: a local manifest,
-tag, badge, or release note cannot certify them. Generated API documentation is reconciled through
-its generator or source, not silently hand-edited.
+The checked-in manifest owns current-source identity unless the repository declares another source.
+A version-bearing surface must also declare what it means. Compare current-source claims with the
+manifest and latest-published claims with direct registry/store/deployment evidence; do not call
+their expected difference drift. Generated API documentation is reconciled through its generator
+or source, not silently hand-edited. A local tag, badge, or release note cannot certify public state.
 
 Monorepos need an explicit coupling rule. Related deliverables in one stream align; independently
 published packages do not receive synchronized bumps merely because they share a repository. Apple

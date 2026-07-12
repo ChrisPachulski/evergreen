@@ -132,7 +132,8 @@ done
 # Package, registry, CLI, and deployed-doc release claims share one cross-host contract.
 for tok in \
   "Release identity spans package manifests, registry versions, and version-reporting CLI output." \
-  "Audit badges, installed-command examples, generated API docs, and deployed docs labels as linked release claims." \
+  "Audit version-bearing badges, version-reporting installed-command examples, generated API version labels or headers, and deployed docs version labels as linked release claims." \
+  "Interpret each claim's meaning: current source and latest published release may legitimately differ." \
   "Keep independently versioned packages and platforms as independent release streams unless repository policy explicitly couples them." \
   "Without direct registry, store, or deployment evidence, report external release state unverified." \
   "Never publish, upload, push, deploy, or mutate a portal or registry without explicit user authority."; do
@@ -149,20 +150,49 @@ done
 
 if ROOT="$ROOT" python3 - <<'PY'
 import os
+import json
+import re
 from pathlib import Path
 
 root = Path(os.environ["ROOT"])
 fixture = (root / "examples/package-release-identity.md").read_text()
-for token in (
-    "package.json", "1.4.0", "1.3.2", "Expected: release_identity_drift",
-    "Expected: external release state unverified", "independent release stream",
-):
-    assert token in fixture
+
+def fenced(heading, language):
+    marker = f"### {heading}\n"
+    assert marker in fixture, f"missing section {heading}"
+    section = fixture.split(marker, 1)[1].split("\n### ", 1)[0]
+    match = re.search(rf"```{language}\n(.*?)\n```", section, re.DOTALL)
+    assert match, f"missing {language} example for {heading}"
+    return match.group(1).strip()
+
+manifest_version = json.loads(fenced("`package.json` — current source", "json"))["version"]
+cli_source = fenced("CLI version source — current source", "javascript")
+cli_output = fenced("CLI version output — current source", "text")
+assert "package.json" in cli_source and cli_output == manifest_version == "1.4.0"
+
+def only_version(text):
+    versions = re.findall(r"\b\d+\.\d+\.\d+\b", text)
+    assert len(versions) == 1, versions
+    return versions[0]
+
+published_claims = {
+    "registry badge": fenced("Registry badge — latest published release", "markdown"),
+    "installed command": fenced("Installed-command example — latest published release", "console"),
+    "deployed docs": fenced("Deployed docs label — latest published release", "text"),
+}
+assert {only_version(value) for value in published_claims.values()} == {"1.3.2"}
+api_header = fenced("Generated API header — current source", "html")
+assert only_version(api_header) == "1.3.2" != manifest_version
+
+assert "registry badge may be correct while `1.4.0` remains unreleased" in fixture
+assert "Expected: release_identity_drift — the generated API header" in fixture
+assert "Expected: external release state unverified" in fixture
+assert "independent release stream" in fixture
 PY
 then
-  ok "package release identity example covers mismatch, uncertainty, and independent streams"
+  ok "package release example parses ownership-aware version claims and compares them"
 else
-  no "package release identity example covers mismatch, uncertainty, and independent streams"
+  no "package release example parses ownership-aware version claims and compares them"
 fi
 
 printf 'strict' > "$TMP/.evergreen-mode"

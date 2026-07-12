@@ -39,15 +39,16 @@ input remains a warning.
 Treat shipped package, CLI, app, and deployed-doc version metadata as executable documentation.
 
 Release identity spans package manifests, registry versions, and version-reporting CLI output.
-Audit badges, installed-command examples, generated API docs, and deployed docs labels as linked release claims.
+Audit version-bearing badges, version-reporting installed-command examples, generated API version labels or headers, and deployed docs version labels as linked release claims.
+Interpret each claim's meaning: current source and latest published release may legitimately differ.
 Keep independently versioned packages and platforms as independent release streams unless repository policy explicitly couples them.
 Without direct registry, store, or deployment evidence, report external release state unverified.
 Never publish, upload, push, deploy, or mutate a portal or registry without explicit user authority.
 
-For each release stream, find the checked-in source manifest, reconcile CLI `--version`, badges,
-installed examples, generated API-doc sources/output, and living docs. Regenerate owned output;
-never hand-edit it. Local contradictions can prove `release_identity_drift`; tags and manifests do
-not prove registry, store, or deployment state.
+For each release stream, find the checked-in source manifest and classify version-bearing claims
+as current-source or latest-published before comparing them with the source that owns that meaning.
+Regenerate owned output; never hand-edit it. A mismatch proves `release_identity_drift` only within
+one meaning, and local evidence does not prove registry, store, or deployment state.
 
 On release, archive, TestFlight, App Store, ship, or version-bump work, preserve these Apple rules:
 

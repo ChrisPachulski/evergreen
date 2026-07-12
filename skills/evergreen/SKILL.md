@@ -74,7 +74,8 @@ Treat every shipped version as executable documentation. Inspect release identit
 binary, app, archive, registry, deployed-docs, or version-bump work even when prose omits it.
 
 Release identity spans package manifests, registry versions, and version-reporting CLI output.
-Audit badges, installed-command examples, generated API docs, and deployed docs labels as linked release claims.
+Audit version-bearing badges, version-reporting installed-command examples, generated API version labels or headers, and deployed docs version labels as linked release claims.
+Interpret each claim's meaning: current source and latest published release may legitimately differ.
 Keep independently versioned packages and platforms as independent release streams unless repository policy explicitly couples them.
 Without direct registry, store, or deployment evidence, report external release state unverified.
 Never publish, upload, push, deploy, or mutate a portal or registry without explicit user authority.
@@ -82,12 +83,13 @@ Never publish, upload, push, deploy, or mutate a portal or registry without expl
 1. **Inventory streams and sources.** Find each stream's checked-in source of truth (`package.json`,
    `pyproject.toml`, `Cargo.toml`, app manifest, or repository-declared equivalent). A lockfile,
    generated project, badge, tag, or release note is not automatically the owner.
-2. **Reconcile linked claims.** For each stream, compare the manifest with `--version` behavior,
-   installed-command examples, static badge labels, generated API-doc sources/output, and living
-   docs. Regenerate owned output from its source; do not hand-edit a generated artifact.
+2. **Reconcile linked claims.** First identify whether each version-bearing surface promises the
+   current source or latest published release, then compare it with the source that owns that
+   meaning. Regenerate owned output from its source; do not hand-edit a generated artifact.
 3. **Separate local proof from external state.** A checked-in mismatch can prove
-   `release_identity_drift`. A registry version, store build, or deployed docs label is evidence
-   only when directly queried for the same stream; otherwise report it unverified.
+   `release_identity_drift` only when the claim and source describe the same meaning. A registry
+   version, store build, or deployed docs label is evidence only when directly queried for the same
+   stream; otherwise report it unverified.
 4. **Apply repository version policy.** Use the stream's declared SemVer/calendar/build policy and
    product evidence, not elapsed commits alone. Put a material milestone judgment on trial.
 
