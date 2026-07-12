@@ -44,6 +44,26 @@ for tok in "Prove it or drop it" "Vanished path" "Dead contract" "left alone:" \
   fi
 done
 
+if ROOT="$ROOT" python3 - <<'PY'
+import os
+from pathlib import Path
+import re
+
+root = Path(os.environ["ROOT"])
+digest = re.findall(r"\b[\w'-]+\b", (root / "skills/evergreen/DIGEST.md").read_text())
+skill = re.findall(r"\b[\w'-]+\b", (root / "skills/evergreen/SKILL.md").read_text())
+ratio = len(digest) / len(skill)
+readme = (root / "README.md").read_text()
+assert 0.30 <= ratio <= 0.40, ratio
+assert "compact digest—currently about one-third of the full skill by words" in readme
+assert "~40-line" not in readme
+PY
+then
+  ok "README describes the measured digest/skill relationship without a line-count claim"
+else
+  no "README describes the measured digest/skill relationship without a line-count claim"
+fi
+
 # Passive providers and source maps may expand review scope, never decide the review.
 for tok in \
   "Provider evidence and source maps nominate candidates, never findings or verdicts." \

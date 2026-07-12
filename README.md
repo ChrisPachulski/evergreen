@@ -149,7 +149,9 @@ links.
 
 It rides along every session: flags drift the moment a change leaves a doc lying, adds `/evergreen:winnow`, and leaves a quiet nudge if you changed code and forgot to look. Intensity is `off | light | strict` (default **light**). The truth reflex never blocks your commit — it flags, you decide. (The hygiene guard is the one exception, and it's the kind you want — see [Commands](#commands).)
 
-What it costs, since you count tokens: session start injects a ~40-line [digest](skills/evergreen/DIGEST.md), not the full ruleset (that loads on demand), and the post-turn nudge fires once per new change — not on every turn while the tree sits dirty.
+What it costs, since you count tokens: session start injects a compact digest—currently about one-third of the full skill by words—not the full ruleset. The [digest](skills/evergreen/DIGEST.md)
+loads at startup, the full skill loads on demand, and the post-turn nudge fires once per new change,
+not on every turn while the tree sits dirty.
 
 ### On every pull request
 
