@@ -12,7 +12,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from eval.bench.artifact import read_bytes
+try:
+    from .artifact import read_bytes
+except ImportError:  # Direct script execution through label_audit.py.
+    from artifact import read_bytes
 
 
 LANGUAGES = ("java", "python", "typescript", "rust", "go")
@@ -529,7 +532,10 @@ def build_overlay(artifact: ArtifactInput, labels: dict[tuple[str, str], tuple[s
 
 
 def rescore_overlay(artifact: ArtifactInput, overlay: dict) -> dict:
-    from eval.bench.metrics import score
+    try:
+        from .metrics import score
+    except ImportError:  # Direct script execution through label_audit.py.
+        from metrics import score
     if overlay.get("source_artifact_sha256") != artifact.sha256:
         raise ValueError("overlay source artifact hash mismatch")
     rows = overlay.get("rows", [])

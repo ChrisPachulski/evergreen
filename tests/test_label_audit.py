@@ -2,6 +2,8 @@ import hashlib
 import json
 import os
 import stat
+import subprocess
+import sys
 import tempfile
 import unittest
 import dataclasses
@@ -314,6 +316,76 @@ class LabelAuditOverlayTests(unittest.TestCase):
         self.assertFalse(set(split.development_repositories) & set(split.holdout_repositories))
         again = core.split_by_repository(combined, list(reversed(coordinator)), split_key=b"s" * 32)
         self.assertEqual(split.development_ids, again.development_ids)
+
+
+class LabelAuditSourceTests(unittest.TestCase):
+    def test_future_derived_rows_preserve_source_provenance(self):
+        from eval.bench import codocbench_to_jsonl
+        source = {
+            "owner": "owner", "project": "project", "file": "src/lib.rs",
+            "commit": "0123456789ab", "function": "f", "language": "rust",
+            "version_data": [
+                {"docstring": "Old docs", "code": "fn f() {}"},
+                {"docstring": "New docs", "code": "fn f() { println!() }"},
+            ],
+        }
+        result = codocbench_to_jsonl.pair(source, 3, "old", "inconsistent")
+        self.assertEqual(result["source"], {
+            "owner": "owner", "project": "project", "file": "src/lib.rs",
+            "commit": "0123456789ab", "doc_version": "old",
+        })
+        self.assertEqual(result["source_status"], "complete")
+
+    def test_source_registry_records_missing_pools_without_fake_hashes(self):
+        registry = json.loads(Path("eval/bench/human-audit/source-pools.json").read_text())
+        by_language = {row["language"]: row for row in registry["pools"]}
+        self.assertEqual(by_language["python"]["sha256"],
+                         "6cbccfb5eb88f2a7e826e3e5f3595fb59274e04a2711c7c097d8faac4926fdae")
+        for language, missing in (("typescript", 76), ("rust", 56), ("go", 61)):
+            self.assertEqual(by_language[language]["status"], "missing")
+            self.assertEqual(by_language[language]["missing_discarded_count"], missing)
+            self.assertNotIn("sha256", by_language[language])
+
+
+class LabelAuditCliTests(unittest.TestCase):
+    def test_help_lists_six_provider_free_subcommands(self):
+        completed = subprocess.run(
+            [sys.executable, "eval/bench/label_audit.py", "--help"],
+            capture_output=True, text=True, cwd=Path.cwd(),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        for command in ("sample", "check-labels", "make-third-review", "report", "rescore", "split"):
+            self.assertIn(command, completed.stdout)
+        self.assertNotIn("--model", completed.stdout)
+        self.assertNotIn("--provider", completed.stdout)
+
+    def test_sample_stops_at_human_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = []
+            for language in core.LANGUAGES:
+                rows = [result_row(f"o/{language}/p", language, "inconsistent", "complete", "inconsistent"),
+                        result_row(f"o/{language}/fp", language, "consistent", "complete", "inconsistent")]
+                rows += [result_row(f"o/{language}/tn-{i}", language) for i in range(25)]
+                if language == "rust":
+                    rows.append(result_row("o/rust/a", language, status="abstain", verdict=None))
+                path = root / f"{language}.json"
+                path.write_text(json.dumps({"schema_version": 2,
+                                            "metadata": {"dataset": {"sha256": "d" * 64}},
+                                            "rows": rows, "timing": {}}))
+                artifacts += ["--artifact", str(path)]
+            rubric = root / "rubric.md"
+            rubric.write_text("Human rubric")
+            work = root / "external" / "audit"
+            completed = subprocess.run(
+                [sys.executable, "eval/bench/label_audit.py", "sample", *artifacts,
+                 "--audit-id", "test-audit", "--rubric", str(rubric),
+                 "--work-dir", str(work)], cwd=Path.cwd(), capture_output=True, text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("HUMAN JUDGMENT REQUIRED", completed.stdout)
+            self.assertFalse(list(work.glob("*annotation*")))
+            self.assertFalse(list(work.glob("*adjudication*")))
 
 
 if __name__ == "__main__":
