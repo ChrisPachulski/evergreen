@@ -10,6 +10,7 @@ import re
 import shutil
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path, PurePosixPath
 
 try:
@@ -79,12 +80,13 @@ def _repository_relative_posix(value, label):
     parts = value.split("/")
     first = parts[0]
     home_markers = {"$HOME", "${HOME}", "$HOMEPATH", "$USERPROFILE", "%USERPROFILE%"}
-    if (PurePosixPath(value).is_absolute() or "\\" in value or "://" in value or
+    if (PurePosixPath(value).is_absolute() or "\\" in value or
+            re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", value) or
             any(part in ("", ".", "..") for part in parts) or
             first.startswith("~") or first.upper() in home_markers or
             re.fullmatch(r"[A-Za-z]:", first) or
             PurePosixPath(value).as_posix() != value or
-            any(ord(character) < 32 or ord(character) == 127 for character in value)):
+            any(unicodedata.category(character) in {"Cc", "Cf"} for character in value)):
         raise ValueError(f"{label} path must be normalized repository-relative POSIX")
     return value
 

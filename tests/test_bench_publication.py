@@ -234,13 +234,21 @@ class ProjectionTests(unittest.TestCase):
             "$HOME/private/skill.md",
             "C:/Users/private/skill.md",
             "skills\\evergreen\\SKILL.md",
+            "file:/Users/private/skill.md",
+            "mailto:private@example.com",
+            "urn:evergreen:private",
+            "skills/evergreen/\u0085SKILL.md",
+            "skills/evergreen/\u202eSKILL.md",
         )
         for value in invalid:
             with self.subTest(value=value):
                 document = private_artifact([private_row()])
                 document["metadata"]["skill"]["path"] = value
-                with self.assertRaisesRegex(ValueError, "repository-relative POSIX"):
+                with self.assertRaisesRegex(
+                    ValueError, "repository-relative POSIX"
+                ) as caught:
                     publication.project_artifact(document)
+                self.assertNotIn(value, str(caught.exception))
 
     def test_projection_binds_judge_path_to_verified_file_list(self):
         document = private_artifact([private_row()])
