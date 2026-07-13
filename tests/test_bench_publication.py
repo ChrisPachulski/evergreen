@@ -389,3 +389,14 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 2)
             self.assertIn("publication error:", completed.stderr)
             self.assertNotIn("not json", completed.stderr)
+
+
+class CommittedPublicationTests(unittest.TestCase):
+    def test_committed_0_4_0_publication_verifies(self):
+        repo = Path(__file__).parent.parent.resolve()
+        paths = publication.verify_publication(
+            repo / "eval/bench/public/0.4.0/manifest.json",
+            repo,
+            repo / "eval/bench/results-0.4.0.md",
+        )
+        self.assertEqual(len(paths), 5)

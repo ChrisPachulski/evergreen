@@ -3,9 +3,11 @@
 .evergreen-mode
 PLAN.md
 PLAN-REVIEW-LOG.md
+# Raw/local benchmark runs and logs; never publish these files directly.
 eval/out/
 eval/bench/out/
 eval/bench/*.log
+# Sanitized, content-addressed publications live in eval/bench/public/ and are tracked.
 __pycache__/
 # >>> autoloop managed (ephemeral runtime dirs) >>>
 .autoloop-self/
