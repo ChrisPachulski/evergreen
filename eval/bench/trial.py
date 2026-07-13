@@ -10,6 +10,11 @@ import tempfile
 import time
 from types import SimpleNamespace
 
+try:
+    from .resolver import needs_synthesis_v1, resolve_v1
+except ImportError:  # Direct script execution.
+    from resolver import needs_synthesis_v1, resolve_v1
+
 HERE = Path(__file__).parent
 SKILL = HERE.parent.parent / "skills" / "evergreen" / "SKILL.md"
 MODEL_OUTPUT_SCHEMA = HERE / "model-output.schema.json"
@@ -486,12 +491,7 @@ def judge(pair, models, run_test=None):
     trail["blindspot"] = blindspot_result
     if bs is None:
         return _abstained(trail, blindspot_result["reason"])
-    missed = bool(bs["missed_angle"])
-
-    all_votes = [snap_v] + pv
-    if not missed and len(set(all_votes)) == 1:      # everyone agrees, nothing missed → done
-        verdict, category, why = snap_v, (snap or {}).get("category"), (snap or {}).get("why")
-    else:                                            # 5. synthesis (strong), only when contested
+    if needs_synthesis_v1(trail):                    # 5. synthesis (strong), only when contested
         synthesis_result, syn = _checked_stage(
             invoke("synthesis", pair, snap, ch, prongs, bs, strong),
             "synthesis",
@@ -500,11 +500,7 @@ def judge(pair, models, run_test=None):
         trail["synthesis"] = synthesis_result
         if syn is None:
             return _abstained(trail, synthesis_result["reason"])
-        verdict = syn["verdict"]
-        category, why = syn.get("category"), syn.get("why")
-
-    return {"final_status": "complete", "final_verdict": verdict, "verdict": verdict,
-            "category": category, "why": why, "contested": cracked or missed, "stages": trail}
+    return resolve_v1(trail)
 
 
 def selftest():

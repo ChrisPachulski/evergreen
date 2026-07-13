@@ -27,7 +27,7 @@ MAX_METADATA_HASH_SECONDS = 30
 VALID_CATEGORIES = {None, "direct-mismatch", "over-promise", "under-promise"}
 JUDGE_MODULES = (
     "artifact.py", "frozen_run.py", "metrics.py", "model-output.schema.json", "report.py",
-    "run_bench.py", "runner.py", "trial.py",
+    "resolver.py", "run_bench.py", "runner.py", "trial.py",
 )
 
 
