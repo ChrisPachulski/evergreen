@@ -38,7 +38,7 @@ def _coordinator(path: Path) -> dict:
 def command_sample(args) -> int:
     artifacts = tuple(core.load_artifact(Path(path)) for path in args.artifact)
     pools = {language: core.load_source_pool(path, language) for language, path in args.source_pool}
-    manifest = core.load_source_manifest(Path(args.source_manifest), REPO)
+    manifest = core.load_source_manifest(REPO / core.SOURCE_MANIFEST_RELATIVE, REPO)
     selection = core.build_sample(artifacts, pools, audit_id=args.audit_id, seed=args.seed,
                                   source_manifest=manifest)
     rubric_sha = core.sha256_file(Path(args.rubric))
@@ -133,9 +133,12 @@ def _analysis(coordinator: dict, first: core.AnnotationSet, second: core.Annotat
             if rows:
                 census_rates.append(sum(row.label_error for row in rows) / len(rows))
     discarded = [row for row in results if row.stratum == "discarded_candidate"]
+    max_census_error = max(census_rates, default=0.0)
+    discarded_usable_rate = (sum(row.label_error for row in discarded) / len(discarded)
+                             if discarded else 0.0)
     inputs = stats.GateInputs(overall_kappa, overall_lower, language_kappa,
-                              overall_error.upper, language_error, max(census_rates, default=0.0),
-                              sum(row.label_error for row in discarded) / len(discarded) if discarded else 0.0,
+                              overall_error.upper, language_error, max_census_error,
+                              discarded_usable_rate,
                               sum(label.unresolved for label in combined.labels),
                               tuple(coordinator.get("missing_discarded_languages", [])), False)
     stratum_counts = {}
@@ -156,6 +159,8 @@ def _analysis(coordinator: dict, first: core.AnnotationSet, second: core.Annotat
         "overall_error": dataclass_dict(overall_error),
         "language_error": {language: dataclass_dict(estimate)
                            for language, estimate in language_estimates.items()},
+        "max_census_error": max_census_error,
+        "discarded_usable_rate": discarded_usable_rate,
         "uncertainty_rate": (sum(label.review_reason == "uncertainty"
                                  for label in combined.labels) / len(combined.labels)),
         "third_review_rate": (sum(label.review_reason is not None for label in combined.labels) /
@@ -214,7 +219,10 @@ def command_report(args) -> int:
 
 
 def command_rescore(args) -> int:
-    result = core.rescore_overlay(core.load_artifact(Path(args.artifact)), _json(Path(args.overlay)))
+    result = core.rescore_overlay(
+        core.load_artifact(Path(args.artifact)), _json(Path(args.overlay)),
+        label_package=_json(Path(args.label_package)),
+        coordinator=_coordinator(Path(args.coordinator)), rubric=Path(args.rubric))
     core.write_private_json(Path(args.out), result, repo=REPO)
     return 0
 
@@ -254,8 +262,6 @@ def parser() -> argparse.ArgumentParser:
     sample = commands.add_parser("sample")
     sample.add_argument("--artifact", action="append", required=True)
     sample.add_argument("--source-pool", action="append", type=_source, default=[])
-    sample.add_argument("--source-manifest",
-                        default=str(REPO / "eval/bench/human-audit/source-pools.json"))
     sample.add_argument("--work-dir", required=True)
     sample.add_argument("--audit-id", default="evergreen-0.4.0-label-audit")
     sample.add_argument("--seed", type=int, default=20260713)
@@ -273,7 +279,7 @@ def parser() -> argparse.ArgumentParser:
         report.add_argument(f"--{name}", required=True)
     report.add_argument("--seed", type=int, default=20260713); report.set_defaults(handler=command_report)
     rescore = commands.add_parser("rescore")
-    for name in ("artifact", "overlay", "out"):
+    for name in ("artifact", "overlay", "label-package", "coordinator", "rubric", "out"):
         rescore.add_argument(f"--{name}", required=True)
     rescore.set_defaults(handler=command_rescore)
     split = commands.add_parser("split")

@@ -323,6 +323,65 @@ class LabelAuditStatisticsTests(unittest.TestCase):
         self.assertEqual(overall_undefined.status, "escalate")
         self.assertIn("overall kappa", overall_undefined.reasons)
 
+    def test_report_renders_calculated_census_and_discarded_rates(self):
+        from eval.bench import label_audit_stats as stats
+        inputs = stats.GateInputs(
+            0.8, 0.7, {language: 0.75 for language in core.LANGUAGES}, 0.04,
+            {language: 0.08 for language in core.LANGUAGES}, 0.031, 0.042, 0, (), False)
+        evidence = {
+            "coordinator_sha256": "c" * 64, "selected_count": 10,
+            "third_review_rate": 0.1, "uncertainty_rate": 0.02,
+            "input_hashes": {"python": "a" * 64},
+            "language_error": {language: {"point": 0.01, "lower": 0.0, "upper": 0.08}
+                               for language in core.LANGUAGES},
+            "language_kappa": {language: 0.75 for language in core.LANGUAGES},
+            "counts_by_language_stratum": {"python:true_negative_sample": 10},
+            "inclusion_probabilities": {"python:true_negative_sample": [0.5]},
+            "max_census_error": 0.031, "discarded_usable_rate": 0.042,
+            "thresholds": {"max_census_error": 0.05, "discarded_usable_rate": 0.05},
+        }
+        report = stats.render_audit_report(inputs, stats.evaluate_gate(inputs), evidence=evidence)
+        self.assertIn("Maximum census-stratum error: `0.031`", report)
+        self.assertIn("Discarded-candidate usable rate: `0.042`", report)
+
+    def test_analysis_json_evidence_contains_calculated_gate_rates(self):
+        from eval.bench import label_audit
+        coordinator_rows, first_rows, second_rows, final_rows = [], [], [], []
+        for language in core.LANGUAGES:
+            for suffix, verdict, label, stratum in (
+                    ("c", "consistent", "consistent", "true_negative_sample"),
+                    ("i", "inconsistent", "consistent" if language == "java" else "inconsistent",
+                     "nominal_false_positive")):
+                blind = f"{language}-{suffix}"
+                judgment = LabelAuditAnnotationTests().judgment(blind, verdict)
+                first_rows.append(judgment); second_rows.append(dict(judgment))
+                final_rows.append(core.CombinedLabel(
+                    blind, verdict, judgment["category"], False, None, (judgment, judgment)))
+                coordinator_rows.append({"blind_id": blind, "language": language,
+                                         "stratum": stratum, "label": label,
+                                         "inclusion_probability": 1.0})
+        judgment = LabelAuditAnnotationTests().judgment("python-discarded", "inconsistent")
+        first_rows.append(judgment); second_rows.append(dict(judgment))
+        final_rows.append(core.CombinedLabel("python-discarded", "inconsistent",
+                                             "direct-mismatch", False, None,
+                                             (judgment, judgment)))
+        coordinator_rows.append({"blind_id": "python-discarded", "language": "python",
+                                 "stratum": "discarded_candidate", "label": "consistent",
+                                 "inclusion_probability": 1.0})
+        first = core.AnnotationSet("audit", "f" * 64, "H1", "self-attested-human", False,
+                                   tuple(first_rows))
+        second = core.AnnotationSet("audit", "f" * 64, "H2", "self-attested-human", False,
+                                    tuple(second_rows))
+        combined = core.CombinedLabels("audit", "f" * 64, tuple(final_rows))
+        coordinator = {"coordinator_sha256": "c" * 64,
+                       "input_hashes": {language: "a" * 64 for language in core.LANGUAGES},
+                       "missing_discarded_languages": (), "items": coordinator_rows}
+        inputs, _, evidence = label_audit._analysis(coordinator, first, second, combined)
+        self.assertEqual(evidence["max_census_error"], inputs.max_census_error)
+        self.assertEqual(evidence["discarded_usable_rate"], inputs.discarded_usable_rate)
+        self.assertEqual(evidence["max_census_error"], 1.0)
+        self.assertEqual(evidence["discarded_usable_rate"], 1.0)
+
 
 class LabelAuditOverlayTests(unittest.TestCase):
     def label_package(self, artifact, labels):
@@ -342,21 +401,62 @@ class LabelAuditOverlayTests(unittest.TestCase):
             package, "label_package_sha256")
         return package
 
+    def bound_package(self, artifact, labels, root):
+        rubric = root / "rubric.md"
+        rubric.write_text("Frozen rubric\n")
+        rubric_sha256 = core.sha256_file(rubric)
+        package = self.label_package(artifact, labels)
+        items = []
+        by_key = {item.key: item for item in artifact.items}
+        for row in package["labels"]:
+            item = by_key[(row["language"], row["id"])]
+            items.append({"blind_id": row["blind_id"], "id": row["id"],
+                          "language": row["language"], "code": item.code, "doc": item.doc})
+        coordinator = {"audit_id": "audit", "rubric_sha256": rubric_sha256, "items": items}
+        coordinator["coordinator_sha256"] = core.document_identity(
+            coordinator, "coordinator_sha256")
+        package["coordinator_sha256"] = coordinator["coordinator_sha256"]
+        package["evidence"]["coordinator_sha256"] = coordinator["coordinator_sha256"]
+        package["rubric_sha256"] = rubric_sha256
+        package["label_package_sha256"] = core.document_identity(
+            package, "label_package_sha256")
+        return package, coordinator, rubric
+
     def test_rescore_requires_complete_content_bound_overlay(self):
         item_a = audit_item("owner/repo/a", "python", "inconsistent", "consistent")
         item_b = audit_item("owner/repo/b", "python", "consistent", "consistent")
         artifact = artifact_input("python", [item_a, item_b])
-        partial = core.build_overlay(artifact, self.label_package(artifact, {
-            item_a.key: ("inconsistent", "direct-mismatch"),
-        }))
-        with self.assertRaisesRegex(ValueError, "100%"):
-            core.rescore_overlay(artifact, partial)
-        complete = core.build_overlay(artifact, self.label_package(artifact, {
-            item_a.key: ("consistent", None), item_b.key: ("consistent", None),
-        }))
-        result = core.rescore_overlay(artifact, complete)
-        self.assertEqual(result["corrected"]["tn"], 2)
-        self.assertEqual(result["corrected"]["tp"], 0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package, coordinator, rubric = self.bound_package(artifact, {
+                item_a.key: ("inconsistent", "direct-mismatch"),
+            }, root)
+            partial = core.build_overlay(artifact, package)
+            with self.assertRaisesRegex(ValueError, "100%"):
+                core.rescore_overlay(artifact, partial, label_package=package,
+                                     coordinator=coordinator, rubric=rubric)
+            package, coordinator, rubric = self.bound_package(artifact, {
+                item_a.key: ("consistent", None), item_b.key: ("consistent", None),
+            }, root)
+            complete = core.build_overlay(artifact, package)
+            result = core.rescore_overlay(artifact, complete, label_package=package,
+                                          coordinator=coordinator, rubric=rubric)
+            self.assertEqual(result["corrected"]["tn"], 2)
+            self.assertEqual(result["corrected"]["tp"], 0)
+
+    def test_rescore_rejects_forged_self_hashed_overlay(self):
+        item = audit_item("owner/repo/a", "python")
+        artifact = artifact_input("python", [item])
+        with tempfile.TemporaryDirectory() as directory:
+            package, coordinator, rubric = self.bound_package(
+                artifact, {item.key: ("consistent", None)}, Path(directory))
+            overlay = core.build_overlay(artifact, package)
+            overlay["rows"][0]["human_verdict"] = "inconsistent"
+            overlay["rows"][0]["human_category"] = "direct-mismatch"
+            overlay["overlay_sha256"] = core.document_identity(overlay, "overlay_sha256")
+            with self.assertRaisesRegex(ValueError, "derivation"):
+                core.rescore_overlay(artifact, overlay, label_package=package,
+                                     coordinator=coordinator, rubric=rubric)
 
     def test_overlay_rejects_tampered_label_package_and_overlay_identity(self):
         item = audit_item("owner/repo/a", "python")
@@ -365,11 +465,14 @@ class LabelAuditOverlayTests(unittest.TestCase):
         package["labels"][0]["human_verdict"] = "inconsistent"
         with self.assertRaisesRegex(ValueError, "package identity"):
             core.build_overlay(artifact, package)
-        package = self.label_package(artifact, {item.key: ("consistent", None)})
-        overlay = core.build_overlay(artifact, package)
-        overlay["generation_mode"] = "sample"
-        with self.assertRaisesRegex(ValueError, "overlay identity"):
-            core.rescore_overlay(artifact, overlay)
+        with tempfile.TemporaryDirectory() as directory:
+            package, coordinator, rubric = self.bound_package(
+                artifact, {item.key: ("consistent", None)}, Path(directory))
+            overlay = core.build_overlay(artifact, package)
+            overlay["generation_mode"] = "sample"
+            with self.assertRaisesRegex(ValueError, "derivation"):
+                core.rescore_overlay(artifact, overlay, label_package=package,
+                                     coordinator=coordinator, rubric=rubric)
 
     def test_repository_split_has_no_overlap_and_is_stable(self):
         labels = []
@@ -397,8 +500,9 @@ class LabelAuditOverlayTests(unittest.TestCase):
 
     def test_repository_split_allocates_rare_cells_or_fails_closed(self):
         labels, coordinator = [], []
-        for repo, verdict in (("a", "consistent"), ("b", "consistent"),
-                              ("c", "inconsistent"), ("d", "inconsistent")):
+        rows = [(f"c{index}", "consistent") for index in range(5)] + [
+            (f"i{index}", "inconsistent") for index in range(5)]
+        for repo, verdict in rows:
             blind = f"blind-{repo}"
             labels.append(core.CombinedLabel(
                 blind, verdict, "direct-mismatch" if verdict == "inconsistent" else None,
@@ -411,10 +515,25 @@ class LabelAuditOverlayTests(unittest.TestCase):
         for identifiers in (split.development_ids, split.holdout_ids):
             self.assertEqual({label_by_id[item].final_verdict for item in identifiers},
                              {"consistent", "inconsistent"})
+        sparse_labels = (labels[0], labels[1], labels[5])
+        sparse_ids = {label.blind_id for label in sparse_labels}
         with self.assertRaisesRegex(ValueError, "twice"):
             core.split_by_repository(
-                core.CombinedLabels("audit", "f" * 64, tuple(labels[:-1])),
-                coordinator[:-1], split_key=b"x" * 32)
+                core.CombinedLabels("audit", "f" * 64, sparse_labels),
+                [row for row in coordinator if row["blind_id"] in sparse_ids],
+                split_key=b"x" * 32)
+
+    def test_repository_split_rejects_gross_row_imbalance_from_skewed_repositories(self):
+        labels, coordinator = [], []
+        for repo, size in (("huge", 100), ("a", 1), ("b", 1), ("c", 1)):
+            for index in range(size):
+                blind = f"{repo}-{index}"
+                labels.append(core.CombinedLabel(blind, "consistent", None, False, None, ()))
+                coordinator.append({"blind_id": blind, "language": "python",
+                                    "id": f"owner/{repo}/file-{index}"})
+        with self.assertRaisesRegex(ValueError, "row.*tolerance"):
+            core.split_by_repository(core.CombinedLabels("audit", "f" * 64, tuple(labels)),
+                                     coordinator, split_key=b"z" * 32)
 
     def test_split_export_contains_human_labels_not_heuristic_labels(self):
         label = core.CombinedLabel("blind", "inconsistent", "over-promise", False, None, ())
@@ -465,6 +584,13 @@ class LabelAuditSourceTests(unittest.TestCase):
         self.assertEqual(by_language["python"].row_count, 400)
         self.assertEqual(by_language["typescript"].status, "missing")
 
+    def test_source_manifest_rejects_consistent_non_authoritative_replacement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            replacement = Path(directory) / "source-pools.json"
+            replacement.write_bytes(Path("eval/bench/human-audit/source-pools.json").read_bytes())
+            with self.assertRaisesRegex(ValueError, "authoritative"):
+                core.load_source_manifest(replacement, Path.cwd())
+
     def test_future_derived_rows_preserve_source_provenance(self):
         from eval.bench import codocbench_to_jsonl
         source = {
@@ -504,6 +630,19 @@ class LabelAuditCliTests(unittest.TestCase):
             self.assertIn(command, completed.stdout)
         self.assertNotIn("--model", completed.stdout)
         self.assertNotIn("--provider", completed.stdout)
+        rescore = subprocess.run(
+            [sys.executable, "eval/bench/label_audit.py", "rescore", "--help"],
+            capture_output=True, text=True, cwd=Path.cwd(),
+        )
+        self.assertEqual(rescore.returncode, 0, rescore.stderr)
+        for required in ("--label-package", "--coordinator", "--rubric"):
+            self.assertIn(required, rescore.stdout)
+        sample = subprocess.run(
+            [sys.executable, "eval/bench/label_audit.py", "sample", "--help"],
+            capture_output=True, text=True, cwd=Path.cwd(),
+        )
+        self.assertEqual(sample.returncode, 0, sample.stderr)
+        self.assertNotIn("--source-manifest", sample.stdout)
 
     def test_sample_stops_at_human_boundary(self):
         with tempfile.TemporaryDirectory() as directory:

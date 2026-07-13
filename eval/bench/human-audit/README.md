@@ -14,6 +14,13 @@ requires every report, rescore, adjudication packet, and split destination to be
 outside the repository. Source pools count only when their path, row count, and SHA-256 exactly
 match the tracked `source-pools.json` manifest.
 
+The source-pool manifest path is not configurable: only the tracked repository manifest is
+authoritative. Repository-grouped development/holdout splits target 60/40 by labeled rows, permit
+at most 5 percentage points of overall row imbalance and 15 percentage points per human-label
+cell, and fail closed when indivisible repositories cannot clear those tolerances. Exact rescoring
+requires the overlay, human-label package, coordinator, and rubric files together so the tool can
+rederive the overlay instead of trusting its self-reported hash.
+
 The historical TypeScript, Rust, and Go derived source pools are missing. Their discarded-candidate
 selection remains unverified; a regenerated lookalike is not the historical pool. A passing sample
 is `human-audited`. Only full independently reviewed source-pool coverage is `human-validated`.

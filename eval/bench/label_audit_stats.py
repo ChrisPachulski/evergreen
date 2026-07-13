@@ -157,7 +157,9 @@ def render_audit_report(inputs: GateInputs, result: GateResult, *, evidence: dic
                   f"Coordinator SHA-256: `{evidence['coordinator_sha256']}`",
                   f"Selected judgments: `{evidence['selected_count']}`",
                   f"Third-review rate: `{evidence['third_review_rate']:.3f}`",
-                  f"Uncertainty rate: `{evidence['uncertainty_rate']:.3f}`", "",
+                  f"Uncertainty rate: `{evidence['uncertainty_rate']:.3f}`",
+                  f"Maximum census-stratum error: `{evidence['max_census_error']:.3f}`",
+                  f"Discarded-candidate usable rate: `{evidence['discarded_usable_rate']:.3f}`", "",
                   "### Input SHA-256 values", ""]
         lines += [f"- `{name}`: `{digest}`"
                   for name, digest in sorted(evidence["input_hashes"].items())]

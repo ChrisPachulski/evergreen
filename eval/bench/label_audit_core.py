@@ -19,6 +19,9 @@ except ImportError:  # Direct script execution through label_audit.py.
 
 
 LANGUAGES = ("java", "python", "typescript", "rust", "go")
+SOURCE_MANIFEST_RELATIVE = Path("eval/bench/human-audit/source-pools.json")
+SPLIT_ROW_TOLERANCE = 0.05
+SPLIT_CELL_TOLERANCE = 0.15
 MAX_AUDIT_INPUT_BYTES = 64 * 1024 * 1024
 _ARCHIVE_NAME = re.compile(r"\.rows-(\d+)\.([0-9a-f]{64})\.json$")
 
@@ -243,6 +246,9 @@ def load_source_pool(path: Path, language: str) -> SourcePool:
 
 def load_source_manifest(path: Path, repo: Path) -> SourceManifest:
     path, repo = Path(path), Path(repo).resolve()
+    authoritative = (repo / SOURCE_MANIFEST_RELATIVE).resolve()
+    if path.resolve() != authoritative:
+        raise ValueError("source pool manifest must be the authoritative tracked repository manifest")
     raw = read_bytes(path, MAX_AUDIT_INPUT_BYTES, label="source pool manifest")
     document = json.loads(raw)
     if not isinstance(document, dict) or set(document) != {"schema_version", "pools"}:
@@ -854,7 +860,8 @@ def build_overlay(artifact: ArtifactInput, label_package: dict) -> dict:
     return overlay
 
 
-def rescore_overlay(artifact: ArtifactInput, overlay: dict) -> dict:
+def rescore_overlay(artifact: ArtifactInput, overlay: dict, *, label_package: dict,
+                    coordinator: dict, rubric: Path) -> dict:
     try:
         from .metrics import score
     except ImportError:  # Direct script execution through label_audit.py.
@@ -864,6 +871,35 @@ def rescore_overlay(artifact: ArtifactInput, overlay: dict) -> dict:
                 "generation_mode", "coverage", "rows", "overlay_sha256"}
     if not isinstance(overlay, dict) or set(overlay) != expected:
         raise ValueError("overlay fields are invalid")
+    if (not isinstance(coordinator, dict) or
+            coordinator.get("coordinator_sha256") !=
+            document_identity(coordinator, "coordinator_sha256")):
+        raise ValueError("rescore coordinator identity mismatch")
+    expected_overlay = build_overlay(artifact, label_package)
+    rubric_sha256 = sha256_file(Path(rubric))
+    if (label_package.get("coordinator_sha256") != coordinator["coordinator_sha256"] or
+            label_package.get("rubric_sha256") != rubric_sha256 or
+            coordinator.get("rubric_sha256") != rubric_sha256 or
+            coordinator.get("audit_id") != label_package.get("audit_id") or
+            overlay != expected_overlay):
+        raise ValueError("overlay derivation does not match the referenced human evidence")
+    coordinator_items = coordinator.get("items")
+    if not isinstance(coordinator_items, list):
+        raise ValueError("overlay derivation coordinator items are invalid")
+    by_blind = {row.get("blind_id"): row for row in coordinator_items if isinstance(row, dict)}
+    package_labels = label_package["labels"]
+    if (len(by_blind) != len(coordinator_items) or
+            set(by_blind) != {row["blind_id"] for row in package_labels}):
+        raise ValueError("overlay derivation does not exactly cover coordinator items")
+    for row in package_labels:
+        source = by_blind[row["blind_id"]]
+        if (source.get("id") != row["id"] or source.get("language") != row["language"] or
+                not isinstance(source.get("code"), str) or not isinstance(source.get("doc"), str)):
+            raise ValueError("overlay derivation label does not match coordinator item")
+        bound = json.dumps([row["language"], row["id"], source["code"], source["doc"]],
+                           ensure_ascii=False, separators=(",", ":"))
+        if hashlib.sha256(bound.encode()).hexdigest() != row["item_sha256"]:
+            raise ValueError("overlay derivation item content hash mismatch")
     if overlay.get("schema_version") != 1:
         raise ValueError("overlay schema is invalid")
     if not isinstance(overlay.get("audit_id"), str) or not overlay["audit_id"]:
@@ -951,11 +987,15 @@ def split_by_repository(labels: CombinedLabels, coordinator_items: list[dict], *
                      hmac.new(split_key, repo.encode(), hashlib.sha256).digest())
     rank = {repository: index for index, repository in enumerate(ordered)}
     label_by_id = {label.blind_id: label for label in labels.labels}
-    repo_cells = {repository: {(mapping[identifier]["language"],
-                                label_by_id[identifier].final_verdict,
-                                label_by_id[identifier].final_category)
-                               for identifier in identifiers}
-                  for repository, identifiers in repositories.items()}
+    repo_cell_counts = {}
+    for repository, identifiers in repositories.items():
+        counts = {}
+        for identifier in identifiers:
+            cell = (mapping[identifier]["language"], label_by_id[identifier].final_verdict,
+                    label_by_id[identifier].final_category)
+            counts[cell] = counts.get(cell, 0) + 1
+        repo_cell_counts[repository] = counts
+    repo_cells = {repository: set(counts) for repository, counts in repo_cell_counts.items()}
     all_cells = set().union(*repo_cells.values())
     candidates = {cell: sorted((repository for repository, cells in repo_cells.items()
                                 if cell in cells), key=rank.get)
@@ -1001,12 +1041,70 @@ def split_by_repository(labels: CombinedLabels, coordinator_items: list[dict], *
 
     if not assign_supports():
         raise ValueError("repository split cannot satisfy human-label cell coverage")
-    target = round(len(ordered) * development_fraction)
-    target = min(len(ordered) - sum(value is False for value in assignment.values()),
-                 max(sum(value is True for value in assignment.values()), target))
+    target_rows = len(labels.labels) * development_fraction
+    development_rows = sum(len(repositories[repository]) for repository, value in assignment.items()
+                           if value)
+    for repository in sorted((repo for repo in ordered if repo not in assignment),
+                             key=lambda repo: (-len(repositories[repo]), rank[repo])):
+        size = len(repositories[repository])
+        take = abs(development_rows + size - target_rows) <= abs(development_rows - target_rows)
+        assignment[repository] = take
+        development_rows += size if take else 0
+
+    cell_totals = {cell: sum(counts.get(cell, 0) for counts in repo_cell_counts.values())
+                   for cell in all_cells}
+
+    def balance_score(values: dict[str, bool]) -> tuple[float, float, float, float]:
+        row_fraction = (sum(len(repositories[repository]) for repository, value in values.items()
+                            if value) / len(labels.labels))
+        cell_fractions = []
+        for cell in sorted(all_cells):
+            development = sum(repo_cell_counts[repository].get(cell, 0)
+                              for repository, value in values.items() if value)
+            cell_fractions.append(development / cell_totals[cell])
+        row_delta = abs(row_fraction - development_fraction)
+        cell_deltas = [abs(value - development_fraction) for value in cell_fractions]
+        excesses = [max(0.0, row_delta - SPLIT_ROW_TOLERANCE)] + [
+            max(0.0, value - SPLIT_CELL_TOLERANCE) for value in cell_deltas]
+        return max(excesses), sum(excesses), row_delta, sum(cell_deltas)
+
+    # Whole repositories are indivisible. Improve the seeded allocation with deterministic flips
+    # and swaps, then fail closed if no locally reachable allocation clears declared tolerances.
+    while True:
+        current = balance_score(assignment)
+        best_score, best_change = current, None
+        for repository in ordered:
+            candidate = dict(assignment); candidate[repository] = not candidate[repository]
+            score = balance_score(candidate)
+            if score < best_score:
+                best_score, best_change = score, (repository,)
+        development = [repo for repo in ordered if assignment[repo]]
+        holdout = [repo for repo in ordered if not assignment[repo]]
+        for left in development:
+            for right in holdout:
+                candidate = dict(assignment); candidate[left] = False; candidate[right] = True
+                score = balance_score(candidate)
+                if score < best_score:
+                    best_score, best_change = score, (left, right)
+        if best_change is None:
+            break
+        for repository in best_change:
+            assignment[repository] = not assignment[repository]
+
+    row_fraction = (sum(len(repositories[repository]) for repository, value in assignment.items()
+                        if value) / len(labels.labels))
+    if abs(row_fraction - development_fraction) > SPLIT_ROW_TOLERANCE + 1e-12:
+        raise ValueError("repository split row balance exceeds declared 5% tolerance")
+    for cell in sorted(all_cells):
+        development_count = sum(repo_cell_counts[repository].get(cell, 0)
+                                for repository, value in assignment.items() if value)
+        fraction = development_count / cell_totals[cell]
+        if abs(fraction - development_fraction) > SPLIT_CELL_TOLERANCE + 1e-12:
+            raise ValueError(f"repository split cell balance exceeds declared 15% tolerance: {cell}")
+
     for repository in ordered:
         if repository not in assignment:
-            assignment[repository] = sum(assignment.values()) < target
+            raise AssertionError("repository split assignment is incomplete")
     development_repositories = {repository for repository, development in assignment.items()
                                 if development}
     development_ids = sorted(identifier for repo in development_repositories
