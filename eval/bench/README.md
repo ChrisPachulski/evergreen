@@ -21,8 +21,9 @@ python3 eval/bench/frozen_run.py --dataset cascade.jsonl \
 **CoDocBench** ([github.com/kunpai/codocbench](https://github.com/kunpai/codocbench),
 arXiv:2502.00519) supplies the wild *Python* set — 4,573 coupled code+docstring changes with no
 drift labels, from which we derive candidates ((old doc, new code) = the doc that lagged;
-(new doc, new code) = control) and then **validate every label with a three-LLM majority vote**
-before scoring, reporting inter-annotator kappa:
+(new doc, new code) = control) and then **screen every retained label with a three-LLM majority
+vote** before scoring, reporting inter-annotator kappa. This is LLM screening, not independent
+human validation:
 
 ```sh
 git clone https://github.com/kunpai/codocbench
@@ -135,7 +136,8 @@ advice or a claim that existing research inputs have been relicensed.
 The package supports decision inspection and metric rescoring for the retained evaluated rows. It
 does not reconstruct the full candidate-selection process: the TypeScript, Rust, and Go vote logs
 do not contain the discarded candidates' source payloads or exact source revisions. Label validity,
-selection validity, and decision quality remain separate claims.
+selection validity, and decision quality remain separate claims; candidate-selection audit status
+therefore remains unverified for those three discarded pools.
 
 ## Results — how it compares
 

@@ -31,6 +31,13 @@ STAGE_STATUSES = {"ok", "abstain"}
 STAGES = {"snap", "challenge", "prongs", "prongs_escalated", "blindspot", "synthesis"}
 PRONG_ROLES = {"defend", "prove-wrong", "hardest-broken"}
 SHA256 = re.compile(r"[0-9a-f]{64}")
+PUBLIC_USAGE_KEYS = {
+    "cache_creation_input_tokens", "cache_read_input_tokens", "cached_input_tokens",
+    "cost_usd", "input_tokens", "output_tokens", "reasoning_output_tokens", "requests",
+}
+FUTURE_DETECTOR_SETTINGS = {
+    "context_protocol", "resolver", "split", "split_manifest_sha256",
+}
 
 
 def canonical_bytes(value):
@@ -39,7 +46,9 @@ def canonical_bytes(value):
 
 
 def _category(value, label="category"):
-    if value not in artifact.VALID_CATEGORIES:
+    if value is not None and (
+        not isinstance(value, str) or value not in artifact.VALID_CATEGORIES
+    ):
         raise ValueError(f"{label} is invalid")
     return value
 
@@ -47,9 +56,120 @@ def _category(value, label="category"):
 def _verdict(value, *, nullable=False, label="verdict"):
     if nullable and value is None:
         return None
-    if value not in VERDICTS:
+    if not isinstance(value, str) or value not in VERDICTS:
         raise ValueError(f"{label} is invalid")
     return value
+
+
+def _bounded_string(value, label, maximum=4096):
+    if not isinstance(value, str) or not value.strip() or len(value) > maximum:
+        raise ValueError(f"{label} is invalid")
+    return value
+
+
+def _hex_string(value, label, lengths):
+    if (not isinstance(value, str) or len(value) not in lengths or
+            any(character not in "0123456789abcdef" for character in value)):
+        raise ValueError(f"{label} is invalid")
+    return value
+
+
+def _path_hash(value, label):
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} is invalid")
+    return {
+        "path": _bounded_string(value.get("path"), f"{label} path"),
+        "sha256": _hex_string(value.get("sha256"), f"{label} SHA-256", {64}),
+    }
+
+
+def _project_metadata(metadata):
+    if not isinstance(metadata, dict):
+        raise ValueError("artifact metadata is invalid")
+    dataset = _path_hash(metadata.get("dataset"), "dataset")
+    skill = _path_hash(metadata.get("skill"), "skill")
+    judge_source = metadata.get("judge")
+    judge = _path_hash(judge_source, "judge")
+    files = judge_source.get("files") if isinstance(judge_source, dict) else None
+    if not isinstance(files, list) or not files:
+        raise ValueError("judge files are invalid")
+    judge["files"] = [_path_hash(item, "judge file") for item in files]
+    judge_paths = [item["path"] for item in judge["files"]]
+    if judge_paths != sorted(set(judge_paths)):
+        raise ValueError("judge files are invalid")
+
+    git_source = metadata.get("git")
+    if not isinstance(git_source, dict) or type(git_source.get("dirty")) is not bool:
+        raise ValueError("Git metadata is invalid")
+    git = {
+        "commit": _hex_string(git_source.get("commit"), "Git commit", {40, 64}),
+        "tree": _hex_string(git_source.get("tree"), "Git tree", {40, 64}),
+        "dirty": git_source["dirty"],
+        "status_sha256": _hex_string(
+            git_source.get("status_sha256"), "Git status SHA-256", {64}
+        ),
+        "diff_sha256": _hex_string(
+            git_source.get("diff_sha256"), "Git diff SHA-256", {64}
+        ),
+        "untracked_sha256": _hex_string(
+            git_source.get("untracked_sha256"), "Git untracked SHA-256", {64}
+        ),
+    }
+    provider = metadata.get("provider")
+    if provider not in ("claude", "codex"):
+        raise ValueError("provider is invalid")
+    settings_source = metadata.get("settings")
+    models_source = settings_source.get("models") if isinstance(settings_source, dict) else None
+    if not isinstance(models_source, dict):
+        raise ValueError("model settings are invalid")
+    if set(settings_source) & FUTURE_DETECTOR_SETTINGS:
+        raise ValueError("publication schema 1 does not support detector provenance fields")
+    concurrency = settings_source.get("concurrency")
+    if type(concurrency) is not int or concurrency < 1:
+        raise ValueError("concurrency setting is invalid")
+    settings_provider = settings_source.get("provider")
+    if settings_provider != provider:
+        raise ValueError("settings provider is invalid")
+    settings = {
+        "provider": settings_provider,
+        "models": {
+            "strong": _bounded_string(models_source.get("strong"), "strong model"),
+            "cheap": _bounded_string(models_source.get("cheap"), "cheap model"),
+        },
+        "concurrency": concurrency,
+    }
+    return {
+        "dataset": dataset,
+        "provider": provider,
+        "skill": skill,
+        "judge": judge,
+        "git": git,
+        "cli_version": _bounded_string(metadata.get("cli_version"), "CLI version"),
+        "settings": settings,
+    }
+
+
+def _project_timing(timing):
+    if not isinstance(timing, dict):
+        raise ValueError("artifact timing is invalid")
+    elapsed = timing.get("elapsed_seconds")
+    if (not artifact.valid_iso_time(timing.get("started_at")) or
+            not isinstance(elapsed, (int, float)) or isinstance(elapsed, bool) or
+            not math.isfinite(elapsed) or elapsed < 0):
+        raise ValueError("artifact timing is invalid")
+    return {"started_at": timing["started_at"], "elapsed_seconds": elapsed}
+
+
+def _project_usage(usage):
+    artifact.validate_usage(usage)
+    projected = {}
+    for key in sorted(set(usage) & PUBLIC_USAGE_KEYS):
+        value = usage[key]
+        if (not isinstance(value, (int, float)) or isinstance(value, bool) or
+                not math.isfinite(value) or value < 0):
+            raise ValueError("public artifact provider usage values must be numeric counts")
+        projected[key] = value
+    return projected
 
 
 def _stage(record, name):
@@ -162,15 +282,8 @@ def project_artifact(document):
     if (not isinstance(document, dict) or type(document.get("schema_version")) is not int or
             document["schema_version"] != PUBLICATION_SCHEMA_VERSION):
         raise ValueError("unsupported benchmark artifact schema")
-    report._validate_metadata(document.get("metadata"))
-    timing = document.get("timing")
-    if not isinstance(timing, dict):
-        raise ValueError("artifact timing is invalid")
-    elapsed = timing.get("elapsed_seconds")
-    if (not artifact.valid_iso_time(timing.get("started_at")) or
-            not isinstance(elapsed, (int, float)) or isinstance(elapsed, bool) or
-            not math.isfinite(elapsed) or elapsed < 0):
-        raise ValueError("artifact timing is invalid")
+    metadata = _project_metadata(document.get("metadata"))
+    timing = _project_timing(document.get("timing"))
     rows = document.get("rows")
     if not isinstance(rows, list) or len(rows) > MAX_PUBLIC_ROWS:
         raise ValueError("artifact rows are invalid")
@@ -180,13 +293,12 @@ def project_artifact(document):
         raise ValueError("artifact contains duplicate pair ids")
     projected = {
         "schema_version": PUBLICATION_SCHEMA_VERSION,
-        "metadata": document["metadata"],
+        "metadata": metadata,
         "timing": timing,
         "rows": projected_rows,
     }
     if "provider_usage" in document:
-        artifact.validate_usage(document["provider_usage"])
-        projected["provider_usage"] = document["provider_usage"]
+        projected["provider_usage"] = _project_usage(document["provider_usage"])
     return projected
 
 
@@ -209,6 +321,36 @@ def repository_path(path, repo):
         return resolved.relative_to(repo).as_posix()
     except ValueError:
         raise ValueError("publication path escapes repository") from None
+
+
+def _json_snapshot(path, max_bytes, label):
+    raw = artifact.read_bytes(path, max_bytes, label=label)
+    return raw, json.loads(raw)
+
+
+def _dataset_snapshot(path):
+    raw = artifact.read_bytes(path, runner.MAX_DATASET_BYTES, label="dataset")
+    rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
+    if len(rows) > runner.MAX_DATASET_ROWS:
+        raise ValueError("dataset has too many rows")
+    for row in rows:
+        artifact.validate_benchmark_row(row, require_result=False)
+        if any(not isinstance(row.get(key), str) for key in ("func", "code", "doc")):
+            raise ValueError("dataset func, code, and doc must be strings")
+        runner.validate_pair(row)
+    if len({row["id"] for row in rows}) != len(rows):
+        raise ValueError("dataset contains duplicate pair ids")
+    return raw, rows
+
+
+def _render_snapshot_report(documents, required, threshold):
+    with tempfile.TemporaryDirectory(prefix="evergreen-publication-report-") as directory:
+        paths = []
+        for name, document in documents:
+            path = Path(directory) / name
+            path.write_bytes(canonical_bytes(document))
+            paths.append(path)
+        return report.render_markdown(paths, sorted(required), threshold).encode()
 
 
 def _settings_sha256(settings):
@@ -247,28 +389,35 @@ def export_publication(
         raise ValueError("coverage threshold must be between 0 and 1")
 
     sources = []
-    for expected, source in source_specs:
+    for expected, source in sorted(source_specs, key=lambda item: str(Path(item[1]).resolve())):
         source = Path(source)
-        actual = artifact.sha256_file(source, artifact.MAX_ARTIFACT_BYTES)
+        raw, document = _json_snapshot(source, artifact.MAX_ARTIFACT_BYTES, "source artifact")
+        actual = hashlib.sha256(raw).hexdigest()
         if actual != expected:
             raise ValueError("source artifact SHA-256 does not match expected identity")
-        sources.append((expected, source, source.stat().st_size))
+        sources.append((expected, source, raw, document))
 
-    loaded = report._load_artifacts([source for _digest, source, _size in sources])
     projected = []
     observed_languages = set()
+    compatibility = None
+    all_ids = set()
+    row_count = 0
     total_bytes = 0
-    for source_info, loaded_artifact in zip(
-        sorted(sources, key=lambda item: str(item[1].resolve())), loaded
-    ):
-        expected, source, source_bytes = source_info
-        document = artifact.load_json(source, artifact.MAX_ARTIFACT_BYTES)
-        dataset_value = loaded_artifact["metadata"]["dataset"]
+    for expected, source, source_raw, document in sources:
+        public_document = project_artifact(document)
+        metadata = public_document["metadata"]
+        identity = {key: value for key, value in metadata.items() if key != "dataset"}
+        if compatibility is None:
+            compatibility = identity
+        elif identity != compatibility:
+            raise ValueError("incompatible provenance across artifacts")
+        dataset_value = metadata["dataset"]
         dataset_path = repo / dataset_value["path"]
         repository_path(dataset_path, repo)
-        _payload, dataset_rows = runner.load_dataset(dataset_path)
+        dataset_raw, dataset_rows = _dataset_snapshot(dataset_path)
+        if hashlib.sha256(dataset_raw).hexdigest() != dataset_value["sha256"]:
+            raise ValueError("dataset SHA-256 does not match source provenance")
         artifact.resume_state(document, document["metadata"], dataset_rows=dataset_rows)
-        public_document = project_artifact(document)
         languages = {row["language"] for row in public_document["rows"]}
         if len(languages) != 1:
             raise ValueError("each public artifact must contain exactly one language")
@@ -276,6 +425,13 @@ def export_publication(
         if language in observed_languages:
             raise ValueError("duplicate public artifact language")
         observed_languages.add(language)
+        identifiers = {row["id"] for row in public_document["rows"]}
+        if identifiers & all_ids:
+            raise ValueError("duplicate public pair id")
+        all_ids.update(identifiers)
+        row_count += len(identifiers)
+        if row_count > MAX_PUBLIC_ROWS:
+            raise ValueError("public artifacts exceed aggregate row limit")
         public_bytes = canonical_bytes(public_document)
         if len(public_bytes) > MAX_PUBLIC_ARTIFACT_BYTES:
             raise ValueError("public artifact exceeds per-file byte limit")
@@ -284,7 +440,7 @@ def export_publication(
             "document": public_document,
             "language": language,
             "name": source.name,
-            "source_bytes": source_bytes,
+            "source_bytes": len(source_raw),
             "source_sha256": expected,
             "dataset": dataset_value,
             "bytes": public_bytes,
@@ -304,9 +460,9 @@ def export_publication(
     parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.", dir=parent))
     try:
-        staged_paths = []
         entries = []
-        for item in sorted(projected, key=lambda value: (value["language"], value["name"])):
+        ordered = sorted(projected, key=lambda value: (value["language"], value["name"]))
+        for item in ordered:
             destination = staging / item["name"]
             artifact.atomic_write_json(
                 destination, item["document"], max_bytes=MAX_PUBLIC_ARTIFACT_BYTES
@@ -315,7 +471,6 @@ def export_publication(
                 destination, MAX_PUBLIC_ARTIFACT_BYTES, label="public artifact"
             ) != item["bytes"]:
                 raise ValueError("public artifact serialization is not canonical")
-            staged_paths.append(destination)
             final_path = output_dir / item["name"]
             entries.append({
                 "bytes": len(item["bytes"]),
@@ -329,7 +484,10 @@ def export_publication(
                     "sha256": item["source_sha256"],
                 },
             })
-        rendered = report.render_markdown(staged_paths, sorted(required), coverage_threshold).encode()
+        rendered = _render_snapshot_report(
+            [(item["name"], item["document"]) for item in ordered],
+            required, coverage_threshold,
+        )
         if rendered != expected_report:
             raise ValueError("public artifacts do not regenerate the declared report")
         shared = projected[0]["document"]["metadata"]
@@ -390,6 +548,32 @@ def _hash(value, label):
     if not isinstance(value, str) or not SHA256.fullmatch(value):
         raise ValueError(f"{label} must be lowercase SHA-256")
     return value
+
+
+def _validate_public_artifact(document):
+    expected = {"schema_version", "metadata", "timing", "rows"}
+    if isinstance(document, dict) and "provider_usage" in document:
+        expected.add("provider_usage")
+    if not isinstance(document, dict) or set(document) != expected:
+        raise ValueError("public artifact envelope fields are invalid")
+    if type(document["schema_version"]) is not int or document["schema_version"] != 1:
+        raise ValueError("public artifact schema is invalid")
+    metadata = document["metadata"]
+    if _project_metadata(metadata) != metadata:
+        raise ValueError("public artifact metadata fields are invalid")
+    timing = document["timing"]
+    if _project_timing(timing) != timing:
+        raise ValueError("public artifact timing fields are invalid")
+    if "provider_usage" in document:
+        usage = document["provider_usage"]
+        if _project_usage(usage) != usage:
+            raise ValueError("public artifact provider usage fields are invalid")
+    rows = document["rows"]
+    if not isinstance(rows, list) or len(rows) > MAX_PUBLIC_ROWS:
+        raise ValueError("public artifact rows are invalid")
+    for row in rows:
+        _validate_public_row(row)
+    return metadata, rows
 
 
 def _public_stage(stage, name, required):
@@ -494,7 +678,9 @@ def verify_publication(manifest_path, repo, report_path):
     if not manifest_path.is_absolute():
         manifest_path = repo / manifest_path
     repository_path(manifest_path, repo)
-    manifest = artifact.load_json(manifest_path, MAX_PUBLIC_ARTIFACT_BYTES)
+    _manifest_raw, manifest = _json_snapshot(
+        manifest_path, MAX_PUBLIC_ARTIFACT_BYTES, "manifest"
+    )
     if not isinstance(manifest, dict) or set(manifest) != {
         "schema_version", "kind", "evaluated_release", "projection", "publication",
         "provenance", "artifacts", "report",
@@ -525,9 +711,10 @@ def verify_publication(manifest_path, repo, report_path):
             len(entries) > MAX_PUBLIC_ARTIFACTS or len(entries) != len(required)):
         raise ValueError("public manifest artifact count is invalid")
     public_paths = []
+    snapshots = []
     observed_languages = set()
     total_bytes = 0
-    entry_by_path = {}
+    observed_paths = set()
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) != {
             "bytes", "dataset", "language", "path", "rows", "sha256", "source",
@@ -537,10 +724,10 @@ def verify_publication(manifest_path, repo, report_path):
             raise ValueError("duplicate public manifest language")
         observed_languages.add(entry["language"])
         path = _manifest_file(entry["path"], repo)
-        if entry["path"] in entry_by_path:
+        if entry["path"] in observed_paths:
             raise ValueError("duplicate public manifest path")
-        entry_by_path[entry["path"]] = entry
-        raw = artifact.read_bytes(path, MAX_PUBLIC_ARTIFACT_BYTES, label="public artifact")
+        observed_paths.add(entry["path"])
+        raw, document = _json_snapshot(path, MAX_PUBLIC_ARTIFACT_BYTES, "public artifact")
         if type(entry["bytes"]) is not int or entry["bytes"] != len(raw):
             raise ValueError("public artifact bytes do not match manifest")
         total_bytes += len(raw)
@@ -557,42 +744,57 @@ def verify_publication(manifest_path, repo, report_path):
         if not isinstance(dataset, dict) or set(dataset) != {"path", "sha256"}:
             raise ValueError("public dataset identity is invalid")
         _hash(dataset["sha256"], "dataset hash")
+        metadata, rows = _validate_public_artifact(document)
+        if len(rows) != entry["rows"]:
+            raise ValueError("public artifact row count does not match manifest")
+        if any(row["language"] != entry["language"] for row in rows):
+            raise ValueError("public artifact language does not match manifest entry")
+        if metadata["dataset"] != entry["dataset"]:
+            raise ValueError("public artifact dataset metadata does not match manifest")
         public_paths.append(path)
+        snapshots.append({
+            "document": document, "entry": entry, "metadata": metadata, "rows": rows,
+        })
     if total_bytes > MAX_TOTAL_PUBLIC_BYTES:
         raise ValueError("public artifacts exceed aggregate byte limit")
     if observed_languages != required:
         raise ValueError("public manifest languages do not match policy")
 
-    loaded = report._load_artifacts(public_paths)
     all_ids = set()
-    for loaded_artifact in loaded:
-        path = loaded_artifact["path"]
-        entry = entry_by_path[repository_path(path, repo)]
-        document = artifact.load_json(path, MAX_PUBLIC_ARTIFACT_BYTES)
-        if len(document["rows"]) != entry["rows"]:
-            raise ValueError("public artifact row count does not match manifest")
-        for row in document["rows"]:
-            _validate_public_row(row)
+    compatibility = None
+    dataset_snapshots = {}
+    for snapshot in snapshots:
+        entry = snapshot["entry"]
+        metadata = snapshot["metadata"]
+        rows = snapshot["rows"]
+        identity = {key: value for key, value in metadata.items() if key != "dataset"}
+        if compatibility is None:
+            compatibility = identity
+        elif identity != compatibility:
+            raise ValueError("incompatible provenance across public artifacts")
+        for row in rows:
             if row["id"] in all_ids:
                 raise ValueError("duplicate public pair id")
             all_ids.add(row["id"])
-        metadata = loaded_artifact["metadata"]
-        if metadata["dataset"] != entry["dataset"]:
-            raise ValueError("public artifact dataset metadata does not match manifest")
+            if len(all_ids) > MAX_PUBLIC_ROWS:
+                raise ValueError("public artifacts exceed aggregate row limit")
         dataset_path = _manifest_file(entry["dataset"]["path"], repo)
-        if artifact.sha256_file(dataset_path, artifact.MAX_DATASET_METADATA_BYTES) != entry["dataset"]["sha256"]:
+        dataset_key = dataset_path.resolve()
+        if dataset_key not in dataset_snapshots:
+            dataset_snapshots[dataset_key] = _dataset_snapshot(dataset_path)
+        dataset_raw, dataset_rows = dataset_snapshots[dataset_key]
+        if hashlib.sha256(dataset_raw).hexdigest() != entry["dataset"]["sha256"]:
             raise ValueError("dataset SHA-256 does not match manifest")
-        _payload, dataset_rows = runner.load_dataset(dataset_path)
         expected = {row["id"]: row for row in dataset_rows}
-        if len(expected) != len(document["rows"]):
+        if len(expected) != len(rows):
             raise ValueError("public artifact does not cover the declared dataset")
-        for row in document["rows"]:
+        for row in rows:
             source = expected.get(row["id"])
             if source is None or any(row[key] != source[key] for key in
                                      ("language", "label", "category")):
                 raise ValueError("public artifact row does not match declared dataset")
 
-    metadata = loaded[0]["metadata"]
+    metadata = snapshots[0]["metadata"]
     provenance = manifest["provenance"]
     if not isinstance(provenance, dict) or set(provenance) != {
         "cli_version", "commit", "judge_sha256", "provider", "settings_sha256",
@@ -629,7 +831,14 @@ def verify_publication(manifest_path, repo, report_path):
     report_bytes = artifact.read_bytes(report_path, report.MAX_TOTAL_ARTIFACT_BYTES, label="report")
     if hashlib.sha256(report_bytes).hexdigest() != _hash(declared_report["sha256"], "report hash"):
         raise ValueError("report SHA-256 does not match manifest")
-    rendered = report.render_markdown(public_paths, sorted(required), threshold).encode()
+    rendered = _render_snapshot_report(
+        [
+            (Path(snapshot["entry"]["path"]).name, snapshot["document"])
+            for snapshot in snapshots
+        ],
+        required,
+        threshold,
+    )
     if rendered != report_bytes:
         raise ValueError("public artifacts do not regenerate the report")
     return public_paths
@@ -662,7 +871,7 @@ def main(argv=None):
         else:
             paths = verify_publication(args.manifest, args.repo, args.report)
             print(f"verified public benchmark publication: {len(paths)} artifacts")
-    except (OSError, ValueError, json.JSONDecodeError, RecursionError) as error:
+    except (OSError, TypeError, ValueError, json.JSONDecodeError, RecursionError) as error:
         message = " ".join(str(error).split())[:500] or error.__class__.__name__
         print(f"publication error: {message}", file=sys.stderr)
         return 2

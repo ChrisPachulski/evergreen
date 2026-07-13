@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from eval.bench import artifact, publication, report
 
@@ -174,6 +175,55 @@ class ProjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "timing"):
             publication.project_artifact(broken)
 
+    def test_projection_reconstructs_every_public_envelope_object(self):
+        document = private_artifact([private_row()])
+        document["private_top_level"] = "/Users/private"
+        document["metadata"]["provider_environment"] = {"HOME": "/Users/private"}
+        document["metadata"]["judge"]["private_nested"] = "secret"
+        document["timing"]["why"] = "private explanation"
+        document["provider_usage"] = {
+            "input_tokens": 12,
+            "nested": {"requests": 1},
+            "private_counter": 3,
+        }
+
+        projected = publication.project_artifact(document)
+
+        self.assertEqual(set(projected), {
+            "schema_version", "metadata", "timing", "provider_usage", "rows",
+        })
+        self.assertEqual(set(projected["metadata"]), {
+            "dataset", "provider", "skill", "judge", "git", "cli_version", "settings",
+        })
+        self.assertEqual(set(projected["metadata"]["judge"]), {
+            "path", "sha256", "files",
+        })
+        self.assertEqual(set(projected["timing"]), {"started_at", "elapsed_seconds"})
+        self.assertEqual(projected["provider_usage"], {"input_tokens": 12})
+        self.assertNotIn("/Users/private", json.dumps(projected))
+
+    def test_category_and_verdict_validation_is_type_safe(self):
+        for field, value in (("category", []), ("final_verdict", {}), ("verdict", [])):
+            with self.subTest(field=field):
+                row = private_row()
+                target = row if field == "category" else row["got"]
+                target[field] = value
+                with self.assertRaises(ValueError):
+                    publication.project_row(row)
+
+    def test_projection_refuses_unversioned_detector_provenance(self):
+        for field, value in (
+            ("resolver", "v2"),
+            ("context_protocol", "java-git-window-v1"),
+            ("split_manifest_sha256", "a" * 64),
+            ("split", "holdout"),
+        ):
+            with self.subTest(field=field):
+                document = private_artifact([private_row()])
+                document["metadata"]["settings"][field] = value
+                with self.assertRaisesRegex(ValueError, "publication schema"):
+                    publication.project_artifact(document)
+
 
 class PublicationTests(unittest.TestCase):
     def make_source_package(self, root):
@@ -336,6 +386,143 @@ class PublicationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "public artifact projection"):
                 publication.verify_publication(manifest_path, repo, report_path)
 
+    def test_verify_rejects_rehashed_extras_at_every_public_envelope_level(self):
+        mutations = (
+            lambda value: value.update({"private_top_level": "secret"}),
+            lambda value: value["metadata"].update({
+                "provider_environment": {"HOME": "/Users/private"},
+            }),
+            lambda value: value["metadata"]["judge"].update({"private_nested": "secret"}),
+            lambda value: value["timing"].update({"why": "private explanation"}),
+            lambda value: value.update({
+                "provider_usage": {"input_tokens": 1, "nested": {"requests": 2}},
+            }),
+            lambda value: value.update({
+                "provider_usage": {"input_tokens": {"private_counter": 2}},
+            }),
+        )
+        for mutate in mutations:
+            with self.subTest(mutate=mutate), tempfile.TemporaryDirectory() as directory:
+                repo, manifest_path, report_path = self.make_git_publication(Path(directory))
+                manifest = json.loads(manifest_path.read_text())
+                public_path = repo / manifest["artifacts"][0]["path"]
+                value = json.loads(public_path.read_text())
+                mutate(value)
+                public_path.write_bytes(publication.canonical_bytes(value))
+                manifest["artifacts"][0]["bytes"] = public_path.stat().st_size
+                manifest["artifacts"][0]["sha256"] = hashlib.sha256(
+                    public_path.read_bytes()
+                ).hexdigest()
+                manifest_path.write_bytes(publication.canonical_bytes(manifest))
+
+                with self.assertRaisesRegex(ValueError, "public artifact"):
+                    publication.verify_publication(manifest_path, repo, report_path)
+
+    def test_export_uses_one_source_snapshot_for_hash_parse_and_projection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, digest, _report_path = self.make_source_package(root)
+            swapped = json.loads(source.read_text())
+            swapped["rows"][0]["got"]["final_verdict"] = "inconsistent"
+            swapped["rows"][0]["got"]["verdict"] = "inconsistent"
+            swapped_bytes = publication.canonical_bytes(swapped)
+            swapped_path = root / "swapped.json"
+            swapped_path.write_bytes(swapped_bytes)
+            report_path = root / "swapped-report.md"
+            report_path.write_text(report.render_markdown([swapped_path], ["rust"], 0.99))
+            original_read = artifact.read_bytes
+            replaced = False
+
+            def replace_after_read(path, *args, **kwargs):
+                nonlocal replaced
+                payload = original_read(path, *args, **kwargs)
+                if Path(path).resolve() == source.resolve() and not replaced:
+                    replaced = True
+                    source.write_bytes(swapped_bytes)
+                return payload
+
+            with mock.patch.object(artifact, "read_bytes", side_effect=replace_after_read):
+                with self.assertRaisesRegex(ValueError, "report"):
+                    publication.export_publication(
+                        [(digest, source)], root / "public", "0.4.0", ["rust"], 0.99,
+                        report_path, root,
+                    )
+            self.assertFalse((root / "public").exists())
+
+    def test_verify_uses_one_artifact_and_dataset_snapshot(self):
+        for target in ("artifact", "dataset"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                repo, manifest_path, report_path = self.make_git_publication(Path(directory))
+                manifest = json.loads(manifest_path.read_text())
+                entry = manifest["artifacts"][0]
+                public_path = repo / entry["path"]
+                dataset_path = repo / entry["dataset"]["path"]
+                tampered_public = json.loads(public_path.read_text())
+                tampered_dataset = json.loads(dataset_path.read_text())
+
+                if target == "artifact":
+                    tampered_public["rows"][0]["got"]["final_verdict"] = "inconsistent"
+                    tampered_public["rows"][0]["got"]["verdict"] = "inconsistent"
+                    tampered_public_bytes = publication.canonical_bytes(tampered_public)
+                    swapped_path = Path(directory) / "swapped-public.json"
+                    swapped_path.write_bytes(tampered_public_bytes)
+                    report_path.write_text(report.render_markdown(
+                        [swapped_path], ["rust"], 0.99
+                    ))
+                    manifest["report"]["sha256"] = hashlib.sha256(
+                        report_path.read_bytes()
+                    ).hexdigest()
+                    manifest_path.write_bytes(publication.canonical_bytes(manifest))
+                    original_read = artifact.read_bytes
+                    replaced = False
+
+                    def replace_artifact_after_read(path, *args, **kwargs):
+                        nonlocal replaced
+                        payload = original_read(path, *args, **kwargs)
+                        if Path(path).resolve() == public_path.resolve() and not replaced:
+                            replaced = True
+                            public_path.write_bytes(tampered_public_bytes)
+                        return payload
+
+                    context = mock.patch.object(
+                        artifact, "read_bytes", side_effect=replace_artifact_after_read
+                    )
+                else:
+                    tampered_public["rows"][0]["category"] = "direct-mismatch"
+                    tampered_public_bytes = publication.canonical_bytes(tampered_public)
+                    tampered_dataset["category"] = "direct-mismatch"
+                    tampered_dataset_bytes = (
+                        json.dumps(tampered_dataset, sort_keys=True) + "\n"
+                    ).encode()
+                    public_path.write_bytes(tampered_public_bytes)
+                    entry["bytes"] = len(tampered_public_bytes)
+                    entry["sha256"] = hashlib.sha256(tampered_public_bytes).hexdigest()
+                    swapped_path = Path(directory) / "swapped-public.json"
+                    swapped_path.write_bytes(tampered_public_bytes)
+                    report_path.write_text(report.render_markdown(
+                        [swapped_path], ["rust"], 0.99
+                    ))
+                    manifest["report"]["sha256"] = hashlib.sha256(
+                        report_path.read_bytes()
+                    ).hexdigest()
+                    manifest_path.write_bytes(publication.canonical_bytes(manifest))
+                    original_hash = artifact.sha256_file
+                    replaced = False
+
+                    def replace_dataset_after_hash(path, *args, **kwargs):
+                        nonlocal replaced
+                        digest_value = original_hash(path, *args, **kwargs)
+                        if Path(path).resolve() == dataset_path.resolve() and not replaced:
+                            replaced = True
+                            dataset_path.write_bytes(tampered_dataset_bytes)
+                        return digest_value
+
+                    context = mock.patch.object(
+                        artifact, "sha256_file", side_effect=replace_dataset_after_hash
+                    )
+                with context, self.assertRaises(ValueError):
+                    publication.verify_publication(manifest_path, repo, report_path)
+
     def test_verify_rejects_manifest_dataset_report_and_git_tampering(self):
         cases = ("artifact", "dataset", "report", "tree")
         for case in cases:
@@ -373,6 +560,7 @@ class PublicationTests(unittest.TestCase):
     def test_verify_cli_reports_success_and_structural_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             repo, manifest_path, report_path = self.make_git_publication(Path(directory))
+            valid_manifest = json.loads(manifest_path.read_text())
             script = Path(publication.__file__).resolve()
             command = [
                 sys.executable, str(script), "verify", "--manifest", str(manifest_path),
@@ -390,6 +578,20 @@ class PublicationTests(unittest.TestCase):
             self.assertIn("publication error:", completed.stderr)
             self.assertNotIn("not json", completed.stderr)
 
+            public_path = repo / valid_manifest["artifacts"][0]["path"]
+            public_document = json.loads(public_path.read_text())
+            public_document["rows"][0]["got"]["verdict"] = []
+            public_path.write_bytes(publication.canonical_bytes(public_document))
+            valid_manifest["artifacts"][0]["bytes"] = public_path.stat().st_size
+            valid_manifest["artifacts"][0]["sha256"] = hashlib.sha256(
+                public_path.read_bytes()
+            ).hexdigest()
+            manifest_path.write_bytes(publication.canonical_bytes(valid_manifest))
+            completed = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 2)
+            self.assertIn("publication error:", completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
+
 
 class CommittedPublicationTests(unittest.TestCase):
     def test_committed_0_4_0_publication_verifies(self):
@@ -400,3 +602,24 @@ class CommittedPublicationTests(unittest.TestCase):
             repo / "eval/bench/results-0.4.0.md",
         )
         self.assertEqual(len(paths), 5)
+
+    def test_manifest_language_is_bound_to_its_specific_artifact(self):
+        repo = Path(__file__).parent.parent.resolve()
+        source = repo / "eval/bench/public/0.4.0/manifest.json"
+        manifest = json.loads(source.read_text())
+        java = next(item for item in manifest["artifacts"] if item["language"] == "Java")
+        python = next(item for item in manifest["artifacts"] if item["language"] == "Python")
+        java["language"], python["language"] = python["language"], java["language"]
+        public_root = source.parent
+        with tempfile.NamedTemporaryFile(
+            prefix="manifest-language-swap-", suffix=".json", dir=public_root, delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(publication.canonical_bytes(manifest))
+        try:
+            with self.assertRaisesRegex(ValueError, "language"):
+                publication.verify_publication(
+                    temporary, repo, repo / "eval/bench/results-0.4.0.md"
+                )
+        finally:
+            temporary.unlink(missing_ok=True)
