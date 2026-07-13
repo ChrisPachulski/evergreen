@@ -25,24 +25,35 @@ def selftest():
 
 
 def score(rows):
-    """Return completed-row metrics, abstention coverage, and the under-promise tally."""
+    """Return decision metrics plus separate provider and semantic coverage."""
     languages = {row.get("language", "unknown") for row in rows}
     if len(languages) > 1:
         raise ValueError("score accepts one language at a time")
 
-    def completed(row):
+    def provider_completed(row):
         status = row.get("final_status")
-        verdict = row.get("final_verdict") if status is not None else row.get("verdict")
-        return (status in (None, "complete")) and verdict in VERDICTS
+        if status is None:
+            return row.get("verdict") in VERDICTS
+        return status == "complete"
+
+    def decided(row):
+        status = row.get("final_status")
+        semantic = row.get("semantic_status")
+        value = row.get("final_verdict") if status is not None else row.get("verdict")
+        if semantic == "unverified" or semantic == "not-evaluated":
+            return False
+        return (status in (None, "complete")) and value in VERDICTS
 
     def verdict(row):
         return row.get("final_verdict") if row.get("final_status") is not None else row.get("verdict")
 
     attempted = len(rows)
-    completed_rows = [r for r in rows if completed(r)]
-    core = [r for r in completed_rows if r["category"] in CORE_CATEGORIES]
+    provider_rows = [r for r in rows if provider_completed(r)]
+    decided_rows = [r for r in rows if decided(r)]
+    unverified_rows = [r for r in provider_rows if r.get("semantic_status") == "unverified"]
+    core = [r for r in decided_rows if r["category"] in CORE_CATEGORIES]
     under = [r for r in rows if r["category"] == "under-promise"]
-    under_completed = [r for r in under if completed(r)]
+    under_completed = [r for r in under if decided(r)]
     tp = sum(r["label"] == "inconsistent" and verdict(r) == "inconsistent" for r in core)
     fp = sum(r["label"] == "consistent" and verdict(r) == "inconsistent" for r in core)
     fn = sum(r["label"] == "inconsistent" and verdict(r) == "consistent" for r in core)
@@ -69,9 +80,18 @@ def score(rows):
         "accuracy": accuracy,
         "flag_rate": flag_rate,
         "attempted": attempted,
-        "completed": len(completed_rows),
-        "abstained": attempted - len(completed_rows),
-        "completion_rate": len(completed_rows) / attempted if attempted else 0.0,
+        "provider_completed": len(provider_rows),
+        "provider_abstained": attempted - len(provider_rows),
+        "provider_completion_rate": len(provider_rows) / attempted if attempted else 0.0,
+        "decided": len(decided_rows),
+        "unverified": len(unverified_rows),
+        "decision_rate": len(decided_rows) / len(provider_rows) if provider_rows else 0.0,
+        "decided_positive": sum(row["label"] == "inconsistent" for row in decided_rows),
+        "decided_negative": sum(row["label"] == "consistent" for row in decided_rows),
+        # Backward-compatible aliases retain their provider-transport meaning.
+        "completed": len(provider_rows),
+        "abstained": attempted - len(provider_rows),
+        "completion_rate": len(provider_rows) / attempted if attempted else 0.0,
         "under_flagged": sum(verdict(r) == "inconsistent" for r in under_completed),
         "under_total": len(under),
         "under_attempted": len(under),
@@ -84,7 +104,8 @@ def score(rows):
 def split_metrics(rows, pos_frac, resamples=1000, seed=0):
     """Median metrics at a fixed prevalence: keep every inconsistent core pair, resample the
     consistent class to the target ratio (CASCADE's protocol, arXiv:2604.19400)."""
-    core = [r for r in rows if r["category"] in CORE_CATEGORIES and
+    core = [r for r in rows if r.get("semantic_status") != "unverified" and
+            r["category"] in CORE_CATEGORIES and
             ((r.get("final_status") is None and r.get("verdict") in VERDICTS) or
              (r.get("final_status") == "complete" and r.get("final_verdict") in VERDICTS))]
     pos = [r for r in core if r["label"] == "inconsistent"]
@@ -107,8 +128,10 @@ def split_metrics(rows, pos_frac, resamples=1000, seed=0):
 def _report_language(rows, label):
     m = score(rows)
     n = m["tp"] + m["fp"] + m["fn"] + m["tn"]
-    print(f"\ncompletion: {m['completed']}/{m['attempted']} completed, {m['abstained']} abstained"
-          f" ({m['completion_rate']:.1%})")
+    print(f"\nprovider completion: {m['provider_completed']}/{m['attempted']} completed, "
+          f"{m['provider_abstained']} abstained ({m['provider_completion_rate']:.1%})")
+    print(f"semantic decisions: {m['decided']}/{m['provider_completed']} decided, "
+          f"{m['unverified']} unverified ({m['decision_rate']:.1%})")
     print(f"\ncore set (consistent + direct-mismatch + over-promise), n={n}{label}")
     if m["metrics_available"]:
         nat = split_metrics(rows, 0.10)
@@ -146,13 +169,18 @@ def rows_from_transcript(transcript):
     rows = []
     for item in transcript:
         got = item.get("got") or {}
-        if got.get("final_status") == "complete" and got.get("final_verdict") in VERDICTS:
-            status, verdict = "complete", got["final_verdict"]
+        if (got.get("final_status") == "complete" and
+                got.get("semantic_status") == "unverified" and
+                got.get("final_verdict") is None):
+            status, semantic, verdict = "complete", "unverified", None
+        elif got.get("final_status") == "complete" and got.get("final_verdict") in VERDICTS:
+            status, semantic, verdict = "complete", "decided", got["final_verdict"]
         elif "final_status" not in got and got.get("verdict") in VERDICTS:
-            status, verdict = "complete", got["verdict"]  # legacy completed artifact
+            status, semantic, verdict = "complete", "decided", got["verdict"]
         else:
-            status, verdict = "abstain", None
+            status, semantic, verdict = "abstain", "not-evaluated", None
         rows.append({"language": item.get("language", "unknown"),
                      "label": item["label"], "category": item["category"],
-                     "final_status": status, "final_verdict": verdict})
+                     "final_status": status, "semantic_status": semantic,
+                     "final_verdict": verdict})
     return rows

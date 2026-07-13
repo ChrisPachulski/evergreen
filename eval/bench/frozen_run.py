@@ -22,11 +22,15 @@ try:
         MAX_ARTIFACT_BYTES, artifact_metadata, git_identity, read_bytes, resume_state,
     )
     from .runner import artifact_filename, load_dataset, require_single_language
+    from .java_context import PROTOCOL as JAVA_CONTEXT_PROTOCOL, validate_context
+    from .split_manifest import MAX_MANIFEST_BYTES, load_split_assignments
 except ImportError:
     from artifact import (
         MAX_ARTIFACT_BYTES, artifact_metadata, git_identity, read_bytes, resume_state,
     )
     from runner import artifact_filename, load_dataset, require_single_language
+    from java_context import PROTOCOL as JAVA_CONTEXT_PROTOCOL, validate_context
+    from split_manifest import MAX_MANIFEST_BYTES, load_split_assignments
 
 
 HERE = Path(__file__).resolve().parent
@@ -36,6 +40,55 @@ ARCHIVE_NAME = re.compile(r"\.rows-(\d+)\.([0-9a-f]{64})\.json$")
 
 class LiveArtifactIncompatible(ValueError):
     pass
+
+
+def run_policy(_dataset, rows, resolver, split_manifest, split, context_protocol):
+    """Validate and return immutable detector-policy provenance for a frozen lane."""
+    if resolver not in ("v1", "v2"):
+        raise ValueError("resolver must be v1 or v2")
+    if context_protocol not in ("none", JAVA_CONTEXT_PROTOCOL):
+        raise ValueError("unknown context protocol")
+    if resolver == "v2" and (split_manifest is None or split is None):
+        raise ValueError("resolver v2 requires --split-manifest and --split")
+    if (resolver == "v2" and
+            any(row.get("language", "python").casefold() == "java" for row in rows) and
+            context_protocol != JAVA_CONTEXT_PROTOCOL):
+        raise ValueError(
+            f"Java resolver v2 requires context protocol {JAVA_CONTEXT_PROTOCOL}"
+        )
+    if (split_manifest is None) != (split is None):
+        raise ValueError("split manifest and split must be declared together")
+    manifest_sha256 = None
+    if split_manifest is not None:
+        if split not in ("dev", "holdout"):
+            raise ValueError("split must be dev or holdout")
+        before = read_bytes(
+            split_manifest, MAX_MANIFEST_BYTES, label="split manifest provenance"
+        )
+        assignments = load_split_assignments(Path(split_manifest))
+        after = read_bytes(
+            split_manifest, MAX_MANIFEST_BYTES, label="split manifest provenance"
+        )
+        if before != after:
+            raise ValueError("split manifest changed during frozen preflight")
+        if any(assignments.get(row.get("id")) != split for row in rows):
+            raise ValueError("every input row must belong to the declared split")
+        manifest_sha256 = hashlib.sha256(before).hexdigest()
+    if context_protocol == "none":
+        if any("context" in row for row in rows):
+            raise ValueError("dataset context is present but not declared")
+    else:
+        if any(row.get("language", "python").casefold() != "java" or
+               "context" not in row for row in rows):
+            raise ValueError("context protocol requires context on every Java input row")
+        for row in rows:
+            validate_context(row["context"])
+    return {
+        "resolver": resolver,
+        "context_protocol": context_protocol,
+        "split_manifest_sha256": manifest_sha256,
+        "split": split,
+    }
 
 
 def validate_locations(repo, archive):
@@ -316,6 +369,12 @@ def parse_args(argv=None):
     parser.add_argument("--provider", choices=("claude", "codex"), default="codex")
     parser.add_argument("--strong-model", default="gpt-5.6-sol")
     parser.add_argument("--cheap-model", default="gpt-5.6-sol")
+    parser.add_argument("--resolver", choices=("v1", "v2"), default="v1")
+    parser.add_argument("--split-manifest", type=Path)
+    parser.add_argument("--split", choices=("dev", "holdout"))
+    parser.add_argument(
+        "--context-protocol", choices=("none", JAVA_CONTEXT_PROTOCOL), default="none"
+    )
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--minimum-free-gib", type=float, default=8.0)
     parser.add_argument("--poll-seconds", type=float, default=5.0)
@@ -337,6 +396,10 @@ def main(argv=None):
     }
     _payload, rows = load_dataset(args.dataset)
     require_single_language(rows)
+    settings.update(run_policy(
+        args.dataset, rows, args.resolver, args.split_manifest, args.split,
+        args.context_protocol,
+    ))
     expected_metadata = artifact_metadata(args.dataset, repo, settings)
     expected = expected_metadata["git"]
     if expected.get("dirty") is not False or expected.get("commit") == "unavailable":
@@ -361,7 +424,7 @@ def main(argv=None):
     lock = acquire_lock(global_lock)
     try:
         output = HERE / "out" / artifact_filename(
-            args.dataset, args.strong_model, args.provider
+            args.dataset, args.strong_model, args.provider, args.resolver
         )
         prepare_output(output, archive, expected_metadata, dataset_rows=rows)
         environment = dict(os.environ)
@@ -380,6 +443,10 @@ def main(argv=None):
             "EVAL_MODEL_STRONG": args.strong_model,
             "EVAL_MODEL_CHEAP": args.cheap_model,
             "EVAL_CONCURRENCY": str(args.concurrency),
+            "EVAL_RESOLVER": args.resolver,
+            "EVAL_CONTEXT_PROTOCOL": args.context_protocol,
+            "EVAL_SPLIT_MANIFEST_SHA256": settings["split_manifest_sha256"] or "",
+            "EVAL_SPLIT": settings["split"] or "",
         })
         if (git_identity(repo) != expected or workspace_token(repo) != anchored_workspace or
                 path_token(archive) != anchored_archive):

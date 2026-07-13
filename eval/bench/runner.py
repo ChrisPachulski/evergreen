@@ -80,6 +80,34 @@ def eval_provider(environment=os.environ):
     return provider
 
 
+def eval_resolver(environment=os.environ):
+    resolver = environment.get("EVAL_RESOLVER", "v1")
+    if resolver not in ("v1", "v2"):
+        raise ValueError("EVAL_RESOLVER must be v1 or v2")
+    return resolver
+
+
+def eval_policy_settings(environment=os.environ):
+    resolver = eval_resolver(environment)
+    context_protocol = environment.get("EVAL_CONTEXT_PROTOCOL", "none")
+    if context_protocol not in ("none", "java-git-window-v1"):
+        raise ValueError("EVAL_CONTEXT_PROTOCOL is invalid")
+    manifest = environment.get("EVAL_SPLIT_MANIFEST_SHA256") or None
+    split = environment.get("EVAL_SPLIT") or None
+    if (manifest is None) != (split is None):
+        raise ValueError("frozen split provenance must include both manifest hash and split")
+    if resolver == "v2" and (manifest is None or split is None):
+        raise ValueError("resolver v2 requires frozen split provenance")
+    if manifest is not None and not re.fullmatch(r"[0-9a-f]{64}", manifest):
+        raise ValueError("frozen split provenance hash is invalid")
+    if split is not None and split not in ("dev", "holdout"):
+        raise ValueError("frozen split provenance split is invalid")
+    return {
+        "resolver": resolver, "context_protocol": context_protocol,
+        "split_manifest_sha256": manifest, "split": split,
+    }
+
+
 def require_frozen_run(environment=os.environ):
     try:
         descriptor = int(environment["EVAL_FROZEN_FD"])
@@ -103,11 +131,24 @@ def require_frozen_run(environment=os.environ):
         )
 
 
-def artifact_filename(dataset, strong_model, provider):
+def artifact_filename(dataset, strong_model, provider, resolver="v1"):
     parts = (Path(dataset).stem, provider, strong_model)
     if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", part) for part in parts):
         raise ValueError("dataset, provider, and model names must be safe filename components")
-    return f"bench-{parts[0]}-trial-{parts[1]}-{parts[2]}.json"
+    if resolver not in ("v1", "v2"):
+        raise ValueError("resolver must be v1 or v2")
+    suffix = "" if resolver == "v1" else f"-resolver-{resolver}"
+    return f"bench-{parts[0]}-trial-{parts[1]}-{parts[2]}{suffix}.json"
+
+
+def validate_dataset_policy(rows, policy):
+    protocol = policy["context_protocol"]
+    if protocol == "none" and any("context" in row for row in rows):
+        raise ValueError("dataset context is present but not declared")
+    if protocol == "java-git-window-v1" and any(
+            row.get("language", "python").casefold() != "java" or "context" not in row
+            for row in rows):
+        raise ValueError("Java context protocol requires context on every row")
 
 
 def require_single_language(rows):
@@ -223,9 +264,12 @@ def main():
     require_frozen_run()
     ds = Path(sys.argv[sys.argv.index("--dataset") + 1]) if "--dataset" in sys.argv \
         else Path(os.environ.get("EVAL_DATASET", HERE / "dataset.jsonl"))
-    # Two tiers: strong (snap + escalated prongs + synthesis) and cheap (challenge, prongs,
-    # blind-spot). Fable is banned from every role in this project.
+    # Frozen v1 uses strong for snap/escalated prongs/synthesis and cheap for challenge, initial
+    # prongs, and blind-spot. V2 adds evidence-auditor/cleared-bar plurality semantics and moves
+    # blind-spot to strong; its initial prongs remain cheap unless the challenge cracks the snap.
+    # Fable is banned from every role in this project.
     provider = eval_provider()
+    policy = eval_policy_settings()
     default_strong = "claude-opus-4-8" if provider == "claude" else "gpt-5.6-sol"
     default_cheap = "claude-sonnet-5" if provider == "claude" else "gpt-5.6-sol"
     strong = os.environ.get("EVAL_MODEL_STRONG", default_strong)
@@ -236,10 +280,13 @@ def main():
     require_single_language(pairs)
     skill_payload = read_bytes(SKILL, MAX_SKILL_BYTES, label="skill input")
     set_skill_body(skill_payload.decode())
-    models = {"strong": strong, "cheap": cheap, "provider": provider}
+    models = {"strong": strong, "cheap": cheap, "provider": provider,
+              "resolver": policy["resolver"]}
     workers = eval_concurrency()
     settings = {"provider": provider, "models": {"strong": strong, "cheap": cheap},
                 "concurrency": workers}
+    settings.update(policy)
+    validate_dataset_policy(pairs, policy)
     metadata = artifact_metadata(ds, HERE.parent.parent, settings)
     if hashlib.sha256(dataset_payload).hexdigest() != metadata["dataset"]["sha256"]:
         raise ValueError("dataset changed while provenance was captured")
@@ -248,7 +295,7 @@ def main():
     new_started_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     start = time.monotonic()
     out_dir = HERE / "out"; out_dir.mkdir(exist_ok=True)
-    out_path = out_dir / artifact_filename(ds, strong, provider)
+    out_path = out_dir / artifact_filename(ds, strong, provider, policy["resolver"])
     if out_path.exists():
         state = resume_state(load_json(out_path, MAX_RESUME_BYTES), metadata, dataset_rows=pairs)
     else:
@@ -283,12 +330,17 @@ def main():
             done[p["id"]] = {**p, "got": v}
             verdict = v["final_verdict"]
             status = v["final_status"]
-            path = "abstain" if status == "abstain" else \
-                ("contested" if v.get("contested") else "clear")
-            mark = "-" if status == "abstain" else \
+            if status == "abstain":
+                path = "abstain"
+            elif v.get("semantic_status") == "unverified":
+                path = "unverified"
+            else:
+                path = "contested" if v.get("contested") else "clear"
+            mark = "-" if status == "abstain" or verdict is None else \
                 ("✓" if (verdict == "inconsistent") == (p["label"] == "inconsistent") else "✗")
+            display_verdict = "unverified" if path == "unverified" else (verdict or "abstain")
             print(f"  {mark} [{len(done)}/{len(pairs)}] {p['id']:40} label={p['label']:12} "
-                  f"verdict={(verdict or 'abstain'):12} [{path}]", flush=True)
+                  f"verdict={display_verdict:12} [{path}]", flush=True)
             if len(done) % 25 == 0:
                 write_artifact([done[pair["id"]] for pair in pairs if pair["id"] in done])
     transcript = [done[p["id"]] for p in pairs]

@@ -11,6 +11,67 @@ from eval.bench import frozen_run
 
 
 class FrozenRunSafetyTests(unittest.TestCase):
+    def test_v2_requires_split_manifest_and_validates_context_protocol(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dataset = root / "java.jsonl"
+            row = {
+                "id": "org/repo/f#1", "language": "Java", "func": "f",
+                "code": "return 1", "doc": "returns one", "label": "consistent",
+                "category": None,
+            }
+            dataset.write_text(json.dumps(row) + "\n")
+            manifest = root / "split.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "datasets": [{"sha256": "a" * 64, "language": "Java"}],
+                "rows": [{"id": row["id"], "dataset_sha256": "a" * 64,
+                          "project": "org/repo", "split": "dev"}],
+            }))
+            manifest_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+
+            with self.assertRaisesRegex(ValueError, "v2 requires"):
+                frozen_run.run_policy(dataset, [row], "v2", None, None, "none")
+            with self.assertRaisesRegex(ValueError, "context protocol"):
+                frozen_run.run_policy(
+                    dataset, [row], "v2", manifest, "dev", "java-git-window-v1"
+                )
+            with self.assertRaisesRegex(ValueError, "Java resolver v2"):
+                frozen_run.run_policy(dataset, [row], "v2", manifest, "dev", "none")
+
+            row["context"] = {
+                "status": "unavailable", "protocol": "java-git-window-v1",
+                "reason": "mirror-unavailable",
+            }
+            policy = frozen_run.run_policy(
+                dataset, [row], "v2", manifest, "dev", "java-git-window-v1"
+            )
+
+        self.assertEqual(policy["resolver"], "v2")
+        self.assertEqual(policy["split"], "dev")
+        self.assertEqual(policy["context_protocol"], "java-git-window-v1")
+        self.assertEqual(policy["split_manifest_sha256"], manifest_digest)
+
+    def test_split_policy_rejects_wrong_assignment_and_undeclared_context(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dataset = root / "data.jsonl"
+            row = {"id": "org/repo/f#1", "language": "Python"}
+            dataset.write_text(json.dumps(row))
+            manifest = root / "split.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "datasets": [{"sha256": "a" * 64, "language": "Java"}],
+                "rows": [{"id": row["id"], "dataset_sha256": "a" * 64,
+                          "project": "org/repo", "split": "holdout"}],
+            }))
+            with self.assertRaisesRegex(ValueError, "declared split"):
+                frozen_run.run_policy(dataset, [row], "v2", manifest, "dev", "none")
+            with self.assertRaisesRegex(ValueError, "not declared"):
+                frozen_run.run_policy(
+                    dataset, [{**row, "context": {}}], "v1", None, None, "none"
+                )
+
     def test_managed_plugin_checkout_is_refused(self):
         for repo in (
             Path("/Users/me/.claude/plugins/marketplaces/evergreen"),
@@ -293,7 +354,9 @@ class FrozenRunMainTests(unittest.TestCase):
             with mock.patch.object(frozen_run, "REPO", repo), \
                  mock.patch.object(frozen_run, "HERE", here), \
                  mock.patch.object(frozen_run, "git_identity", return_value=identity), \
-                 mock.patch.object(frozen_run, "artifact_metadata", return_value=metadata), \
+                 mock.patch.object(
+                     frozen_run, "artifact_metadata", return_value=metadata
+                 ) as metadata_call, \
                  mock.patch.object(frozen_run, "load_dataset", return_value=(b"fixture", [
                      {"language": "python"}
                  ])), \
@@ -325,6 +388,12 @@ class FrozenRunMainTests(unittest.TestCase):
         self.assertEqual(environment["EVAL_FROZEN_ARCHIVE_DIR"], str(resolved_archive))
         self.assertIn("EVAL_FROZEN_FD", environment)
         self.assertIn("EVAL_FROZEN_TOKEN_SHA256", environment)
+        self.assertEqual(environment["EVAL_RESOLVER"], "v1")
+        self.assertEqual(environment["EVAL_CONTEXT_PROTOCOL"], "none")
+        self.assertEqual(metadata_call.call_args.args[2]["resolver"], "v1")
+        self.assertEqual(metadata_call.call_args.args[2]["context_protocol"], "none")
+        self.assertIsNone(metadata_call.call_args.args[2]["split_manifest_sha256"])
+        self.assertIsNone(metadata_call.call_args.args[2]["split"])
         self.assertEqual(len(popen.call_args.kwargs["pass_fds"]), 1)
         self.assertEqual(monitor.call_args.kwargs["expected_metadata"], metadata)
         lock.close.assert_called_once_with()

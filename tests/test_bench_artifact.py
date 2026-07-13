@@ -49,11 +49,14 @@ class ArtifactMetadataTests(unittest.TestCase):
             modules = {
                 "artifact.py": b"artifact body\n",
                 "frozen_run.py": b"frozen run body\n",
+                "java_context.py": b"java context body\n",
                 "metrics.py": b"metrics body\n",
                 "model-output.schema.json": b"{}\n",
                 "report.py": b"report body\n",
+                "resolver.py": b"resolver body\n",
                 "run_bench.py": b"judge body\n",
                 "runner.py": b"runner body\n",
+                "split_manifest.py": b"split manifest body\n",
                 "trial.py": b"trial body\n",
             }
             for name, payload in modules.items():
@@ -99,8 +102,9 @@ class ArtifactMetadataTests(unittest.TestCase):
             dataset.write_text("data")
             skill.write_text("skill")
             for name in (
-                "artifact.py", "frozen_run.py", "metrics.py", "model-output.schema.json",
-                "report.py", "run_bench.py", "runner.py", "trial.py",
+                "artifact.py", "frozen_run.py", "java_context.py", "metrics.py",
+                "model-output.schema.json", "report.py", "resolver.py", "run_bench.py",
+                "runner.py", "split_manifest.py", "trial.py",
             ):
                 (bench / name).write_text(name)
             git = {"commit": "c", "tree": "t", "dirty": False,
@@ -164,8 +168,9 @@ class ArtifactMetadataTests(unittest.TestCase):
         from eval.bench import artifact
 
         expected = {
-            "artifact.py", "frozen_run.py", "metrics.py", "model-output.schema.json",
-            "report.py", "run_bench.py", "runner.py", "trial.py",
+            "artifact.py", "frozen_run.py", "java_context.py", "metrics.py",
+            "model-output.schema.json", "report.py", "resolver.py", "run_bench.py",
+            "runner.py", "split_manifest.py", "trial.py",
         }
         self.assertEqual(set(artifact.JUDGE_MODULES), expected)
         with tempfile.TemporaryDirectory() as directory:
@@ -534,13 +539,91 @@ class ArtifactReportTests(unittest.TestCase):
             text = markdown.read_text()
 
         self.assertEqual(status, 2)
-        self.assertIn("Coverage: **50.0%**", text)
+        self.assertIn("Provider coverage: **50.0%**", text)
         self.assertIn("FAIL", text)
+
+    def test_quality_gate_cannot_hide_low_decision_coverage_with_unverified_rows(self):
+        from eval.bench import report
+
+        rows = [
+            completed("p1", "python", "inconsistent", "direct-mismatch", "inconsistent"),
+            completed("p2", "python", "consistent", None, "consistent"),
+        ]
+        rows.extend({
+            "id": f"u{index}", "language": "python", "label": "consistent",
+            "category": None, "got": {
+                "final_status": "complete", "semantic_status": "unverified",
+                "final_verdict": None,
+            },
+        } for index in range(8))
+        with tempfile.TemporaryDirectory() as directory:
+            artifact_path = self.write_artifact(directory, "artifact.json", rows)
+            markdown = Path(directory) / "report.md"
+            status = report.main([
+                str(artifact_path), "--markdown", str(markdown),
+                "--require-language", "python", "--coverage-threshold", "1.0",
+                "--decision-threshold", "0.90", "--precision-threshold", "0.90",
+                "--recall-threshold", "0.90", "--f1-threshold", "0.90",
+            ])
+            text = markdown.read_text()
+
+        self.assertEqual(status, 2)
+        self.assertIn("Provider coverage: **100.0%**", text)
+        self.assertIn("Decision coverage: **20.0%**", text)
+        self.assertIn("| Unverified | 8 |", text)
+
+    def test_tiny_perfect_sample_fails_minimum_human_class_counts(self):
+        from eval.bench import report
+
+        rows = [
+            completed("p1", "python", "inconsistent", "direct-mismatch", "inconsistent"),
+            completed("n1", "python", "consistent", None, "consistent"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            artifact_path = self.write_artifact(directory, "artifact.json", rows)
+            markdown = Path(directory) / "report.md"
+            status = report.main([
+                str(artifact_path), "--markdown", str(markdown),
+                "--require-language", "python", "--precision-threshold", "1.0",
+                "--recall-threshold", "1.0", "--f1-threshold", "1.0",
+                "--minimum-human-positive-decisions", "20",
+                "--minimum-human-negative-decisions", "20",
+            ])
+            text = markdown.read_text()
+
+        self.assertEqual(status, 2)
+        self.assertIn("Human positive decisions", text)
+        self.assertIn("1 / 20", text)
+
+    def test_result_validation_enforces_semantic_status_combinations(self):
+        from eval.bench import artifact
+
+        base = completed("p1", "python", "consistent", None, "consistent")
+        invalid_results = [
+            {"final_status": "complete", "semantic_status": "decided",
+             "final_verdict": None},
+            {"final_status": "complete", "semantic_status": "unverified",
+             "final_verdict": "consistent"},
+            {"final_status": "abstain", "semantic_status": "decided",
+             "final_verdict": None},
+            {"final_status": "complete", "semantic_status": "unknown",
+             "final_verdict": None},
+        ]
+        for got in invalid_results:
+            with self.subTest(got=got), self.assertRaisesRegex(ValueError, "result"):
+                artifact.validate_benchmark_row({**base, "got": got}, require_result=True)
 
     def test_cli_accepts_coverage_at_threshold(self):
         from eval.bench import report
 
-        rows = [completed("p1", "python", "consistent", None, "consistent")]
+        rows = [
+            completed(f"p{index}", "python", "inconsistent", "direct-mismatch",
+                      "inconsistent")
+            for index in range(20)
+        ] + [
+            completed(f"n{index}", "python", "consistent", None, "consistent")
+            for index in range(20)
+        ]
         with tempfile.TemporaryDirectory() as directory:
             artifact_path = self.write_artifact(directory, "artifact.json", rows)
             markdown = Path(directory) / "report.md"

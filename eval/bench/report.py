@@ -25,6 +25,7 @@ MAX_LANGUAGE_CHARS = 128
 REQUIRED_METADATA = (
     "dataset", "provider", "skill", "judge", "git", "cli_version", "settings",
 )
+MINIMUM_HUMAN_CLASS_DECISIONS = 20
 
 
 def _safe_text(value):
@@ -179,9 +180,30 @@ def _required_languages(values):
     return set(values)
 
 
-def _build_report(paths, required_languages, coverage_threshold):
-    if not 0 <= coverage_threshold <= 1:
-        raise ValueError("coverage threshold must be between 0 and 1")
+def _build_report(
+    paths, required_languages, coverage_threshold, decision_threshold=0.0,
+    precision_threshold=0.0, recall_threshold=0.0, f1_threshold=0.0,
+    minimum_human_positive_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+    minimum_human_negative_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+):
+    thresholds = {
+        "coverage": coverage_threshold,
+        "decision": decision_threshold,
+        "precision": precision_threshold,
+        "recall": recall_threshold,
+        "f1": f1_threshold,
+    }
+    for name, value in thresholds.items():
+        if not 0 <= value <= 1:
+            raise ValueError(f"{name} threshold must be between 0 and 1")
+    for name, value in (
+        ("human positive decisions", minimum_human_positive_decisions),
+        ("human negative decisions", minimum_human_negative_decisions),
+    ):
+        if type(value) is not int or value < MINIMUM_HUMAN_CLASS_DECISIONS:
+            raise ValueError(
+                f"minimum {name} must be at least {MINIMUM_HUMAN_CLASS_DECISIONS}"
+            )
     required = _required_languages(required_languages)
     artifacts = _load_artifacts(paths)
     rows = [row for artifact in artifacts for row in artifact["rows"]]
@@ -207,7 +229,12 @@ def _build_report(paths, required_languages, coverage_threshold):
         "",
         "Publication status: **PASS**.",
         "",
-        f"Required completion coverage: **{_percent(coverage_threshold)}**.",
+        f"Required provider completion: **{_percent(coverage_threshold)}**.",
+        f"Required semantic decision coverage: **{_percent(decision_threshold)}**.",
+        f"Required precision / recall / F1: **{_percent(precision_threshold)} / "
+        f"{_percent(recall_threshold)} / {_percent(f1_threshold)}**.",
+        f"Required human positive / negative decisions per language: "
+        f"**{minimum_human_positive_decisions} / {minimum_human_negative_decisions}**.",
         f"Required languages: **{', '.join(_safe_text(value) for value in sorted(required))}**.",
         "",
         "### Provenance",
@@ -239,20 +266,54 @@ def _build_report(paths, required_languages, coverage_threshold):
     for language in languages:
         language_rows = [row for row in rows if row.get("language", "unknown") == language]
         language_metrics = metrics.score(metrics.rows_from_transcript(language_rows))
-        passed = language_metrics["completion_rate"] >= coverage_threshold
+        gate_values = {
+            "provider coverage": language_metrics["provider_completion_rate"],
+            "decision coverage": language_metrics["decision_rate"],
+            "precision": language_metrics["precision"],
+            "recall": language_metrics["recall"],
+            "F1": language_metrics["f1"],
+        }
+        gate_thresholds = {
+            "provider coverage": coverage_threshold,
+            "decision coverage": decision_threshold,
+            "precision": precision_threshold,
+            "recall": recall_threshold,
+            "F1": f1_threshold,
+        }
+        gate_passes = {
+            name: threshold == 0 or (gate_values[name] is not None and
+                                     gate_values[name] >= threshold)
+            for name, threshold in gate_thresholds.items()
+        }
+        human_gate_passes = {
+            "Human positive decisions": (
+                language_metrics["decided_positive"] >= minimum_human_positive_decisions
+            ),
+            "Human negative decisions": (
+                language_metrics["decided_negative"] >= minimum_human_negative_decisions
+            ),
+        }
+        passed = all(gate_passes.values()) and all(human_gate_passes.values())
         passed_all = passed_all and passed
         lines.extend([
             "",
             f"## {_safe_text(language)}",
             "",
-            f"Coverage: **{_percent(language_metrics['completion_rate'])}** — "
-            f"**{'PASS' if passed else 'FAIL'}**.",
+            f"Provider coverage: **{_percent(language_metrics['provider_completion_rate'])}** — "
+            f"**{'PASS' if gate_passes['provider coverage'] else 'FAIL'}**.",
+            f"Decision coverage: **{_percent(language_metrics['decision_rate'])}** — "
+            f"**{'PASS' if gate_passes['decision coverage'] else 'FAIL'}**.",
             "",
-            "| Coverage | Count |",
+            "| Provider coverage | Count |",
             "|---|---:|",
             f"| Attempted | {language_metrics['attempted']} |",
-            f"| Completed | {language_metrics['completed']} |",
-            f"| Abstained | {language_metrics['abstained']} |",
+            f"| Completed | {language_metrics['provider_completed']} |",
+            f"| Abstained | {language_metrics['provider_abstained']} |",
+            "",
+            "| Semantic coverage | Count |",
+            "|---|---:|",
+            f"| Decided | {language_metrics['decided']} |",
+            f"| Unverified | {language_metrics['unverified']} |",
             "",
             "| Core result | Value |",
             "|---|---:|",
@@ -266,6 +327,26 @@ def _build_report(paths, required_languages, coverage_threshold):
             f"| Specificity | {_metric(language_metrics['specificity'])} |",
             f"| Accuracy | {_metric(language_metrics['accuracy'])} |",
             "",
+            "| Quality gate | Required | Observed | Result |",
+            "|---|---:|---:|---:|",
+            *[
+                f"| {_safe_text(name)} | {_percent(gate_thresholds[name])} | "
+                f"{_metric(gate_values[name])} | "
+                f"{'PASS' if gate_passes[name] else 'FAIL'} |"
+                for name in gate_thresholds
+            ],
+            *[
+                f"| {name} | {required_count} | "
+                f"{language_metrics[metric_name]} / {required_count} | "
+                f"{'PASS' if human_gate_passes[name] else 'FAIL'} |"
+                for name, required_count, metric_name in (
+                    ("Human positive decisions", minimum_human_positive_decisions,
+                     "decided_positive"),
+                    ("Human negative decisions", minimum_human_negative_decisions,
+                     "decided_negative"),
+                )
+            ],
+            "",
             "| Under-promise (informational) | Count |",
             "|---|---:|",
             f"| Attempted | {language_metrics['under_attempted']} |",
@@ -278,12 +359,30 @@ def _build_report(paths, required_languages, coverage_threshold):
     return "\n".join(lines) + "\n", passed_all
 
 
-def render_markdown(paths, required_languages, coverage_threshold=1.0):
-    return _build_report(paths, required_languages, coverage_threshold)[0]
+def render_markdown(
+    paths, required_languages, coverage_threshold=1.0, decision_threshold=0.0,
+    precision_threshold=0.0, recall_threshold=0.0, f1_threshold=0.0,
+    minimum_human_positive_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+    minimum_human_negative_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+):
+    return _build_report(
+        paths, required_languages, coverage_threshold, decision_threshold,
+        precision_threshold, recall_threshold, f1_threshold,
+        minimum_human_positive_decisions, minimum_human_negative_decisions,
+    )[0]
 
 
-def coverage_passes(paths, required_languages, coverage_threshold):
-    return _build_report(paths, required_languages, coverage_threshold)[1]
+def coverage_passes(
+    paths, required_languages, coverage_threshold, decision_threshold=0.0,
+    precision_threshold=0.0, recall_threshold=0.0, f1_threshold=0.0,
+    minimum_human_positive_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+    minimum_human_negative_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+):
+    return _build_report(
+        paths, required_languages, coverage_threshold, decision_threshold,
+        precision_threshold, recall_threshold, f1_threshold,
+        minimum_human_positive_decisions, minimum_human_negative_decisions,
+    )[1]
 
 
 def main(argv=None):
@@ -292,10 +391,26 @@ def main(argv=None):
     parser.add_argument("--markdown", type=Path, required=True)
     parser.add_argument("--require-language", action="append")
     parser.add_argument("--coverage-threshold", type=float, default=1.0)
+    parser.add_argument("--decision-threshold", type=float, default=0.0)
+    parser.add_argument("--precision-threshold", type=float, default=0.0)
+    parser.add_argument("--recall-threshold", type=float, default=0.0)
+    parser.add_argument("--f1-threshold", type=float, default=0.0)
+    parser.add_argument(
+        "--minimum-human-positive-decisions", type=int,
+        default=MINIMUM_HUMAN_CLASS_DECISIONS,
+    )
+    parser.add_argument(
+        "--minimum-human-negative-decisions", type=int,
+        default=MINIMUM_HUMAN_CLASS_DECISIONS,
+    )
     args = parser.parse_args(argv)
     try:
         markdown, passed = _build_report(
-            args.artifacts, args.require_language, args.coverage_threshold
+            args.artifacts, args.require_language, args.coverage_threshold,
+            args.decision_threshold, args.precision_threshold,
+            args.recall_threshold, args.f1_threshold,
+            args.minimum_human_positive_decisions,
+            args.minimum_human_negative_decisions,
         )
     except RecursionError:
         markdown = (
