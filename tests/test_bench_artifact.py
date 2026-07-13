@@ -49,6 +49,7 @@ class ArtifactMetadataTests(unittest.TestCase):
             modules = {
                 "artifact.py": b"artifact body\n",
                 "frozen_run.py": b"frozen run body\n",
+                "java_context.py": b"java context body\n",
                 "metrics.py": b"metrics body\n",
                 "model-output.schema.json": b"{}\n",
                 "report.py": b"report body\n",
@@ -100,8 +101,9 @@ class ArtifactMetadataTests(unittest.TestCase):
             dataset.write_text("data")
             skill.write_text("skill")
             for name in (
-                "artifact.py", "frozen_run.py", "metrics.py", "model-output.schema.json",
-                "report.py", "resolver.py", "run_bench.py", "runner.py", "trial.py",
+                "artifact.py", "frozen_run.py", "java_context.py", "metrics.py",
+                "model-output.schema.json", "report.py", "resolver.py", "run_bench.py",
+                "runner.py", "trial.py",
             ):
                 (bench / name).write_text(name)
             git = {"commit": "c", "tree": "t", "dirty": False,
@@ -165,8 +167,9 @@ class ArtifactMetadataTests(unittest.TestCase):
         from eval.bench import artifact
 
         expected = {
-            "artifact.py", "frozen_run.py", "metrics.py", "model-output.schema.json",
-            "report.py", "resolver.py", "run_bench.py", "runner.py", "trial.py",
+            "artifact.py", "frozen_run.py", "java_context.py", "metrics.py",
+            "model-output.schema.json", "report.py", "resolver.py", "run_bench.py",
+            "runner.py", "trial.py",
         }
         self.assertEqual(set(artifact.JUDGE_MODULES), expected)
         with tempfile.TemporaryDirectory() as directory:

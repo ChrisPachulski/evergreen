@@ -97,6 +97,12 @@ def _validated_pair_data(pair):
             raise ValueError(f"benchmark pair {field} must be a non-empty string")
         if len(value.encode()) > limit:
             raise ValueError(f"benchmark pair {field} exceeds {limit} bytes")
+    if "context" in pair:
+        try:
+            from .java_context import validate_context
+        except ImportError:  # Direct script execution.
+            from java_context import validate_context
+        data["context"] = validate_context(pair["context"])
     return data
 
 
