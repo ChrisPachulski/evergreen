@@ -671,6 +671,31 @@ class CommittedPublicationTests(unittest.TestCase):
         )
         self.assertEqual(len(paths), 5)
 
+    def test_documented_v1_cli_regenerates_frozen_report_exactly(self):
+        repo = Path(__file__).parent.parent.resolve()
+        manifest = json.loads(
+            (repo / "eval/bench/public/0.4.0/manifest.json").read_text()
+        )
+        artifacts = [str(repo / item["path"]) for item in manifest["artifacts"]]
+        expected = (repo / manifest["report"]["path"]).read_bytes()
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "results-0.4.0.md"
+            arguments = [
+                *artifacts,
+                "--format", "v1",
+                "--coverage-threshold", str(
+                    manifest["publication"]["coverage_threshold"]
+                ),
+                "--markdown", str(output),
+            ]
+            for language in manifest["publication"]["required_languages"]:
+                arguments.extend(("--require-language", language))
+            status = report.main(arguments)
+            actual = output.read_bytes()
+
+        self.assertEqual(status, 0)
+        self.assertEqual(actual, expected)
+
     def test_manifest_language_is_bound_to_its_specific_artifact(self):
         repo = Path(__file__).parent.parent.resolve()
         source = repo / "eval/bench/public/0.4.0/manifest.json"

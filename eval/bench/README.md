@@ -80,6 +80,7 @@ The frozen 0.4.0 report can be regenerated from its public publication set:
 
 ```sh
 python3 eval/bench/report.py \
+  --format v1 \
   eval/bench/public/0.4.0/bench-codocbench-validated-trial-codex-gpt-5.6-sol.json \
   eval/bench/public/0.4.0/bench-cascade-java-trial-codex-gpt-5.6-sol.json \
   eval/bench/public/0.4.0/bench-codocbench-ts-validated-trial-codex-gpt-5.6-sol.json \

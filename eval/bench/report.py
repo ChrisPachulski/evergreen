@@ -180,8 +180,8 @@ def _required_languages(values):
     return set(values)
 
 
-def render_markdown_v1(paths, required_languages, coverage_threshold=1.0):
-    """Render the frozen coverage-only report used by the 0.4.0 publication."""
+def _build_report_v1(paths, required_languages, coverage_threshold=1.0):
+    """Build the frozen coverage-only report used by the 0.4.0 publication."""
     if not 0 <= coverage_threshold <= 1:
         raise ValueError("coverage threshold must be between 0 and 1")
     required = _required_languages(required_languages)
@@ -277,7 +277,12 @@ def render_markdown_v1(paths, required_languages, coverage_threshold=1.0):
         ])
     if not passed_all:
         lines[2] = "Publication status: **FAIL**."
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n", passed_all
+
+
+def render_markdown_v1(paths, required_languages, coverage_threshold=1.0):
+    """Render the frozen coverage-only report used by the 0.4.0 publication."""
+    return _build_report_v1(paths, required_languages, coverage_threshold)[0]
 
 
 def _build_report(
@@ -489,6 +494,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("artifacts", nargs="+")
     parser.add_argument("--markdown", type=Path, required=True)
+    parser.add_argument("--format", choices=("v1", "v2"), default="v2")
     parser.add_argument("--require-language", action="append")
     parser.add_argument("--coverage-threshold", type=float, default=1.0)
     parser.add_argument("--decision-threshold", type=float, default=0.0)
@@ -505,13 +511,18 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     try:
-        markdown, passed = _build_report(
-            args.artifacts, args.require_language, args.coverage_threshold,
-            args.decision_threshold, args.precision_threshold,
-            args.recall_threshold, args.f1_threshold,
-            args.minimum_human_positive_decisions,
-            args.minimum_human_negative_decisions,
-        )
+        if args.format == "v1":
+            markdown, passed = _build_report_v1(
+                args.artifacts, args.require_language, args.coverage_threshold,
+            )
+        else:
+            markdown, passed = _build_report(
+                args.artifacts, args.require_language, args.coverage_threshold,
+                args.decision_threshold, args.precision_threshold,
+                args.recall_threshold, args.f1_threshold,
+                args.minimum_human_positive_decisions,
+                args.minimum_human_negative_decisions,
+            )
     except RecursionError:
         markdown = (
             "# Evergreen benchmark report\n\nPublication status: **FAIL**.\n\n"
