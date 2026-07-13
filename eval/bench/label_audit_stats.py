@@ -25,8 +25,8 @@ class AuditResult:
 
 @dataclass(frozen=True)
 class GateInputs:
-    overall_kappa: float
-    overall_kappa_lower: float
+    overall_kappa: float | None
+    overall_kappa_lower: float | None
     language_kappa: dict[str, float | None]
     overall_error_upper: float
     language_error_upper: dict[str, float]
@@ -107,8 +107,16 @@ def weighted_error(rows: Sequence[AuditResult], *, replicates: int = 10_000,
                   for row in rng.choices(group, k=len(group))]
         estimates.append(_weighted_point(sample))
     estimates.sort()
-    return Estimate(point, estimates[int(0.025 * (len(estimates) - 1))],
-                    estimates[int(0.975 * (len(estimates) - 1))])
+    bootstrap_lower = estimates[int(0.025 * (len(estimates) - 1))]
+    bootstrap_upper = estimates[int(0.975 * (len(estimates) - 1))]
+    # A nonparametric bootstrap cannot invent errors when none were observed. Envelope it with a
+    # Wilson interval at the Kish effective sample size so finite zero-error samples remain honest.
+    weights = [1 / row.inclusion_probability for row in rows]
+    effective_n = max(1, round(sum(weights) ** 2 / sum(weight * weight for weight in weights)))
+    effective_errors = min(effective_n, max(0, round(point * effective_n)))
+    wilson_lower, wilson_upper = wilson_interval(effective_errors, effective_n)
+    return Estimate(point, min(bootstrap_lower, wilson_lower),
+                    max(bootstrap_upper, wilson_upper))
 
 
 def evaluate_gate(inputs: GateInputs) -> GateResult:
@@ -119,9 +127,9 @@ def evaluate_gate(inputs: GateInputs) -> GateResult:
                           tuple(f"missing historical source pool: {language}"
                                 for language in inputs.missing_discarded_languages))
     reasons = []
-    if inputs.overall_kappa < 0.70:
+    if inputs.overall_kappa is None or inputs.overall_kappa < 0.70:
         reasons.append("overall kappa")
-    if inputs.overall_kappa_lower < 0.60:
+    if inputs.overall_kappa_lower is None or inputs.overall_kappa_lower < 0.60:
         reasons.append("overall kappa lower bound")
     reasons += [f"{language} kappa" for language, value in inputs.language_kappa.items()
                 if value is None or value < 0.60]
@@ -138,11 +146,41 @@ def evaluate_gate(inputs: GateInputs) -> GateResult:
     return GateResult("pass", "human-validated" if inputs.census_complete else "human-audited", ())
 
 
-def render_audit_report(inputs: GateInputs, result: GateResult) -> str:
+def render_audit_report(inputs: GateInputs, result: GateResult, *, evidence: dict | None = None) -> str:
+    overall_kappa = "undefined" if inputs.overall_kappa is None else f"{inputs.overall_kappa:.3f}"
     lines = ["# Evergreen human-label audit", "", f"Status: **{result.status}**.", "",
              "Human status is self-attested and not machine-verifiable.", "",
-             f"Overall Cohen's kappa: `{inputs.overall_kappa:.3f}`",
+             f"Overall Cohen's kappa: `{overall_kappa}`",
              f"Overall label-error upper bound: `{inputs.overall_error_upper:.3f}`"]
+    if evidence:
+        lines += ["", "## Evidence", "",
+                  f"Coordinator SHA-256: `{evidence['coordinator_sha256']}`",
+                  f"Selected judgments: `{evidence['selected_count']}`",
+                  f"Third-review rate: `{evidence['third_review_rate']:.3f}`",
+                  f"Uncertainty rate: `{evidence['uncertainty_rate']:.3f}`", "",
+                  "### Input SHA-256 values", ""]
+        lines += [f"- `{name}`: `{digest}`"
+                  for name, digest in sorted(evidence["input_hashes"].items())]
+        for group in ("packet_sha256s", "annotation_sha256s"):
+            if group in evidence:
+                lines += [f"- `{group}.{name}`: `{digest}`"
+                          for name, digest in sorted(evidence[group].items())]
+        lines += ["", "### Per-language estimates", ""]
+        for language in sorted(evidence["language_error"]):
+            estimate = evidence["language_error"][language]
+            kappa = evidence["language_kappa"][language]
+            rendered_kappa = "undefined" if kappa is None else f"{kappa:.3f}"
+            lines.append(f"- {language}: kappa `{rendered_kappa}`; label-error "
+                         f"`{estimate['point']:.3f}` (95% interval "
+                         f"`{estimate['lower']:.3f}`–`{estimate['upper']:.3f}`)")
+        lines += ["", "### Selection counts and probabilities", ""]
+        for cell, count in sorted(evidence["counts_by_language_stratum"].items()):
+            probabilities = ", ".join(f"{value:.6f}" for value in
+                                      evidence["inclusion_probabilities"][cell])
+            lines.append(f"- {cell}: `{count}` at inclusion probability `{probabilities}`")
+        lines += ["", "### Publication thresholds", ""]
+        lines += [f"- {name}: `{value:.3f}`"
+                  for name, value in sorted(evidence["thresholds"].items())]
     if result.reasons:
         lines += ["", "Reasons:"] + [f"- {reason}" for reason in result.reasons]
     return "\n".join(lines) + "\n"

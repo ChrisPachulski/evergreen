@@ -13,6 +13,17 @@ Inconsistent judgments also require a category. Work independently, without mode
 discussion with another annotator. Use only the opaque packet ID and do not seek the benchmark's
 existing label or model outcome. Annotator IDs are pseudonyms; do not record personal information.
 
+Examples:
+
+- `direct-mismatch`: documentation says the function returns `true`, while every shown return path
+  returns `false`.
+- `over-promise`: documentation promises retries after a transient failure, while the shown code
+  attempts the operation once and immediately returns the error.
+- `consistent`: documentation promises a value is cached, and the shown code both reads and writes
+  that cache; an additional undocumented metrics call does not make the claim inconsistent.
+- `insufficient-context`: documentation promises validation, but the shown function delegates to an
+  unseen validator whose behavior cannot be established from the packet.
+
 Two humans label every item. A third human independently labels every disagreement, every
 insufficient-context response, and a deterministic 10% sample of agreements. Automation accepts a
 final label only when two decisive judgments match; otherwise the row remains unresolved.

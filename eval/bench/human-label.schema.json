@@ -2,11 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "audit_id", "rubric_sha256", "annotator", "judgments"],
+  "required": ["schema_version", "audit_id", "rubric_sha256", "coordinator_sha256", "packet_sha256", "annotator", "judgments"],
   "properties": {
     "schema_version": {"const": 1},
     "audit_id": {"type": "string", "minLength": 1},
     "rubric_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "coordinator_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "packet_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "annotator": {
       "type": "object",
       "additionalProperties": false,

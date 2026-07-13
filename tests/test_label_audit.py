@@ -163,6 +163,13 @@ class LabelAuditSamplingTests(unittest.TestCase):
             core.write_blinded_packets(selection, Path.cwd() / "packets", blind_key=b"k" * 32,
                                        rubric_sha256="f" * 64, repo=Path.cwd())
 
+    def test_source_pool_cannot_clear_missing_without_manifest_admission(self):
+        artifacts = self.synthetic_artifacts()
+        invented = core.SourcePool(Path("/invented.jsonl"), "e" * 64, "python", 20,
+                                   "complete", tuple())
+        with self.assertRaisesRegex(ValueError, "manifest"):
+            core.build_sample(artifacts, {"python": invented}, audit_id="audit-1")
+
 
 class LabelAuditAnnotationTests(unittest.TestCase):
     def judgment(self, blind_id="item-a", verdict="consistent"):
@@ -200,16 +207,33 @@ class LabelAuditAnnotationTests(unittest.TestCase):
         self.assertIn("item-1", selected)
         self.assertEqual(len(selected), 4)  # two mandatory + ceil(10% of 18 agreements)
 
+    def test_category_disagreement_requires_third_review(self):
+        direct = self.judgment("item-a", "inconsistent")
+        over = {**direct, "category": "over-promise"}
+        first = core.AnnotationSet("audit", "f" * 64, "H1", "self-attested-human", False,
+                                   (direct,))
+        second = core.AnnotationSet("audit", "f" * 64, "H2", "self-attested-human", False,
+                                    (over,))
+        self.assertEqual(core.select_third_review(first, second, rate=0, seed=1), ("item-a",))
+
     def test_load_annotations_requires_exact_packet_and_self_attestation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             packet = root / "packet.json"
             labels = root / "labels.json"
-            packet.write_text(json.dumps({"schema_version": 1, "audit_id": "audit",
-                                          "rubric_sha256": "f" * 64,
-                                          "items": [{"blind_id": "item-a"}]}))
+            packet_document = {"schema_version": 1, "audit_id": "audit",
+                               "rubric_sha256": "f" * 64,
+                               "coordinator_sha256": "c" * 64,
+                               "items": [{"blind_id": "item-a", "language": "python",
+                                          "code": "1 | return 1",
+                                          "documentation": "1 | Returns one."}]}
+            packet_document["packet_sha256"] = core.document_identity(
+                packet_document, "packet_sha256")
+            packet.write_text(json.dumps(packet_document))
             labels.write_text(json.dumps({
                 "schema_version": 1, "audit_id": "audit", "rubric_sha256": "f" * 64,
+                "coordinator_sha256": "c" * 64,
+                "packet_sha256": packet_document["packet_sha256"],
                 "annotator": {"annotator_id": "H1", "human_judgment": True,
                               "worked_independently": True, "used_model_assistance": False},
                 "judgments": [self.judgment()],
@@ -264,8 +288,12 @@ class LabelAuditStatisticsTests(unittest.TestCase):
             stats.AuditResult("python", "sample", False, 0.25),
         ])
         self.assertAlmostEqual(estimate.point, 0.2)
-        self.assertAlmostEqual(estimate.lower, 0.2)
-        self.assertAlmostEqual(estimate.upper, 0.2)
+        self.assertLessEqual(estimate.lower, estimate.point)
+        self.assertGreater(estimate.upper, estimate.point)
+        zero = stats.weighted_error([
+            stats.AuditResult("python", "sample", False, 1.0) for _ in range(25)
+        ])
+        self.assertGreater(zero.upper, 0.13)
         self.assertLess(stats.wilson_interval(0, 25)[1], 0.14)
 
     def test_gate_pass_unverified_and_escalate(self):
@@ -291,24 +319,57 @@ class LabelAuditStatisticsTests(unittest.TestCase):
             base, language_kappa={**base.language_kappa, "go": None}))
         self.assertEqual(undefined.status, "escalate")
         self.assertIn("go kappa", undefined.reasons)
+        overall_undefined = stats.evaluate_gate(dataclasses.replace(base, overall_kappa=None))
+        self.assertEqual(overall_undefined.status, "escalate")
+        self.assertIn("overall kappa", overall_undefined.reasons)
 
 
 class LabelAuditOverlayTests(unittest.TestCase):
+    def label_package(self, artifact, labels):
+        rows = []
+        for item in artifact.items:
+            if item.key not in labels:
+                continue
+            verdict, category = labels[item.key]
+            rows.append({"blind_id": f"blind-{item.id}", "id": item.id,
+                         "language": item.language, "item_sha256": core.item_sha256(item),
+                         "human_verdict": verdict, "human_category": category})
+        package = {"schema_version": 1, "audit_id": "audit", "rubric_sha256": "f" * 64,
+                   "coordinator_sha256": "c" * 64,
+                   "gate": {"status": "unverified", "qualification": None, "reasons": []},
+                   "evidence": {"coordinator_sha256": "c" * 64}, "labels": rows}
+        package["label_package_sha256"] = core.document_identity(
+            package, "label_package_sha256")
+        return package
+
     def test_rescore_requires_complete_content_bound_overlay(self):
         item_a = audit_item("owner/repo/a", "python", "inconsistent", "consistent")
         item_b = audit_item("owner/repo/b", "python", "consistent", "consistent")
         artifact = artifact_input("python", [item_a, item_b])
-        partial = core.build_overlay(artifact, {
+        partial = core.build_overlay(artifact, self.label_package(artifact, {
             item_a.key: ("inconsistent", "direct-mismatch"),
-        }, rubric_sha256="f" * 64, label_package_sha256="e" * 64)
+        }))
         with self.assertRaisesRegex(ValueError, "100%"):
             core.rescore_overlay(artifact, partial)
-        complete = core.build_overlay(artifact, {
+        complete = core.build_overlay(artifact, self.label_package(artifact, {
             item_a.key: ("consistent", None), item_b.key: ("consistent", None),
-        }, rubric_sha256="f" * 64, label_package_sha256="e" * 64)
+        }))
         result = core.rescore_overlay(artifact, complete)
         self.assertEqual(result["corrected"]["tn"], 2)
         self.assertEqual(result["corrected"]["tp"], 0)
+
+    def test_overlay_rejects_tampered_label_package_and_overlay_identity(self):
+        item = audit_item("owner/repo/a", "python")
+        artifact = artifact_input("python", [item])
+        package = self.label_package(artifact, {item.key: ("consistent", None)})
+        package["labels"][0]["human_verdict"] = "inconsistent"
+        with self.assertRaisesRegex(ValueError, "package identity"):
+            core.build_overlay(artifact, package)
+        package = self.label_package(artifact, {item.key: ("consistent", None)})
+        overlay = core.build_overlay(artifact, package)
+        overlay["generation_mode"] = "sample"
+        with self.assertRaisesRegex(ValueError, "overlay identity"):
+            core.rescore_overlay(artifact, overlay)
 
     def test_repository_split_has_no_overlap_and_is_stable(self):
         labels = []
@@ -327,9 +388,83 @@ class LabelAuditOverlayTests(unittest.TestCase):
         self.assertFalse(set(split.development_repositories) & set(split.holdout_repositories))
         again = core.split_by_repository(combined, list(reversed(coordinator)), split_key=b"s" * 32)
         self.assertEqual(split.development_ids, again.development_ids)
+        label_by_id = {label.blind_id: label for label in combined.labels}
+        for ids in (split.development_ids, split.holdout_ids):
+            cells = {(next(row["language"] for row in coordinator if row["blind_id"] == identifier),
+                      label_by_id[identifier].final_verdict,
+                      label_by_id[identifier].final_category) for identifier in ids}
+            self.assertEqual(len(cells), len(core.LANGUAGES) * 2)
+
+    def test_repository_split_allocates_rare_cells_or_fails_closed(self):
+        labels, coordinator = [], []
+        for repo, verdict in (("a", "consistent"), ("b", "consistent"),
+                              ("c", "inconsistent"), ("d", "inconsistent")):
+            blind = f"blind-{repo}"
+            labels.append(core.CombinedLabel(
+                blind, verdict, "direct-mismatch" if verdict == "inconsistent" else None,
+                False, None, ()))
+            coordinator.append({"blind_id": blind, "language": "python",
+                                "id": f"owner/{repo}/file"})
+        combined = core.CombinedLabels("audit", "f" * 64, tuple(labels))
+        split = core.split_by_repository(combined, coordinator, split_key=b"x" * 32)
+        label_by_id = {label.blind_id: label for label in labels}
+        for identifiers in (split.development_ids, split.holdout_ids):
+            self.assertEqual({label_by_id[item].final_verdict for item in identifiers},
+                             {"consistent", "inconsistent"})
+        with self.assertRaisesRegex(ValueError, "twice"):
+            core.split_by_repository(
+                core.CombinedLabels("audit", "f" * 64, tuple(labels[:-1])),
+                coordinator[:-1], split_key=b"x" * 32)
+
+    def test_split_export_contains_human_labels_not_heuristic_labels(self):
+        label = core.CombinedLabel("blind", "inconsistent", "over-promise", False, None, ())
+        row = core.human_export_row(label, {"blind_id": "blind", "id": "o/r/f", "language": "go",
+                                            "label": "consistent", "category": None})
+        self.assertEqual(row["human_verdict"], "inconsistent")
+        self.assertEqual(row["human_category"], "over-promise")
+        self.assertNotIn("label", row)
+        self.assertNotIn("category", row)
+
+
+class LabelAuditIdentityTests(unittest.TestCase):
+    def test_coordinator_and_packet_identities_detect_mutation(self):
+        artifacts = LabelAuditSamplingTests().synthetic_artifacts()
+        selection = core.build_sample(artifacts, {}, audit_id="audit")
+        with tempfile.TemporaryDirectory() as directory:
+            outputs = core.write_blinded_packets(selection, Path(directory) / "audit",
+                                                  blind_key=b"k" * 32, rubric_sha256="f" * 64,
+                                                  repo=Path.cwd())
+            coordinator = core.load_coordinator(outputs.coordinator)
+            packet = core.load_packet(outputs.annotator_a)
+            self.assertEqual(packet["coordinator_sha256"], coordinator["coordinator_sha256"])
+            changed = json.loads(outputs.coordinator.read_text())
+            changed["items"][0]["inclusion_probability"] = 0.9
+            outputs.coordinator.write_text(json.dumps(changed))
+            with self.assertRaisesRegex(ValueError, "identity"):
+                core.load_coordinator(outputs.coordinator)
+
+    def test_private_output_refuses_repo_relative_and_existing_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            external = Path(directory) / "report.json"
+            core.write_private_json(external, {"ok": True}, repo=Path.cwd())
+            self.assertEqual(stat.S_IMODE(external.stat().st_mode), 0o600)
+            with self.assertRaises(FileExistsError):
+                core.write_private_json(external, {"ok": False}, repo=Path.cwd())
+        with self.assertRaisesRegex(ValueError, "absolute"):
+            core.write_private_json(Path("relative.json"), {}, repo=Path.cwd())
+        with self.assertRaisesRegex(ValueError, "outside"):
+            core.write_private_json(Path.cwd() / "report.json", {}, repo=Path.cwd())
 
 
 class LabelAuditSourceTests(unittest.TestCase):
+    def test_source_manifest_verifies_tracked_pool_hashes_and_counts(self):
+        manifest = core.load_source_manifest(
+            Path("eval/bench/human-audit/source-pools.json"), Path.cwd())
+        by_language = manifest.by_language()
+        self.assertEqual(by_language["python"].status, "available")
+        self.assertEqual(by_language["python"].row_count, 400)
+        self.assertEqual(by_language["typescript"].status, "missing")
+
     def test_future_derived_rows_preserve_source_provenance(self):
         from eval.bench import codocbench_to_jsonl
         source = {

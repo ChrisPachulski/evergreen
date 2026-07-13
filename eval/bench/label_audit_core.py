@@ -70,6 +70,25 @@ class SourcePool:
 
 
 @dataclass(frozen=True)
+class SourceManifestEntry:
+    language: str
+    status: str
+    path: Path | None
+    sha256: str | None
+    row_count: int | None
+
+
+@dataclass(frozen=True)
+class SourceManifest:
+    path: Path
+    sha256: str
+    entries: tuple[SourceManifestEntry, ...]
+
+    def by_language(self) -> dict[str, SourceManifestEntry]:
+        return {entry.language: entry for entry in self.entries}
+
+
+@dataclass(frozen=True)
 class SelectedItem:
     item: AuditItem
     stratum: str
@@ -106,6 +125,8 @@ class AnnotationSet:
     trust_status: str
     humanity_verified: bool
     judgments: tuple[dict, ...]
+    coordinator_sha256: str = ""
+    packet_sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -220,6 +241,57 @@ def load_source_pool(path: Path, language: str) -> SourcePool:
                       "complete" if complete else "unverified", tuple(rows))
 
 
+def load_source_manifest(path: Path, repo: Path) -> SourceManifest:
+    path, repo = Path(path), Path(repo).resolve()
+    raw = read_bytes(path, MAX_AUDIT_INPUT_BYTES, label="source pool manifest")
+    document = json.loads(raw)
+    if not isinstance(document, dict) or set(document) != {"schema_version", "pools"}:
+        raise ValueError("source pool manifest fields are invalid")
+    if document["schema_version"] != 1 or not isinstance(document["pools"], list):
+        raise ValueError("source pool manifest schema is invalid")
+    entries = []
+    seen = set()
+    available_keys = {"language", "status", "row_count", "sha256", "path"}
+    missing_keys = {"language", "status", "expected_row_count", "retained_row_count",
+                    "missing_discarded_count"}
+    for row in document["pools"]:
+        if not isinstance(row, dict) or row.get("status") not in ("available", "missing"):
+            raise ValueError("source pool manifest entry is invalid")
+        expected = available_keys if row["status"] == "available" else missing_keys
+        if set(row) != expected:
+            raise ValueError("source pool manifest entry fields are invalid")
+        language = canonical_language(row.get("language", ""))
+        if language in seen:
+            raise ValueError("source pool manifest languages must be unique")
+        seen.add(language)
+        if row["status"] == "missing":
+            counts = [row[name] for name in ("expected_row_count", "retained_row_count",
+                                             "missing_discarded_count")]
+            if any(not isinstance(value, int) or value < 0 for value in counts):
+                raise ValueError("source pool manifest counts are invalid")
+            if counts[0] - counts[1] != counts[2]:
+                raise ValueError("source pool manifest missing count is inconsistent")
+            entries.append(SourceManifestEntry(language, "missing", None, None, None))
+            continue
+        digest, count, relative = row["sha256"], row["row_count"], row["path"]
+        if (not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest) or
+                not isinstance(count, int) or count <= 0 or
+                not isinstance(relative, str) or not relative):
+            raise ValueError("source pool manifest available entry is invalid")
+        resolved = (repo / relative).resolve()
+        if resolved == repo or repo not in resolved.parents:
+            raise ValueError("source pool manifest path escapes repository")
+        actual = read_bytes(resolved, MAX_AUDIT_INPUT_BYTES, label="manifest source pool")
+        if hashlib.sha256(actual).hexdigest() != digest:
+            raise ValueError(f"source pool manifest hash mismatch for {language}")
+        if len([line for line in actual.splitlines() if line.strip()]) != count:
+            raise ValueError(f"source pool manifest row count mismatch for {language}")
+        entries.append(SourceManifestEntry(language, "available", resolved, digest, count))
+    if seen != set(LANGUAGES):
+        raise ValueError("source pool manifest must declare every language")
+    return SourceManifest(path, hashlib.sha256(raw).hexdigest(), tuple(entries))
+
+
 def _source_item(row: dict, language: str, digest: str) -> AuditItem:
     for field in ("id", "code", "doc", "func", "label"):
         if not isinstance(row.get(field), str) or not row[field]:
@@ -230,7 +302,8 @@ def _source_item(row: dict, language: str, digest: str) -> AuditItem:
 
 def build_sample(artifacts: tuple[ArtifactInput, ...], source_pools: dict[str, SourcePool], *,
                  audit_id: str, seed: int = 20260713, tn_per_language: int = 25,
-                 discarded_per_language: int = 20) -> SampleSelection:
+                 discarded_per_language: int = 20,
+                 source_manifest: SourceManifest | None = None) -> SampleSelection:
     by_language = {artifact.language: artifact for artifact in artifacts}
     if len(by_language) != len(artifacts) or set(by_language) != set(LANGUAGES):
         raise ValueError("audit requires exactly one artifact for every declared language")
@@ -258,10 +331,20 @@ def build_sample(artifacts: tuple[ArtifactInput, ...], source_pools: dict[str, S
             selected.append(SelectedItem(item, "true_negative_sample",
                                          tn_per_language / len(tn), "retained"))
 
+    if source_pools and source_manifest is None:
+        raise ValueError("source pool manifest admission is required")
+    manifest = source_manifest.by_language() if source_manifest else {}
+    for language, pool in source_pools.items():
+        entry = manifest.get(language)
+        if (entry is None or entry.status != "available" or entry.path is None or
+                pool.path.resolve() != entry.path or pool.sha256 != entry.sha256 or
+                pool.row_count != entry.row_count):
+            raise ValueError(f"source pool does not match manifest admission: {language}")
     missing = []
     for language in ("python", "typescript", "rust", "go"):
         pool = source_pools.get(language)
-        if pool is None:
+        entry = manifest.get(language)
+        if pool is None or entry is None or entry.status != "available":
             missing.append(language)
             continue
         if pool.language != language:
@@ -282,9 +365,12 @@ def build_sample(artifacts: tuple[ArtifactInput, ...], source_pools: dict[str, S
                 selected.append(SelectedItem(item, "discarded_candidate", each / len(candidates),
                                              "discarded"))
     selected.sort(key=lambda value: (value.item.language, value.item.id, value.stratum))
+    extra_hashes = [(f"{language}-source", pool.sha256)
+                    for language, pool in source_pools.items()]
+    if source_manifest is not None:
+        extra_hashes.append(("source-manifest", source_manifest.sha256))
     hashes = tuple(sorted((artifact.language, artifact.sha256) for artifact in artifacts) +
-                   sorted((f"{language}-source", pool.sha256)
-                          for language, pool in source_pools.items()))
+                   sorted(extra_hashes))
     return SampleSelection(audit_id, seed, tuple(selected), tuple(sorted(missing)), hashes)
 
 
@@ -299,7 +385,16 @@ def _numbered(value: str) -> str:
     return "\n".join(f"{number} | {line}" for number, line in enumerate(value.splitlines(), 1))
 
 
+def document_identity(value: dict, field: str) -> str:
+    unsigned = {key: item for key, item in value.items() if key != field}
+    encoded = json.dumps(unsigned, sort_keys=True, ensure_ascii=False,
+                         separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _atomic_json(path: Path, value: object, mode: int = 0o600) -> None:
+    if path.exists() or path.is_symlink():
+        raise FileExistsError(f"refusing to overwrite existing output: {path}")
     temporary = path.with_name(path.name + ".tmp")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
     try:
@@ -308,13 +403,56 @@ def _atomic_json(path: Path, value: object, mode: int = 0o600) -> None:
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        os.link(temporary, path, follow_symlinks=False)
+        temporary.unlink()
     except BaseException:
         try:
             temporary.unlink()
         except FileNotFoundError:
             pass
         raise
+
+
+def _external_destination(path: Path, repo: Path) -> Path:
+    path, repo = Path(path), Path(repo).resolve()
+    if not path.is_absolute():
+        raise ValueError("output must be an absolute path")
+    parent = path.parent.resolve()
+    if parent == repo or repo in parent.parents:
+        raise ValueError("output must live outside the repository")
+    if path.exists() or path.is_symlink():
+        raise FileExistsError(f"refusing to overwrite existing output: {path}")
+    return path
+
+
+def write_private_json(path: Path, value: object, *, repo: Path) -> Path:
+    path = _external_destination(path, repo)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _atomic_json(path, value)
+    os.chmod(path, 0o600)
+    return path
+
+
+def write_private_text(path: Path, value: str, *, repo: Path) -> Path:
+    path = _external_destination(path, repo)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.link(temporary, path, follow_symlinks=False)
+        temporary.unlink()
+        os.chmod(path, 0o600)
+    except BaseException:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    return path
 
 
 def write_blinded_packets(selection: SampleSelection, work_dir: Path, *, blind_key: bytes,
@@ -351,25 +489,152 @@ def write_blinded_packets(selection: SampleSelection, work_dir: Path, *, blind_k
                     work_dir / "adjudicator-source.packet.json")
     coordinator = work_dir / "coordinator.json"
     key_path = work_dir / "blind.key"
-    _atomic_json(a, {**base, "items": ordered("annotator-a")})
-    _atomic_json(b, {**base, "items": ordered("annotator-b")})
-    _atomic_json(source, {**base, "items": ordered("adjudicator")})
-    _atomic_json(coordinator, {**base, "missing_discarded_languages":
-                 list(selection.missing_discarded_languages), "input_hashes": dict(selection.input_hashes),
-                 "items": [{"blind_id": opaque, "id": selected.item.id,
-                            "language": selected.item.language, "label": selected.item.label,
-                            "category": selected.item.category, "final_status": selected.item.final_status,
-                            "final_verdict": selected.item.final_verdict, "stratum": selected.stratum,
-                            "inclusion_probability": selected.inclusion_probability,
-                            "source_kind": selected.source_kind,
-                            "artifact_sha256": selected.item.artifact_sha256,
-                            "code": selected.item.code, "doc": selected.item.doc,
-                            "func": selected.item.func}
-                           for opaque, selected in mapped]})
+    coordinator_document = {**base, "missing_discarded_languages":
+                            list(selection.missing_discarded_languages),
+                            "input_hashes": dict(selection.input_hashes),
+                            "items": [{"blind_id": opaque, "id": selected.item.id,
+                                       "language": selected.item.language,
+                                       "label": selected.item.label,
+                                       "category": selected.item.category,
+                                       "final_status": selected.item.final_status,
+                                       "final_verdict": selected.item.final_verdict,
+                                       "stratum": selected.stratum,
+                                       "inclusion_probability": selected.inclusion_probability,
+                                       "source_kind": selected.source_kind,
+                                       "artifact_sha256": selected.item.artifact_sha256,
+                                       "code": selected.item.code, "doc": selected.item.doc,
+                                       "func": selected.item.func}
+                                      for opaque, selected in mapped]}
+    coordinator_document["coordinator_sha256"] = document_identity(
+        coordinator_document, "coordinator_sha256")
+    _atomic_json(coordinator, coordinator_document)
+    for path, role in ((a, "annotator-a"), (b, "annotator-b"),
+                       (source, "adjudicator")):
+        packet = {**base, "coordinator_sha256": coordinator_document["coordinator_sha256"],
+                  "items": ordered(role)}
+        packet["packet_sha256"] = document_identity(packet, "packet_sha256")
+        _atomic_json(path, packet)
     descriptor = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "wb") as handle:
         handle.write(blind_key)
     return PacketOutputs(a, b, source, coordinator, key_path)
+
+
+_PACKET_ITEM_KEYS = {"blind_id", "language", "code", "documentation"}
+_COORDINATOR_ITEM_KEYS = {"blind_id", "id", "language", "label", "category",
+                          "final_status", "final_verdict", "stratum",
+                          "inclusion_probability", "source_kind", "artifact_sha256",
+                          "code", "doc", "func"}
+
+
+def load_packet(path: Path) -> dict:
+    document = json.loads(read_bytes(Path(path), MAX_AUDIT_INPUT_BYTES,
+                                     label="annotation packet"))
+    expected = {"schema_version", "audit_id", "rubric_sha256", "coordinator_sha256",
+                "packet_sha256", "items"}
+    if not isinstance(document, dict) or set(document) != expected:
+        raise ValueError("annotation packet fields are invalid")
+    if document.get("schema_version") != 1:
+        raise ValueError("annotation packet schema is invalid")
+    for field in ("rubric_sha256", "coordinator_sha256", "packet_sha256"):
+        if not isinstance(document.get(field), str) or not re.fullmatch(r"[0-9a-f]{64}", document[field]):
+            raise ValueError(f"annotation packet {field} is invalid")
+    if document["packet_sha256"] != document_identity(document, "packet_sha256"):
+        raise ValueError("annotation packet identity mismatch")
+    if not isinstance(document.get("audit_id"), str) or not document["audit_id"]:
+        raise ValueError("annotation packet audit_id is invalid")
+    items = document.get("items")
+    if not isinstance(items, list) or any(not isinstance(row, dict) or set(row) != _PACKET_ITEM_KEYS
+                                          for row in items):
+        raise ValueError("annotation packet items are invalid")
+    identifiers = [row.get("blind_id") for row in items]
+    if (any(not isinstance(value, str) or not value for value in identifiers) or
+            len(identifiers) != len(set(identifiers))):
+        raise ValueError("annotation packet blind IDs must be unique")
+    for row in items:
+        canonical_language(row.get("language", ""))
+        if any(not isinstance(row[field], str) for field in ("code", "documentation")):
+            raise ValueError("annotation packet content is invalid")
+    return document
+
+
+def load_coordinator(path: Path) -> dict:
+    document = json.loads(read_bytes(Path(path), MAX_AUDIT_INPUT_BYTES,
+                                     label="audit coordinator"))
+    expected = {"schema_version", "audit_id", "rubric_sha256", "coordinator_sha256",
+                "missing_discarded_languages", "input_hashes", "items"}
+    if not isinstance(document, dict) or set(document) != expected:
+        raise ValueError("coordinator fields are invalid")
+    if document.get("schema_version") != 1:
+        raise ValueError("coordinator schema is invalid")
+    if not isinstance(document.get("audit_id"), str) or not document["audit_id"]:
+        raise ValueError("coordinator audit_id is invalid")
+    for field in ("rubric_sha256", "coordinator_sha256"):
+        if not isinstance(document.get(field), str) or not re.fullmatch(r"[0-9a-f]{64}", document[field]):
+            raise ValueError(f"coordinator {field} is invalid")
+    if document["coordinator_sha256"] != document_identity(document, "coordinator_sha256"):
+        raise ValueError("coordinator identity mismatch")
+    hashes = document.get("input_hashes")
+    if (not isinstance(hashes, dict) or any(not isinstance(key, str) or
+            not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value)
+            for key, value in hashes.items())):
+        raise ValueError("coordinator input hashes are invalid")
+    required_hashes = set(LANGUAGES)
+    allowed_hashes = required_hashes | {f"{language}-source" for language in LANGUAGES} | {
+        "source-manifest"}
+    if not required_hashes <= set(hashes) or not set(hashes) <= allowed_hashes:
+        raise ValueError("coordinator input hash inventory is invalid")
+    missing = document.get("missing_discarded_languages")
+    expected_missing = sorted(language for language in ("python", "typescript", "rust", "go")
+                              if f"{language}-source" not in hashes)
+    if missing != expected_missing:
+        raise ValueError("coordinator missing source pools are inconsistent")
+    items = document.get("items")
+    if not isinstance(items, list) or not items or any(
+            not isinstance(row, dict) or set(row) != _COORDINATOR_ITEM_KEYS
+                                          for row in items):
+        raise ValueError("coordinator items are invalid")
+    blind_ids, item_keys = [], []
+    for row in items:
+        language = canonical_language(row.get("language", ""))
+        blind_ids.append(row.get("blind_id")); item_keys.append((language, row.get("id")))
+        if (not isinstance(row.get("blind_id"), str) or not row["blind_id"] or
+                not isinstance(row.get("id"), str) or not row["id"]):
+            raise ValueError("coordinator item identity is invalid")
+        if (not isinstance(row.get("inclusion_probability"), (int, float)) or
+                isinstance(row.get("inclusion_probability"), bool) or
+                not 0 < row["inclusion_probability"] <= 1):
+            raise ValueError("coordinator inclusion probability is invalid")
+        if row.get("stratum") not in ("nominal_positive", "nominal_false_positive",
+                                       "abstention", "true_negative_sample",
+                                       "discarded_candidate"):
+            raise ValueError("coordinator stratum is invalid")
+        if row.get("source_kind") not in ("retained", "discarded"):
+            raise ValueError("coordinator source kind is invalid")
+        if ((row["stratum"] == "discarded_candidate") !=
+                (row["source_kind"] == "discarded")):
+            raise ValueError("coordinator source kind and stratum are inconsistent")
+        if row.get("label") not in ("consistent", "inconsistent"):
+            raise ValueError("coordinator nominal label is invalid")
+        if row.get("category") not in (None, "direct-mismatch", "over-promise"):
+            raise ValueError("coordinator category is invalid")
+        if row.get("final_status") not in ("complete", "abstain", "unscored"):
+            raise ValueError("coordinator final status is invalid")
+        if ((row["final_status"] == "complete" and
+             row.get("final_verdict") not in ("consistent", "inconsistent")) or
+                (row["final_status"] != "complete" and row.get("final_verdict") is not None)):
+            raise ValueError("coordinator final verdict is invalid")
+        if any(not isinstance(row.get(field), str) for field in ("code", "doc", "func")):
+            raise ValueError("coordinator item content is invalid")
+        if not isinstance(row.get("artifact_sha256"), str) or not re.fullmatch(
+                r"[0-9a-f]{64}", row["artifact_sha256"]):
+            raise ValueError("coordinator artifact hash is invalid")
+        hash_key = f"{language}-source" if row["source_kind"] == "discarded" else language
+        if row["artifact_sha256"] != hashes.get(hash_key):
+            raise ValueError("coordinator item does not match declared input hash")
+    if len(blind_ids) != len(set(blind_ids)) or len(item_keys) != len(set(item_keys)):
+        raise ValueError("coordinator item identities must be unique")
+    return document
 
 
 _JUDGMENT_KEYS = {"blind_id", "verdict", "category", "documentation_claim",
@@ -414,7 +679,8 @@ def select_third_review(first: AnnotationSet, second: AnnotationSet, *, rate: fl
         raise ValueError("annotation sets cover different packet items")
     mandatory, agreements = [], []
     for identifier in sorted(a):
-        if (a[identifier]["verdict"] != b[identifier]["verdict"] or
+        if ((a[identifier]["verdict"], a[identifier]["category"]) !=
+                (b[identifier]["verdict"], b[identifier]["category"]) or
                 "insufficient-context" in (a[identifier]["verdict"], b[identifier]["verdict"])):
             mandatory.append(identifier)
         else:
@@ -427,15 +693,16 @@ def select_third_review(first: AnnotationSet, second: AnnotationSet, *, rate: fl
 def load_annotations(path: Path, packet: Path) -> AnnotationSet:
     document = json.loads(read_bytes(Path(path), MAX_AUDIT_INPUT_BYTES,
                                      label="human annotations"))
-    packet_document = json.loads(read_bytes(Path(packet), MAX_AUDIT_INPUT_BYTES,
-                                            label="annotation packet"))
-    if set(document) != {"schema_version", "audit_id", "rubric_sha256", "annotator", "judgments"}:
+    packet_document = load_packet(packet)
+    expected_fields = {"schema_version", "audit_id", "rubric_sha256", "coordinator_sha256",
+                       "packet_sha256", "annotator", "judgments"}
+    if set(document) != expected_fields:
         raise ValueError("annotation fields are invalid")
     if document.get("schema_version") != 1:
         raise ValueError("annotation schema_version must be 1")
-    if (document.get("audit_id") != packet_document.get("audit_id") or
-            document.get("rubric_sha256") != packet_document.get("rubric_sha256")):
-        raise ValueError("annotations do not match packet audit and rubric")
+    if any(document.get(field) != packet_document.get(field)
+           for field in ("audit_id", "rubric_sha256", "coordinator_sha256", "packet_sha256")):
+        raise ValueError("annotations do not match packet identity")
     annotator = document.get("annotator")
     expected_annotator = {"annotator_id", "human_judgment", "worked_independently",
                           "used_model_assistance"}
@@ -459,20 +726,22 @@ def load_annotations(path: Path, packet: Path) -> AnnotationSet:
         raise ValueError("annotation coverage must exactly match packet")
     return AnnotationSet(document["audit_id"], document["rubric_sha256"],
                          annotator["annotator_id"], "self-attested-human", False,
-                         tuple(judgments))
+                         tuple(judgments), document["coordinator_sha256"],
+                         document["packet_sha256"])
 
 
-def write_third_packet(source_packet: Path, blind_ids: tuple[str, ...], destination: Path) -> Path:
-    source = json.loads(read_bytes(Path(source_packet), MAX_AUDIT_INPUT_BYTES,
-                                   label="adjudicator source packet"))
+def write_third_packet(source_packet: Path, blind_ids: tuple[str, ...], destination: Path, *,
+                       repo: Path) -> Path:
+    source = load_packet(source_packet)
     wanted = set(blind_ids)
     items = [row for row in source.get("items", []) if row.get("blind_id") in wanted]
     if {row["blind_id"] for row in items} != wanted:
         raise ValueError("third-review IDs are absent from source packet")
-    output = {key: source[key] for key in ("schema_version", "audit_id", "rubric_sha256")}
+    output = {key: source[key] for key in ("schema_version", "audit_id", "rubric_sha256",
+                                           "coordinator_sha256")}
     output["items"] = items
-    _atomic_json(Path(destination), output)
-    return Path(destination)
+    output["packet_sha256"] = document_identity(output, "packet_sha256")
+    return write_private_json(Path(destination), output, repo=repo)
 
 
 def combine_human_labels(first: AnnotationSet, second: AnnotationSet, third: AnnotationSet,
@@ -482,6 +751,9 @@ def combine_human_labels(first: AnnotationSet, second: AnnotationSet, third: Ann
         raise ValueError("three distinct human annotators are required")
     if len({(item.audit_id, item.rubric_sha256) for item in sets}) != 1:
         raise ValueError("annotation sets target different audits")
+    identities = {item.coordinator_sha256 for item in sets if item.coordinator_sha256}
+    if len(identities) > 1:
+        raise ValueError("annotation sets target different coordinator identities")
     a, b, c = (_judgments_by_id(item) for item in sets)
     if set(a) != set(b) or set(c) != set(third_ids):
         raise ValueError("annotation coverage does not match review selection")
@@ -491,7 +763,8 @@ def combine_human_labels(first: AnnotationSet, second: AnnotationSet, third: Ann
         reason = None
         if identifier in c:
             submissions.append(c[identifier])
-            if (a[identifier]["verdict"] != b[identifier]["verdict"]):
+            if ((a[identifier]["verdict"], a[identifier]["category"]) !=
+                    (b[identifier]["verdict"], b[identifier]["category"])):
                 reason = "disagreement"
             elif "insufficient-context" in (a[identifier]["verdict"], b[identifier]["verdict"]):
                 reason = "uncertainty"
@@ -512,25 +785,73 @@ def item_sha256(item: AuditItem) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def build_overlay(artifact: ArtifactInput, labels: dict[tuple[str, str], tuple[str, str | None]], *,
-                  rubric_sha256: str, label_package_sha256: str) -> dict:
+def build_overlay(artifact: ArtifactInput, label_package: dict) -> dict:
+    required = {"schema_version", "audit_id", "rubric_sha256", "coordinator_sha256",
+                "label_package_sha256", "gate", "evidence", "labels"}
+    if not isinstance(label_package, dict) or set(label_package) != required:
+        raise ValueError("human label package fields are invalid")
+    if (label_package.get("schema_version") != 1 or
+            label_package["label_package_sha256"] !=
+            document_identity(label_package, "label_package_sha256")):
+        raise ValueError("human label package identity mismatch")
+    if not isinstance(label_package.get("audit_id"), str) or not label_package["audit_id"]:
+        raise ValueError("human label package audit_id is invalid")
+    for field in ("rubric_sha256", "coordinator_sha256", "label_package_sha256"):
+        if not isinstance(label_package.get(field), str) or not re.fullmatch(
+                r"[0-9a-f]{64}", label_package[field]):
+            raise ValueError(f"human label package {field} is invalid")
+    gate, evidence = label_package.get("gate"), label_package.get("evidence")
+    if (not isinstance(gate, dict) or set(gate) != {"status", "qualification", "reasons"} or
+            gate.get("status") not in ("pass", "unverified", "escalate") or
+            not isinstance(gate.get("reasons"), list) or
+            not isinstance(evidence, dict) or
+            evidence.get("coordinator_sha256") != label_package["coordinator_sha256"]):
+        raise ValueError("human label package audit evidence is invalid")
     rows = []
     by_key = {item.key: item for item in artifact.items}
-    for key, (verdict, category) in sorted(labels.items()):
-        if key not in by_key:
-            raise ValueError(f"overlay label does not match artifact: {key}")
+    labels = label_package.get("labels")
+    if not isinstance(labels, list):
+        raise ValueError("human label package labels are invalid")
+    seen, seen_blind = set(), set()
+    for human in sorted(labels, key=lambda row: (row.get("language", ""), row.get("id", ""))):
+        if (not isinstance(human, dict) or set(human) != {"blind_id", "id", "language",
+                "item_sha256", "human_verdict", "human_category"}):
+            raise ValueError("human label package row is invalid")
+        key = (canonical_language(human.get("language", "")), human.get("id"))
+        if (not isinstance(human.get("blind_id"), str) or not human["blind_id"] or
+                not isinstance(human.get("id"), str) or not human["id"] or
+                not isinstance(human.get("item_sha256"), str) or
+                not re.fullmatch(r"[0-9a-f]{64}", human["item_sha256"])):
+            raise ValueError("human label package row identity is invalid")
+        if key in seen:
+            raise ValueError("human label package contains duplicate rows")
+        seen.add(key)
+        if human["blind_id"] in seen_blind:
+            raise ValueError("human label package contains duplicate blind IDs")
+        seen_blind.add(human["blind_id"])
+        verdict, category = human.get("human_verdict"), human.get("human_category")
         if verdict not in ("consistent", "inconsistent"):
             raise ValueError("overlay human verdict is invalid")
         if verdict == "inconsistent" and category not in ("direct-mismatch", "over-promise"):
             raise ValueError("inconsistent overlay requires a category")
         if verdict == "consistent" and category is not None:
             raise ValueError("consistent overlay category must be null")
+        if key not in by_key:
+            continue
         item = by_key[key]
+        if human.get("item_sha256") != item_sha256(item):
+            raise ValueError("human label package item content hash mismatch")
         rows.append({"id": item.id, "language": item.language, "item_sha256": item_sha256(item),
                      "human_verdict": verdict, "human_category": category})
-    return {"schema_version": 1, "source_artifact_sha256": artifact.sha256,
-            "label_package_sha256": label_package_sha256, "rubric_sha256": rubric_sha256,
-            "coverage": len(rows) / artifact.row_count, "rows": rows}
+    overlay = {"schema_version": 1, "audit_id": label_package["audit_id"],
+               "source_artifact_sha256": artifact.sha256,
+               "label_package_sha256": label_package["label_package_sha256"],
+               "coordinator_sha256": label_package["coordinator_sha256"],
+               "rubric_sha256": label_package["rubric_sha256"],
+               "generation_mode": "census" if len(rows) == artifact.row_count else "sample",
+               "coverage": len(rows) / artifact.row_count, "rows": rows}
+    overlay["overlay_sha256"] = document_identity(overlay, "overlay_sha256")
+    return overlay
 
 
 def rescore_overlay(artifact: ArtifactInput, overlay: dict) -> dict:
@@ -538,11 +859,36 @@ def rescore_overlay(artifact: ArtifactInput, overlay: dict) -> dict:
         from .metrics import score
     except ImportError:  # Direct script execution through label_audit.py.
         from metrics import score
+    expected = {"schema_version", "audit_id", "source_artifact_sha256",
+                "label_package_sha256", "coordinator_sha256", "rubric_sha256",
+                "generation_mode", "coverage", "rows", "overlay_sha256"}
+    if not isinstance(overlay, dict) or set(overlay) != expected:
+        raise ValueError("overlay fields are invalid")
+    if overlay.get("schema_version") != 1:
+        raise ValueError("overlay schema is invalid")
+    if not isinstance(overlay.get("audit_id"), str) or not overlay["audit_id"]:
+        raise ValueError("overlay audit_id is invalid")
+    for field in ("source_artifact_sha256", "label_package_sha256", "coordinator_sha256",
+                  "rubric_sha256", "overlay_sha256"):
+        if not isinstance(overlay.get(field), str) or not re.fullmatch(r"[0-9a-f]{64}", overlay[field]):
+            raise ValueError(f"overlay {field} is invalid")
+    if overlay.get("overlay_sha256") != document_identity(overlay, "overlay_sha256"):
+        raise ValueError("overlay identity mismatch")
     if overlay.get("source_artifact_sha256") != artifact.sha256:
         raise ValueError("overlay source artifact hash mismatch")
     rows = overlay.get("rows", [])
-    if len(rows) != artifact.row_count or overlay.get("coverage") != 1.0:
+    if (len(rows) != artifact.row_count or overlay.get("coverage") != 1.0 or
+            overlay.get("generation_mode") != "census"):
         raise ValueError("exact rescoring requires 100% human-label coverage")
+    for row in rows:
+        if (not isinstance(row, dict) or set(row) != {"id", "language", "item_sha256",
+                "human_verdict", "human_category"}):
+            raise ValueError("overlay row fields are invalid")
+        verdict, category = row.get("human_verdict"), row.get("human_category")
+        if (verdict not in ("consistent", "inconsistent") or
+                (verdict == "consistent" and category is not None) or
+                (verdict == "inconsistent" and category not in ("direct-mismatch", "over-promise"))):
+            raise ValueError("overlay human label is invalid")
     human = {(row["language"], row["id"]): row for row in rows}
     if len(human) != len(rows):
         raise ValueError("overlay contains duplicate rows")
@@ -558,6 +904,8 @@ def rescore_overlay(artifact: ArtifactInput, overlay: dict) -> dict:
                                "category": row["human_category"]})
     return {"source_artifact_sha256": artifact.sha256, "original": score(original_rows),
             "corrected": score(corrected_rows),
+            "audit_id": overlay["audit_id"], "overlay_sha256": overlay["overlay_sha256"],
+            "coordinator_sha256": overlay["coordinator_sha256"],
             "label_package_sha256": overlay["label_package_sha256"],
             "rubric_sha256": overlay["rubric_sha256"]}
 
@@ -567,6 +915,21 @@ def repository_key(identifier: str) -> str:
     if len(parts) < 3 or not parts[0] or not parts[1]:
         raise ValueError(f"benchmark id lacks owner/project repository: {identifier}")
     return "/".join(parts[:2])
+
+
+def human_export_row(label: CombinedLabel, coordinator_item: dict) -> dict:
+    if label.unresolved or label.final_verdict not in ("consistent", "inconsistent"):
+        raise ValueError("only resolved human labels can be exported")
+    if coordinator_item.get("blind_id") != label.blind_id:
+        raise ValueError("human label does not match coordinator item")
+    row = {"blind_id": label.blind_id, "id": coordinator_item["id"],
+           "language": canonical_language(coordinator_item["language"]),
+           "human_verdict": label.final_verdict, "human_category": label.final_category}
+    if all(isinstance(coordinator_item.get(field), str) for field in ("code", "doc")):
+        value = json.dumps([row["language"], row["id"], coordinator_item["code"],
+                            coordinator_item["doc"]], ensure_ascii=False, separators=(",", ":"))
+        row["item_sha256"] = hashlib.sha256(value.encode()).hexdigest()
+    return row
 
 
 def split_by_repository(labels: CombinedLabels, coordinator_items: list[dict], *, split_key: bytes,
@@ -586,18 +949,76 @@ def split_by_repository(labels: CombinedLabels, coordinator_items: list[dict], *
         repositories.setdefault(repository, []).append(label.blind_id)
     ordered = sorted(repositories, key=lambda repo:
                      hmac.new(split_key, repo.encode(), hashlib.sha256).digest())
+    rank = {repository: index for index, repository in enumerate(ordered)}
+    label_by_id = {label.blind_id: label for label in labels.labels}
+    repo_cells = {repository: {(mapping[identifier]["language"],
+                                label_by_id[identifier].final_verdict,
+                                label_by_id[identifier].final_category)
+                               for identifier in identifiers}
+                  for repository, identifiers in repositories.items()}
+    all_cells = set().union(*repo_cells.values())
+    candidates = {cell: sorted((repository for repository, cells in repo_cells.items()
+                                if cell in cells), key=rank.get)
+                  for cell in all_cells}
+    sparse = [cell for cell, values in candidates.items() if len(values) < 2]
+    if sparse:
+        raise ValueError(f"repository split cannot cover human-label cells twice: {sorted(sparse)}")
+    assignment: dict[str, bool] = {}
+
+    def supports(cell, development: bool) -> bool:
+        return any(assignment.get(repository) is development for repository in candidates[cell])
+
+    def assign_supports() -> bool:
+        unsatisfied = [cell for cell in all_cells
+                       if not supports(cell, True) or not supports(cell, False)]
+        if not unsatisfied:
+            return True
+        cell = min(unsatisfied, key=lambda value: (len(candidates[value]), value))
+        need_dev, need_hold = not supports(cell, True), not supports(cell, False)
+        if need_dev and need_hold:
+            for development in candidates[cell]:
+                if development in assignment:
+                    continue
+                assignment[development] = True
+                for holdout in candidates[cell]:
+                    if holdout == development or holdout in assignment:
+                        continue
+                    assignment[holdout] = False
+                    if assign_supports():
+                        return True
+                    del assignment[holdout]
+                del assignment[development]
+            return False
+        desired = True if need_dev else False
+        for repository in candidates[cell]:
+            if repository in assignment:
+                continue
+            assignment[repository] = desired
+            if assign_supports():
+                return True
+            del assignment[repository]
+        return False
+
+    if not assign_supports():
+        raise ValueError("repository split cannot satisfy human-label cell coverage")
     target = round(len(ordered) * development_fraction)
-    development_repositories = set(ordered[:target])
+    target = min(len(ordered) - sum(value is False for value in assignment.values()),
+                 max(sum(value is True for value in assignment.values()), target))
+    for repository in ordered:
+        if repository not in assignment:
+            assignment[repository] = sum(assignment.values()) < target
+    development_repositories = {repository for repository, development in assignment.items()
+                                if development}
     development_ids = sorted(identifier for repo in development_repositories
                              for identifier in repositories[repo])
     holdout_repositories = set(ordered) - development_repositories
     holdout_ids = sorted(identifier for repo in holdout_repositories
                          for identifier in repositories[repo])
-    label_by_id = {label.blind_id: label for label in labels.labels}
-    for language in LANGUAGES:
-        classes = {label_by_id[identifier].final_verdict for identifier in holdout_ids
-                   if mapping[identifier]["language"] == language}
-        if classes != {"consistent", "inconsistent"}:
-            raise ValueError(f"holdout split has sparse binary coverage for {language}")
+    for name, identifiers in (("development", development_ids), ("holdout", holdout_ids)):
+        cells = {(mapping[identifier]["language"], label_by_id[identifier].final_verdict,
+                  label_by_id[identifier].final_category) for identifier in identifiers}
+        missing = all_cells - cells
+        if missing:
+            raise ValueError(f"{name} split has sparse human-label cell coverage: {sorted(missing)}")
     return SplitResult(tuple(development_ids), tuple(holdout_ids),
                        tuple(sorted(development_repositories)), tuple(sorted(holdout_repositories)))
