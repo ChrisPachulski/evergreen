@@ -11,9 +11,9 @@ import time
 from types import SimpleNamespace
 
 try:
-    from .resolver import needs_synthesis_v1, resolve_v1
+    from .resolver import needs_synthesis_v1, needs_synthesis_v2, resolve_v1, resolve_v2
 except ImportError:  # Direct script execution.
-    from resolver import needs_synthesis_v1, resolve_v1
+    from resolver import needs_synthesis_v1, needs_synthesis_v2, resolve_v1, resolve_v2
 
 HERE = Path(__file__).parent
 SKILL = HERE.parent.parent / "skills" / "evergreen" / "SKILL.md"
@@ -306,6 +306,21 @@ Reply with exactly one line of JSON and nothing else:
     return model_json(prompt, model, provider)
 
 
+def snap_call_v2(pair, model, provider="claude"):
+    prompt = f"""{skill_body()}
+
+# Task
+Judge only what the supplied code directly proves about the documentation claim. Distinguish
+direct evidence from a conclusion delegated to another function and from evidence that would
+require code not shown. Use unverified when the supplied evidence cannot settle the claim.
+
+{_pair_envelope(pair)}
+
+Reply with exactly one line of JSON and nothing else:
+{{"verdict": "consistent" | "inconsistent" | "unverified", "proof": "direct" | "delegated" | "requires-unseen-code", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "claim": "<the exact claim being judged>", "evidence": "<the exact supplied code evidence>"}}"""
+    return model_json(prompt, model, provider)
+
+
 def challenge_call(pair, snap_verdict, model, provider="claude"):
     attack = ("Argue the documentation is actually INCONSISTENT — find the specific code that "
               "breaks its claim." if snap_verdict == "consistent" else
@@ -327,10 +342,28 @@ Reply with exactly one line of JSON and nothing else:
     return model_json(prompt, model, provider)
 
 
+def challenge_call_v2(pair, snap_verdict, model, provider="claude"):
+    prompt = f"""A first reviewer judged this documentation "{snap_verdict}". Make the strongest
+opposing case using only code directly present in the supplied evidence. Do not treat delegated
+behavior or code that is not shown as proof. Then say whether that direct case cracks the verdict.
+
+{_pair_envelope(pair)}
+
+Reply with exactly one line of JSON and nothing else:
+{{"cracks": true | false, "why": "<the strongest directly cited case>"}}"""
+    return model_json(prompt, model, provider)
+
+
 PRONGS = {
     "defend": "Make the strongest case the documentation is STILL TRUE for this code. What reading makes it hold? Cite the code.",
     "prove-wrong": "Try to PROVE the documentation wrong: find the exact code token or behavior that breaks its claim. If none exists, say so.",
     "hardest-broken": "Make the hardest case the documentation genuinely MISREPRESENTS what the code does.",
+}
+
+PRONGS_V2 = {
+    "defend": "Build the strongest directly evidenced case that the documentation is true.",
+    "prove-wrong": "Build the strongest directly evidenced case that the documentation is false.",
+    "evidence-auditor": "Audit whether the supplied code can actually settle the claim at all.",
 }
 
 
@@ -354,6 +387,27 @@ def run_prongs(pair, model, provider="claude"):
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=3) as pool:
         return list(pool.map(lambda r: prong_call(pair, r, model, provider), PRONGS))
+
+
+def prong_call_v2(pair, role, model, provider="claude"):
+    prompt = f"""{skill_body()}
+
+# Task ({role})
+{PRONGS_V2[role]} Judge only the supplied code. Label evidence delegated when the conclusion
+depends on a called function whose implementation is not evaluated here, and requires-unseen-code
+when the necessary implementation is absent. Use unverified when the evidence cannot settle it.
+
+{_pair_envelope(pair)}
+
+Reply with exactly one line of JSON and nothing else:
+{{"role": "{role}", "verdict": "consistent" | "inconsistent" | "unverified", "proof": "direct" | "delegated" | "requires-unseen-code", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "claim": "<the exact claim being judged>", "evidence": "<the exact supplied code evidence>"}}"""
+    return model_json(prompt, model, provider)
+
+
+def run_prongs_v2(pair, model, provider="claude"):
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        return list(pool.map(lambda role: prong_call_v2(pair, role, model, provider), PRONGS_V2))
 
 
 def blindspot_call(pair, model, provider="claude"):
@@ -394,7 +448,41 @@ Reply with exactly one line of JSON and nothing else:
     return model_json(prompt, model, provider)
 
 
+def synthesis_call_v2(pair, snap, challenge, prongs, blindspot, model, provider="claude"):
+    evidence = {"snap": snap, "challenge": challenge, "prongs": prongs,
+                "blindspot": blindspot}
+    prompt = f"""{skill_body()}
+
+# Task
+Resolve the trial using only evidence directly present in the supplied code. A consistent or
+inconsistent decision requires direct proof. If the answer depends on a delegated implementation
+or code not shown, return unverified. An inconsistent decision also requires direct-mismatch or
+over-promise; under-promise is informational and cannot be a drift decision.
+
+{_pair_envelope(pair)}
+
+## Trial record
+{_trial_envelope(evidence)}
+
+Reply with exactly one line of JSON and nothing else:
+{{"verdict": "consistent" | "inconsistent" | "unverified", "proof": "direct" | "delegated" | "requires-unseen-code", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "claim": "<the exact claim being judged>", "evidence": "<the deciding supplied code evidence>"}}"""
+    return model_json(prompt, model, provider)
+
+
 VERDICTS = {"consistent", "inconsistent"}
+V2_VERDICTS = VERDICTS | {"unverified"}
+PROOFS = {"direct", "delegated", "requires-unseen-code"}
+V2_CATEGORIES = {None, "direct-mismatch", "over-promise", "under-promise"}
+
+
+def _valid_proof_stage(value, role=None):
+    valid = (
+        value.get("verdict") in V2_VERDICTS and value.get("proof") in PROOFS and
+        "category" in value and value.get("category") in V2_CATEGORIES and
+        all(isinstance(value.get(field), str) and bool(value[field].strip())
+            for field in ("claim", "evidence"))
+    )
+    return valid and (role is None or value.get("role") == role)
 
 
 def _checked_stage(result, name, required):
@@ -408,8 +496,8 @@ def _checked_stage(result, name, required):
     return result, value
 
 
-def _abstained(trail, reason):
-    return {
+def _abstained(trail, reason, resolver_id="v1"):
+    result = {
         "final_status": "abstain",
         "final_verdict": None,
         "verdict": None,
@@ -418,28 +506,40 @@ def _abstained(trail, reason):
         "contested": False,
         "stages": trail,
     }
+    if resolver_id == "v2":
+        result["semantic_status"] = "not-evaluated"
+    return result
 
 
 def judge(pair, models, run_test=None):
     """Put one claim on trial (the 5-step process). models: {strong, cheap}."""
     strong, cheap = models["strong"], models["cheap"]
     provider = models.get("provider", "claude")
+    resolver_id = models.get("resolver", "v1")
+    if resolver_id not in ("v1", "v2"):
+        raise ValueError("resolver must be v1 or v2")
     trail = {}
-    calls = {
+    calls = ({
         "snap": snap_call, "challenge": challenge_call, "prongs": run_prongs,
         "prongs_escalated": run_prongs, "blindspot": blindspot_call,
         "synthesis": synthesis_call,
-    }
+    } if resolver_id == "v1" else {
+        "snap": snap_call_v2, "challenge": challenge_call_v2, "prongs": run_prongs_v2,
+        "blindspot": blindspot_call, "synthesis": synthesis_call_v2,
+    })
+    prong_roles = tuple(PRONGS if resolver_id == "v1" else PRONGS_V2)
+    valid_snap = (lambda value: value.get("verdict") in VERDICTS) if resolver_id == "v1" \
+        else _valid_proof_stage
 
     def invoke(stage, *args):
         return run_test(stage, *args) if run_test is not None else calls[stage](*args, provider)
 
     snap_result, snap = _checked_stage(
-        invoke("snap", pair, strong), "snap", lambda value: value.get("verdict") in VERDICTS
+        invoke("snap", pair, strong), "snap", valid_snap
     )                                                                 # 1. snap (strong)
     trail["snap"] = snap_result
     if snap is None:
-        return _abstained(trail, snap_result["reason"])
+        return _abstained(trail, snap_result["reason"], resolver_id)
     snap_v = snap["verdict"]
 
     challenge_result, ch = _checked_stage(
@@ -449,21 +549,26 @@ def judge(pair, models, run_test=None):
     )                                                                 # 2. challenge (cheap)
     trail["challenge"] = challenge_result
     if ch is None:
-        return _abstained(trail, challenge_result["reason"])
+        return _abstained(trail, challenge_result["reason"], resolver_id)
     cracked = ch["cracks"]
 
     prong_results = invoke("prongs", pair, strong if cracked else cheap)  # 3. blind prongs
-    checked_prongs = [
-        _checked_stage(result, "prong", lambda value: value.get("verdict") in VERDICTS)
-        for result in prong_results
-    ]
+    checked_prongs = []
+    for index, result in enumerate(prong_results):
+        role = prong_roles[index] if index < len(prong_roles) else None
+        required = (lambda value: value.get("verdict") in VERDICTS) \
+            if resolver_id == "v1" else (lambda value, role=role: _valid_proof_stage(value, role))
+        checked_prongs.append(_checked_stage(result, "prong", required))
     trail["prongs"] = [result for result, _ in checked_prongs]
-    if len(checked_prongs) != len(PRONGS) or any(value is None for _, value in checked_prongs):
-        return _abstained(trail, "one or more prong responses are missing required fields")
+    if (len(checked_prongs) != len(prong_roles) or
+            any(value is None for _, value in checked_prongs)):
+        return _abstained(
+            trail, "one or more prong responses are missing required fields", resolver_id
+        )
     prongs = [value for _, value in checked_prongs]
     pv = [p["verdict"] for p in prongs]
 
-    if not cracked:  # survived path: tally snap + 3 prongs; a 2-2 tie means the snap failed
+    if resolver_id == "v1" and not cracked:
         votes = [snap_v] + pv
         if votes.count("inconsistent") == votes.count("consistent"):
             cracked = True
@@ -490,17 +595,21 @@ def judge(pair, models, run_test=None):
     )                                                                 # 4. blind-spot (cheap)
     trail["blindspot"] = blindspot_result
     if bs is None:
-        return _abstained(trail, blindspot_result["reason"])
-    if needs_synthesis_v1(trail):                    # 5. synthesis (strong), only when contested
+        return _abstained(trail, blindspot_result["reason"], resolver_id)
+    needs_synthesis = (needs_synthesis_v1(trail) if resolver_id == "v1"
+                       else needs_synthesis_v2(trail))
+    if needs_synthesis:                              # 5. synthesis, only when contested
+        valid_synthesis = (lambda value: value.get("verdict") in VERDICTS) \
+            if resolver_id == "v1" else _valid_proof_stage
         synthesis_result, syn = _checked_stage(
             invoke("synthesis", pair, snap, ch, prongs, bs, strong),
             "synthesis",
-            lambda value: value.get("verdict") in VERDICTS,
+            valid_synthesis,
         )
         trail["synthesis"] = synthesis_result
         if syn is None:
-            return _abstained(trail, synthesis_result["reason"])
-    return resolve_v1(trail)
+            return _abstained(trail, synthesis_result["reason"], resolver_id)
+    return resolve_v1(trail) if resolver_id == "v1" else resolve_v2(trail)
 
 
 def selftest():

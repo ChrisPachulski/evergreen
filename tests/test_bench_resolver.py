@@ -1,7 +1,9 @@
 import unittest
 
 
-from eval.bench.resolver import needs_synthesis_v1, resolve, resolve_v1
+from eval.bench.resolver import (
+    needs_synthesis_v1, needs_synthesis_v2, resolve, resolve_v1, resolve_v2,
+)
 
 
 def ok(value):
@@ -83,6 +85,90 @@ class ResolverV1Tests(unittest.TestCase):
         self.assertEqual(resolve(self.unanimous(), "v1")["final_verdict"], "consistent")
         with self.assertRaisesRegex(ValueError, "resolver"):
             resolve(self.unanimous(), "unknown")
+
+
+def proof_verdict(value, proof="direct", category=None, role=None):
+    record = {
+        "verdict": value, "proof": proof, "category": category,
+        "claim": "the documentation claim", "evidence": "return 1",
+    }
+    if role is not None:
+        record["role"] = role
+    return record
+
+
+class ResolverV2Tests(unittest.TestCase):
+    roles = ("defend", "prove-wrong", "evidence-auditor")
+
+    def unanimous(self, value="consistent", proof="direct"):
+        category = "direct-mismatch" if value == "inconsistent" else None
+        return {
+            "snap": ok(proof_verdict(value, proof, category)),
+            "challenge": ok({"cracks": False, "why": "attack failed"}),
+            "prongs": [ok(proof_verdict(value, proof, category, role))
+                       for role in self.roles],
+            "blindspot": ok({"missed_angle": None}),
+        }
+
+    def test_unanimous_direct_evidence_is_a_semantic_decision(self):
+        stages = self.unanimous()
+        self.assertFalse(needs_synthesis_v2(stages))
+        result = resolve_v2(stages)
+        self.assertEqual(result["final_status"], "complete")
+        self.assertEqual(result["semantic_status"], "decided")
+        self.assertEqual(result["final_verdict"], "consistent")
+
+    def test_non_direct_consensus_forces_synthesis_and_downgrades_to_unverified(self):
+        stages = self.unanimous(proof="requires-unseen-code")
+        stages["synthesis"] = ok(proof_verdict(
+            "consistent", "requires-unseen-code"
+        ))
+        self.assertTrue(needs_synthesis_v2(stages))
+        result = resolve_v2(stages)
+        self.assertEqual(result["final_status"], "complete")
+        self.assertEqual(result["semantic_status"], "unverified")
+        self.assertIsNone(result["final_verdict"])
+
+    def test_inconsistent_requires_direct_proof_and_scored_category(self):
+        for proof, category in (
+            ("delegated", "direct-mismatch"),
+            ("direct", None),
+            ("direct", "under-promise"),
+        ):
+            with self.subTest(proof=proof, category=category):
+                stages = self.unanimous()
+                stages["synthesis"] = ok(proof_verdict(
+                    "inconsistent", proof, category
+                ))
+                stages["challenge"] = ok({"cracks": True, "why": "landed"})
+                result = resolve_v2(stages)
+                self.assertEqual(result["semantic_status"], "unverified")
+                self.assertIsNone(result["final_verdict"])
+
+    def test_any_disagreement_challenge_or_blindspot_forces_synthesis(self):
+        mutations = (
+            lambda stages: stages["challenge"]["value"].update(cracks=True),
+            lambda stages: stages["blindspot"]["value"].update(missed_angle="edge"),
+            lambda stages: stages["prongs"][1].update(
+                value=proof_verdict("inconsistent", category="direct-mismatch",
+                                    role="prove-wrong")
+            ),
+        )
+        for mutate in mutations:
+            stages = self.unanimous()
+            mutate(stages)
+            with self.subTest(stages=stages):
+                self.assertTrue(needs_synthesis_v2(stages))
+
+    def test_malformed_proof_record_is_infrastructure_abstention(self):
+        stages = self.unanimous()
+        del stages["snap"]["value"]["evidence"]
+        result = resolve_v2(stages)
+        self.assertEqual(result["final_status"], "abstain")
+        self.assertEqual(result["semantic_status"], "not-evaluated")
+
+    def test_dispatch_accepts_v2(self):
+        self.assertEqual(resolve(self.unanimous(), "v2")["semantic_status"], "decided")
 
 
 if __name__ == "__main__":
