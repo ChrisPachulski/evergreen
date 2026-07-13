@@ -362,14 +362,15 @@ def _dataset_snapshot(path):
     return raw, rows
 
 
-def _render_snapshot_report(documents, required, threshold):
+def _render_snapshot_report(documents, required, threshold, *, legacy=False):
     with tempfile.TemporaryDirectory(prefix="evergreen-publication-report-") as directory:
         paths = []
         for name, document in documents:
             path = Path(directory) / name
             path.write_bytes(canonical_bytes(document))
             paths.append(path)
-        return report.render_markdown(paths, sorted(required), threshold).encode()
+        renderer = report.render_markdown_v1 if legacy else report.render_markdown
+        return renderer(paths, sorted(required), threshold).encode()
 
 
 def _settings_sha256(settings):
@@ -503,11 +504,17 @@ def export_publication(
                     "sha256": item["source_sha256"],
                 },
             })
+        report_inputs = [
+            (item["name"], item["document"]) for item in ordered
+        ]
         rendered = _render_snapshot_report(
-            [(item["name"], item["document"]) for item in ordered],
+            report_inputs,
             required, coverage_threshold,
         )
-        if rendered != expected_report:
+        legacy_rendered = _render_snapshot_report(
+            report_inputs, required, coverage_threshold, legacy=True,
+        )
+        if expected_report not in (rendered, legacy_rendered):
             raise ValueError("public artifacts do not regenerate the declared report")
         shared = projected[0]["document"]["metadata"]
         manifest = {
@@ -850,15 +857,15 @@ def verify_publication(manifest_path, repo, report_path):
     report_bytes = artifact.read_bytes(report_path, report.MAX_TOTAL_ARTIFACT_BYTES, label="report")
     if hashlib.sha256(report_bytes).hexdigest() != _hash(declared_report["sha256"], "report hash"):
         raise ValueError("report SHA-256 does not match manifest")
-    rendered = _render_snapshot_report(
-        [
-            (Path(snapshot["entry"]["path"]).name, snapshot["document"])
-            for snapshot in snapshots
-        ],
-        required,
-        threshold,
+    report_inputs = [
+        (Path(snapshot["entry"]["path"]).name, snapshot["document"])
+        for snapshot in snapshots
+    ]
+    rendered = _render_snapshot_report(report_inputs, required, threshold)
+    legacy_rendered = _render_snapshot_report(
+        report_inputs, required, threshold, legacy=True,
     )
-    if rendered != report_bytes:
+    if report_bytes not in (rendered, legacy_rendered):
         raise ValueError("public artifacts do not regenerate the report")
     return public_paths
 

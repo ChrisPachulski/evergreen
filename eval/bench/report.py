@@ -180,6 +180,106 @@ def _required_languages(values):
     return set(values)
 
 
+def render_markdown_v1(paths, required_languages, coverage_threshold=1.0):
+    """Render the frozen coverage-only report used by the 0.4.0 publication."""
+    if not 0 <= coverage_threshold <= 1:
+        raise ValueError("coverage threshold must be between 0 and 1")
+    required = _required_languages(required_languages)
+    artifacts = _load_artifacts(paths)
+    rows = [row for artifact in artifacts for row in artifact["rows"]]
+    languages = sorted({row.get("language", "unknown") for row in rows})
+    observed = set(languages)
+    mismatch = []
+    if required - observed:
+        mismatch.append(
+            "missing artifacts for required languages: "
+            + ", ".join(_safe_text(value) for value in sorted(required - observed))
+        )
+    if observed - required:
+        mismatch.append(
+            "undeclared artifacts for languages: "
+            + ", ".join(_safe_text(value) for value in sorted(observed - required))
+        )
+    if mismatch:
+        raise ValueError("; ".join(mismatch))
+    provenance = artifacts[0]["metadata"]
+    git = provenance["git"]
+    lines = [
+        "# Evergreen benchmark report",
+        "",
+        "Publication status: **PASS**.",
+        "",
+        f"Required completion coverage: **{_percent(coverage_threshold)}**.",
+        f"Required languages: **{', '.join(_safe_text(value) for value in sorted(required))}**.",
+        "",
+        "### Provenance",
+        "",
+        "| Input | Identity |",
+        "|---|---|",
+        f"| Skill SHA-256 | `{_safe_text(provenance['skill']['sha256'])}` |",
+        f"| Judge SHA-256 | `{_safe_text(provenance['judge']['sha256'])}` |",
+        f"| Git commit | `{_safe_text(git['commit'])}` |",
+        f"| Git tree | `{_safe_text(git['tree'])}` |",
+        f"| Git dirty | `{str(git['dirty']).lower()}` |",
+        f"| Git status SHA-256 | `{_safe_text(git['status_sha256'])}` |",
+        f"| Git diff SHA-256 | `{_safe_text(git['diff_sha256'])}` |",
+        f"| Git untracked SHA-256 | `{_safe_text(git['untracked_sha256'])}` |",
+        f"| Provider | {_safe_text(provenance['provider'])} |",
+        f"| CLI version | {_safe_text(provenance['cli_version'])} |",
+        "| Settings SHA-256 | `"
+        + hashlib.sha256(json.dumps(
+            provenance["settings"], sort_keys=True, separators=(",", ":")
+        ).encode()).hexdigest()
+        + "` |",
+    ]
+    for artifact in artifacts:
+        dataset = artifact["metadata"]["dataset"]
+        lines.append(
+            f"| Dataset {_safe_text(dataset['path'])} | `{_safe_text(dataset['sha256'])}` |"
+        )
+    passed_all = bool(languages)
+    for language in languages:
+        language_rows = [row for row in rows if row.get("language", "unknown") == language]
+        language_metrics = metrics.score(metrics.rows_from_transcript(language_rows))
+        passed = language_metrics["completion_rate"] >= coverage_threshold
+        passed_all = passed_all and passed
+        lines.extend([
+            "",
+            f"## {_safe_text(language)}",
+            "",
+            f"Coverage: **{_percent(language_metrics['completion_rate'])}** — "
+            f"**{'PASS' if passed else 'FAIL'}**.",
+            "",
+            "| Coverage | Count |",
+            "|---|---:|",
+            f"| Attempted | {language_metrics['attempted']} |",
+            f"| Completed | {language_metrics['completed']} |",
+            f"| Abstained | {language_metrics['abstained']} |",
+            "",
+            "| Core result | Value |",
+            "|---|---:|",
+            f"| TP | {language_metrics['tp']} |",
+            f"| FP | {language_metrics['fp']} |",
+            f"| FN | {language_metrics['fn']} |",
+            f"| TN | {language_metrics['tn']} |",
+            f"| Precision | {_metric(language_metrics['precision'])} |",
+            f"| Recall | {_metric(language_metrics['recall'])} |",
+            f"| F1 | {_metric(language_metrics['f1'])} |",
+            f"| Specificity | {_metric(language_metrics['specificity'])} |",
+            f"| Accuracy | {_metric(language_metrics['accuracy'])} |",
+            "",
+            "| Under-promise (informational) | Count |",
+            "|---|---:|",
+            f"| Attempted | {language_metrics['under_attempted']} |",
+            f"| Completed | {language_metrics['under_completed']} |",
+            f"| Abstained | {language_metrics['under_abstained']} |",
+            f"| Flagged | {language_metrics['under_flagged']} |",
+        ])
+    if not passed_all:
+        lines[2] = "Publication status: **FAIL**."
+    return "\n".join(lines) + "\n"
+
+
 def _build_report(
     paths, required_languages, coverage_threshold, decision_threshold=0.0,
     precision_threshold=0.0, recall_threshold=0.0, f1_threshold=0.0,
