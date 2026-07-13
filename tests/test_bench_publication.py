@@ -224,6 +224,30 @@ class ProjectionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "publication schema"):
                     publication.project_artifact(document)
 
+    def test_projection_rejects_non_repository_metadata_paths(self):
+        invalid = (
+            "/Users/private/skill.md",
+            "../private/skill.md",
+            "skills//evergreen/SKILL.md",
+            "skills/./evergreen/SKILL.md",
+            "~/private/skill.md",
+            "$HOME/private/skill.md",
+            "C:/Users/private/skill.md",
+            "skills\\evergreen\\SKILL.md",
+        )
+        for value in invalid:
+            with self.subTest(value=value):
+                document = private_artifact([private_row()])
+                document["metadata"]["skill"]["path"] = value
+                with self.assertRaisesRegex(ValueError, "repository-relative POSIX"):
+                    publication.project_artifact(document)
+
+    def test_projection_binds_judge_path_to_verified_file_list(self):
+        document = private_artifact([private_row()])
+        document["metadata"]["judge"]["path"] = "eval/bench/undeclared.py"
+        with self.assertRaisesRegex(ValueError, "declared judge file"):
+            publication.project_artifact(document)
+
 
 class PublicationTests(unittest.TestCase):
     def make_source_package(self, root):
@@ -336,6 +360,23 @@ class PublicationTests(unittest.TestCase):
                     root / "report.md", root,
                 )
 
+    def test_export_rejects_absolute_skill_path_before_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _digest, report_path = self.make_source_package(root)
+            document = json.loads(source.read_text())
+            document["metadata"]["skill"]["path"] = "/Users/private/SKILL.md"
+            source.write_bytes(publication.canonical_bytes(document))
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            output = root / "public"
+
+            with self.assertRaisesRegex(ValueError, "repository-relative POSIX"):
+                publication.export_publication(
+                    [(digest, source)], output, "0.4.0", ["rust"], 0.99,
+                    report_path, root,
+                )
+            self.assertFalse(output.exists())
+
     def test_export_writes_deterministic_manifest_and_rescorable_artifact(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -417,6 +458,25 @@ class PublicationTests(unittest.TestCase):
 
                 with self.assertRaisesRegex(ValueError, "public artifact"):
                     publication.verify_publication(manifest_path, repo, report_path)
+
+    def test_verify_rejects_rehashed_absolute_judge_path_without_echoing_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo, manifest_path, report_path = self.make_git_publication(Path(directory))
+            manifest = json.loads(manifest_path.read_text())
+            public_path = repo / manifest["artifacts"][0]["path"]
+            value = json.loads(public_path.read_text())
+            private_path = "/Users/private/eval/bench/run_bench.py"
+            value["metadata"]["judge"]["path"] = private_path
+            public_path.write_bytes(publication.canonical_bytes(value))
+            manifest["artifacts"][0]["bytes"] = public_path.stat().st_size
+            manifest["artifacts"][0]["sha256"] = hashlib.sha256(
+                public_path.read_bytes()
+            ).hexdigest()
+            manifest_path.write_bytes(publication.canonical_bytes(manifest))
+
+            with self.assertRaisesRegex(ValueError, "repository-relative POSIX") as caught:
+                publication.verify_publication(manifest_path, repo, report_path)
+            self.assertNotIn(private_path, str(caught.exception))
 
     def test_export_uses_one_source_snapshot_for_hash_parse_and_projection(self):
         with tempfile.TemporaryDirectory() as directory:

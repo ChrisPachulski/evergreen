@@ -10,7 +10,7 @@ import re
 import shutil
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 try:
     from . import artifact, report, runner
@@ -74,11 +74,26 @@ def _hex_string(value, label, lengths):
     return value
 
 
+def _repository_relative_posix(value, label):
+    value = _bounded_string(value, f"{label} path")
+    parts = value.split("/")
+    first = parts[0]
+    home_markers = {"$HOME", "${HOME}", "$HOMEPATH", "$USERPROFILE", "%USERPROFILE%"}
+    if (PurePosixPath(value).is_absolute() or "\\" in value or "://" in value or
+            any(part in ("", ".", "..") for part in parts) or
+            first.startswith("~") or first.upper() in home_markers or
+            re.fullmatch(r"[A-Za-z]:", first) or
+            PurePosixPath(value).as_posix() != value or
+            any(ord(character) < 32 or ord(character) == 127 for character in value)):
+        raise ValueError(f"{label} path must be normalized repository-relative POSIX")
+    return value
+
+
 def _path_hash(value, label):
     if not isinstance(value, dict):
         raise ValueError(f"{label} is invalid")
     return {
-        "path": _bounded_string(value.get("path"), f"{label} path"),
+        "path": _repository_relative_posix(value.get("path"), label),
         "sha256": _hex_string(value.get("sha256"), f"{label} SHA-256", {64}),
     }
 
@@ -97,6 +112,8 @@ def _project_metadata(metadata):
     judge_paths = [item["path"] for item in judge["files"]]
     if judge_paths != sorted(set(judge_paths)):
         raise ValueError("judge files are invalid")
+    if judge["path"] not in judge_paths:
+        raise ValueError("judge path must name a declared judge file")
 
     git_source = metadata.get("git")
     if not isinstance(git_source, dict) or type(git_source.get("dirty")) is not bool:
