@@ -170,12 +170,13 @@ validates the model's result before rendering or applying the configured inconcl
 
 ## Evaluation status
 
-Current five-language benchmark metrics remain unpublished until one compatible run clears every declared coverage gate.
+Current five-language benchmark metrics are published only from one compatible run that clears every declared coverage gate.
 
-Python, Java, TypeScript, Rust, and Go each require a complete compatible artifact tied to the same
-implementation, judge, dataset hashes, model/CLI identity, protocol, and settings. Interrupted or
-cross-commit diagnostics remain diagnostic; no partial matrix is promoted. Task 4 runs only the
-benchmark self-test, not provider-backed scoring or publication.
+The current Python, Java, TypeScript, Rust, and Go artifacts are tied to the same implementation,
+judge, dataset hashes, model/CLI identity, protocol, and settings. All five cleared the declared 99%
+coverage gate; the generated report preserves the one abstention. Interrupted or cross-commit
+diagnostics remain diagnostic, and Task 4 still runs only the benchmark self-test, not
+provider-backed scoring or publication.
 
 ## Non-goals
 

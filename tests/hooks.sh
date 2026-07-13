@@ -219,7 +219,7 @@ fi
 for tok in \
   "Evidence providers and source maps are passive candidate inputs; Evergreen never executes provider commands or accepts their verdicts." \
   "Executable proof is local and explicit; CI never executes pull-request code, and unsafe or unavailable isolation is inconclusive." \
-  "Current five-language benchmark metrics remain unpublished until one compatible run clears every declared coverage gate." \
+  "Current five-language benchmark metrics are published only from one compatible run that clears every declared coverage gate." \
   "Evergreen is not a hosted index, AST engine, dashboard, or automatic truth-path prose rewriter."; do
   if grep -Fq "$tok" "$ROOT/README.md" && grep -Fq "$tok" "$ROOT/docs/DESIGN.md"; then
     ok "final product boundary agrees across README/design: $tok"

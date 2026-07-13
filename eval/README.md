@@ -29,11 +29,8 @@ The harness prints its own numbers on each run.
 
 ## How it compares
 
-The per-pair benchmark ([`bench/`](bench/)) reduces each language to one confusion matrix, but no
-five-language current-judge result is published yet. Python, Java, TypeScript, Rust, and Go must all
-finish and individually clear the declared generated-report coverage threshold. The current run was
-interrupted by a provider session limit, and implementation commits landed between language starts.
-Those diagnostic checkpoints have incompatible provenance and will not be resumed or published. A
-fresh run from one stabilized commit is required; partial matrices and historical prior-judge numbers
-are intentionally not presented as current results. [`bench/`](bench/) records the run protocol and
-dataset provenance.
+The per-pair benchmark ([`bench/`](bench/)) reduces each language to one confusion matrix. The
+five-language current-judge publication passed its predeclared gate: Python, Java, TypeScript, Rust,
+and Go each reached at least 99% coverage from one frozen implementation and provider identity.
+[`bench/results-current.md`](bench/results-current.md) contains the matrices, the one visible
+abstention, and exact provenance. Partial, interrupted, and cross-commit diagnostics remain excluded.

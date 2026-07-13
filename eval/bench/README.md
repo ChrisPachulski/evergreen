@@ -111,13 +111,23 @@ train on one language's labels; different regime, noted and out of scope.
 
 ### Evergreen — current judge (the trial rebuild)
 
-The five-language publication is **not yet available**. Python, Java, TypeScript, Rust, and Go must
-all individually clear the declared report coverage threshold before `results-current.md` is
-generated and linked here. A provider session limit interrupted a preliminary run, and implementation
-commits landed between language starts. Those diagnostic checkpoints have incompatible provenance
-and will not be resumed or presented as results. All five languages require a fresh run from one
-stabilized commit. Historical matrices from the prior judge are not current and must not be cited as
-such.
+The five-language publication gate **passes**. The full matrices, coverage, and exact frozen
+provenance are in [`results-current.md`](results-current.md). Across 2,104 attempted pairs, 2,103
+completed and one Rust pair abstained (99.95% overall completion); every language individually met
+the predeclared 99% coverage threshold.
+
+| Language | Completed | Abstained | Precision | Recall | F1 | Specificity |
+|---|---:|---:|---:|---:|---:|---:|
+| Java | 885 / 885 | 0 | 0.202 | 0.343 | 0.254 | 0.883 |
+| Python | 332 / 332 | 0 | 0.129 | 1.000 | 0.228 | 0.811 |
+| TypeScript | 284 / 284 | 0 | 0.213 | 1.000 | 0.352 | 0.780 |
+| Rust | 303 / 304 | 1 | 0.464 | 0.684 | 0.553 | 0.947 |
+| Go | 299 / 299 | 0 | 0.261 | 0.750 | 0.387 | 0.880 |
+
+These are the observed dataset-base-rate metrics, not a claim of best-in-class quality. The current
+judge is recall-heavy on Python and TypeScript, weak on Java recall, and produces too many false
+positives in several languages. The publication proves reproducibility and coverage; the matrices
+set an honest baseline for the next judge iteration.
 
 ## Schema
 
