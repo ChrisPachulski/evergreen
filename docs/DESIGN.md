@@ -184,8 +184,9 @@ validates the model's result before rendering or applying the configured inconcl
 
 ## Evaluation status
 
-The only published five-language metrics are the frozen Evergreen 0.4.0 baseline from one
-compatible run that cleared every declared coverage gate.
+Current five-language benchmark metrics are published only from one compatible run that clears every declared coverage gate.
+Those currently published metrics are the frozen Evergreen 0.4.0 baseline; they do not belong to
+the changed resolver-v2 judge.
 
 Those Python, Java, TypeScript, Rust, and Go artifacts are tied to the same 0.4.0 implementation,
 judge, dataset hashes, model/CLI identity, protocol, and settings. All five cleared the declared
