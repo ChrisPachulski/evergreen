@@ -136,6 +136,20 @@ execution-policy hardening. These are backward-compatible pre-1.0 features, so t
 SemVer policy justifies minor `0.4.0`, not patch `0.3.3` or stable `1.0.0`. This plugin stream has
 no binary build-number field, and the release invents none.
 
+### 0.5.0 quality milestone gate
+
+The audit, replay, resolver-v2, Java-context, and public-verification infrastructure is additive,
+but it does not by itself prove improved shipped detection. The coupled plugin manifests remain at
+`0.4.0` until independent human labels are completed, the candidate judge is frozen against the
+development split, and the locked holdout plus paid five-language gate pass. That completed,
+backward-compatible milestone warrants `0.5.0`; it is not a patch release.
+
+The decision package under `eval/bench/public/0.4.0` and `results-0.4.0.md` are a separate,
+immutable evaluated-release identity. A later source-version bump must not rename them, inherit
+their metrics, or imply that resolver v2 has passed gates that were not run. Until direct evidence
+exists, human-label validity, v2 detector quality, marketplace publication, and other external
+release state remain unverified.
+
 ## Hybrid provider boundary
 
 Provider evidence and source maps nominate candidates, never findings or verdicts.
@@ -170,13 +184,15 @@ validates the model's result before rendering or applying the configured inconcl
 
 ## Evaluation status
 
-Current five-language benchmark metrics are published only from one compatible run that clears every declared coverage gate.
+The only published five-language metrics are the frozen Evergreen 0.4.0 baseline from one
+compatible run that cleared every declared coverage gate.
 
-The current Python, Java, TypeScript, Rust, and Go artifacts are tied to the same implementation,
-judge, dataset hashes, model/CLI identity, protocol, and settings. All five cleared the declared 99%
-coverage gate; the generated report preserves the one abstention. Interrupted or cross-commit
-diagnostics remain diagnostic, and Task 4 still runs only the benchmark self-test, not
-provider-backed scoring or publication.
+Those Python, Java, TypeScript, Rust, and Go artifacts are tied to the same 0.4.0 implementation,
+judge, dataset hashes, model/CLI identity, protocol, and settings. All five cleared the declared
+99% provider-completion gate; the generated report preserves the one abstention. Resolver v2 has
+no published result yet. Interrupted, provisional-label, development, or cross-commit diagnostics
+remain diagnostic; normal CI runs only offline verification, never provider-backed scoring or
+publication.
 
 ## Non-goals
 
