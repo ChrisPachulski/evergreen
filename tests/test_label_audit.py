@@ -222,6 +222,11 @@ class LabelAuditAnnotationTests(unittest.TestCase):
             labels.write_text(json.dumps(document))
             with self.assertRaisesRegex(ValueError, "coverage"):
                 core.load_annotations(labels, packet)
+            document["judgments"] = [self.judgment()]
+            document["unexpected"] = True
+            labels.write_text(json.dumps(document))
+            with self.assertRaisesRegex(ValueError, "fields"):
+                core.load_annotations(labels, packet)
 
     def test_combine_requires_two_matching_decisive_votes(self):
         first = core.AnnotationSet("audit", "f" * 64, "H1", "self-attested-human", False,
@@ -259,6 +264,8 @@ class LabelAuditStatisticsTests(unittest.TestCase):
             stats.AuditResult("python", "sample", False, 0.25),
         ])
         self.assertAlmostEqual(estimate.point, 0.2)
+        self.assertAlmostEqual(estimate.lower, 0.2)
+        self.assertAlmostEqual(estimate.upper, 0.2)
         self.assertLess(stats.wilson_interval(0, 25)[1], 0.14)
 
     def test_gate_pass_unverified_and_escalate(self):
@@ -280,6 +287,10 @@ class LabelAuditStatisticsTests(unittest.TestCase):
         self.assertIn("overall kappa", failed.reasons)
         with self.assertRaisesRegex(ValueError, "unresolved"):
             stats.evaluate_gate(dataclasses.replace(base, unresolved_count=1))
+        undefined = stats.evaluate_gate(dataclasses.replace(
+            base, language_kappa={**base.language_kappa, "go": None}))
+        self.assertEqual(undefined.status, "escalate")
+        self.assertIn("go kappa", undefined.reasons)
 
 
 class LabelAuditOverlayTests(unittest.TestCase):

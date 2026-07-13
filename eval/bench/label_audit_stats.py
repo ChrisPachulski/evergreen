@@ -27,7 +27,7 @@ class AuditResult:
 class GateInputs:
     overall_kappa: float
     overall_kappa_lower: float
-    language_kappa: dict[str, float]
+    language_kappa: dict[str, float | None]
     overall_error_upper: float
     language_error_upper: dict[str, float]
     max_census_error: float
@@ -88,16 +88,27 @@ def wilson_interval(errors: int, n: int, z: float = 1.959963984540054) -> tuple[
     return max(0.0, centre - margin), min(1.0, centre + margin)
 
 
-def weighted_error(rows: Sequence[AuditResult]) -> Estimate:
+def _weighted_point(rows: Sequence[AuditResult]) -> float:
+    weights = [1 / row.inclusion_probability for row in rows]
+    return sum(weight for row, weight in zip(rows, weights) if row.label_error) / sum(weights)
+
+
+def weighted_error(rows: Sequence[AuditResult], *, replicates: int = 10_000,
+                   seed: int = 20260713) -> Estimate:
     if not rows or any(not 0 < row.inclusion_probability <= 1 for row in rows):
         raise ValueError("weighted error requires rows with valid inclusion probabilities")
-    weights = [1 / row.inclusion_probability for row in rows]
-    point = sum(weight for row, weight in zip(rows, weights) if row.label_error) / sum(weights)
-    # Conservative effective-sample Wilson interval; reporting keeps the design weights visible.
-    effective_n = max(1, round(sum(weights) ** 2 / sum(weight * weight for weight in weights)))
-    effective_errors = min(effective_n, round(point * effective_n))
-    lower, upper = wilson_interval(effective_errors, effective_n)
-    return Estimate(point, lower, upper)
+    point = _weighted_point(rows)
+    groups = {(row.language, row.stratum): [] for row in rows}
+    for row in rows:
+        groups[row.language, row.stratum].append(row)
+    rng, estimates = random.Random(seed), []
+    for _ in range(replicates):
+        sample = [row for group in groups.values()
+                  for row in rng.choices(group, k=len(group))]
+        estimates.append(_weighted_point(sample))
+    estimates.sort()
+    return Estimate(point, estimates[int(0.025 * (len(estimates) - 1))],
+                    estimates[int(0.975 * (len(estimates) - 1))])
 
 
 def evaluate_gate(inputs: GateInputs) -> GateResult:
@@ -113,7 +124,7 @@ def evaluate_gate(inputs: GateInputs) -> GateResult:
     if inputs.overall_kappa_lower < 0.60:
         reasons.append("overall kappa lower bound")
     reasons += [f"{language} kappa" for language, value in inputs.language_kappa.items()
-                if value < 0.60]
+                if value is None or value < 0.60]
     if inputs.overall_error_upper > 0.05:
         reasons.append("overall label-error upper bound")
     reasons += [f"{language} label-error upper bound"

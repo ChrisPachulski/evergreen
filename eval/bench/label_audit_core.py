@@ -429,6 +429,8 @@ def load_annotations(path: Path, packet: Path) -> AnnotationSet:
                                      label="human annotations"))
     packet_document = json.loads(read_bytes(Path(packet), MAX_AUDIT_INPUT_BYTES,
                                             label="annotation packet"))
+    if set(document) != {"schema_version", "audit_id", "rubric_sha256", "annotator", "judgments"}:
+        raise ValueError("annotation fields are invalid")
     if document.get("schema_version") != 1:
         raise ValueError("annotation schema_version must be 1")
     if (document.get("audit_id") != packet_document.get("audit_id") or
