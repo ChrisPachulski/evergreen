@@ -61,10 +61,18 @@ def replay_rows(rows, resolver_id, expect_stored=False):
     return replayed
 
 
+def bounded_snapshot(path, max_bytes, label):
+    """Read and hash one bounded immutable byte snapshot."""
+    payload = read_bytes(path, max_bytes, label=label)
+    return payload, hashlib.sha256(payload).hexdigest()
+
+
 def artifact_snapshot(path):
     """Parse and hash one bounded immutable byte snapshot of an artifact."""
-    payload = read_bytes(path, MAX_ARTIFACT_BYTES, label="benchmark replay artifact")
-    return json.loads(payload), hashlib.sha256(payload).hexdigest()
+    payload, digest = bounded_snapshot(
+        path, MAX_ARTIFACT_BYTES, label="benchmark replay artifact"
+    )
+    return json.loads(payload), digest
 
 
 def _jsonl(path, max_bytes=MAX_DATASET_BYTES, label="dataset"):
@@ -229,7 +237,10 @@ def _select_main(argv):
         Path(args.output_dir), context_datasets=contexts,
     )
     for language, path in sorted(paths.items()):
-        print(f"{language}\t{hashlib.sha256(path.read_bytes()).hexdigest()}\t{path}")
+        _payload, digest = bounded_snapshot(
+            path, MAX_DATASET_BYTES, label="generated split output"
+        )
+        print(f"{language}\t{digest}\t{path}")
     return 0
 
 

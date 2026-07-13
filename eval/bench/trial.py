@@ -294,18 +294,13 @@ def model_json(prompt, model, provider="claude", **kwargs):
 
 
 # ── The trial ────────────────────────────────────────────────────────────────
-# A documentation claim is put on trial against the real code. No single call is trusted:
-#   1. snap    (strong)  — first-instinct verdict, logged; a weighted vote, never the last word.
-#   2. challenge(cheap)  — hardest case the snap is WRONG (direction flips); it must survive.
-#   3. prongs   (blind)  — three independent fresh reads (defend / prove-wrong / hardest-broken);
-#                          they are told NOTHING of the snap, challenge, or their own tier, so a
-#                          "confirming" prong can't rubber-stamp. Cheap if snap survived, strong
-#                          if cracked. On the survived path a 2-2 tie of {snap+3 prongs} = the
-#                          snap failed → escalate to the strong prongs.
-#   4. blindspot(cheap)  — surfaces an angle everyone missed; it only RAISES, never decides.
-#   5. synthesis(strong) — weighs it all into the verdict, but only when the evidence isn't
-#                          unanimous. This is where "did the accusation beat its defense?" is
-#                          judged — there is no separate immune rule (needs iterations we lack).
+# Both resolvers put a claim on trial against supplied code without trusting one call. Frozen v1
+# retains the original defend/prove-wrong/hardest-broken prongs, 2-2 tie escalation, cheap
+# blind-spot pass, and disagreement-driven synthesis so archived decisions remain reproducible.
+# V2 replaces hardest-broken with an evidence-auditor prong, counts the snap plus only prongs that
+# explicitly clear their evidence bar, escalates a genuine plurality tie, and runs the blind-spot
+# pass on the strong tier. Its separate proof-sufficiency gate can require synthesis even without
+# dissent, while a conceded lens does not manufacture disagreement.
 
 def snap_call(pair, model, provider="claude"):
     prompt = f"""{skill_body()}

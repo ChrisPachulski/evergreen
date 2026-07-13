@@ -264,8 +264,10 @@ def main():
     require_frozen_run()
     ds = Path(sys.argv[sys.argv.index("--dataset") + 1]) if "--dataset" in sys.argv \
         else Path(os.environ.get("EVAL_DATASET", HERE / "dataset.jsonl"))
-    # Two tiers: strong (snap + escalated prongs + synthesis) and cheap (challenge, prongs,
-    # blind-spot). Fable is banned from every role in this project.
+    # Frozen v1 uses strong for snap/escalated prongs/synthesis and cheap for challenge, initial
+    # prongs, and blind-spot. V2 adds evidence-auditor/cleared-bar plurality semantics and moves
+    # blind-spot to strong; its initial prongs remain cheap unless the challenge cracks the snap.
+    # Fable is banned from every role in this project.
     provider = eval_provider()
     policy = eval_policy_settings()
     default_strong = "claude-opus-4-8" if provider == "claude" else "gpt-5.6-sol"

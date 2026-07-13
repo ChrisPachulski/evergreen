@@ -76,6 +76,29 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(digest, hashlib.sha256(payload).hexdigest())
         bounded.assert_called_once()
 
+    def test_generated_split_hash_uses_bounded_snapshot(self):
+        from eval.bench import replay
+
+        path = Path("out/Python.jsonl")
+        payload = b'{"id":"one"}\n'
+        with mock.patch.object(replay, "select_split", return_value={"Python": path}), \
+             mock.patch.object(replay, "read_bytes", return_value=payload) as bounded, \
+             mock.patch.object(Path, "read_bytes", side_effect=AssertionError("unbounded")), \
+             mock.patch("builtins.print") as printed:
+            status = replay._select_main([
+                "--manifest", "manifest.json", "--split", "dev",
+                "--labels", "labels.jsonl", "--dataset", "data.jsonl",
+                "--output-dir", "out",
+            ])
+
+        self.assertEqual(status, 0)
+        bounded.assert_called_once_with(
+            path, replay.MAX_DATASET_BYTES, label="generated split output"
+        )
+        printed.assert_called_once_with(
+            f"Python\t{hashlib.sha256(payload).hexdigest()}\t{path}"
+        )
+
     def test_replay_never_calls_model_boundary(self):
         with mock.patch("eval.bench.trial.model_json", side_effect=AssertionError("paid path")):
             self.assertEqual(replay_rows([self.row()], "v1")[0]["got"]["final_verdict"],
