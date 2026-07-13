@@ -54,6 +54,17 @@ baselines. Rerun any committed transcript without API calls:
 python3 eval/bench/run_bench.py --rescore out/bench-default.json
 ```
 
+Replay stored trial stages through their versioned decision policy, require exact final-verdict
+parity, and compare the strong snap diagnostically without model calls:
+
+```sh
+python3 eval/bench/replay.py out/bench-default.json \
+  --resolver v1 --expect-stored --compare-snap
+```
+
+Replay output contains hashes, counts, matrices, and mismatch IDs only. It does not print pair text
+or free-form model reasoning.
+
 The eventual current-judge publication will record one clean implementation commit and tree in
 every compatible artifact, together with provider `codex`, Codex CLI `0.144.1`, strong and cheap
 model `gpt-5.6-sol`, and `EVAL_CONCURRENCY=4`. The final implementation commit is frozen before any
