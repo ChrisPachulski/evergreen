@@ -9,6 +9,20 @@ appropriate).
 one-line verdict — the finding(s), or `evergreen: docs still match` when the touched surface holds.
 Silent only when nothing documented was touched. Off on "stop evergreen".
 
+## Parallel-first execution
+
+Run independent workstreams concurrently. Give each agent a narrow file/decision boundary and an
+isolated worktree or branch when it will edit; require agents to exchange cross-workstream
+constraints before integration. The root agent owns shared policy, judge/schema, release, and final
+report files unless ownership is explicitly reassigned. Reconcile only at declared shared gates.
+
+Do not serialize work merely because one stream informs another: proceed against the frozen current
+contract, record assumptions, then rebase conclusions when sibling evidence arrives. Serialize only
+operations that truly share mutable state or a safety-limited resource, including publication,
+commits to the same branch, and paid benchmark lanes covered by the global run lock. Never run a
+full paid benchmark merely to coordinate parallel development; use fixtures, rescoring, and offline
+checks first.
+
 ## Freshness ladder
 
 Candidate set = the diff: grep docs for changed paths and edited symbol names, not the whole tree.
