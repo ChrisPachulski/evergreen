@@ -35,9 +35,14 @@ def usable(row):
 def pair(row, i, which, label):
     new = row["version_data"][1]
     doc = row["version_data"][0]["docstring"] if which == "old" else new["docstring"]
+    source = {"owner": row.get("owner"), "project": row.get("project"),
+              "file": row.get("file"), "commit": row.get("commit"), "doc_version": which}
+    complete = all(isinstance(source[key], str) and source[key]
+                   for key in ("owner", "project", "file", "commit"))
     return {"id": f"{row['owner']}/{row['project']}/{row['function']}#{i}-{which}",
             "func": row["function"], "code": new["code"], "doc": doc,
-            "label": label, "category": None, "language": row.get("language", "Python")}
+            "label": label, "category": None, "language": row.get("language", "Python"),
+            "source": source, "source_status": "complete" if complete else "incomplete"}
 
 
 def main():

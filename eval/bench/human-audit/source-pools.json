@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "pools": [
+    {"language": "java", "status": "available", "row_count": 885, "sha256": "1c322acf6bc02ae304c062f0d53306e6e9ebb0334bd133afd57940922892ae0b", "path": "eval/bench/cascade-java.jsonl"},
+    {"language": "python", "status": "available", "row_count": 400, "sha256": "6cbccfb5eb88f2a7e826e3e5f3595fb59274e04a2711c7c097d8faac4926fdae", "path": "eval/bench/out/codocbench-derived.jsonl"},
+    {"language": "typescript", "status": "missing", "expected_row_count": 360, "retained_row_count": 284, "missing_discarded_count": 76},
+    {"language": "rust", "status": "missing", "expected_row_count": 360, "retained_row_count": 304, "missing_discarded_count": 56},
+    {"language": "go", "status": "missing", "expected_row_count": 360, "retained_row_count": 299, "missing_discarded_count": 61}
+  ]
+}

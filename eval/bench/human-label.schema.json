@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "audit_id", "rubric_sha256", "coordinator_sha256", "packet_sha256", "annotator", "judgments"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "audit_id": {"type": "string", "minLength": 1},
+    "rubric_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "coordinator_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "packet_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "annotator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["annotator_id", "human_judgment", "worked_independently", "used_model_assistance"],
+      "properties": {
+        "annotator_id": {"type": "string", "minLength": 1},
+        "human_judgment": {"const": true},
+        "worked_independently": {"const": true},
+        "used_model_assistance": {"const": false}
+      }
+    },
+    "judgments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["blind_id", "verdict", "category", "documentation_claim", "code_evidence", "rationale", "missing_context"],
+        "properties": {
+          "blind_id": {"type": "string", "minLength": 1},
+          "verdict": {"enum": ["consistent", "inconsistent", "insufficient-context"]},
+          "category": {"enum": [null, "direct-mismatch", "over-promise"]},
+          "documentation_claim": {"type": "string", "minLength": 1},
+          "code_evidence": {"type": "string", "minLength": 1},
+          "rationale": {"type": "string", "minLength": 1},
+          "missing_context": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}
