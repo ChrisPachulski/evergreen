@@ -160,6 +160,15 @@ class ResolverV2Tests(unittest.TestCase):
             with self.subTest(stages=stages):
                 self.assertTrue(needs_synthesis_v2(stages))
 
+    def test_semantically_incoherent_vote_category_forces_synthesis(self):
+        for value, category in (("consistent", "direct-mismatch"),
+                                ("inconsistent", None),
+                                ("inconsistent", "under-promise")):
+            stages = self.unanimous(value)
+            stages["snap"]["value"]["category"] = category
+            with self.subTest(value=value, category=category):
+                self.assertTrue(needs_synthesis_v2(stages))
+
     def test_malformed_proof_record_is_infrastructure_abstention(self):
         stages = self.unanimous()
         del stages["snap"]["value"]["evidence"]

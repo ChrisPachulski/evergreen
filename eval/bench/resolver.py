@@ -134,9 +134,16 @@ def needs_synthesis_v2(stages):
         return True
     snap, challenge, prongs, blindspot = values
     votes = [snap, *prongs]
+    incoherent = any(
+        (vote["verdict"] == "inconsistent" and
+         vote["category"] not in {"direct-mismatch", "over-promise"}) or
+        (vote["verdict"] != "inconsistent" and vote["category"] is not None)
+        for vote in votes
+    )
     return (
         challenge["cracks"] or bool(blindspot["missed_angle"]) or
         len({vote["verdict"] for vote in votes}) != 1 or
+        incoherent or
         any(vote["proof"] != "direct" or vote["verdict"] == "unverified"
             for vote in votes)
     )
@@ -156,7 +163,10 @@ def resolve_v2(stages):
             return _abstain_v2(stages, "synthesis response is missing required fields")
 
     verdict = source["verdict"]
-    direct_consistent = verdict == "consistent" and source["proof"] == "direct"
+    direct_consistent = (
+        verdict == "consistent" and source["proof"] == "direct" and
+        source["category"] is None
+    )
     direct_inconsistent = (
         verdict == "inconsistent" and source["proof"] == "direct" and
         source["category"] in {"direct-mismatch", "over-promise"}
