@@ -7,7 +7,7 @@ from pathlib import Path
 import unittest
 
 
-from eval.bench.split_manifest import load_split_manifest
+from eval.bench.split_manifest import load_split_assignments, load_split_manifest
 
 
 def dataset_row(pair_id, language="Java", label="consistent"):
@@ -52,8 +52,10 @@ class SplitManifestTests(unittest.TestCase):
         return path
 
     def test_accepts_complete_project_grouped_id_only_manifest(self):
-        result = load_split_manifest(self.write_manifest(), [self.dataset])
+        manifest = self.write_manifest()
+        result = load_split_manifest(manifest, [self.dataset])
         self.assertEqual(result, {"org/a/f#1": "dev", "org/b/g#1": "holdout"})
+        self.assertEqual(load_split_assignments(manifest), result)
 
     def test_rejects_project_leakage_between_splits(self):
         rows = [
@@ -62,7 +64,7 @@ class SplitManifestTests(unittest.TestCase):
             {"id": "org/b/g#1", "dataset_sha256": self.digest,
              "project": "org/a", "split": "holdout"},
         ]
-        with self.assertRaisesRegex(ValueError, "project appears in both"):
+        with self.assertRaisesRegex(ValueError, "invalid.*project"):
             load_split_manifest(self.write_manifest(rows), [self.dataset])
 
     def test_rejects_incomplete_unknown_and_duplicate_rows(self):

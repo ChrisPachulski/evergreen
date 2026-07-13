@@ -28,7 +28,7 @@ VALID_CATEGORIES = {None, "direct-mismatch", "over-promise", "under-promise"}
 JUDGE_MODULES = (
     "artifact.py", "frozen_run.py", "java_context.py", "metrics.py",
     "model-output.schema.json", "report.py", "resolver.py", "run_bench.py", "runner.py",
-    "trial.py",
+    "split_manifest.py", "trial.py",
 )
 
 

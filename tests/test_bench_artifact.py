@@ -56,6 +56,7 @@ class ArtifactMetadataTests(unittest.TestCase):
                 "resolver.py": b"resolver body\n",
                 "run_bench.py": b"judge body\n",
                 "runner.py": b"runner body\n",
+                "split_manifest.py": b"split manifest body\n",
                 "trial.py": b"trial body\n",
             }
             for name, payload in modules.items():
@@ -103,7 +104,7 @@ class ArtifactMetadataTests(unittest.TestCase):
             for name in (
                 "artifact.py", "frozen_run.py", "java_context.py", "metrics.py",
                 "model-output.schema.json", "report.py", "resolver.py", "run_bench.py",
-                "runner.py", "trial.py",
+                "runner.py", "split_manifest.py", "trial.py",
             ):
                 (bench / name).write_text(name)
             git = {"commit": "c", "tree": "t", "dirty": False,
@@ -169,7 +170,7 @@ class ArtifactMetadataTests(unittest.TestCase):
         expected = {
             "artifact.py", "frozen_run.py", "java_context.py", "metrics.py",
             "model-output.schema.json", "report.py", "resolver.py", "run_bench.py",
-            "runner.py", "trial.py",
+            "runner.py", "split_manifest.py", "trial.py",
         }
         self.assertEqual(set(artifact.JUDGE_MODULES), expected)
         with tempfile.TemporaryDirectory() as directory:

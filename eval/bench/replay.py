@@ -163,7 +163,7 @@ def _snap_rows(rows):
 def _replay_main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("artifacts", nargs="+")
-    parser.add_argument("--resolver", choices=("v1",), default="v1")
+    parser.add_argument("--resolver", choices=("v1", "v2"), default="v1")
     parser.add_argument("--expect-stored", action="store_true")
     parser.add_argument("--compare-snap", action="store_true")
     args = parser.parse_args(argv)

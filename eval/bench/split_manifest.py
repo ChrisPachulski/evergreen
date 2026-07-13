@@ -50,8 +50,7 @@ def _datasets(paths):
     return declarations, ids
 
 
-def load_split_manifest(path: Path, datasets: list[Path]) -> dict[str, str]:
-    """Return ID-to-split mapping after exact hash, coverage, and grouping validation."""
+def _manifest(path, expected_declarations=None):
     document = _load_json(Path(path), MAX_MANIFEST_BYTES, "split manifest")
     if not isinstance(document, dict) or set(document) != ALLOWED_TOP:
         raise ValueError("split manifest has unknown or missing fields")
@@ -66,27 +65,36 @@ def load_split_manifest(path: Path, datasets: list[Path]) -> dict[str, str]:
     declared_set = set()
     for item in declared:
         if (not isinstance(item["sha256"], str) or len(item["sha256"]) != 64 or
+                any(character not in "0123456789abcdef" for character in item["sha256"]) or
                 not isinstance(item["language"], str) or not item["language"]):
             raise ValueError("split manifest dataset declaration is malformed")
         declared_set.add((item["sha256"], item["language"]))
-    actual_set, expected_ids = _datasets(datasets)
-    if declared_set != actual_set or len(declared_set) != len(declared):
+    if len(declared_set) != len(declared):
+        raise ValueError("split manifest dataset declarations are duplicated")
+    if (expected_declarations is not None and
+            (declared_set != expected_declarations or len(declared_set) != len(declared))):
         raise ValueError("split manifest dataset declarations do not match inputs")
-
     rows = document["rows"]
     if not isinstance(rows, list) or len(rows) > MAX_ROWS:
         raise ValueError("split manifest rows are malformed")
     result = {}
+    row_datasets = {}
     project_splits = {}
+    declared_hashes = {digest for digest, _language in declared_set}
     for row in rows:
         if not isinstance(row, dict) or set(row) != ALLOWED_ROW:
             raise ValueError("split manifest row has forbidden or missing fields")
         pair_id = row["id"]
         project = row["project"]
         split = row["split"]
+        id_parts = pair_id.split("/") if isinstance(pair_id, str) else []
+        expected_project = "/".join(id_parts[:2]) if len(id_parts) >= 2 else None
         if (not isinstance(pair_id, str) or not pair_id or
-                not isinstance(project, str) or not project or split not in SPLITS or
-                row["dataset_sha256"] != expected_ids.get(pair_id)):
+                not isinstance(project, str) or project != expected_project or
+                split not in SPLITS or
+                not isinstance(row["dataset_sha256"], str) or
+                len(row["dataset_sha256"]) != 64 or
+                row["dataset_sha256"] not in declared_hashes):
             raise ValueError("split manifest row has invalid id, dataset, project, or split")
         if pair_id in result:
             raise ValueError("split manifest contains duplicate row id")
@@ -94,7 +102,21 @@ def load_split_manifest(path: Path, datasets: list[Path]) -> dict[str, str]:
         if previous != split:
             raise ValueError("project appears in both dev and holdout")
         result[pair_id] = split
-    if set(result) != set(expected_ids):
+        row_datasets[pair_id] = row["dataset_sha256"]
+    return result, row_datasets, declared_set, document
+
+
+def load_split_assignments(path: Path) -> dict[str, str]:
+    """Load the public ID-to-split mapping without opening any label-bearing dataset."""
+    return _manifest(path)[0]
+
+
+def load_split_manifest(path: Path, datasets: list[Path]) -> dict[str, str]:
+    """Return ID-to-split mapping after exact hash, coverage, and grouping validation."""
+    actual_set, expected_ids = _datasets(datasets)
+    result, row_datasets, _declared_set, _document = _manifest(path, actual_set)
+    if (set(result) != set(expected_ids) or
+            any(row_datasets[pair_id] != digest for pair_id, digest in expected_ids.items())):
         raise ValueError("split manifest does not exactly cover dataset rows")
     return result
 

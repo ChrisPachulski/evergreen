@@ -205,11 +205,33 @@ class ProviderConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "claude or codex"):
             runner.eval_provider({"EVAL_PROVIDER": "other"})
 
+    def test_resolver_defaults_to_v1_and_accepts_v2_only(self):
+        self.assertEqual(runner.eval_resolver({}), "v1")
+        self.assertEqual(runner.eval_resolver({"EVAL_RESOLVER": "v2"}), "v2")
+        with self.assertRaisesRegex(ValueError, "v1 or v2"):
+            runner.eval_resolver({"EVAL_RESOLVER": "future"})
+
+    def test_policy_settings_validate_frozen_split_identity(self):
+        settings = runner.eval_policy_settings({
+            "EVAL_RESOLVER": "v2", "EVAL_CONTEXT_PROTOCOL": "java-git-window-v1",
+            "EVAL_SPLIT_MANIFEST_SHA256": "a" * 64, "EVAL_SPLIT": "dev",
+        })
+        self.assertEqual(settings, {
+            "resolver": "v2", "context_protocol": "java-git-window-v1",
+            "split_manifest_sha256": "a" * 64, "split": "dev",
+        })
+        with self.assertRaisesRegex(ValueError, "split provenance"):
+            runner.eval_policy_settings({"EVAL_RESOLVER": "v2"})
+
     def test_artifact_filename_includes_provider(self):
         dataset = Path("dataset.jsonl")
         self.assertEqual(
             runner.artifact_filename(dataset, "gpt-5.6-sol", "codex"),
             "bench-dataset-trial-codex-gpt-5.6-sol.json",
+        )
+        self.assertEqual(
+            runner.artifact_filename(dataset, "gpt-5.6-sol", "codex", "v2"),
+            "bench-dataset-trial-codex-gpt-5.6-sol-resolver-v2.json",
         )
         for unsafe in ("", ".", "..", "x/y", "x\\y", "../escape", "x" * 129):
             with self.subTest(unsafe=unsafe), self.assertRaisesRegex(ValueError, "model"):
