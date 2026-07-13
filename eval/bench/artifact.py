@@ -292,8 +292,25 @@ def validate_benchmark_row(row, require_result):
     language = row.get("language", "unknown")
     if not isinstance(language, str) or not language:
         raise ValueError("benchmark row language must be a non-empty string")
-    if require_result and not isinstance(row.get("got"), dict):
-        raise ValueError("benchmark row result must be an object")
+    if require_result:
+        got = row.get("got")
+        if not isinstance(got, dict):
+            raise ValueError("benchmark row result must be an object")
+        status = got.get("final_status")
+        semantic = got.get("semantic_status")
+        verdict = got.get("final_verdict")
+        if semantic is None:
+            valid = ((status == "complete" and verdict in ("consistent", "inconsistent")) or
+                     (status == "abstain" and verdict is None))
+        else:
+            valid = (
+                (status == "complete" and semantic == "decided" and
+                 verdict in ("consistent", "inconsistent")) or
+                (status == "complete" and semantic == "unverified" and verdict is None) or
+                (status == "abstain" and semantic == "not-evaluated" and verdict is None)
+            )
+        if not valid:
+            raise ValueError("benchmark row result status combination is invalid")
 
 
 def validate_input_hashes(

@@ -539,6 +539,27 @@ class JudgeAbstentionTests(unittest.TestCase):
 
 
 class ScoringTests(unittest.TestCase):
+    def test_semantic_unverified_is_provider_complete_but_not_a_decision(self):
+        rows = [
+            {"label": "inconsistent", "category": "direct-mismatch",
+             "final_status": "complete", "semantic_status": "unverified",
+             "final_verdict": None},
+            {"label": "consistent", "category": None,
+             "final_status": "complete", "semantic_status": "decided",
+             "final_verdict": "consistent"},
+        ]
+
+        result = metrics.score(rows)
+
+        self.assertEqual((result["tp"], result["fp"], result["fn"], result["tn"]),
+                         (0, 0, 0, 1))
+        self.assertEqual(
+            (result["provider_completed"], result["provider_abstained"]), (2, 0)
+        )
+        self.assertEqual((result["decided"], result["unverified"]), (1, 1))
+        self.assertEqual(result["provider_completion_rate"], 1.0)
+        self.assertEqual(result["decision_rate"], 0.5)
+
     def test_abstentions_are_excluded_from_matrix_and_reported_as_coverage(self):
         rows = [
             {"label": "inconsistent", "category": "direct-mismatch", "final_status": "complete", "final_verdict": "inconsistent"},
@@ -647,16 +668,40 @@ class ScoringTests(unittest.TestCase):
             {"id": "d", "language": "python", "label": "consistent", "category": None},
         ]
         direct = [
-            {"language": "python", "label": "inconsistent", "category": "direct-mismatch", "final_status": "complete", "final_verdict": "inconsistent"},
-            {"language": "python", "label": "consistent", "category": None, "final_status": "abstain", "final_verdict": None},
-            {"language": "python", "label": "consistent", "category": None, "final_status": "complete", "final_verdict": "consistent"},
-            {"language": "python", "label": "consistent", "category": None, "final_status": "abstain", "final_verdict": None},
+            {"language": "python", "label": "inconsistent", "category": "direct-mismatch", "final_status": "complete", "semantic_status": "decided", "final_verdict": "inconsistent"},
+            {"language": "python", "label": "consistent", "category": None, "final_status": "abstain", "semantic_status": "not-evaluated", "final_verdict": None},
+            {"language": "python", "label": "consistent", "category": None, "final_status": "complete", "semantic_status": "decided", "final_verdict": "consistent"},
+            {"language": "python", "label": "consistent", "category": None, "final_status": "abstain", "semantic_status": "not-evaluated", "final_verdict": None},
         ]
 
         rescored_rows = metrics.rows_from_transcript(transcript)
 
         self.assertEqual(rescored_rows, direct)
         self.assertEqual(metrics.score(rescored_rows), metrics.score(direct))
+
+    def test_transcript_preserves_v2_semantic_status_and_infers_legacy_decisions(self):
+        transcript = [
+            {"id": "a", "language": "python", "label": "inconsistent",
+             "category": "direct-mismatch", "got": {
+                 "final_status": "complete", "semantic_status": "unverified",
+                 "final_verdict": None,
+             }},
+            {"id": "b", "language": "python", "label": "consistent",
+             "category": None, "got": {
+                 "final_status": "complete", "final_verdict": "consistent",
+             }},
+            {"id": "c", "language": "python", "label": "consistent",
+             "category": None, "got": {
+                 "final_status": "abstain", "semantic_status": "not-evaluated",
+                 "final_verdict": None,
+             }},
+        ]
+
+        rows = metrics.rows_from_transcript(transcript)
+
+        self.assertEqual(rows[0]["semantic_status"], "unverified")
+        self.assertEqual(rows[1]["semantic_status"], "decided")
+        self.assertEqual(rows[2]["semantic_status"], "not-evaluated")
 
 
 if __name__ == "__main__":
