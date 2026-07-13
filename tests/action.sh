@@ -251,6 +251,7 @@ run_driver() {
     EVERGREEN_MAX_MODEL_OUTPUT_BYTES="${TEST_MAX_MODEL_OUTPUT_BYTES:-262144}" \
     EVERGREEN_MAX_BUDGET_USD="${TEST_MAX_BUDGET_USD:-5}" \
     EVERGREEN_GIT_TIMEOUT_SECONDS="${TEST_GIT_TIMEOUT_SECONDS:-15}" \
+    EVERGREEN_PREFILTER_TIMEOUT_SECONDS="${TEST_PREFILTER_TIMEOUT_SECONDS:-${TEST_GIT_TIMEOUT_SECONDS:-15}}" \
     EVERGREEN_GIT_MAX_OUTPUT_BYTES="${TEST_GIT_MAX_OUTPUT_BYTES:-1048576}" \
     EVERGREEN_COMMENT_TIMEOUT_SECONDS="${TEST_COMMENT_TIMEOUT_SECONDS:-15}" \
     EVERGREEN_SETUP_ERROR="${SETUP_ERROR:-}" \
@@ -456,7 +457,7 @@ pass "path prefilter has bounded in-process parsing"
 for prefilter_mode in code docs; do
   make_repo "hanging-$prefilter_mode-prefilter"
   started="$(python3 -c 'import time; print(time.monotonic())')"
-  TEST_PREFILTER_BEHAVIOR="$prefilter_mode" TEST_GIT_TIMEOUT_SECONDS=0.1 \
+  TEST_PREFILTER_BEHAVIOR="$prefilter_mode" TEST_PREFILTER_TIMEOUT_SECONDS=0.1 \
     run_driver "hanging-$prefilter_mode-prefilter" '' true "$HANG_PREFILTER_BIN"
   elapsed="$(python3 -c 'import sys; print(float(sys.argv[2])-float(sys.argv[1]))' \
     "$started" "$(python3 -c 'import time; print(time.monotonic())')")"
@@ -469,11 +470,14 @@ for prefilter_mode in code docs; do
     expected='Documentation-path classification exceeded its safety bounds.'
   fi
   contains "$SUMMARY_FILE" "$expected" "hanging $prefilter_mode prefilter lost exact reason"
+  contains "$CASE_DIR/prefilter-env.log" 'SECRET=' \
+    "hanging $prefilter_mode prefilter wrapper was not reached"
   not_contains "$CASE_DIR/prefilter-env.log" 'SECRET=set' \
     "hanging $prefilter_mode prefilter inherited unrelated secrets"
   [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "hanging $prefilter_mode prefilter invoked Claude"
 done
 unset TEST_PREFILTER_BEHAVIOR
+unset TEST_PREFILTER_TIMEOUT_SECONDS
 pass "path prefilters have outer hard timeouts"
 
 make_repo dirty-index
