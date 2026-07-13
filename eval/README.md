@@ -30,7 +30,8 @@ The harness prints its own numbers on each run.
 ## How it compares
 
 The per-pair benchmark ([`bench/`](bench/)) reduces each language to one confusion matrix. The
-five-language current-judge publication passed its predeclared gate: Python, Java, TypeScript, Rust,
+Evergreen 0.4.0 five-language baseline passed its predeclared gate: Python, Java, TypeScript, Rust,
 and Go each reached at least 99% coverage from one frozen implementation and provider identity.
-[`bench/results-current.md`](bench/results-current.md) contains the matrices, the one visible
-abstention, and exact provenance. Partial, interrupted, and cross-commit diagnostics remain excluded.
+[`bench/results-0.4.0.md`](bench/results-0.4.0.md) contains the matrices and one visible abstention;
+the checked-in [public decision package](bench/public/0.4.0/manifest.json) binds them to frozen
+provenance. Partial, interrupted, and cross-commit diagnostics remain excluded.

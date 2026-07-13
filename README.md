@@ -99,10 +99,11 @@ schema, but provider-supplied findings and verdicts are rejected at the boundary
 That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with catalogued lies, true claims that must not be flagged, and exempt docs, then lets a headless agent winnow it blind. The per-pair harness ([`eval/bench/`](eval/bench/)) runs the judge over labeled code/doc pairs.
 
 Current five-language benchmark metrics are published only from one compatible run that clears every declared coverage gate.
-The current Codex run passed: 2,103 of 2,104 pairs completed, every language independently cleared
+The published metrics are the frozen Evergreen 0.4.0 baseline.
+That frozen Codex run passed: 2,103 of 2,104 pairs completed, every language independently cleared
 99% coverage, and the sole abstention remains visible. The full matrices and frozen provenance are
-in [`eval/bench/results-current.md`](eval/bench/results-current.md); protocol and dataset provenance
-live in [`eval/bench/`](eval/bench/).
+in [`eval/bench/results-0.4.0.md`](eval/bench/results-0.4.0.md); its redacted, offline-verifiable
+decision artifacts, protocol, and dataset provenance live in [`eval/bench/`](eval/bench/).
 
 ## Install
 
