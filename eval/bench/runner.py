@@ -3,9 +3,12 @@
 from collections import deque
 from datetime import datetime, timezone
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
+import re
+import stat
 import sys
 import time
 
@@ -77,8 +80,41 @@ def eval_provider(environment=os.environ):
     return provider
 
 
+def require_frozen_run(environment=os.environ):
+    try:
+        descriptor = int(environment["EVAL_FROZEN_FD"])
+        expected = environment["EVAL_FROZEN_TOKEN_SHA256"]
+        os.set_blocking(descriptor, False)
+        token = os.read(descriptor, 33)
+    except (KeyError, OSError, TypeError, ValueError):
+        raise ValueError(
+            "paid benchmark runs must use eval/bench/frozen_run.py for durable checkpoints"
+        ) from None
+    finally:
+        if "descriptor" in locals():
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+    if (len(token) != 32 or len(expected) != 64 or
+            not hmac.compare_digest(hashlib.sha256(token).hexdigest(), expected)):
+        raise ValueError(
+            "paid benchmark runs must use eval/bench/frozen_run.py for durable checkpoints"
+        )
+
+
 def artifact_filename(dataset, strong_model, provider):
-    return f"bench-{Path(dataset).stem}-trial-{provider}-{strong_model}.json"
+    parts = (Path(dataset).stem, provider, strong_model)
+    if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", part) for part in parts):
+        raise ValueError("dataset, provider, and model names must be safe filename components")
+    return f"bench-{parts[0]}-trial-{parts[1]}-{parts[2]}.json"
+
+
+def require_single_language(rows):
+    languages = {row.get("language", "python") for row in rows}
+    if len(languages) != 1:
+        raise ValueError("a frozen benchmark lane must contain exactly one language")
+    return next(iter(languages))
 
 
 def provider_usage(environment=os.environ):
@@ -97,6 +133,34 @@ def provider_usage(environment=os.environ):
 
 def accumulated_usage(previous, incremental, evaluated_rows):
     return merge_usage(previous, incremental) if evaluated_rows else merge_usage(previous, None)
+
+
+def mirror_frozen_checkpoint(path, metadata, environment=os.environ):
+    archive = environment.get("EVAL_FROZEN_ARCHIVE_DIR")
+    archive_token = environment.get("EVAL_FROZEN_ARCHIVE_TOKEN")
+    if not archive or not Path(archive).is_absolute() or not archive_token:
+        raise ValueError("frozen benchmark archive must be an absolute path")
+    try:
+        status = os.lstat(archive)
+        actual = f"{status.st_dev}:{status.st_ino}:{status.st_mode}"
+        archive_is_directory = stat.S_ISDIR(status.st_mode)
+    except OSError:
+        actual = None
+        archive_is_directory = False
+    if actual != archive_token or not archive_is_directory:
+        raise ValueError("frozen benchmark archive was replaced")
+    try:
+        from .frozen_run import archive_checkpoint
+    except ImportError:
+        from frozen_run import archive_checkpoint
+    return archive_checkpoint(Path(path), Path(archive), metadata)
+
+
+def validate_runtime_metadata(
+    expected, dataset, repo, settings, metadata_fn=artifact_metadata
+):
+    if metadata_fn(dataset, repo, settings) != expected:
+        raise ValueError("benchmark runtime provenance changed before checkpoint write")
 
 
 def load_dataset(path):
@@ -156,6 +220,7 @@ def main():
         path = Path(sys.argv[sys.argv.index("--rescore") + 1])
         return report(rows_from_transcript(load_rescore(path)),
                       f", rescored from {path.name}")
+    require_frozen_run()
     ds = Path(sys.argv[sys.argv.index("--dataset") + 1]) if "--dataset" in sys.argv \
         else Path(os.environ.get("EVAL_DATASET", HERE / "dataset.jsonl"))
     # Two tiers: strong (snap + escalated prongs + synthesis) and cheap (challenge, prongs,
@@ -168,6 +233,7 @@ def main():
     for role, m in (("strong", strong), ("cheap", cheap)):
         assert "fable" not in m.lower(), f"Fable is banned from this project ({role}={m})"
     dataset_payload, pairs = load_dataset(ds)
+    require_single_language(pairs)
     skill_payload = read_bytes(SKILL, MAX_SKILL_BYTES, label="skill input")
     set_skill_body(skill_payload.decode())
     models = {"strong": strong, "cheap": cheap, "provider": provider}
@@ -199,6 +265,7 @@ def main():
 
     def write_artifact(rows):
         validate_input_hashes(metadata, ds, SKILL)
+        validate_runtime_metadata(metadata, ds, HERE.parent.parent, settings)
         document = artifact_document(
             rows, metadata, started_at=started_at,
             elapsed_seconds=round(prior_elapsed + time.monotonic() - start, 3),
@@ -207,6 +274,7 @@ def main():
             ),
         )
         atomic_write_json(out_path, document)
+        mirror_frozen_checkpoint(out_path, metadata)
 
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=workers) as pool:

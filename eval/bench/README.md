@@ -14,7 +14,8 @@ is released and is the real test: 885 wild Java method/Javadoc pairs (70 inconsi
 git clone https://github.com/TobiasKiecker/CASCADE
 unzip CASCADE/PaperEvaluation/dataset.zip -d cascade_dataset
 python3 eval/bench/cascade_to_jsonl.py cascade_dataset > cascade.jsonl
-EVAL_CONCURRENCY=8 python3 eval/bench/run_bench.py --dataset cascade.jsonl
+python3 eval/bench/frozen_run.py --dataset cascade.jsonl \
+  --archive-dir "$HOME/evergreen-benchmark-archive"
 ```
 
 **CoDocBench** ([github.com/kunpai/codocbench](https://github.com/kunpai/codocbench),
@@ -28,7 +29,8 @@ git clone https://github.com/kunpai/codocbench
 python3 eval/bench/codocbench_to_jsonl.py codocbench/dataset/codocbench.jsonl \
     --pos 40 --neg 360 --seed 0 > derived.jsonl
 EVAL_CONCURRENCY=6 python3 eval/bench/validate_labels.py derived.jsonl --out validated.jsonl
-EVAL_CONCURRENCY=8 python3 eval/bench/run_bench.py --dataset validated.jsonl
+python3 eval/bench/frozen_run.py --dataset validated.jsonl \
+  --archive-dir "$HOME/evergreen-benchmark-archive"
 ```
 
 **DocPrism's** set is still not runnable — its `anonymous.4open.science/r/DocPrism-5746`
@@ -141,11 +143,13 @@ rather than dragging down recall, and names the asymmetry instead of hiding it.
 ## Run
 
 ```sh
-python3 eval/bench/run_bench.py            # Claude defaults (backward compatible)
-EVAL_MODEL_STRONG=claude-opus-4-8 EVAL_MODEL_CHEAP=claude-sonnet-5 \
-  python3 eval/bench/run_bench.py
-EVAL_PROVIDER=codex EVAL_MODEL_STRONG=gpt-5.6-sol EVAL_MODEL_CHEAP=gpt-5.6-sol \
-  EVAL_CONCURRENCY=4 python3 eval/bench/run_bench.py
+python3 eval/bench/frozen_run.py \
+  --dataset eval/bench/dataset.jsonl \
+  --archive-dir "$HOME/evergreen-benchmark-archive" \
+  --provider codex \
+  --strong-model gpt-5.6-sol \
+  --cheap-model gpt-5.6-sol \
+  --concurrency 4
 python3 eval/bench/run_bench.py --selftest # prove the scoring math, no API calls
 ```
 
@@ -153,6 +157,19 @@ python3 eval/bench/run_bench.py --selftest # prove the scoring math, no API call
 only; provider identity, CLI version, models, judge, repository state, and dataset hashes are bound
 into every artifact. Codex runs are ephemeral, read-only, schema-constrained, instructed not to use
 tools, and abstain if a tool event appears.
+
+`frozen_run.py` is mandatory for paid runs; `run_bench.py` requires the launcher's one-time inherited
+handshake and refuses ordinary direct execution except for self-test and rescore. The launcher fails
+before spending model calls unless the repository is clean, contains exactly one dataset language,
+lives outside every managed plugin marketplace/cache path, and its exact commit is already a remote
+ref tip. A user-global lock permits only one language lane. Every runner checkpoint is mirrored
+synchronously to the absolute external archive with its row count and SHA-256 in the filename.
+Resume selects the highest untampered checkpoint whose complete metadata matches the new run; an
+incompatible or corrupt live artifact is durably quarantined before restoration. During execution
+the launcher aborts and terminates the model process group if the repository/archive inode or Git
+identity changes, checkpoint archival fails, or either volume's free disk falls below the declared
+minimum (8 GiB by default). The archive must live outside the repository, so replacing the checkout
+cannot replace the backup.
 
 The run prints precision/recall/F1 at both splits. Measured Evergreen numbers appear in
 [Results](#results--how-it-compares) only after the declared publication gate passes.

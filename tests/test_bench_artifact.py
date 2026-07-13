@@ -48,6 +48,7 @@ class ArtifactMetadataTests(unittest.TestCase):
             skill.write_bytes(b"skill body\n")
             modules = {
                 "artifact.py": b"artifact body\n",
+                "frozen_run.py": b"frozen run body\n",
                 "metrics.py": b"metrics body\n",
                 "model-output.schema.json": b"{}\n",
                 "report.py": b"report body\n",
@@ -98,8 +99,8 @@ class ArtifactMetadataTests(unittest.TestCase):
             dataset.write_text("data")
             skill.write_text("skill")
             for name in (
-                "artifact.py", "metrics.py", "model-output.schema.json", "report.py",
-                "run_bench.py", "runner.py", "trial.py",
+                "artifact.py", "frozen_run.py", "metrics.py", "model-output.schema.json",
+                "report.py", "run_bench.py", "runner.py", "trial.py",
             ):
                 (bench / name).write_text(name)
             git = {"commit": "c", "tree": "t", "dirty": False,
@@ -163,8 +164,8 @@ class ArtifactMetadataTests(unittest.TestCase):
         from eval.bench import artifact
 
         expected = {
-            "artifact.py", "metrics.py", "model-output.schema.json", "report.py",
-            "run_bench.py", "runner.py", "trial.py",
+            "artifact.py", "frozen_run.py", "metrics.py", "model-output.schema.json",
+            "report.py", "run_bench.py", "runner.py", "trial.py",
         }
         self.assertEqual(set(artifact.JUDGE_MODULES), expected)
         with tempfile.TemporaryDirectory() as directory:
@@ -870,6 +871,44 @@ class ArtifactReportTests(unittest.TestCase):
 
 
 class RunBenchArtifactIntegrationTests(unittest.TestCase):
+    def test_checkpoint_write_requires_full_runtime_provenance_to_remain_frozen(self):
+        expected = {"git": {"commit": "a"}, "judge": {"sha256": "b"}}
+        self.assertIsNone(runner.validate_runtime_metadata(
+            expected, Path("dataset"), Path("repo"), {"provider": "codex"},
+            metadata_fn=lambda *_args: expected,
+        ))
+        with self.assertRaisesRegex(ValueError, "provenance changed"):
+            runner.validate_runtime_metadata(
+                expected, Path("dataset"), Path("repo"), {"provider": "codex"},
+                metadata_fn=lambda *_args: {
+                    "git": {"commit": "a"}, "judge": {"sha256": "changed"}
+                },
+            )
+
+    def test_every_atomic_checkpoint_is_synchronously_mirrored(self):
+        metadata = {"git": {"commit": "a" * 40, "dirty": False}}
+        path = Path("artifact.json")
+        with tempfile.TemporaryDirectory() as directory:
+            archive_path = Path(directory).resolve()
+            status = os.lstat(archive_path)
+            token = f"{status.st_dev}:{status.st_ino}:{status.st_mode}"
+            with mock.patch("eval.bench.frozen_run.archive_checkpoint") as archive:
+                runner.mirror_frozen_checkpoint(
+                    path, metadata,
+                    {"EVAL_FROZEN_ARCHIVE_DIR": str(archive_path),
+                     "EVAL_FROZEN_ARCHIVE_TOKEN": token},
+                )
+            archive.assert_called_once_with(path, archive_path, metadata)
+        with self.assertRaisesRegex(ValueError, "archive"):
+            runner.mirror_frozen_checkpoint(path, metadata, {})
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "replaced"):
+                runner.mirror_frozen_checkpoint(
+                    path, metadata,
+                    {"EVAL_FROZEN_ARCHIVE_DIR": str(Path(directory).resolve()),
+                     "EVAL_FROZEN_ARCHIVE_TOKEN": "1:2:3"},
+                )
+
     def test_artifact_rows_supports_new_envelope_and_legacy_transcript(self):
         rows = [completed("p1", "python", "consistent", None, "consistent")]
         self.assertEqual(runner.artifact_rows({"schema_version": 1, "rows": rows}), rows)

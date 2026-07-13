@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import tempfile
 from contextlib import redirect_stdout
@@ -210,6 +211,35 @@ class ProviderConfigurationTests(unittest.TestCase):
             runner.artifact_filename(dataset, "gpt-5.6-sol", "codex"),
             "bench-dataset-trial-codex-gpt-5.6-sol.json",
         )
+        for unsafe in ("", ".", "..", "x/y", "x\\y", "../escape", "x" * 129):
+            with self.subTest(unsafe=unsafe), self.assertRaisesRegex(ValueError, "model"):
+                runner.artifact_filename(dataset, unsafe, "codex")
+
+    def test_language_lane_rejects_mixed_datasets(self):
+        self.assertEqual(runner.require_single_language([
+            {"language": "rust"}, {"language": "rust"}
+        ]), "rust")
+        with self.assertRaisesRegex(ValueError, "exactly one language"):
+            runner.require_single_language([
+                {"language": "rust"}, {"language": "go"}
+            ])
+
+    def test_paid_run_requires_the_frozen_launcher(self):
+        with self.assertRaisesRegex(ValueError, "frozen_run.py"):
+            runner.require_frozen_run({})
+        with self.assertRaisesRegex(ValueError, "frozen_run.py"):
+            runner.require_frozen_run({"EVAL_FROZEN_RUN": "1"})
+        read_fd, write_fd = os.pipe()
+        token = b"f" * 32
+        try:
+            os.write(write_fd, token)
+        finally:
+            os.close(write_fd)
+        environment = {
+            "EVAL_FROZEN_FD": str(read_fd),
+            "EVAL_FROZEN_TOKEN_SHA256": hashlib.sha256(token).hexdigest(),
+        }
+        self.assertIsNone(runner.require_frozen_run(environment))
 
 
 class PromptIsolationTests(unittest.TestCase):
