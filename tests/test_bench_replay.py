@@ -49,8 +49,32 @@ class ReplayTests(unittest.TestCase):
 
     def test_expect_stored_reports_mismatch_by_id(self):
         with self.assertRaisesRegex(
-                ValueError, "org/repo/f#1: stored=inconsistent replayed=consistent"):
+                ValueError,
+                "org/repo/f#1: final_verdict stored=inconsistent replayed=consistent"):
             replay_rows([self.row("inconsistent")], "v1", expect_stored=True)
+
+    def test_expect_stored_compares_complete_declared_decision_shape(self):
+        for field, value in (
+            ("category", "over-promise"), ("why", "different"),
+            ("contested", True), ("semantic_status", "decided"),
+        ):
+            row = self.row()
+            row["got"][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, field):
+                replay_rows([row], "v1", expect_stored=True)
+
+    def test_artifact_hash_uses_the_same_bounded_snapshot_that_is_parsed(self):
+        from eval.bench import replay
+
+        document = {"rows": [self.row()]}
+        payload = json.dumps(document).encode()
+        with mock.patch("eval.bench.replay.read_bytes", return_value=payload) as bounded, \
+             mock.patch.object(Path, "read_bytes", side_effect=AssertionError("unbounded")):
+            loaded, digest = replay.artifact_snapshot(Path("artifact.json"))
+
+        self.assertEqual(loaded, document)
+        self.assertEqual(digest, hashlib.sha256(payload).hexdigest())
+        bounded.assert_called_once()
 
     def test_replay_never_calls_model_boundary(self):
         with mock.patch("eval.bench.trial.model_json", side_effect=AssertionError("paid path")):

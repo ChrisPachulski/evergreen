@@ -572,6 +572,29 @@ class ArtifactReportTests(unittest.TestCase):
         self.assertIn("Decision coverage: **20.0%**", text)
         self.assertIn("| Unverified | 8 |", text)
 
+    def test_tiny_perfect_sample_fails_minimum_human_class_counts(self):
+        from eval.bench import report
+
+        rows = [
+            completed("p1", "python", "inconsistent", "direct-mismatch", "inconsistent"),
+            completed("n1", "python", "consistent", None, "consistent"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            artifact_path = self.write_artifact(directory, "artifact.json", rows)
+            markdown = Path(directory) / "report.md"
+            status = report.main([
+                str(artifact_path), "--markdown", str(markdown),
+                "--require-language", "python", "--precision-threshold", "1.0",
+                "--recall-threshold", "1.0", "--f1-threshold", "1.0",
+                "--minimum-human-positive-decisions", "20",
+                "--minimum-human-negative-decisions", "20",
+            ])
+            text = markdown.read_text()
+
+        self.assertEqual(status, 2)
+        self.assertIn("Human positive decisions", text)
+        self.assertIn("1 / 20", text)
+
     def test_result_validation_enforces_semantic_status_combinations(self):
         from eval.bench import artifact
 
@@ -593,7 +616,14 @@ class ArtifactReportTests(unittest.TestCase):
     def test_cli_accepts_coverage_at_threshold(self):
         from eval.bench import report
 
-        rows = [completed("p1", "python", "consistent", None, "consistent")]
+        rows = [
+            completed(f"p{index}", "python", "inconsistent", "direct-mismatch",
+                      "inconsistent")
+            for index in range(20)
+        ] + [
+            completed(f"n{index}", "python", "consistent", None, "consistent")
+            for index in range(20)
+        ]
         with tempfile.TemporaryDirectory() as directory:
             artifact_path = self.write_artifact(directory, "artifact.json", rows)
             markdown = Path(directory) / "report.md"

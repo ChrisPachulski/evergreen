@@ -12,13 +12,13 @@ import sys
 import tempfile
 
 try:
-    from .artifact import MAX_ARTIFACT_BYTES, load_json, read_bytes
+    from .artifact import MAX_ARTIFACT_BYTES, read_bytes
     from .metrics import rows_from_transcript, score
     from .resolver import resolve
     from .runner import artifact_rows
     from .split_manifest import load_split_manifest
 except ImportError:  # Direct script execution.
-    from artifact import MAX_ARTIFACT_BYTES, load_json, read_bytes
+    from artifact import MAX_ARTIFACT_BYTES, read_bytes
     from metrics import rows_from_transcript, score
     from resolver import resolve
     from runner import artifact_rows
@@ -31,6 +31,17 @@ SAFE_LANGUAGE = re.compile(r"^[A-Za-z0-9._-]+$")
 LABEL_FIELDS = {"id", "label", "category"}
 LABELS = {"consistent", "inconsistent"}
 CATEGORIES = {None, "direct-mismatch", "over-promise"}
+DECISION_FIELDS = (
+    "final_status", "final_verdict", "verdict", "category", "why", "contested",
+)
+OPTIONAL_DECISION_FIELDS = ("semantic_status", "proof", "claim", "evidence")
+
+
+def _decision_differences(stored, replayed):
+    fields = [*DECISION_FIELDS, *(
+        field for field in OPTIONAL_DECISION_FIELDS if field in stored or field in replayed
+    )]
+    return [field for field in fields if stored.get(field) != replayed.get(field)]
 
 
 def replay_rows(rows, resolver_id, expect_stored=False):
@@ -39,14 +50,21 @@ def replay_rows(rows, resolver_id, expect_stored=False):
     for original, row in zip(rows, replayed):
         got = original.get("got") or {}
         decision = resolve(got.get("stages") or {}, resolver_id)
-        if expect_stored and (got.get("final_status"), got.get("final_verdict")) != (
-                decision["final_status"], decision["final_verdict"]):
+        differences = _decision_differences(got, decision) if expect_stored else []
+        if differences:
+            field = differences[0]
             raise ValueError(
-                f"{original.get('id')}: stored={got.get('final_verdict')} "
-                f"replayed={decision['final_verdict']}"
+                f"{original.get('id')}: {field} stored={got.get(field)} "
+                f"replayed={decision.get(field)}"
             )
         row["got"] = decision
     return replayed
+
+
+def artifact_snapshot(path):
+    """Parse and hash one bounded immutable byte snapshot of an artifact."""
+    payload = read_bytes(path, MAX_ARTIFACT_BYTES, label="benchmark replay artifact")
+    return json.loads(payload), hashlib.sha256(payload).hexdigest()
 
 
 def _jsonl(path, max_bytes=MAX_DATASET_BYTES, label="dataset"):
@@ -171,9 +189,9 @@ def _replay_main(argv):
     hashes = []
     for path_text in args.artifacts:
         path = Path(path_text)
-        document = load_json(path, MAX_ARTIFACT_BYTES)
+        document, digest = artifact_snapshot(path)
         rows.extend(artifact_rows(document))
-        hashes.append(hashlib.sha256(path.read_bytes()).hexdigest())
+        hashes.append(digest)
     replayed = replay_rows(rows, args.resolver, expect_stored=args.expect_stored)
     completed = sum(row["got"]["final_status"] == "complete" for row in replayed)
     abstained = len(replayed) - completed

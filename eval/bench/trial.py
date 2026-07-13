@@ -11,9 +11,13 @@ import time
 from types import SimpleNamespace
 
 try:
-    from .resolver import needs_synthesis_v1, needs_synthesis_v2, resolve_v1, resolve_v2
+    from .resolver import (
+        needs_synthesis_v1, needs_synthesis_v2, plurality_v2, resolve_v1, resolve_v2,
+    )
 except ImportError:  # Direct script execution.
-    from resolver import needs_synthesis_v1, needs_synthesis_v2, resolve_v1, resolve_v2
+    from resolver import (
+        needs_synthesis_v1, needs_synthesis_v2, plurality_v2, resolve_v1, resolve_v2,
+    )
 
 HERE = Path(__file__).parent
 SKILL = HERE.parent.parent / "skills" / "evergreen" / "SKILL.md"
@@ -41,6 +45,12 @@ CODEX_DISABLED_FEATURES = (
     "browser_use_full_cdp_access", "computer_use", "image_generation", "multi_agent",
     "unified_exec", "shell_tool", "goals", "hooks", "code_mode_host", "tool_suggest",
     "workspace_dependencies", "in_app_browser",
+)
+V2_FALSE_POSITIVE_POLICY = (
+    "False-positive policy: an ordinary summary is not a universal guarantee unless the words "
+    "make it one; a hypothetical or optional input is not a contradiction unless the "
+    "documentation claims that input or behavior; extra behavior remains consistent or an "
+    "informational under-promise unless it falsifies an explicit documentation claim."
 )
 
 
@@ -319,6 +329,7 @@ def snap_call_v2(pair, model, provider="claude"):
 Judge only what the supplied code directly proves about the documentation claim. Distinguish
 direct evidence from a conclusion delegated to another function and from evidence that would
 require code not shown. Use unverified when the supplied evidence cannot settle the claim.
+{V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
 
@@ -352,6 +363,7 @@ def challenge_call_v2(pair, snap_verdict, model, provider="claude"):
     prompt = f"""A first reviewer judged this documentation "{snap_verdict}". Make the strongest
 opposing case using only code directly present in the supplied evidence. Do not treat delegated
 behavior or code that is not shown as proof. Then say whether that direct case cracks the verdict.
+{V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
 
@@ -402,11 +414,14 @@ def prong_call_v2(pair, role, model, provider="claude"):
 {PRONGS_V2[role]} Judge only the supplied code. Label evidence delegated when the conclusion
 depends on a called function whose implementation is not evaluated here, and requires-unseen-code
 when the necessary implementation is absent. Use unverified when the evidence cannot settle it.
+Argue the assigned lens, but set cleared_bar=false and concede when its case does not meet the
+high evidence bar; a lens is never forced to conclude its assigned side.
+{V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
 
 Reply with exactly one line of JSON and nothing else:
-{{"role": "{role}", "verdict": "consistent" | "inconsistent" | "unverified", "proof": "direct" | "delegated" | "requires-unseen-code", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "claim": "<the exact claim being judged>", "evidence": "<the exact supplied code evidence>"}}"""
+{{"role": "{role}", "verdict": "consistent" | "inconsistent" | "unverified", "cleared_bar": true | false, "proof": "direct" | "delegated" | "requires-unseen-code", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "claim": "<the exact claim being judged>", "evidence": "<the exact supplied code evidence>"}}"""
     return model_json(prompt, model, provider)
 
 
@@ -464,6 +479,7 @@ Resolve the trial using only evidence directly present in the supplied code. A c
 inconsistent decision requires direct proof. If the answer depends on a delegated implementation
 or code not shown, return unverified. An inconsistent decision also requires direct-mismatch or
 over-promise; under-promise is informational and cannot be a drift decision.
+{V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
 
@@ -488,7 +504,8 @@ def _valid_proof_stage(value, role=None):
         all(isinstance(value.get(field), str) and bool(value[field].strip())
             for field in ("claim", "evidence"))
     )
-    return valid and (role is None or value.get("role") == role)
+    return valid and (role is None or
+                      (value.get("role") == role and type(value.get("cleared_bar")) is bool))
 
 
 def _checked_stage(result, name, required):
@@ -531,7 +548,8 @@ def judge(pair, models, run_test=None):
         "synthesis": synthesis_call,
     } if resolver_id == "v1" else {
         "snap": snap_call_v2, "challenge": challenge_call_v2, "prongs": run_prongs_v2,
-        "blindspot": blindspot_call, "synthesis": synthesis_call_v2,
+        "prongs_escalated": run_prongs_v2, "blindspot": blindspot_call,
+        "synthesis": synthesis_call_v2,
     })
     prong_roles = tuple(PRONGS if resolver_id == "v1" else PRONGS_V2)
     valid_snap = (lambda value: value.get("verdict") in VERDICTS) if resolver_id == "v1" \
@@ -592,8 +610,26 @@ def judge(pair, models, run_test=None):
             prongs = [value for _, value in escalated]
             pv = [p["verdict"] for p in prongs]
 
+    if resolver_id == "v2" and not cracked and plurality_v2(snap, prongs) is None:
+        cracked = True
+        escalated = []
+        for index, result in enumerate(invoke("prongs_escalated", pair, strong)):
+            role = prong_roles[index] if index < len(prong_roles) else None
+            escalated.append(_checked_stage(
+                result, "escalated prong",
+                lambda value, role=role: _valid_proof_stage(value, role),
+            ))
+        trail["prongs_escalated"] = [result for result, _ in escalated]
+        if (len(escalated) != len(prong_roles) or
+                any(value is None for _, value in escalated)):
+            return _abstained(
+                trail, "one or more escalated prong responses are missing required fields",
+                resolver_id,
+            )
+        prongs = [value for _, value in escalated]
+
     blindspot_result, bs = _checked_stage(
-        invoke("blindspot", pair, cheap),
+        invoke("blindspot", pair, strong if resolver_id == "v2" else cheap),
         "blindspot",
         lambda value: "missed_angle" in value and
         (value["missed_angle"] is None or

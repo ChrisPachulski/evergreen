@@ -86,6 +86,8 @@ def score(rows):
         "decided": len(decided_rows),
         "unverified": len(unverified_rows),
         "decision_rate": len(decided_rows) / len(provider_rows) if provider_rows else 0.0,
+        "decided_positive": sum(row["label"] == "inconsistent" for row in decided_rows),
+        "decided_negative": sum(row["label"] == "consistent" for row in decided_rows),
         # Backward-compatible aliases retain their provider-transport meaning.
         "completed": len(provider_rows),
         "abstained": attempted - len(provider_rows),

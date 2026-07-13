@@ -79,7 +79,10 @@ class ResolverV1Tests(unittest.TestCase):
         stages["prongs"][1] = ok({"role": "prove-wrong"})
         result = resolve_v1(stages)
         self.assertEqual(result["final_status"], "abstain")
-        self.assertIn("trial record", result["why"])
+        self.assertEqual(
+            result["why"],
+            "one or more prong responses are missing required fields",
+        )
 
     def test_dispatch_rejects_unknown_resolver(self):
         self.assertEqual(resolve(self.unanimous(), "v1")["final_verdict"], "consistent")
@@ -87,13 +90,14 @@ class ResolverV1Tests(unittest.TestCase):
             resolve(self.unanimous(), "unknown")
 
 
-def proof_verdict(value, proof="direct", category=None, role=None):
+def proof_verdict(value, proof="direct", category=None, role=None, cleared_bar=True):
     record = {
         "verdict": value, "proof": proof, "category": category,
         "claim": "the documentation claim", "evidence": "return 1",
     }
     if role is not None:
         record["role"] = role
+        record["cleared_bar"] = cleared_bar
     return record
 
 
@@ -145,20 +149,45 @@ class ResolverV2Tests(unittest.TestCase):
                 self.assertEqual(result["semantic_status"], "unverified")
                 self.assertIsNone(result["final_verdict"])
 
-    def test_any_disagreement_challenge_or_blindspot_forces_synthesis(self):
+    def test_challenge_blindspot_or_genuine_tie_forces_synthesis(self):
         mutations = (
             lambda stages: stages["challenge"]["value"].update(cracks=True),
             lambda stages: stages["blindspot"]["value"].update(missed_angle="edge"),
-            lambda stages: stages["prongs"][1].update(
+            lambda stages: [stages["prongs"][index].update(
                 value=proof_verdict("inconsistent", category="direct-mismatch",
-                                    role="prove-wrong")
-            ),
+                                    role=self.roles[index])
+            ) for index in (1, 2)],
         )
         for mutate in mutations:
             stages = self.unanimous()
             mutate(stages)
             with self.subTest(stages=stages):
                 self.assertTrue(needs_synthesis_v2(stages))
+
+    def test_cleared_bar_plurality_allows_dissent_without_synthesis(self):
+        stages = self.unanimous()
+        stages["prongs"][1] = ok(proof_verdict(
+            "inconsistent", category="direct-mismatch", role="prove-wrong"
+        ))
+        self.assertFalse(needs_synthesis_v2(stages))
+        self.assertEqual(resolve_v2(stages)["final_verdict"], "consistent")
+
+    def test_conceded_opposing_lenses_do_not_count_as_dissent(self):
+        stages = self.unanimous()
+        for index, role in ((1, "prove-wrong"), (2, "evidence-auditor")):
+            stages["prongs"][index] = ok(proof_verdict(
+                "inconsistent", category="direct-mismatch", role=role,
+                cleared_bar=False,
+            ))
+        self.assertFalse(needs_synthesis_v2(stages))
+        self.assertEqual(resolve_v2(stages)["final_verdict"], "consistent")
+
+    def test_non_direct_evidence_gate_is_separate_from_mere_dissent(self):
+        stages = self.unanimous()
+        stages["prongs"][1] = ok(proof_verdict(
+            "consistent", proof="delegated", role="prove-wrong"
+        ))
+        self.assertTrue(needs_synthesis_v2(stages))
 
     def test_semantically_incoherent_vote_category_forces_synthesis(self):
         for value, category in (("consistent", "direct-mismatch"),
@@ -175,6 +204,19 @@ class ResolverV2Tests(unittest.TestCase):
         result = resolve_v2(stages)
         self.assertEqual(result["final_status"], "abstain")
         self.assertEqual(result["semantic_status"], "not-evaluated")
+
+    def test_prong_without_cleared_bar_is_infrastructure_abstention(self):
+        stages = self.unanimous()
+        del stages["prongs"][0]["value"]["cleared_bar"]
+        self.assertEqual(resolve_v2(stages)["final_status"], "abstain")
+
+    def test_escalated_prongs_replace_initial_prongs_during_validation(self):
+        stages = self.unanimous()
+        stages["prongs_escalated"] = [
+            ok(proof_verdict("consistent", role=role)) for role in self.roles
+        ]
+        del stages["prongs_escalated"][0]["value"]["cleared_bar"]
+        self.assertEqual(resolve_v2(stages)["final_status"], "abstain")
 
     def test_dispatch_accepts_v2(self):
         self.assertEqual(resolve(self.unanimous(), "v2")["semantic_status"], "decided")

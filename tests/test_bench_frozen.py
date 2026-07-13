@@ -36,6 +36,8 @@ class FrozenRunSafetyTests(unittest.TestCase):
                 frozen_run.run_policy(
                     dataset, [row], "v2", manifest, "dev", "java-git-window-v1"
                 )
+            with self.assertRaisesRegex(ValueError, "Java resolver v2"):
+                frozen_run.run_policy(dataset, [row], "v2", manifest, "dev", "none")
 
             row["context"] = {
                 "status": "unavailable", "protocol": "java-git-window-v1",
@@ -54,7 +56,7 @@ class FrozenRunSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dataset = root / "data.jsonl"
-            row = {"id": "org/repo/f#1", "language": "Java"}
+            row = {"id": "org/repo/f#1", "language": "Python"}
             dataset.write_text(json.dumps(row))
             manifest = root / "split.json"
             manifest.write_text(json.dumps({

@@ -50,6 +50,12 @@ def run_policy(_dataset, rows, resolver, split_manifest, split, context_protocol
         raise ValueError("unknown context protocol")
     if resolver == "v2" and (split_manifest is None or split is None):
         raise ValueError("resolver v2 requires --split-manifest and --split")
+    if (resolver == "v2" and
+            any(row.get("language", "python").casefold() == "java" for row in rows) and
+            context_protocol != JAVA_CONTEXT_PROTOCOL):
+        raise ValueError(
+            f"Java resolver v2 requires context protocol {JAVA_CONTEXT_PROTOCOL}"
+        )
     if (split_manifest is None) != (split is None):
         raise ValueError("split manifest and split must be declared together")
     manifest_sha256 = None

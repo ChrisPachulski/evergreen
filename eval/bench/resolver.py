@@ -65,6 +65,9 @@ def resolve_v1(stages):
     """Reproduce the cb24647 trial decision policy without invoking a model."""
     values = _validated_v1(stages)
     if values is None:
+        records = stages.get("prongs_escalated") or stages.get("prongs")
+        if isinstance(records, list) and len(records) == 3 and _prongs(stages) is None:
+            return _abstain(stages, "one or more prong responses are missing required fields")
         return _abstain(stages, "trial record is incomplete")
     snap, challenge, prongs, blindspot = values
     missed = bool(blindspot["missed_angle"])
@@ -92,8 +95,9 @@ def _proof_record(value, role=None):
     if any(not isinstance(value.get(field), str) or not value[field].strip()
            for field in ("claim", "evidence")):
         return None
-    if role is not None and value.get("role") != role:
-        return None
+    if role is not None:
+        if value.get("role") != role or type(value.get("cleared_bar")) is not bool:
+            return None
     return value
 
 
@@ -101,7 +105,7 @@ def _validated_v2(stages):
     snap = _proof_record(_value(stages, "snap"))
     challenge = _value(stages, "challenge")
     blindspot = _value(stages, "blindspot")
-    records = stages.get("prongs")
+    records = stages.get("prongs_escalated") or stages.get("prongs")
     if (snap is None or not challenge or type(challenge.get("cracks")) is not bool or
             not blindspot or "missed_angle" not in blindspot or
             not isinstance(records, list) or len(records) != len(V2_PRONG_ROLES)):
@@ -128,24 +132,42 @@ def _abstain_v2(stages, reason):
     }
 
 
+def plurality_v2(snap, prongs):
+    """Return the unique plurality among snap and high-bar prongs; concessions do not dissent."""
+    votes = [snap["verdict"], *(
+        prong["verdict"] for prong in prongs if prong["cleared_bar"]
+    )]
+    counts = {verdict: votes.count(verdict) for verdict in set(votes)}
+    highest = max(counts.values())
+    winners = [verdict for verdict, count in counts.items() if count == highest]
+    return winners[0] if len(winners) == 1 else None
+
+
+def _counted_v2_records(snap, prongs):
+    return [snap, *(prong for prong in prongs if prong["cleared_bar"])]
+
+
+def _v2_evidence_requires_synthesis(snap, prongs):
+    """Evidence sufficiency is an independent gate, not a response to ordinary dissent."""
+    counted = _counted_v2_records(snap, prongs)
+    return any(
+        vote["proof"] != "direct" or vote["verdict"] == "unverified" or
+        (vote["verdict"] == "inconsistent" and
+         vote["category"] not in {"direct-mismatch", "over-promise"}) or
+        (vote["verdict"] != "inconsistent" and vote["category"] is not None)
+        for vote in counted
+    )
+
+
 def needs_synthesis_v2(stages):
     values = _validated_v2(stages)
     if values is None:
         return True
     snap, challenge, prongs, blindspot = values
-    votes = [snap, *prongs]
-    incoherent = any(
-        (vote["verdict"] == "inconsistent" and
-         vote["category"] not in {"direct-mismatch", "over-promise"}) or
-        (vote["verdict"] != "inconsistent" and vote["category"] is not None)
-        for vote in votes
-    )
     return (
         challenge["cracks"] or bool(blindspot["missed_angle"]) or
-        len({vote["verdict"] for vote in votes}) != 1 or
-        incoherent or
-        any(vote["proof"] != "direct" or vote["verdict"] == "unverified"
-            for vote in votes)
+        "prongs_escalated" in stages or plurality_v2(snap, prongs) is None or
+        _v2_evidence_requires_synthesis(snap, prongs)
     )
 
 
@@ -154,9 +176,11 @@ def resolve_v2(stages):
     values = _validated_v2(stages)
     if values is None:
         return _abstain_v2(stages, "trial record is incomplete")
-    snap, challenge, _prongs, blindspot = values
+    snap, challenge, prongs, blindspot = values
     contested = needs_synthesis_v2(stages)
-    source = snap
+    winner = plurality_v2(snap, prongs)
+    counted = _counted_v2_records(snap, prongs)
+    source = next((vote for vote in counted if vote["verdict"] == winner), snap)
     if contested:
         source = _proof_record(_value(stages, "synthesis"))
         if source is None:

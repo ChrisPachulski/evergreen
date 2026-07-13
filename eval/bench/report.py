@@ -25,6 +25,7 @@ MAX_LANGUAGE_CHARS = 128
 REQUIRED_METADATA = (
     "dataset", "provider", "skill", "judge", "git", "cli_version", "settings",
 )
+MINIMUM_HUMAN_CLASS_DECISIONS = 20
 
 
 def _safe_text(value):
@@ -182,6 +183,8 @@ def _required_languages(values):
 def _build_report(
     paths, required_languages, coverage_threshold, decision_threshold=0.0,
     precision_threshold=0.0, recall_threshold=0.0, f1_threshold=0.0,
+    minimum_human_positive_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+    minimum_human_negative_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
 ):
     thresholds = {
         "coverage": coverage_threshold,
@@ -193,6 +196,14 @@ def _build_report(
     for name, value in thresholds.items():
         if not 0 <= value <= 1:
             raise ValueError(f"{name} threshold must be between 0 and 1")
+    for name, value in (
+        ("human positive decisions", minimum_human_positive_decisions),
+        ("human negative decisions", minimum_human_negative_decisions),
+    ):
+        if type(value) is not int or value < MINIMUM_HUMAN_CLASS_DECISIONS:
+            raise ValueError(
+                f"minimum {name} must be at least {MINIMUM_HUMAN_CLASS_DECISIONS}"
+            )
     required = _required_languages(required_languages)
     artifacts = _load_artifacts(paths)
     rows = [row for artifact in artifacts for row in artifact["rows"]]
@@ -222,6 +233,8 @@ def _build_report(
         f"Required semantic decision coverage: **{_percent(decision_threshold)}**.",
         f"Required precision / recall / F1: **{_percent(precision_threshold)} / "
         f"{_percent(recall_threshold)} / {_percent(f1_threshold)}**.",
+        f"Required human positive / negative decisions per language: "
+        f"**{minimum_human_positive_decisions} / {minimum_human_negative_decisions}**.",
         f"Required languages: **{', '.join(_safe_text(value) for value in sorted(required))}**.",
         "",
         "### Provenance",
@@ -272,7 +285,15 @@ def _build_report(
                                      gate_values[name] >= threshold)
             for name, threshold in gate_thresholds.items()
         }
-        passed = all(gate_passes.values())
+        human_gate_passes = {
+            "Human positive decisions": (
+                language_metrics["decided_positive"] >= minimum_human_positive_decisions
+            ),
+            "Human negative decisions": (
+                language_metrics["decided_negative"] >= minimum_human_negative_decisions
+            ),
+        }
+        passed = all(gate_passes.values()) and all(human_gate_passes.values())
         passed_all = passed_all and passed
         lines.extend([
             "",
@@ -314,6 +335,17 @@ def _build_report(
                 f"{'PASS' if gate_passes[name] else 'FAIL'} |"
                 for name in gate_thresholds
             ],
+            *[
+                f"| {name} | {required_count} | "
+                f"{language_metrics[metric_name]} / {required_count} | "
+                f"{'PASS' if human_gate_passes[name] else 'FAIL'} |"
+                for name, required_count, metric_name in (
+                    ("Human positive decisions", minimum_human_positive_decisions,
+                     "decided_positive"),
+                    ("Human negative decisions", minimum_human_negative_decisions,
+                     "decided_negative"),
+                )
+            ],
             "",
             "| Under-promise (informational) | Count |",
             "|---|---:|",
@@ -330,20 +362,26 @@ def _build_report(
 def render_markdown(
     paths, required_languages, coverage_threshold=1.0, decision_threshold=0.0,
     precision_threshold=0.0, recall_threshold=0.0, f1_threshold=0.0,
+    minimum_human_positive_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+    minimum_human_negative_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
 ):
     return _build_report(
         paths, required_languages, coverage_threshold, decision_threshold,
         precision_threshold, recall_threshold, f1_threshold,
+        minimum_human_positive_decisions, minimum_human_negative_decisions,
     )[0]
 
 
 def coverage_passes(
     paths, required_languages, coverage_threshold, decision_threshold=0.0,
     precision_threshold=0.0, recall_threshold=0.0, f1_threshold=0.0,
+    minimum_human_positive_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+    minimum_human_negative_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
 ):
     return _build_report(
         paths, required_languages, coverage_threshold, decision_threshold,
         precision_threshold, recall_threshold, f1_threshold,
+        minimum_human_positive_decisions, minimum_human_negative_decisions,
     )[1]
 
 
@@ -357,12 +395,22 @@ def main(argv=None):
     parser.add_argument("--precision-threshold", type=float, default=0.0)
     parser.add_argument("--recall-threshold", type=float, default=0.0)
     parser.add_argument("--f1-threshold", type=float, default=0.0)
+    parser.add_argument(
+        "--minimum-human-positive-decisions", type=int,
+        default=MINIMUM_HUMAN_CLASS_DECISIONS,
+    )
+    parser.add_argument(
+        "--minimum-human-negative-decisions", type=int,
+        default=MINIMUM_HUMAN_CLASS_DECISIONS,
+    )
     args = parser.parse_args(argv)
     try:
         markdown, passed = _build_report(
             args.artifacts, args.require_language, args.coverage_threshold,
             args.decision_threshold, args.precision_threshold,
             args.recall_threshold, args.f1_threshold,
+            args.minimum_human_positive_decisions,
+            args.minimum_human_negative_decisions,
         )
     except RecursionError:
         markdown = (
