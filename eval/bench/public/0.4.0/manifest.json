@@ -1,0 +1,117 @@
+{
+  "artifacts": [
+    {
+      "bytes": 997420,
+      "dataset": {
+        "path": "eval/bench/cascade-java.jsonl",
+        "sha256": "1c322acf6bc02ae304c062f0d53306e6e9ebb0334bd133afd57940922892ae0b"
+      },
+      "language": "Java",
+      "path": "eval/bench/public/0.4.0/bench-cascade-java-trial-codex-gpt-5.6-sol.json",
+      "rows": 885,
+      "sha256": "028d83bb3de17cd2136d7ef98aa6fde013918b8d00017e24aaacdad2bc2c5f25",
+      "source": {
+        "bytes": 3727667,
+        "sha256": "a03f1b33c3f3e13ee60226298dd1dc83d611ba98ad625d86f22157544175a090"
+      }
+    },
+    {
+      "bytes": 382971,
+      "dataset": {
+        "path": "eval/bench/codocbench-validated.jsonl",
+        "sha256": "af817541f91c00c5ee2731e3688377f1b437059021ddedd5da469d0aaaa6778e"
+      },
+      "language": "Python",
+      "path": "eval/bench/public/0.4.0/bench-codocbench-validated-trial-codex-gpt-5.6-sol.json",
+      "rows": 332,
+      "sha256": "97a6975bbcef0ad649a982c7cb2bb5e78616c1ff0a389036b35b4d85b604e7f3",
+      "source": {
+        "bytes": 1891435,
+        "sha256": "b56b5541ad9e9ad31df3f756e6eb05509241b44651d159396ed0e93ffb566cc9"
+      }
+    },
+    {
+      "bytes": 332945,
+      "dataset": {
+        "path": "eval/bench/codocbench-go-validated.jsonl",
+        "sha256": "75154db6f2bb59e9ba3da0909f8d62ba566b62e8f96ad5b853350256b3a27eca"
+      },
+      "language": "go",
+      "path": "eval/bench/public/0.4.0/bench-codocbench-go-validated-trial-codex-gpt-5.6-sol.json",
+      "rows": 299,
+      "sha256": "507758bc15b4db0144ae5ca0207efb50cd35d9c504c44c738eef4cee6b0fa52f",
+      "source": {
+        "bytes": 1444439,
+        "sha256": "b04a027dee961480a1fe3f8505b1b9bfb5d43ffd80b3e6b50861639246ed91ef"
+      }
+    },
+    {
+      "bytes": 336115,
+      "dataset": {
+        "path": "eval/bench/codocbench-rust-validated.jsonl",
+        "sha256": "53c0e9ba23544fe1035a24cf437e51ed91d46df6064f544819c148e3f16914ec"
+      },
+      "language": "rust",
+      "path": "eval/bench/public/0.4.0/bench-codocbench-rust-validated-trial-codex-gpt-5.6-sol.json",
+      "rows": 304,
+      "sha256": "bfe5a72b1b6ca1d65ec225a822e8078f7c72418f4f415f9184b516732ed418c7",
+      "source": {
+        "bytes": 1431430,
+        "sha256": "88b499de0f0fcf037d54e00dc9c9d36183e6adb4c731f2441f300623a2929e0d"
+      }
+    },
+    {
+      "bytes": 322154,
+      "dataset": {
+        "path": "eval/bench/codocbench-ts-validated.jsonl",
+        "sha256": "47f2b98cc3599d2e9a9848dd32a5e0f17dc34665dc548939a49b3b39dea961e5"
+      },
+      "language": "typescript",
+      "path": "eval/bench/public/0.4.0/bench-codocbench-ts-validated-trial-codex-gpt-5.6-sol.json",
+      "rows": 284,
+      "sha256": "82261e69eb1a4c06dc4c412824b032cbb745313e084f8c65a7e01db1c1aac863",
+      "source": {
+        "bytes": 1509341,
+        "sha256": "16ea13944ce98c9fa62026328903e1babd82a92daf547bd0d45a79b662cd1c94"
+      }
+    }
+  ],
+  "evaluated_release": "0.4.0",
+  "kind": "evergreen-benchmark-decision-publication",
+  "projection": {
+    "name": "structured-decisions",
+    "omitted_fields": [
+      "code",
+      "doc",
+      "func",
+      "missed_angle",
+      "reason",
+      "why"
+    ],
+    "version": 1
+  },
+  "provenance": {
+    "cli_version": "codex-cli 0.144.1",
+    "commit": "cb24647f7c62b9704d10c97e615005d924c005f2",
+    "judge_sha256": "5a72345bb69817449425cb11c4425d78aeca6ef4581585b93750f800055a369e",
+    "provider": "codex",
+    "settings_sha256": "78c54f9f4a07899a55b461bbcf63b72183c2f040ccbb7ce0f7cb76515ccfa3b5",
+    "skill_sha256": "8f52c8d03991b9a0f8111223046e6d87ee18b856494abd66ffef4ab632990951",
+    "tree": "e96142263d9a7d2623218d25b06685d60af5f12f"
+  },
+  "publication": {
+    "coverage_threshold": 0.99,
+    "required_languages": [
+      "Java",
+      "Python",
+      "go",
+      "rust",
+      "typescript"
+    ]
+  },
+  "report": {
+    "path": "eval/bench/results-0.4.0.md",
+    "sha256": "7380283407072134a378588771f5957a78cd6f2c629af1282e93e9d58a276ade"
+  },
+  "schema_version": 1
+}

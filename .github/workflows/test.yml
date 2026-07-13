@@ -28,6 +28,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.11"
@@ -39,3 +41,9 @@ jobs:
         run: bash tests/action.sh
       - name: Benchmark self-test
         run: python3 eval/bench/run_bench.py --selftest
+      - name: Public benchmark verification
+        run: >-
+          python3 eval/bench/publication.py verify
+          --manifest eval/bench/public/0.4.0/manifest.json
+          --repo .
+          --report eval/bench/results-0.4.0.md

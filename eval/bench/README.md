@@ -21,8 +21,9 @@ python3 eval/bench/frozen_run.py --dataset cascade.jsonl \
 **CoDocBench** ([github.com/kunpai/codocbench](https://github.com/kunpai/codocbench),
 arXiv:2502.00519) supplies the wild *Python* set — 4,573 coupled code+docstring changes with no
 drift labels, from which we derive candidates ((old doc, new code) = the doc that lagged;
-(new doc, new code) = control) and then **validate every label with a three-LLM majority vote**
-before scoring, reporting inter-annotator kappa:
+(new doc, new code) = control) and then **screen every retained label with a three-LLM majority
+vote** before scoring, reporting inter-annotator kappa. This is LLM screening, not independent
+human validation:
 
 ```sh
 git clone https://github.com/kunpai/codocbench
@@ -48,13 +49,14 @@ The raw result is a **confusion matrix** (see [Results](#results--how-it-compare
 specificity read straight off it; precision doesn't, because it moves with the drift base rate — so
 precision is also reported reweighted to a **natural 10/90** and a **balanced 50/50** split, medians
 over 1000 resamples of the consistent class (CASCADE's protocol), so it lines up with published
-baselines. Rerun any committed transcript without API calls:
+baselines. Rescore a committed public decision artifact without API calls:
 
 ```sh
-python3 eval/bench/run_bench.py --rescore out/bench-default.json
+python3 eval/bench/run_bench.py --rescore \
+  eval/bench/public/0.4.0/bench-cascade-java-trial-codex-gpt-5.6-sol.json
 ```
 
-Replay stored trial stages through their versioned decision policy, require exact final-verdict
+Replay stored trial stages through their versioned decision policy, require exact full-decision
 parity, and compare the strong snap diagnostically without model calls:
 
 ```sh
@@ -65,32 +67,31 @@ python3 eval/bench/replay.py out/bench-default.json \
 Replay output contains hashes, counts, matrices, and mismatch IDs only. It does not print pair text
 or free-form model reasoning.
 
-The eventual current-judge publication will record one clean implementation commit and tree in
-every compatible artifact, together with provider `codex`, Codex CLI `0.144.1`, strong and cheap
-model `gpt-5.6-sol`, and `EVAL_CONCURRENCY=4`. The final implementation commit is frozen before any
-language starts. Language processes may be serialized to stay within local scratch-space limits.
-The report gate is declared before scoring: every language artifact must finish and individually
-meet the threshold passed to `report.py`. A provider interruption is resumed only when validated
-atomic artifacts share that exact provider and provenance; partial, mixed-provider, or otherwise
-incompatible matrices are never promoted as current results.
+The Evergreen 0.4.0 baseline records one clean implementation commit and tree in every compatible
+artifact, together with provider `codex`, Codex CLI `0.144.1`, strong and cheap model
+`gpt-5.6-sol`, and `EVAL_CONCURRENCY=4`. The implementation commit was frozen before any language
+started. Language processes may be serialized to stay within local scratch-space limits. The report
+gate is declared before scoring: every language artifact must finish and individually meet the
+threshold passed to `report.py`. A provider interruption is resumed only when validated atomic
+artifacts share that exact provider and provenance; partial, mixed-provider, or otherwise
+incompatible matrices are never promoted as a release baseline.
 
-After all five runs complete, generate the current report with the publication set declared
-explicitly:
+The frozen 0.4.0 report can be regenerated from its public publication set:
 
 ```sh
 python3 eval/bench/report.py \
-  eval/bench/out/bench-codocbench-validated-trial-codex-gpt-5.6-sol.json \
-  eval/bench/out/bench-cascade-java-trial-codex-gpt-5.6-sol.json \
-  eval/bench/out/bench-codocbench-ts-validated-trial-codex-gpt-5.6-sol.json \
-  eval/bench/out/bench-codocbench-rust-validated-trial-codex-gpt-5.6-sol.json \
-  eval/bench/out/bench-codocbench-go-validated-trial-codex-gpt-5.6-sol.json \
+  eval/bench/public/0.4.0/bench-codocbench-validated-trial-codex-gpt-5.6-sol.json \
+  eval/bench/public/0.4.0/bench-cascade-java-trial-codex-gpt-5.6-sol.json \
+  eval/bench/public/0.4.0/bench-codocbench-ts-validated-trial-codex-gpt-5.6-sol.json \
+  eval/bench/public/0.4.0/bench-codocbench-rust-validated-trial-codex-gpt-5.6-sol.json \
+  eval/bench/public/0.4.0/bench-codocbench-go-validated-trial-codex-gpt-5.6-sol.json \
   --require-language Python \
   --require-language Java \
   --require-language typescript \
   --require-language rust \
   --require-language go \
   --coverage-threshold 0.99 \
-  --markdown eval/bench/results-current.md
+  --markdown eval/bench/results-0.4.0.md
 ```
 
 The declared set must exactly match the artifact languages. Each language must complete at least
@@ -106,6 +107,49 @@ The checked-in CASCADE conversion is derived from upstream commit
 `cascade-java.jsonl` has 885 rows (70 inconsistent / 815 consistent), is 712,905 bytes, and has
 SHA-256 `1c322acf6bc02ae304c062f0d53306e6e9ebb0334bd133afd57940922892ae0b`.
 
+## Public decision artifacts
+
+The content-addressed [Evergreen 0.4.0 publication](public/0.4.0/manifest.json) contains every
+retained pair's benchmark label, final decision, and structured trial outcomes. It deliberately
+omits source code, documentation text, and free-form reviewer prose. Join a decision to its declared
+dataset by `metadata.dataset.sha256` plus row `id`.
+
+Verify the five files, historical provenance, dataset joins, and checked-in report without a model
+or API call:
+
+```sh
+python3 eval/bench/publication.py verify \
+  --manifest eval/bench/public/0.4.0/manifest.json \
+  --repo . \
+  --report eval/bench/results-0.4.0.md
+```
+
+Rescore any language directly:
+
+```sh
+python3 eval/bench/run_bench.py --rescore \
+  eval/bench/public/0.4.0/bench-cascade-java-trial-codex-gpt-5.6-sol.json
+```
+
+The public artifact hashes, dataset joins, historical Git blobs, and report regeneration are
+independently checkable. Each manifest `source.sha256` is instead a chain-of-custody record of the
+private frozen artifact verified during export; CI cannot independently inspect a source artifact
+that is intentionally not published.
+
+### Publication and licensing boundary
+
+CASCADE is attributed to its upstream MIT-licensed repository and frozen source commit above.
+CoDocBench's upstream repository did not declare a detectable license when this publication was
+prepared on 2026-07-13. The public decision package therefore does not duplicate source code,
+docstrings, or free-form model explanations. This is a publication-scope constraint, not legal
+advice or a claim that existing research inputs have been relicensed.
+
+The package supports decision inspection and metric rescoring for the retained evaluated rows. It
+does not reconstruct the full candidate-selection process: the TypeScript, Rust, and Go vote logs
+do not contain the discarded candidates' source payloads or exact source revisions. Label validity,
+selection validity, and decision quality remain separate claims; candidate-selection audit status
+therefore remains unverified for those three discarded pools.
+
 ## Results — how it compares
 
 The point of the schema above is that evergreen's numbers land next to published peers, so here
@@ -120,10 +164,10 @@ train on one language's labels; different regime, noted and out of scope.
 | Fine-tuned single-language SOTA | trained, 1 language | — | — | 0.88–0.94 | — |
 | **DocPrism** (arXiv:2511.00215) | zero-shot, multi-language | 0.62 | — | — | ~0.15 |
 
-### Evergreen — current judge (the trial rebuild)
+### Evergreen 0.4.0 baseline (the trial rebuild)
 
 The five-language publication gate **passes**. The full matrices, coverage, and exact frozen
-provenance are in [`results-current.md`](results-current.md). Across 2,104 attempted pairs, 2,103
+provenance are in [`results-0.4.0.md`](results-0.4.0.md). Across 2,104 attempted pairs, 2,103
 completed and one Rust pair abstained (99.95% overall completion); every language individually met
 the predeclared 99% coverage threshold.
 
@@ -135,10 +179,10 @@ the predeclared 99% coverage threshold.
 | Rust | 303 / 304 | 1 | 0.464 | 0.684 | 0.553 | 0.947 |
 | Go | 299 / 299 | 0 | 0.261 | 0.750 | 0.387 | 0.880 |
 
-These are the observed dataset-base-rate metrics, not a claim of best-in-class quality. The current
+These are the observed dataset-base-rate metrics, not a claim of best-in-class quality. The 0.4.0
 judge is recall-heavy on Python and TypeScript, weak on Java recall, and produces too many false
-positives in several languages. The publication proves reproducibility and coverage; the matrices
-set an honest baseline for the next judge iteration.
+positives in several languages. The publication proves decision-level auditability and coverage for
+this frozen run; the matrices set an honest baseline for the next judge iteration.
 
 ## Schema
 
