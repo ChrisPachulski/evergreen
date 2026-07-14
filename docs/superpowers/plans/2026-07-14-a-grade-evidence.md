@@ -24,9 +24,10 @@ to A.
 - Five languages are mandatory: Python, Java, TypeScript, Rust, and Go.
 - Holdout requires at least 100 positive and 100 negative decisions per language, at least 10
   repositories per language, and no repository above 20% of a language holdout.
-- Per-language holdout thresholds are provider completion, decision coverage `>= .99`; precision,
-  recall, and F1 `>= .80`; specificity `>= .98`; lower repository-clustered 95% bounds for
-  prevalence-adjusted precision, recall, and F1 `>= .70`; zero silently omitted rows.
+- Per-language and per-language-by-claim-class holdout thresholds are provider completion, decision
+  coverage `>= .99`; precision, recall, and F1 `>= .80`; specificity `>= .98`; lower
+  repository-clustered 95% bounds for prevalence-adjusted precision, recall, and F1 `>= .70`; zero
+  silently omitted rows. Each claim-class cell has at least 20 inconsistent and 40 consistent rows.
 - The grade uses metrics adjusted to 10% drift prevalence and publishes balanced metrics, raw
   confusion counts, and two-sided 95% intervals as supporting evidence.
 - Repository groups, all derivatives, and all paired positive/negative rows remain in one split.
@@ -151,6 +152,9 @@ python3 -m unittest tests.test_grade tests.test_cli
 - source and derivative bytes are hash-bound; one changed byte, ambiguous observable, compile
   failure, timeout, extra output, unknown mutation, or cleanup failure invalidates the package;
 - every source row and its derivatives share a group ID.
+- each finite operator is bound to one oracle kind and exact baseline/mutated/no-op observable
+  shapes; changing only the declared kind or reusing a generic print fixture for another claim class
+  fails validation.
 
 **GREEN:** Implement the smallest common oracle around exact process stdout/exit observations.
 Support versioned `return-value`, `raises`, `default-value`, `cardinality`, and `state-change`
@@ -231,10 +235,11 @@ Build at least 20 distinct source-project groups and 250 mechanically decidable 
 language. Twenty is the mathematical floor for the required 10 repository groups in each of the
 development and holdout splits; package construction still fails unless the keyed split actually
 places at least 10 in both. Select or regenerate a split key only from public group-count constraints
-before any private row is opened, never from detector outcomes or labels. Each seed produces a
-baseline consistent row, a semantic-no-op code control that remains consistent, and one
-lagging-documentation row from a code mutation. Both private packages must clear the per-language
-100-positive/100-negative requirement after repository grouping.
+before any private row is opened, never from detector outcomes or labels. Distribute seeds across
+all five oracle kinds so every language-by-kind cell clears the post-split minimums and repository
+coverage. Each seed produces a baseline consistent row, a semantic-no-op code control that remains
+consistent, and one lagging-documentation row from a code mutation. Both private packages must
+clear the per-language 100-positive/100-negative requirement after repository grouping.
 
 Add a pinned TypeScript compiler and CI jobs that install or select explicit Python,
 Node/TypeScript, JDK, Rust, and Go versions and run oracle validation without network after setup.

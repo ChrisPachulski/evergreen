@@ -89,6 +89,10 @@ oracle grade does not claim coverage of them.
   models code changing while documentation lags.
 - Each mutation family includes a semantic-no-op code control that must remain consistent.
 - Mutation operators are finite and versioned. The corpus generator cannot accept a free-form label.
+- Every mutation operator declares exactly one compatible claim class and exact baseline, mutated,
+  and semantic-no-op observable shapes. A seed whose oracle kind, source pattern, or observed shape
+  does not match that operator is invalid; a generic output-change fixture cannot be relabeled as a
+  default, error, cardinality, or state-change claim.
 - Every row records source hash, mutation ID or `none`, oracle kind, harness hash, expected outcome,
   observed outcome, and project identity.
 - Corpus validation is offline, bounded, network-free, and all-or-nothing. Oracle programs run only
@@ -125,7 +129,7 @@ oracle grade does not claim coverage of them.
 
 ### A thresholds
 
-For every language independently:
+For every language independently, and again for every language-by-claim-class cell:
 
 - provider completion `>= 0.99`;
 - semantic decision coverage `>= 0.99`;
@@ -136,6 +140,10 @@ For every language independently:
 - no unreported or dropped row;
 - raw confusion counts and repository-clustered two-sided 95% confidence intervals are published;
 - the lower 95% confidence bound for prevalence-adjusted precision, recall, and F1 is `>= 0.70`.
+
+Every language-by-claim-class holdout cell contains at least 20 inconsistent and 40 consistent
+decisions, spans the frozen repository groups, and reports its raw counts. The larger per-language
+gate remains required; passing small cells cannot hide a failing aggregate.
 
 Report balanced metrics and prevalence-adjusted metrics at 10% drift. The grade uses the 10%
 prevalence result. Thresholds are fixed before the candidate sees holdout rows.
