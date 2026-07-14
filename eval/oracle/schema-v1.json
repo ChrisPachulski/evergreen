@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "documentation": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "template": {"minLength": 1, "type": "string"}
+      },
+      "required": ["template", "sha256"],
+      "type": "object"
+    },
+    "group_id": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", "type": "string"},
+    "harness": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "items": {"minLength": 1, "type": "string"},
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": ["argv"],
+      "type": "object"
+    },
+    "kind": {"const": "evergreen-executable-documentation-oracle"},
+    "language": {"enum": ["python", "java", "typescript", "rust", "go"]},
+    "mutation": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {"minLength": 1, "type": "string"},
+        "before": {"minLength": 1, "type": "string"},
+        "derivative_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "id": {"type": "string"},
+        "offset": {"minimum": 0, "type": "integer"}
+      },
+      "required": ["id", "offset", "before", "after", "derivative_sha256"],
+      "type": "object"
+    },
+    "oracle": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_observable": {
+          "additionalProperties": false,
+          "properties": {
+            "exit_code": {"const": 0},
+            "stdout": {"maxLength": 4096, "minLength": 1, "type": "string"}
+          },
+          "required": ["exit_code", "stdout"],
+          "type": "object"
+        },
+        "kind": {
+          "enum": ["return-value", "raises", "default-value", "cardinality", "state-change"]
+        }
+      },
+      "required": ["kind", "expected_observable"],
+      "type": "object"
+    },
+    "project": {"pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "type": "string"},
+    "sandbox": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {"const": "docker"},
+        "image": {
+          "pattern": "^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile": {"const": "evergreen-oracle-v1"}
+      },
+      "required": ["engine", "image", "profile"],
+      "type": "object"
+    },
+    "schema_version": {"const": 1},
+    "seed_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "semantic_noop": {
+      "additionalProperties": false,
+      "properties": {
+        "derivative_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "id": {"const": "comment-v1"}
+      },
+      "required": ["id", "derivative_sha256"],
+      "type": "object"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {"minLength": 1, "type": "string"},
+        "commit": {"pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$", "type": "string"},
+        "license": {"minLength": 1, "type": "string"},
+        "origin": {"pattern": "^https://", "type": "string"},
+        "path": {"minLength": 1, "type": "string"},
+        "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+      },
+      "required": ["origin", "commit", "license", "path", "code", "sha256"],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "group_id",
+    "project",
+    "source",
+    "language",
+    "documentation",
+    "harness",
+    "oracle",
+    "mutation",
+    "semantic_noop",
+    "sandbox",
+    "seed_sha256"
+  ],
+  "type": "object"
+}
