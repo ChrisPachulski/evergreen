@@ -73,7 +73,7 @@
   "kind": "evergreen-a-grade-policy",
   "limits": {
     "maximum_artifacts": 10000,
-    "maximum_bytes": 4194304,
+    "maximum_bytes": 16777216,
     "maximum_depth": 16
   },
   "policy_id": "a-grade-v1",

@@ -71,16 +71,9 @@ VERIFIER_ARTIFACTS = (
     "evergreen/receipt.py",
     "eval/grade-policy-v1.json",
 )
-SUBJECT_EXECUTABLE_EXTENSIONS = (".py", ".sh", ".yml", ".yaml", ".toml", ".json")
-SUBJECT_EXECUTABLE_PREFIXES = ("ci/", "commands/", "hooks/", "skills/")
-SUBJECT_EXECUTABLE_PATHS = frozenset({
-    "AGENTS.md",
-    "eval/prompt.md",
-})
-NON_SEMANTIC_JSON_PREFIXES = ("eval/bench/out/", "eval/bench/public/")
 TRUSTED_LIMIT_CEILINGS = {
     "maximum_artifacts": 10_000,
-    "maximum_bytes": 4_194_304,
+    "maximum_bytes": 16_777_216,
     "maximum_depth": 16,
 }
 
@@ -701,19 +694,6 @@ def _trusted_predicates(policy):
     return predicates
 
 
-def _is_subject_executable_path(path, mode):
-    json_is_semantic = not (
-        path.startswith(NON_SEMANTIC_JSON_PREFIXES) or path.endswith(".votes.json")
-    )
-    return (
-        path in SUBJECT_EXECUTABLE_PATHS
-        or path.startswith(SUBJECT_EXECUTABLE_PREFIXES)
-        or path.endswith(SUBJECT_EXECUTABLE_EXTENSIONS[:-1])
-        or (path.endswith(".json") and json_is_semantic)
-        or mode == "100755"
-    )
-
-
 def _subject_executable_inventory(root, subject_commit, policy):
     listing = receipt._git(
         root, "ls-tree", "-r", "-z", subject_commit,
@@ -730,8 +710,6 @@ def _subject_executable_inventory(root, subject_commit, policy):
             raise receipt.ReceiptOperationalError(
                 "subject executable inventory is invalid"
             ) from None
-        if not _is_subject_executable_path(path, mode):
-            continue
         if len(inventory) >= limits["maximum_artifacts"]:
             raise VerificationFailure(
                 "executable-inventory-limit", "subject executable inventory is too large"

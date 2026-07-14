@@ -16,26 +16,9 @@ import runpy
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "bin" / "evergreen"
-INVENTORY_EXTENSIONS = (".py", ".sh", ".yml", ".yaml", ".toml", ".json")
-INVENTORY_PREFIXES = ("ci/", "commands/", "hooks/", "skills/")
-INVENTORY_PATHS = {
-    "AGENTS.md",
-    "eval/prompt.md",
-}
-NON_SEMANTIC_JSON_PREFIXES = ("eval/bench/out/", "eval/bench/public/")
-
-
 def is_inventory_path(path, mode):
-    json_is_semantic = not (
-        path.startswith(NON_SEMANTIC_JSON_PREFIXES) or path.endswith(".votes.json")
-    )
-    return (
-        path in INVENTORY_PATHS
-        or path.startswith(INVENTORY_PREFIXES)
-        or path.endswith(INVENTORY_EXTENSIONS[:-1])
-        or (path.endswith(".json") and json_is_semantic)
-        or mode == "100755"
-    )
+    del path
+    return mode in {"100644", "100755"}
 
 
 class EvergreenCLITests(unittest.TestCase):
@@ -403,7 +386,8 @@ class EvergreenCLITests(unittest.TestCase):
 
     def test_grade_inventory_covers_semantic_ci_hook_plugin_and_executable_inputs(self):
         verifier, candidate, _commit, manifest = self.make_grade_repositories(
-            subject_executable_files={"tools/semantic-runner": b"#!/bin/sh\nexit 0\n"}
+            subject_files={"tools/unknown-config": b"semantic=true\n"},
+            subject_executable_files={"tools/semantic-runner": b"#!/bin/sh\nexit 0\n"},
         )
         evidence = json.loads((candidate / manifest).read_text())
         declared = {item["path"] for item in evidence["subject_executables"]}
@@ -421,6 +405,12 @@ class EvergreenCLITests(unittest.TestCase):
             "commands/impact.md",
             "skills/evergreen/SKILL.md",
             "AGENTS.md",
+            ".evergreen-ignore",
+            ".gitignore",
+            "eval/manifest.tsv",
+            "eval/fixture/README.md",
+            "eval/bench/dataset.jsonl",
+            "tools/unknown-config",
             "tools/semantic-runner",
         }.issubset(declared))
         result = subprocess.run(
@@ -431,6 +421,27 @@ class EvergreenCLITests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2)
         self.assertEqual(json.loads(result.stdout)["status"], "not-earned")
+
+        evidence = json.loads((candidate / manifest).read_text())
+        evidence["subject_executables"] = [
+            item for item in evidence["subject_executables"]
+            if item["path"] != "tools/unknown-config"
+        ]
+        (candidate / manifest).write_text(
+            json.dumps(evidence, sort_keys=True, separators=(",", ":")) + "\n"
+        )
+        self.run_git(candidate, "add", manifest)
+        self.run_git(candidate, "commit", "-qm", "omit unknown semantic input")
+        omitted = subprocess.run(
+            [sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+             "--repo", str(candidate), "--manifest", manifest, "--json"],
+            cwd=candidate, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        self.assertEqual(omitted.returncode, 2)
+        self.assertEqual(
+            json.loads(omitted.stdout)["failures"][0]["code"],
+            "executable-inventory-mismatch",
+        )
 
     def test_grade_verify_deep_json_is_bounded_invalid_without_traceback(self):
         verifier, candidate, _commit, manifest = self.make_grade_repositories()
