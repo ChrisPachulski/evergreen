@@ -967,14 +967,19 @@ runpy.run_path({str(SCRIPT)!r}, run_name='__main__')
         from evergreen.hosts import install
 
         home = Path(self.temporary.name) / "doctor-json-home"
+        plugin = Path(self.temporary.name) / "doctor-json-plugin"
+        shutil.copytree(
+            ROOT, plugin,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
         (home / ".claude").mkdir(parents=True)
         (home / ".codex").mkdir()
-        self.assertTrue(install(home, ROOT, "all").ok)
+        self.assertTrue(install(home, plugin, "all").ok)
         env = os.environ.copy()
         env["HOME"] = str(home)
 
         result = self.run_cli(
-            "doctor", "--host", "all", "--repo", str(ROOT), "--json", env=env
+            "doctor", "--host", "all", "--repo", str(plugin), "--json", env=env
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)

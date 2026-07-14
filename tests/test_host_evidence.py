@@ -15,6 +15,8 @@ class HostEvidenceTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.home = Path(self.temporary.name) / "home with spaces"
         self.home.mkdir()
+        self.plugin = Path(self.temporary.name) / "clean plugin"
+        self.copy_plugin(self.plugin)
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -24,10 +26,10 @@ class HostEvidenceTests(unittest.TestCase):
 
         for directory in (".claude", ".codex"):
             (self.home / directory).mkdir()
-        self.assertTrue(install(self.home, ROOT, "all").ok)
+        self.assertTrue(install(self.home, self.plugin, "all").ok)
         before = self.snapshot(include_directories=True)
 
-        evidence = collect_host_evidence(self.home, ROOT, "all")
+        evidence = collect_host_evidence(self.home, self.plugin, "all")
 
         self.assertEqual(self.snapshot(include_directories=True), before)
         self.assertEqual(set(evidence), {"schema_version", "kind", "canonical", "hosts"})
@@ -36,11 +38,11 @@ class HostEvidenceTests(unittest.TestCase):
         self.assertEqual(set(evidence["hosts"]), {"claude", "codex"})
         self.assertEqual(
             evidence["canonical"]["version"],
-            json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"],
+            json.loads((self.plugin / ".claude-plugin" / "plugin.json").read_text())["version"],
         )
         self.assertEqual(
             evidence["canonical"]["hashes"]["bin/evergreen"],
-            hashlib.sha256((ROOT / "bin" / "evergreen").read_bytes()).hexdigest(),
+            hashlib.sha256((self.plugin / "bin" / "evergreen").read_bytes()).hexdigest(),
         )
         self.assertEqual(
             {
@@ -97,7 +99,7 @@ class HostEvidenceTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     host["installed"]["instruction_block_sha256"],
-                    hashlib.sha256(_block(ROOT)).hexdigest(),
+                    hashlib.sha256(_block(self.plugin.resolve())).hexdigest(),
                 )
                 self.assertEqual(
                     set(host["uninstall_owned_paths"]), {
@@ -112,12 +114,12 @@ class HostEvidenceTests(unittest.TestCase):
 
         for directory in (".claude", ".codex"):
             (self.home / directory).mkdir()
-        self.assertTrue(install(self.home, ROOT, "all").ok)
+        self.assertTrue(install(self.home, self.plugin, "all").ok)
         stale = self.home / ".claude" / "skills" / "evergreen"
         stale.unlink()
         stale.symlink_to(self.home / "stale-cache")
 
-        evidence = collect_host_evidence(self.home, ROOT, "all")
+        evidence = collect_host_evidence(self.home, self.plugin, "all")
 
         self.assertIn("skill-link-stale", evidence["hosts"]["claude"]["doctor_issues"])
         self.assertEqual(evidence["hosts"]["codex"]["doctor_issues"], [])
@@ -126,7 +128,7 @@ class HostEvidenceTests(unittest.TestCase):
         from evergreen.hosts import collect_host_evidence
 
         plugin = Path(self.temporary.name) / "canonical"
-        shutil.copytree(ROOT, plugin, symlinks=True)
+        self.copy_plugin(plugin)
         outside = Path(self.temporary.name) / "outside"
         outside.mkdir()
         (outside / "command.md").write_text("untrusted\n")
@@ -142,7 +144,7 @@ class HostEvidenceTests(unittest.TestCase):
         from evergreen.hosts import collect_host_evidence
 
         plugin = Path(self.temporary.name) / "canonical"
-        shutil.copytree(ROOT, plugin, symlinks=True)
+        self.copy_plugin(plugin)
         (plugin / "commands" / "impact.md").chmod(0o666)
 
         evidence = collect_host_evidence(self.home, plugin, "all")
@@ -160,18 +162,33 @@ class HostEvidenceTests(unittest.TestCase):
     def test_host_evidence_rejects_writable_package_source(self):
         self.assert_package_source_inventory_fails_closed("writable")
 
+    def test_host_evidence_rejects_nonempty_bytecode_cache(self):
+        self.assert_package_source_inventory_fails_closed("bytecode")
+
+    def test_host_evidence_rejects_unexpected_package_symlink(self):
+        self.assert_package_source_inventory_fails_closed("symlink")
+
     def assert_package_source_inventory_fails_closed(self, change):
         from evergreen.hosts import collect_host_evidence
 
         plugin = Path(self.temporary.name) / "canonical"
-        shutil.copytree(ROOT, plugin, symlinks=True)
+        self.copy_plugin(plugin)
         source = plugin / "evergreen" / "impact.py"
         if change == "missing":
             source.unlink()
         elif change == "unexpected":
             (source.parent / "unexpected.py").write_text("raise RuntimeError('imported')\n")
-        else:
+        elif change == "writable":
             source.chmod(0o666)
+        elif change == "bytecode":
+            cache = source.parent / "__pycache__"
+            cache.mkdir()
+            (cache / "impact.cpython-314.pyc").write_bytes(b"executable bytecode")
+        else:
+            outside = Path(self.temporary.name) / "importable package"
+            outside.mkdir()
+            (outside / "__init__.py").write_text("raise RuntimeError('imported')\n")
+            (source.parent / "linked_package").symlink_to(outside, target_is_directory=True)
 
         evidence = collect_host_evidence(self.home, plugin, "all")
 
@@ -184,12 +201,12 @@ class HostEvidenceTests(unittest.TestCase):
 
         for directory in (".claude", ".codex"):
             (self.home / directory).mkdir()
-        self.assertTrue(install(self.home, ROOT, "all").ok)
-        before = collect_host_evidence(self.home, ROOT, "all")
+        self.assertTrue(install(self.home, self.plugin, "all").ok)
+        before = collect_host_evidence(self.home, self.plugin, "all")
         instructions = self.home / ".claude" / "CLAUDE.md"
         instructions.write_bytes(b"user text changed\n" + instructions.read_bytes())
 
-        after = collect_host_evidence(self.home, ROOT, "all")
+        after = collect_host_evidence(self.home, self.plugin, "all")
 
         self.assertNotEqual(before["hosts"]["claude"], after["hosts"]["claude"])
         self.assertEqual(before["hosts"]["codex"], after["hosts"]["codex"])
@@ -218,7 +235,7 @@ class HostEvidenceTests(unittest.TestCase):
 
         for directory in (".claude", ".codex"):
             (self.home / directory).mkdir()
-        self.assertTrue(install(self.home, ROOT, "all").ok)
+        self.assertTrue(install(self.home, self.plugin, "all").ok)
         paths = {
             "instructions": self.home / ".claude" / "CLAUDE.md",
             "ownership": self.home / ".claude" / ".evergreen-owned.json",
@@ -226,7 +243,7 @@ class HostEvidenceTests(unittest.TestCase):
         }
         paths[artifact].chmod(mode)
 
-        evidence = collect_host_evidence(self.home, ROOT, "all")
+        evidence = collect_host_evidence(self.home, self.plugin, "all")
 
         self.assertIn(issue, evidence["hosts"]["claude"]["doctor_issues"])
         self.assertFalse(host_evidence_aligned(evidence, "claude"))
@@ -246,6 +263,13 @@ class HostEvidenceTests(unittest.TestCase):
             elif include_directories:
                 values[relative] = ("directory",)
         return values
+
+    @staticmethod
+    def copy_plugin(destination):
+        shutil.copytree(
+            ROOT, destination, symlinks=True,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
 
 
 if __name__ == "__main__":

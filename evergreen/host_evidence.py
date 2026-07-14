@@ -365,10 +365,11 @@ def _package_sources(root):
     for child in package.iterdir():
         if child.name in expected:
             continue
-        if child.name.endswith(".py") or (
-            _kind(child) == "directory" and child.name != "__pycache__"
-        ):
-            raise OSError(f"unexpected canonical package source: {child}")
+        if child.name == "__pycache__" and _kind(child) == "directory":
+            _secure_active_path(child)
+            if not any(child.iterdir()):
+                continue
+        raise OSError(f"unexpected canonical package entry: {child}")
     sources = []
     for name in PACKAGE_SOURCES:
         source = package / name
