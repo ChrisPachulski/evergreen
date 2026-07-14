@@ -227,9 +227,13 @@ runnable without network access after checkout and must record the exact origin,
 extraction, and harness. Prefer small pure functions and existing examples; do not vendor package
 managers, build caches, repositories, or unrelated source trees.
 
-Build at least 10 source-project groups and 250 mechanically decidable seed claims per language.
-Each seed produces a baseline consistent row, a semantic-no-op code control that remains consistent,
-and one lagging-documentation row from a code mutation. The private holdout must clear the
+Build at least 20 distinct source-project groups and 250 mechanically decidable seed claims per
+language. Twenty is the mathematical floor for the required 10 repository groups in each of the
+development and holdout splits; package construction still fails unless the keyed split actually
+places at least 10 in both. Select or regenerate a split key only from public group-count constraints
+before any private row is opened, never from detector outcomes or labels. Each seed produces a
+baseline consistent row, a semantic-no-op code control that remains consistent, and one
+lagging-documentation row from a code mutation. Both private packages must clear the per-language
 100-positive/100-negative requirement after repository grouping.
 
 Add a pinned TypeScript compiler and CI jobs that install or select explicit Python,
