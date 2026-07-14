@@ -8,14 +8,15 @@ import hmac
 import json
 import math
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import secrets
 import stat
 import subprocess
 import sys
+from urllib.parse import urlsplit
 
-from .oracle import MUTATION_OPERATORS, ORACLE_KINDS, run_seed
+from .oracle import LANGUAGE_ADAPTERS, MUTATION_OPERATORS, ORACLE_KINDS, run_seed
 from .split import (
     LANGUAGES, REFERENCE_CATEGORIES, SimilarityError, assign_split, load_similarity_policy,
     validate_split_isolation,
@@ -79,6 +80,26 @@ class SourceGroupLimits:
 
 
 DEFAULT_SOURCE_GROUP_LIMITS = SourceGroupLimits()
+SOURCE_PACK_ID = "evergreen-executable-oracle-v1"
+SOURCE_ROOT = Path(__file__).with_name("sources")
+PROVENANCE_SCHEMA_PATH = SOURCE_ROOT / "provenance-schema-v1.json"
+RECIPE_SCHEMA_PATH = SOURCE_ROOT / "recipe-schema-v1.json"
+PRIVATE_CUSTODY_SCHEMA_PATH = SOURCE_ROOT / "private-custody-schema-v1.json"
+PROVENANCE_REQUIREMENTS = {
+    "languages": list(LANGUAGES),
+    "minimum_projects_per_language": MINIMUM_SOURCE_GROUPS,
+    "minimum_seed_claims_per_language": 250,
+    "minimum_projects_per_language_kind": MINIMUM_SOURCE_GROUPS,
+    "minimum_seed_claims_per_language_kind": 40,
+    "oracle_kinds": list(ORACLE_KINDS),
+}
+PUBLIC_PROVENANCE_FORBIDDEN_KEYS = {
+    "code", "documentation", "label", "verdict", "mutation", "observable", "split",
+    "split_key", "private_path", "holdout_path", "development_path",
+}
+PUBLIC_SOURCE_LICENSES = {
+    "0BSD", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MIT", "Python-2.0",
+}
 MAX_REFERENCE_INVENTORY_BYTES = 16 * 1024 * 1024
 MAX_REFERENCE_CONTENT_BYTES = 1024 * 1024
 MAX_PACKAGE_ROWS = 100_000
@@ -133,6 +154,465 @@ def _loads_strict(raw):
         raw, parse_constant=lambda item: (_ for _ in ()).throw(ValueError(item)),
         object_pairs_hook=_unique_object,
     )
+
+
+def _sha256_file(path, label):
+    return hashlib.sha256(_read_path_nofollow(path, 16 * 1024 * 1024, label)).hexdigest()
+
+
+def _forbid_public_answers(value):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key in PUBLIC_PROVENANCE_FORBIDDEN_KEYS:
+                raise PackageError("public provenance contains private oracle material")
+            _forbid_public_answers(child)
+    elif isinstance(value, list):
+        for child in value:
+            _forbid_public_answers(child)
+
+
+def _public_source_path(value):
+    return (type(value) is str and re.fullmatch(
+        r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*"
+        r"(?:/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)*", value,
+    ) is not None)
+
+
+def _public_recipe(manifest_path, language, extraction):
+    if not isinstance(extraction, dict) or set(extraction) != {
+            "recipe_path", "recipe_sha256", "argv"}:
+        raise PackageError("oracle source provenance extraction recipe is invalid")
+    relative = extraction["recipe_path"]
+    if type(relative) is not str:
+        raise PackageError("oracle source provenance extraction recipe is invalid")
+    pure = PurePosixPath(relative)
+    if (pure.is_absolute() or pure.as_posix() != relative or len(pure.parts) != 2 or
+            pure.parts[0] != language or pure.suffix != ".json" or
+            any(part in ("", ".", "..") or part.startswith(".") for part in pure.parts)):
+        raise PackageError("oracle source provenance extraction recipe path is invalid")
+    recipe_path = Path(manifest_path).absolute().parent / relative
+    raw = _read_path_nofollow(recipe_path, 1024 * 1024, "public extraction recipe")
+    if (type(extraction["recipe_sha256"]) is not str or
+            hashlib.sha256(raw).hexdigest() != extraction["recipe_sha256"]):
+        raise PackageError("oracle source provenance extraction recipe hash is invalid")
+    try:
+        recipe = _loads_strict(raw)
+    except (UnicodeError, json.JSONDecodeError, ValueError):
+        raise PackageError("public extraction recipe is invalid") from None
+    expected_recipe = {
+        "schema_version": 1,
+        "kind": "evergreen-public-extraction-recipe",
+        "language": language,
+        "steps": [{"argv": ["git", "show", "--no-ext-diff", "COMMIT:PATH"]}],
+    }
+    if recipe != expected_recipe:
+        raise PackageError("public extraction recipe is invalid")
+
+
+def _validate_public_sources(manifest_path, sources, toolchains):
+    source_keys = {
+        "source_id", "language", "project", "lineage_id", "origin", "commit", "tree",
+        "license", "extraction", "harness", "toolchain_id", "sandbox_image",
+        "extracted_tree_sha256", "seed_claims", "oracle_kind_counts",
+        "source_identity_sha256",
+    }
+    toolchain_by_language = {item["language"]: item for item in toolchains}
+    seen_ids = set()
+    seen_projects = set()
+    for source in sources:
+        if not isinstance(source, dict) or set(source) != source_keys:
+            raise PackageError("oracle source provenance source fields are invalid")
+        language = source["language"]
+        parsed = urlsplit(source["origin"]) if type(source["origin"]) is str else None
+        if (language not in LANGUAGES or type(source["source_id"]) is not str or
+                not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", source["source_id"]) or
+                source["source_id"] in seen_ids or type(source["project"]) is not str or
+                not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", source["project"]) or
+                (language, source["project"]) in seen_projects or
+                type(source["lineage_id"]) is not str or
+                not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", source["lineage_id"]) or
+                parsed is None or parsed.scheme != "https" or not parsed.hostname or
+                parsed.username is not None or parsed.password is not None or
+                parsed.query or parsed.fragment or
+                type(source["commit"]) is not str or
+                not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", source["commit"]) or
+                type(source["tree"]) is not str or
+                not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", source["tree"])):
+            raise PackageError("oracle source provenance source identity is invalid")
+        seen_ids.add(source["source_id"])
+        seen_projects.add((language, source["project"]))
+
+        license_record = source["license"]
+        if (not isinstance(license_record, dict) or set(license_record) != {
+                "spdx", "path", "sha256"} or
+                license_record["spdx"] not in PUBLIC_SOURCE_LICENSES or
+                not _public_source_path(license_record["path"]) or
+                type(license_record["sha256"]) is not str or
+                not re.fullmatch(r"[0-9a-f]{64}", license_record["sha256"])):
+            raise PackageError("oracle source provenance license identity is invalid")
+        _public_recipe(manifest_path, language, source["extraction"])
+        extraction_argv = source["extraction"]["argv"]
+        if (not isinstance(extraction_argv, list) or len(extraction_argv) != 4 or
+                extraction_argv[:3] != ["git", "show", "--no-ext-diff"] or
+                type(extraction_argv[3]) is not str or
+                not extraction_argv[3].startswith(source["commit"] + ":") or
+                not _public_source_path(extraction_argv[3].partition(":")[2]) or
+                any(any(token in argument for token in ("\0", "\n", "\r"))
+                    for argument in extraction_argv)):
+            raise PackageError("oracle source provenance extraction argv is invalid")
+
+        harness = source["harness"]
+        if not isinstance(harness, dict) or set(harness) != {"adapter_id", "argv", "sha256"}:
+            raise PackageError("oracle source provenance harness is invalid")
+        unsigned_harness = {key: value for key, value in harness.items() if key != "sha256"}
+        argv = harness["argv"]
+        if (harness["adapter_id"] != f"{language}-oracle-v1" or
+                not isinstance(argv, list) or len(argv) != 3 or
+                argv[0] != LANGUAGE_ADAPTERS[language] or argv[2] != "/control/oracle-v1.json" or
+                type(argv[1]) is not str or not argv[1].startswith("/input/") or
+                harness["sha256"] != hashlib.sha256(_canonical(unsigned_harness)).hexdigest()):
+            raise PackageError("oracle source provenance harness identity is invalid")
+        relative_input = argv[1].removeprefix("/input/")
+        input_path = PurePosixPath(relative_input)
+        if (input_path.is_absolute() or input_path.as_posix() != relative_input or
+                any(part in ("", ".", "..") or part.startswith(".") for part in input_path.parts)):
+            raise PackageError("oracle source provenance harness path is invalid")
+
+        toolchain = toolchain_by_language[language]
+        counts = source["oracle_kind_counts"]
+        if (source["toolchain_id"] != toolchain["toolchain_id"] or
+                not isinstance(counts, dict) or set(counts) != set(ORACLE_KINDS) or
+                any(type(value) is not int or value < 0 for value in counts.values()) or
+                type(source["seed_claims"]) is not int or source["seed_claims"] < 1 or
+                sum(counts.values()) != source["seed_claims"] or
+                type(source["sandbox_image"]) is not str or
+                not re.fullmatch(r"[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}",
+                                 source["sandbox_image"]) or
+                type(source["extracted_tree_sha256"]) is not str or
+                not re.fullmatch(r"[0-9a-f]{64}", source["extracted_tree_sha256"])):
+            raise PackageError("oracle source provenance toolchain or seed counts are invalid")
+        unsigned = {key: value for key, value in source.items()
+                    if key != "source_identity_sha256"}
+        if source["source_identity_sha256"] != hashlib.sha256(_canonical(unsigned)).hexdigest():
+            raise PackageError("oracle source provenance source identity hash is invalid")
+
+
+def _source_aggregates(sources):
+    aggregates = []
+    for language in LANGUAGES:
+        selected = [source for source in sources if source["language"] == language]
+        aggregates.append({
+            "language": language,
+            "projects": len({source["lineage_id"] for source in selected}),
+            "seed_claims": sum(source["seed_claims"] for source in selected),
+            "oracle_kind_counts": {
+                kind: sum(source["oracle_kind_counts"][kind] for source in selected)
+                for kind in ORACLE_KINDS
+            },
+            "oracle_kind_projects": {
+                kind: len({source["lineage_id"] for source in selected
+                           if source["oracle_kind_counts"][kind]})
+                for kind in ORACLE_KINDS
+            },
+        })
+    return aggregates
+
+
+def validate_provenance(path, *, require_ready=True):
+    """Validate the public source contract without opening any private corpus artifact."""
+    document = _load_json(path, "oracle source provenance")
+    if not isinstance(document, dict) or set(document) != {
+            "schema_version", "kind", "source_pack_id", "policy", "requirements",
+            "toolchains", "sources", "aggregates", "custody_commitments"}:
+        raise PackageError("oracle source provenance fields are invalid")
+    _forbid_public_answers(document)
+    if (type(document["schema_version"]) is not int or document["schema_version"] != 1 or
+            document["kind"] != "evergreen-oracle-source-pack-provenance" or
+            document["source_pack_id"] != SOURCE_PACK_ID or
+            document["requirements"] != PROVENANCE_REQUIREMENTS):
+        raise PackageError("oracle source provenance contract is invalid")
+    expected_policy = {
+        "provenance_schema_sha256": _sha256_file(
+            PROVENANCE_SCHEMA_PATH, "provenance schema",
+        ),
+        "recipe_schema_sha256": _sha256_file(RECIPE_SCHEMA_PATH, "recipe schema"),
+        "private_custody_schema_sha256": _sha256_file(
+            PRIVATE_CUSTODY_SCHEMA_PATH, "private custody schema",
+        ),
+        "oracle_schema_sha256": _sha256_file(
+            Path(__file__).with_name("schema-v1.json"), "oracle schema",
+        ),
+        "similarity_policy_sha256": _sha256_file(
+            Path(__file__).with_name("similarity-policy-v1.json"), "similarity policy",
+        ),
+    }
+    if document["policy"] != expected_policy:
+        raise PackageError("oracle source provenance policy hash is invalid")
+
+    toolchains = document["toolchains"]
+    toolchain_keys = {
+        "language", "toolchain_id", "runtime", "version", "compiler", "setup_action",
+        "setup_commit", "adapter_id", "identity_sha256",
+    }
+    if not isinstance(toolchains, list) or len(toolchains) != len(LANGUAGES):
+        raise PackageError("oracle source provenance toolchains are incomplete")
+    seen_toolchains = set()
+    seen_toolchain_ids = set()
+    for toolchain in toolchains:
+        if not isinstance(toolchain, dict) or set(toolchain) != toolchain_keys:
+            raise PackageError("oracle source provenance toolchain is invalid")
+        language = toolchain["language"]
+        unsigned = {key: value for key, value in toolchain.items() if key != "identity_sha256"}
+        if (language not in LANGUAGES or language in seen_toolchains or
+                any(type(toolchain[key]) is not str or not toolchain[key]
+                    for key in ("toolchain_id", "runtime", "version", "compiler")) or
+                toolchain["toolchain_id"] in seen_toolchain_ids or
+                type(toolchain["setup_action"]) is not str or
+                not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+",
+                                 toolchain["setup_action"]) or
+                toolchain["adapter_id"] != f"{language}-oracle-v1" or
+                not re.fullmatch(r"[0-9a-f]{40}", toolchain["setup_commit"]) or
+                toolchain["identity_sha256"] != hashlib.sha256(_canonical(unsigned)).hexdigest()):
+            raise PackageError("oracle source provenance toolchain identity is invalid")
+        seen_toolchains.add(language)
+        seen_toolchain_ids.add(toolchain["toolchain_id"])
+    if seen_toolchains != set(LANGUAGES):
+        raise PackageError("oracle source provenance toolchains are incomplete")
+
+    sources = document["sources"]
+    if not isinstance(sources, list):
+        raise PackageError("oracle source provenance sources are invalid")
+    _validate_public_sources(path, sources, toolchains)
+    aggregates = document["aggregates"]
+    if not isinstance(aggregates, list) or len(aggregates) != len(LANGUAGES):
+        raise PackageError("oracle source provenance aggregates are incomplete")
+    aggregate_by_language = {}
+    count_keys = set(ORACLE_KINDS)
+    for aggregate in aggregates:
+        if not isinstance(aggregate, dict) or set(aggregate) != {
+                "language", "projects", "seed_claims", "oracle_kind_counts",
+                "oracle_kind_projects"}:
+            raise PackageError("oracle source provenance aggregate is invalid")
+        language = aggregate["language"]
+        values = [aggregate["projects"], aggregate["seed_claims"],
+                  *aggregate["oracle_kind_counts"].values(),
+                  *aggregate["oracle_kind_projects"].values()]
+        if (language not in LANGUAGES or language in aggregate_by_language or
+                set(aggregate["oracle_kind_counts"]) != count_keys or
+                set(aggregate["oracle_kind_projects"]) != count_keys or
+                any(type(value) is not int or value < 0 for value in values)):
+            raise PackageError("oracle source provenance aggregate is invalid")
+        aggregate_by_language[language] = aggregate
+    if set(aggregate_by_language) != set(LANGUAGES):
+        raise PackageError("oracle source provenance aggregates are incomplete")
+    if aggregates != _source_aggregates(sources):
+        raise PackageError("oracle source provenance aggregate does not match sources")
+
+    reasons = []
+    for language in LANGUAGES:
+        if aggregate_by_language[language]["projects"] < MINIMUM_SOURCE_GROUPS:
+            reasons.append(f"{language}:projects-below-20")
+    for language in LANGUAGES:
+        if aggregate_by_language[language]["seed_claims"] < 250:
+            reasons.append(f"{language}:seed-claims-below-250")
+    for language in LANGUAGES:
+        aggregate = aggregate_by_language[language]
+        for kind in ORACLE_KINDS:
+            if (aggregate["oracle_kind_counts"][kind] < 40 or
+                    aggregate["oracle_kind_projects"][kind] < MINIMUM_SOURCE_GROUPS):
+                reasons.append(f"{language}:{kind}:post-split-capacity-below-minimum")
+    custody = document["custody_commitments"]
+    if (not isinstance(custody, dict) or set(custody) != {
+            "manifest_sha256", "seed_manifest_sha256", "split_key_sha256",
+            "development_package_sha256", "holdout_package_sha256"} or
+            any(value is not None and (
+                type(value) is not str or not re.fullmatch(r"[0-9a-f]{64}", value)
+            ) for value in custody.values())):
+        raise PackageError("oracle source provenance custody commitments are invalid")
+    if any(value is None for value in custody.values()):
+        reasons.append("external-custody-commitments-missing")
+    report = {
+        "kind": "evergreen-oracle-source-pack-validation",
+        "languages": list(LANGUAGES),
+        "ready": not reasons,
+        "reasons": reasons,
+        "schema_version": 1,
+        "source_pack_id": SOURCE_PACK_ID,
+    }
+    if require_ready and reasons:
+        raise PackageError("source pack is incomplete: " + ", ".join(reasons))
+    return report
+
+
+def validate_private_custody(path, provenance_path):
+    """Validate only a private custody receipt and public commitments, never corpus bytes."""
+    resolved = Path(path).resolve()
+    if resolved == REPOSITORY_ROOT or REPOSITORY_ROOT in resolved.parents:
+        raise PackageError("private custody receipt must remain outside the detector repository")
+    raw = _read_path_nofollow(path, 16 * 1024 * 1024, "private custody receipt", owner_only=True)
+    try:
+        custody = _loads_strict(raw)
+    except (UnicodeError, json.JSONDecodeError, ValueError):
+        raise PackageError("private custody receipt is invalid") from None
+    private_keys = {
+        "code", "documentation", "label", "verdict", "mutation", "observable", "split_key",
+        "seed_manifest", "development_package", "holdout_package",
+    }
+
+    def reject_private_material(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key in private_keys:
+                    raise PackageError("private custody receipt embeds private material")
+                reject_private_material(child)
+        elif isinstance(value, list):
+            for child in value:
+                reject_private_material(child)
+
+    reject_private_material(custody)
+    provenance = _load_json(provenance_path, "oracle source provenance")
+    validate_provenance(provenance_path)
+    if (not isinstance(custody, dict) or set(custody) != {
+            "schema_version", "kind", "source_pack_id", "public_inventory_sha256",
+            "artifacts", "toolchain_receipts", "split_aggregates"} or
+            type(custody["schema_version"]) is not int or custody["schema_version"] != 1 or
+            custody["kind"] != "evergreen-oracle-private-custody-receipt" or
+            custody["source_pack_id"] != provenance["source_pack_id"]):
+        raise PackageError("private custody receipt fields are invalid")
+    if provenance["custody_commitments"]["manifest_sha256"] != hashlib.sha256(raw).hexdigest():
+        raise PackageError("private custody manifest commitment does not match")
+    inventory = {key: value for key, value in provenance.items()
+                 if key != "custody_commitments"}
+    if custody["public_inventory_sha256"] != hashlib.sha256(_canonical(inventory)).hexdigest():
+        raise PackageError("private custody public inventory commitment does not match")
+
+    expected_artifacts = {
+        "seed-manifest": provenance["custody_commitments"]["seed_manifest_sha256"],
+        "split-key": provenance["custody_commitments"]["split_key_sha256"],
+        "development-package": provenance["custody_commitments"]["development_package_sha256"],
+        "holdout-package": provenance["custody_commitments"]["holdout_package_sha256"],
+    }
+    artifacts = custody["artifacts"]
+    if not isinstance(artifacts, list) or len(artifacts) != len(expected_artifacts):
+        raise PackageError("private custody artifact commitment is invalid")
+    artifact_map = {}
+    for artifact in artifacts:
+        if (not isinstance(artifact, dict) or set(artifact) != {
+                "role", "relative_path", "sha256", "bytes"} or
+                artifact["role"] not in expected_artifacts or artifact["role"] in artifact_map or
+                artifact["sha256"] != expected_artifacts[artifact["role"]] or
+                type(artifact["bytes"]) is not int or artifact["bytes"] < 1):
+            raise PackageError("private custody artifact commitment is invalid")
+        relative = artifact["relative_path"]
+        if type(relative) is not str:
+            raise PackageError("private custody artifact path is invalid")
+        pure = PurePosixPath(relative)
+        if (pure.is_absolute() or pure.as_posix() != relative or
+                any(part in ("", ".", "..") or part.startswith(".") for part in pure.parts)):
+            raise PackageError("private custody artifact path is invalid")
+        asset = Path(path).absolute().parent / relative
+        asset_raw = _read_path_nofollow(
+            asset, 64 * 1024 * 1024, "private custody artifact", owner_only=True,
+        )
+        if (len(asset_raw) != artifact["bytes"] or
+                hashlib.sha256(asset_raw).hexdigest() != artifact["sha256"]):
+            raise PackageError("private custody artifact bytes do not match receipt")
+        artifact_map[artifact["role"]] = artifact
+    if set(artifact_map) != set(expected_artifacts):
+        raise PackageError("private custody artifact commitment is invalid")
+
+    toolchains = {item["language"]: item for item in provenance["toolchains"]}
+    source_images = {
+        language: {item["sandbox_image"] for item in provenance["sources"]
+                   if item["language"] == language}
+        for language in LANGUAGES
+    }
+    receipts = custody["toolchain_receipts"]
+    if not isinstance(receipts, list) or len(receipts) != len(LANGUAGES):
+        raise PackageError("private custody toolchain receipts are invalid")
+    seen_languages = set()
+    receipt_keys = {
+        "language", "toolchain_id", "identity_sha256", "executable_sha256",
+        "adapter_sha256", "sandbox_image",
+    }
+    for receipt in receipts:
+        if not isinstance(receipt, dict) or set(receipt) != receipt_keys:
+            raise PackageError("private custody toolchain receipt is invalid")
+        language = receipt["language"]
+        expected = toolchains.get(language)
+        if (expected is None or language in seen_languages or
+                receipt["toolchain_id"] != expected["toolchain_id"] or
+                receipt["identity_sha256"] != expected["identity_sha256"] or
+                any(type(receipt[key]) is not str or
+                    not re.fullmatch(r"[0-9a-f]{64}", receipt[key])
+                    for key in ("executable_sha256", "adapter_sha256")) or
+                source_images[language] != {receipt["sandbox_image"]}):
+            raise PackageError("private custody toolchain receipt is invalid")
+        seen_languages.add(language)
+    if seen_languages != set(LANGUAGES):
+        raise PackageError("private custody toolchain receipts are invalid")
+
+    split_aggregates = custody["split_aggregates"]
+    if not isinstance(split_aggregates, list) or len(split_aggregates) != 2:
+        raise PackageError("private custody split capacity is invalid")
+    split_map = {}
+    for split in split_aggregates:
+        if (not isinstance(split, dict) or set(split) != {"split_name", "languages"} or
+                split["split_name"] not in ("dev", "holdout") or
+                split["split_name"] in split_map or not isinstance(split["languages"], list)):
+            raise PackageError("private custody split capacity is invalid")
+        language_map = {}
+        for cell in split["languages"]:
+            if (not isinstance(cell, dict) or set(cell) != {
+                    "language", "projects", "seed_claims", "consistent_rows",
+                    "inconsistent_rows", "oracle_kinds"} or
+                    cell["language"] not in LANGUAGES or cell["language"] in language_map or
+                    not isinstance(cell["oracle_kinds"], dict) or
+                    set(cell["oracle_kinds"]) != set(ORACLE_KINDS)):
+                raise PackageError("private custody split capacity is invalid")
+            for kind_cell in cell["oracle_kinds"].values():
+                if (not isinstance(kind_cell, dict) or set(kind_cell) != {
+                        "projects", "seed_claims", "consistent_rows", "inconsistent_rows"} or
+                        type(kind_cell["projects"]) is not int or kind_cell["projects"] < 10 or
+                        type(kind_cell["seed_claims"]) is not int or
+                        kind_cell["seed_claims"] < 20 or
+                        type(kind_cell["consistent_rows"]) is not int or
+                        kind_cell["consistent_rows"] < 40 or
+                        type(kind_cell["inconsistent_rows"]) is not int or
+                        kind_cell["inconsistent_rows"] < 20):
+                    raise PackageError("private custody split capacity is invalid")
+            kind_values = list(cell["oracle_kinds"].values())
+            if (type(cell["projects"]) is not int or cell["projects"] < 10 or
+                    cell["seed_claims"] != sum(item["seed_claims"] for item in kind_values) or
+                    cell["consistent_rows"] != sum(
+                        item["consistent_rows"] for item in kind_values) or
+                    cell["inconsistent_rows"] != sum(
+                        item["inconsistent_rows"] for item in kind_values) or
+                    cell["consistent_rows"] != 2 * cell["seed_claims"] or
+                    cell["inconsistent_rows"] != cell["seed_claims"]):
+                raise PackageError("private custody split capacity is invalid")
+            language_map[cell["language"]] = cell
+        if set(language_map) != set(LANGUAGES):
+            raise PackageError("private custody split capacity is invalid")
+        split_map[split["split_name"]] = language_map
+    if set(split_map) != {"dev", "holdout"}:
+        raise PackageError("private custody split capacity is invalid")
+    public_aggregates = {item["language"]: item for item in provenance["aggregates"]}
+    for language in LANGUAGES:
+        if sum(split_map[name][language]["seed_claims"] for name in split_map) != \
+                public_aggregates[language]["seed_claims"]:
+            raise PackageError("private custody split capacity does not match public aggregate")
+        for kind in ORACLE_KINDS:
+            if sum(split_map[name][language]["oracle_kinds"][kind]["seed_claims"]
+                   for name in split_map) != public_aggregates[language]["oracle_kind_counts"][kind]:
+                raise PackageError("private custody split capacity does not match public aggregate")
+    return {
+        "kind": "evergreen-oracle-private-custody-validation",
+        "languages": list(LANGUAGES),
+        "schema_version": 1,
+        "source_pack_id": SOURCE_PACK_ID,
+        "valid": True,
+    }
 
 
 def _manifest(path, policy_hash):
@@ -817,11 +1297,42 @@ def main(argv=None):
     )
     development.add_argument("--manifest", required=True)
     development.add_argument("--package", required=True)
+    provenance = commands.add_parser(
+        "validate-provenance", help="validate the public source-pack provenance contract"
+    )
+    provenance.add_argument("--manifest", required=True)
+    provenance.add_argument(
+        "--contract-only", action="store_true",
+        help="validate structure and report missing external custody without claiming readiness",
+    )
+    custody = commands.add_parser(
+        "validate-custody", help="validate an external owner-only custody receipt"
+    )
+    custody.add_argument("--manifest", required=True)
+    custody.add_argument("--provenance", required=True)
     arguments = parser.parse_args(sys.argv[1:] if argv is None else argv)
     if arguments.command == "development":
         rows = load_development_rows(Path(arguments.manifest), Path(arguments.package))
         for row in sorted(rows, key=lambda item: item["id"]):
             sys.stdout.buffer.write(_canonical(row) + b"\n")
+        return 0
+    if arguments.command == "validate-provenance":
+        try:
+            report = validate_provenance(
+                Path(arguments.manifest), require_ready=not arguments.contract_only,
+            )
+        except PackageError as error:
+            parser.exit(2, f"oracle provenance invalid: {error}\n")
+        sys.stdout.buffer.write(_canonical(report) + b"\n")
+        return 0
+    if arguments.command == "validate-custody":
+        try:
+            report = validate_private_custody(
+                Path(arguments.manifest), Path(arguments.provenance),
+            )
+        except PackageError as error:
+            parser.exit(2, f"oracle custody invalid: {error}\n")
+        sys.stdout.buffer.write(_canonical(report) + b"\n")
         return 0
     raise PackageError("unknown oracle package command")
 

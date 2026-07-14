@@ -2,8 +2,22 @@ name: test
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      oracle_regeneration:
+        description: Admit the public source pack to the trusted Linux regeneration boundary
+        required: true
+        type: boolean
+        default: false
 permissions:
   contents: read
+env:
+  ORACLE_PYTHON_VERSION: "3.11.13"
+  ORACLE_NODE_VERSION: "22.17.0"
+  ORACLE_TYPESCRIPT_VERSION: "5.8.3"
+  ORACLE_JAVA_VERSION: "21.0.7+6"
+  ORACLE_RUST_VERSION: "1.88.0"
+  ORACLE_GO_VERSION: "1.24.4"
 jobs:
   candidate-python310:
     name: ubuntu-latest / Python 3.10 candidate query
@@ -49,3 +63,75 @@ jobs:
           --manifest eval/bench/public/0.4.0/manifest.json
           --repo .
           --report eval/bench/results-0.4.0.md
+  oracle-provenance-offline:
+    name: ${{ matrix.os }} / offline oracle provenance
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.ORACLE_PYTHON_VERSION }}
+      - name: Offline public source-pack contract
+        env:
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          ALL_PROXY: http://127.0.0.1:9
+          NO_PROXY: ""
+        run: >-
+          python3 -m eval.oracle.build validate-provenance
+          --manifest eval/oracle/sources/provenance.json
+          --contract-only
+  trusted-oracle-regeneration:
+    name: ubuntu-latest / trusted oracle regeneration admission
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.oracle_regeneration
+    environment: oracle-source-custody
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.ORACLE_PYTHON_VERSION }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.ORACLE_NODE_VERSION }}
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.ORACLE_JAVA_VERSION }}
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: ${{ env.ORACLE_RUST_VERSION }}
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          cache: false
+          go-version: ${{ env.ORACLE_GO_VERSION }}
+      - name: Install pinned TypeScript compiler
+        run: npm install --global "typescript@$ORACLE_TYPESCRIPT_VERSION"
+      - name: Verify exact toolchain selection
+        run: |
+          python3 --version | grep -F "$ORACLE_PYTHON_VERSION"
+          node --version | grep -F "v$ORACLE_NODE_VERSION"
+          tsc --version | grep -F "Version $ORACLE_TYPESCRIPT_VERSION"
+          javac -version 2>&1 | grep -F "javac ${ORACLE_JAVA_VERSION%%+*}"
+          rustc --version | grep -F "rustc $ORACLE_RUST_VERSION"
+          go version | grep -F "go$ORACLE_GO_VERSION"
+      - name: Offline regeneration admission
+        env:
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          ALL_PROXY: http://127.0.0.1:9
+          NO_PROXY: ""
+        run: >-
+          python3 -m eval.oracle.build validate-provenance
+          --manifest eval/oracle/sources/provenance.json

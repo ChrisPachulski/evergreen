@@ -534,6 +534,198 @@ class OracleBuildTests(unittest.TestCase):
             "text": f"entirely unrelated {category} exclusion material",
         } for category in ("prompt", "example", "test", "fixture", "prior-corpus")]
 
+    def ready_provenance(self):
+        from eval.oracle.oracle import CONTROL_PATH, LANGUAGE_ADAPTERS, ORACLE_KINDS
+
+        document = json.loads(
+            (ROOT / "eval/oracle/sources/provenance.json").read_text()
+        )
+        sources = []
+        suffixes = {
+            "python": "py", "java": "java", "typescript": "ts", "rust": "rs", "go": "go",
+        }
+        for language in LANGUAGES:
+            recipe = {
+                "schema_version": 1,
+                "kind": "evergreen-public-extraction-recipe",
+                "language": language,
+                "steps": [{"argv": ["git", "show", "--no-ext-diff", "COMMIT:PATH"]}],
+            }
+            recipe_raw = (json.dumps(
+                recipe, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                separators=(",", ":"),
+            ) + "\n").encode()
+            recipe_path = self.root / language / "extract-v1.json"
+            recipe_path.parent.mkdir(exist_ok=True)
+            recipe_path.write_bytes(recipe_raw)
+            toolchain = next(
+                item for item in document["toolchains"] if item["language"] == language
+            )
+            for index in range(20):
+                seed_claims = 13 if index < 10 else 12
+                counts = {kind: 2 for kind in ORACLE_KINDS}
+                for offset in range(seed_claims - 10):
+                    counts[ORACLE_KINDS[(index + offset) % len(ORACLE_KINDS)]] += 1
+                source_path = f"extracted/source.{suffixes[language]}"
+                harness = {
+                    "adapter_id": f"{language}-oracle-v1",
+                    "argv": [LANGUAGE_ADAPTERS[language], f"/input/{source_path}", CONTROL_PATH],
+                }
+                harness["sha256"] = hashlib.sha256(json.dumps(
+                    harness, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()).hexdigest()
+                commit = hashlib.sha256(f"{language}-{index}-commit".encode()).hexdigest()
+                source = {
+                    "source_id": f"{language}-source-{index}",
+                    "language": language,
+                    "project": f"example/{language}-{index}",
+                    "lineage_id": f"example-{language}-{index}",
+                    "origin": f"https://example.invalid/example/{language}-{index}.git",
+                    "commit": commit,
+                    "tree": hashlib.sha256(f"{language}-{index}-tree".encode()).hexdigest(),
+                    "license": {
+                        "spdx": "MIT",
+                        "path": "LICENSE",
+                        "sha256": hashlib.sha256(f"license-{language}-{index}".encode()).hexdigest(),
+                    },
+                    "extraction": {
+                        "recipe_path": f"{language}/extract-v1.json",
+                        "recipe_sha256": hashlib.sha256(recipe_raw).hexdigest(),
+                        "argv": ["git", "show", "--no-ext-diff", f"{commit}:source.{suffixes[language]}"],
+                    },
+                    "harness": harness,
+                    "toolchain_id": toolchain["toolchain_id"],
+                    "sandbox_image": (
+                        f"registry.invalid/evergreen-{language}@sha256:" +
+                        hashlib.sha256(f"image-{language}".encode()).hexdigest()
+                    ),
+                    "extracted_tree_sha256": hashlib.sha256(
+                        f"extracted-{language}-{index}".encode()
+                    ).hexdigest(),
+                    "seed_claims": seed_claims,
+                    "oracle_kind_counts": counts,
+                }
+                source["source_identity_sha256"] = hashlib.sha256(json.dumps(
+                    source, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()).hexdigest()
+                sources.append(source)
+        document["sources"] = sources
+        document["aggregates"] = []
+        for language in LANGUAGES:
+            selected = [item for item in sources if item["language"] == language]
+            document["aggregates"].append({
+                "language": language,
+                "projects": len({item["project"] for item in selected}),
+                "seed_claims": sum(item["seed_claims"] for item in selected),
+                "oracle_kind_counts": {
+                    kind: sum(item["oracle_kind_counts"][kind] for item in selected)
+                    for kind in ORACLE_KINDS
+                },
+                "oracle_kind_projects": {
+                    kind: len({item["project"] for item in selected
+                               if item["oracle_kind_counts"][kind]})
+                    for kind in ORACLE_KINDS
+                },
+            })
+        document["custody_commitments"] = {
+            "manifest_sha256": "1" * 64,
+            "seed_manifest_sha256": "2" * 64,
+            "split_key_sha256": "3" * 64,
+            "development_package_sha256": "4" * 64,
+            "holdout_package_sha256": "5" * 64,
+        }
+        path = self.root / "provenance.json"
+        path.write_text(json.dumps(document))
+        return path, document
+
+    def ready_custody(self):
+        path, provenance = self.ready_provenance()
+        artifact_root = self.root / "artifacts"
+        artifact_root.mkdir(exist_ok=True)
+        artifact_bytes = {
+            "seed-manifest": b'{"fixture":"private seed manifest"}\n',
+            "split-key": b"k" * 32,
+            "development-package": b'{"fixture":"development package"}\n',
+            "holdout-package": b'{"fixture":"holdout package"}\n',
+        }
+        artifacts = []
+        commitment_fields = {
+            "seed-manifest": "seed_manifest_sha256",
+            "split-key": "split_key_sha256",
+            "development-package": "development_package_sha256",
+            "holdout-package": "holdout_package_sha256",
+        }
+        for role, raw in artifact_bytes.items():
+            relative = f"artifacts/{role}.bin"
+            artifact = self.root / relative
+            artifact.write_bytes(raw)
+            artifact.chmod(0o600)
+            digest = hashlib.sha256(raw).hexdigest()
+            provenance["custody_commitments"][commitment_fields[role]] = digest
+            artifacts.append({
+                "role": role, "relative_path": relative, "sha256": digest, "bytes": len(raw),
+            })
+        inventory = {key: value for key, value in provenance.items()
+                     if key != "custody_commitments"}
+        custody = {
+            "schema_version": 1,
+            "kind": "evergreen-oracle-private-custody-receipt",
+            "source_pack_id": provenance["source_pack_id"],
+            "public_inventory_sha256": hashlib.sha256(json.dumps(
+                inventory, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                separators=(",", ":"),
+            ).encode()).hexdigest(),
+            "artifacts": artifacts,
+            "toolchain_receipts": [],
+            "split_aggregates": [],
+        }
+        for toolchain in provenance["toolchains"]:
+            language = toolchain["language"]
+            image = next(item["sandbox_image"] for item in provenance["sources"]
+                         if item["language"] == language)
+            custody["toolchain_receipts"].append({
+                "language": language,
+                "toolchain_id": toolchain["toolchain_id"],
+                "identity_sha256": toolchain["identity_sha256"],
+                "executable_sha256": hashlib.sha256(
+                    f"executable-{language}".encode()
+                ).hexdigest(),
+                "adapter_sha256": hashlib.sha256(f"adapter-{language}".encode()).hexdigest(),
+                "sandbox_image": image,
+            })
+        for split_name in ("dev", "holdout"):
+            custody["split_aggregates"].append({
+                "split_name": split_name,
+                "languages": [{
+                    "language": language,
+                    "projects": 10,
+                    "seed_claims": 125,
+                    "consistent_rows": 250,
+                    "inconsistent_rows": 125,
+                    "oracle_kinds": {
+                        kind: {
+                            "projects": 10,
+                            "seed_claims": 25,
+                            "consistent_rows": 50,
+                            "inconsistent_rows": 25,
+                        } for kind in (
+                            "return-value", "raises", "default-value", "cardinality",
+                            "state-change",
+                        )
+                    },
+                } for language in LANGUAGES],
+            })
+        custody_path = self.root / "private-custody.json"
+        custody_path.write_text(json.dumps(custody))
+        custody_path.chmod(0o600)
+        provenance["custody_commitments"]["manifest_sha256"] = hashlib.sha256(
+            custody_path.read_bytes()
+        ).hexdigest()
+        path.write_text(json.dumps(provenance))
+        return path, custody_path, provenance, custody
+
     def write_reference_inventory(self):
         entries = []
         for reference in self.references():
@@ -900,6 +1092,268 @@ class OracleBuildTests(unittest.TestCase):
         rows = [json.loads(line) for line in completed.stdout.splitlines()]
         self.assertTrue(rows)
         self.assertTrue(all(row["split"] == "dev" for row in rows))
+
+    def test_checked_in_source_provenance_is_closed_nonleaking_and_honestly_incomplete(self):
+        from eval.oracle.build import PackageError, validate_provenance
+
+        manifest = ROOT / "eval/oracle/sources/provenance.json"
+        report = validate_provenance(manifest, require_ready=False)
+        self.assertEqual(report, {
+            "kind": "evergreen-oracle-source-pack-validation",
+            "languages": list(LANGUAGES),
+            "ready": False,
+            "reasons": [
+                f"{language}:projects-below-20" for language in LANGUAGES
+            ] + [
+                f"{language}:seed-claims-below-250" for language in LANGUAGES
+            ] + [
+                f"{language}:{kind}:post-split-capacity-below-minimum"
+                for language in LANGUAGES
+                for kind in ("return-value", "raises", "default-value", "cardinality", "state-change")
+            ] + [
+                "external-custody-commitments-missing",
+            ],
+            "schema_version": 1,
+            "source_pack_id": "evergreen-executable-oracle-v1",
+        })
+        with self.assertRaisesRegex(PackageError, "source pack is incomplete"):
+            validate_provenance(manifest)
+
+        document = json.loads(manifest.read_text())
+        recipe_schema = ROOT / "eval/oracle/sources/recipe-schema-v1.json"
+        self.assertEqual(
+            document["policy"]["recipe_schema_sha256"],
+            hashlib.sha256(recipe_schema.read_bytes()).hexdigest(),
+        )
+        self.assertEqual(document["sources"], [])
+        self.assertEqual({item["language"] for item in document["aggregates"]}, set(LANGUAGES))
+        forbidden = {
+            "code", "documentation", "label", "verdict", "mutation", "observable",
+            "split", "split_key", "private_path", "holdout_path", "development_path",
+        }
+
+        def keys(value):
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    yield key
+                    yield from keys(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from keys(child)
+
+        self.assertTrue(forbidden.isdisjoint(keys(document)))
+        self.assertFalse(any(document["custody_commitments"].values()))
+
+    def test_ready_provenance_binds_origins_recipes_harnesses_toolchains_and_aggregates(self):
+        from eval.oracle.build import PackageError, validate_provenance
+
+        path, document = self.ready_provenance()
+        report = validate_provenance(path)
+        self.assertTrue(report["ready"])
+        self.assertEqual(report["reasons"], [])
+
+        def malformed_toolchain(value):
+            toolchain = value["toolchains"][0]
+            toolchain["runtime"] = []
+            unsigned = {key: item for key, item in toolchain.items()
+                        if key != "identity_sha256"}
+            toolchain["identity_sha256"] = hashlib.sha256(json.dumps(
+                unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                separators=(",", ":"),
+            ).encode()).hexdigest()
+
+        cases = (
+            (lambda value: value["sources"][0].__setitem__("commit", "a" * 39), "source"),
+            (lambda value: value["sources"][0]["license"].__setitem__("sha256", "a" * 63),
+             "license"),
+            (lambda value: value["sources"][0]["license"].__setitem__("path", "../LICENSE"),
+             "license"),
+            (lambda value: value["sources"][0]["extraction"]["argv"].__setitem__(
+                3, value["sources"][0]["commit"] + ":../private"
+            ), "extraction argv"),
+            (lambda value: value["sources"][0]["harness"].__setitem__("sha256", "a" * 64),
+             "harness"),
+            (lambda value: value["sources"][0].__setitem__("toolchain_id", "unbound"),
+             "toolchain"),
+            (malformed_toolchain, "toolchain"),
+            (lambda value: value["sources"][0].__setitem__("source_identity_sha256", "0" * 64),
+             "identity"),
+            (lambda value: value["aggregates"][0].__setitem__("seed_claims", 249),
+             "aggregate"),
+            (lambda value: value["sources"][0].__setitem__("split_key", "secret"),
+             "private oracle material"),
+        )
+        for index, (change, message) in enumerate(cases):
+            changed = json.loads(json.dumps(document))
+            change(changed)
+            candidate = self.root / f"bad-provenance-{index}.json"
+            candidate.write_text(json.dumps(changed))
+            with self.subTest(message=message), self.assertRaisesRegex(PackageError, message):
+                validate_provenance(candidate)
+
+        recipe = self.root / document["sources"][0]["extraction"]["recipe_path"]
+        recipe.write_text("changed\n")
+        with self.assertRaisesRegex(PackageError, "recipe"):
+            validate_provenance(path)
+
+    def test_provenance_requires_all_five_oracle_kinds_with_post_split_capacity(self):
+        from eval.oracle.build import PackageError, validate_provenance
+
+        path, document = self.ready_provenance()
+        first = document["sources"][0]
+        moved = first["oracle_kind_counts"]["return-value"]
+        first["oracle_kind_counts"]["return-value"] = 0
+        first["oracle_kind_counts"]["raises"] += moved
+        unsigned = {key: value for key, value in first.items()
+                    if key != "source_identity_sha256"}
+        first["source_identity_sha256"] = hashlib.sha256(json.dumps(
+            unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        document["aggregates"][0]["oracle_kind_counts"]["return-value"] -= moved
+        document["aggregates"][0]["oracle_kind_counts"]["raises"] += moved
+        document["aggregates"][0]["oracle_kind_projects"]["return-value"] = 19
+        path.write_text(json.dumps(document))
+        with self.assertRaisesRegex(PackageError, "post-split-capacity-below-minimum"):
+            validate_provenance(path)
+
+    def test_external_custody_receipt_binds_private_artifacts_toolchains_and_split_capacity(self):
+        from eval.oracle.build import PackageError, validate_private_custody
+
+        provenance_path, custody_path, provenance, custody = self.ready_custody()
+        report = validate_private_custody(custody_path, provenance_path)
+        self.assertEqual(report, {
+            "kind": "evergreen-oracle-private-custody-validation",
+            "languages": list(LANGUAGES),
+            "schema_version": 1,
+            "source_pack_id": "evergreen-executable-oracle-v1",
+            "valid": True,
+        })
+        self.assertNotIn(str(custody_path), json.dumps(report))
+
+        asset = self.root / custody["artifacts"][0]["relative_path"]
+        asset.write_bytes(asset.read_bytes() + b"tampered")
+        with self.assertRaisesRegex(PackageError, "artifact bytes"):
+            validate_private_custody(custody_path, provenance_path)
+        asset.write_bytes(asset.read_bytes().removesuffix(b"tampered"))
+        asset.chmod(0o600)
+
+        changed = json.loads(json.dumps(custody))
+        changed["artifacts"][0]["sha256"] = "f" * 64
+        custody_path.write_text(json.dumps(changed))
+        custody_path.chmod(0o600)
+        provenance["custody_commitments"]["manifest_sha256"] = hashlib.sha256(
+            custody_path.read_bytes()
+        ).hexdigest()
+        provenance_path.write_text(json.dumps(provenance))
+        with self.assertRaisesRegex(PackageError, "artifact commitment"):
+            validate_private_custody(custody_path, provenance_path)
+
+    def test_external_custody_receipt_rejects_private_bytes_weak_modes_and_small_splits(self):
+        from eval.oracle.build import PackageError, validate_private_custody
+
+        for change, message in (
+            (lambda value: value.__setitem__("code", "private bytes"), "private material"),
+            (lambda value: value["split_aggregates"][0]["languages"][0].__setitem__(
+                "projects", 9
+            ), "split capacity"),
+            (lambda value: value["toolchain_receipts"][0].__setitem__(
+                "executable_sha256", "0" * 63
+            ), "toolchain"),
+        ):
+            provenance_path, custody_path, provenance, custody = self.ready_custody()
+            change(custody)
+            custody_path.write_text(json.dumps(custody))
+            custody_path.chmod(0o600)
+            provenance["custody_commitments"]["manifest_sha256"] = hashlib.sha256(
+                custody_path.read_bytes()
+            ).hexdigest()
+            provenance_path.write_text(json.dumps(provenance))
+            with self.subTest(message=message), self.assertRaisesRegex(PackageError, message):
+                validate_private_custody(custody_path, provenance_path)
+
+        provenance_path, custody_path, _provenance, _custody = self.ready_custody()
+        custody_path.chmod(0o644)
+        with self.assertRaisesRegex(PackageError, "owner-only"):
+            validate_private_custody(custody_path, provenance_path)
+
+    def test_provenance_cli_is_deterministic_offline_and_fails_closed_until_curated(self):
+        manifest = ROOT / "eval/oracle/sources/provenance.json"
+        command = [
+            sys.executable, "-m", "eval.oracle.build", "validate-provenance",
+            "--manifest", str(manifest),
+        ]
+        failed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(failed.returncode, 2)
+        self.assertIn("source pack is incomplete", failed.stderr)
+        self.assertEqual(failed.stdout, "")
+
+        first = subprocess.run(
+            [*command, "--contract-only"], cwd=ROOT, capture_output=True, text=True, check=False,
+        )
+        second = subprocess.run(
+            [*command, "--contract-only"], cwd=ROOT, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(first.stdout, second.stdout)
+        report = json.loads(first.stdout)
+        self.assertFalse(report["ready"])
+        self.assertNotIn(str(manifest), first.stdout)
+        self.assertNotIn("holdout", first.stdout)
+
+        from eval.oracle.build import validate_provenance
+        with mock.patch("eval.oracle.build.subprocess.run", side_effect=AssertionError("process")), \
+                mock.patch("socket.socket", side_effect=AssertionError("network")):
+            validate_provenance(manifest, require_ready=False)
+
+    def test_ci_pins_all_oracle_toolchains_and_separates_offline_checks_from_regeneration(self):
+        workflow = (ROOT / ".github/workflows/test.yml").read_text()
+        for required in (
+            'ORACLE_PYTHON_VERSION: "3.11.13"',
+            'ORACLE_NODE_VERSION: "22.17.0"',
+            'ORACLE_TYPESCRIPT_VERSION: "5.8.3"',
+            'ORACLE_JAVA_VERSION: "21.0.7+6"',
+            'ORACLE_RUST_VERSION: "1.88.0"',
+            'ORACLE_GO_VERSION: "1.24.4"',
+            "actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405",
+            "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+            "actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00",
+            "dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88",
+            "actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5",
+            "npm install --global \"typescript@$ORACLE_TYPESCRIPT_VERSION\"",
+            "oracle-provenance-offline:",
+            "matrix.os",
+            "--contract-only",
+            "trusted-oracle-regeneration:",
+            "environment: oracle-source-custody",
+            "github.event_name == 'workflow_dispatch'",
+            "runs-on: ubuntu-latest",
+            "HTTP_PROXY: http://127.0.0.1:9",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, workflow)
+
+        trusted = workflow.split("trusted-oracle-regeneration:", 1)[1]
+        self.assertIn("validate-provenance", trusted)
+        self.assertNotIn("--contract-only", trusted)
+        self.assertNotIn("macos-latest", trusted)
+
+    def test_oracle_readme_names_the_unavailable_external_artifact_without_claiming_a_corpus(self):
+        oracle_readme = (ROOT / "eval/oracle/README.md").read_text()
+        root_readme = (ROOT / "README.md").read_text()
+        normalized = " ".join(oracle_readme.split())
+        for claim in (
+            "No curated source identities or private oracle packages are present",
+            "20 source-project groups and 250 seed claims per language",
+            "owner-only external custody receipt",
+            "never contains holdout code, documentation, labels, mutation identities, or split key",
+            "validate-provenance",
+        ):
+            self.assertIn(claim, normalized)
+        self.assertIn(
+            "is present but not yet corpus-ready",
+            " ".join(root_readme.split()),
+        )
 
 
 if __name__ == "__main__":

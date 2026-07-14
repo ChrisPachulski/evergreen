@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "evergreen-oracle-private-custody-receipt"},
+    "source_pack_id": {"const": "evergreen-executable-oracle-v1"},
+    "public_inventory_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "artifacts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {"enum": ["seed-manifest", "split-key", "development-package", "holdout-package"]},
+          "relative_path": {"pattern": "^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$", "type": "string"},
+          "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+          "bytes": {"minimum": 1, "type": "integer"}
+        },
+        "required": ["role", "relative_path", "sha256", "bytes"],
+        "type": "object"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "type": "array"
+    },
+    "toolchain_receipts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "language": {"enum": ["python", "java", "typescript", "rust", "go"]},
+          "toolchain_id": {"minLength": 1, "type": "string"},
+          "identity_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+          "executable_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+          "adapter_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+          "sandbox_image": {"pattern": "^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$", "type": "string"}
+        },
+        "required": ["language", "toolchain_id", "identity_sha256", "executable_sha256", "adapter_sha256", "sandbox_image"],
+        "type": "object"
+      },
+      "maxItems": 5,
+      "minItems": 5,
+      "type": "array"
+    },
+    "split_aggregates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "split_name": {"enum": ["dev", "holdout"]},
+          "languages": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "language": {"enum": ["python", "java", "typescript", "rust", "go"]},
+                "projects": {"minimum": 10, "type": "integer"},
+                "seed_claims": {"minimum": 100, "type": "integer"},
+                "consistent_rows": {"minimum": 100, "type": "integer"},
+                "inconsistent_rows": {"minimum": 100, "type": "integer"},
+                "oracle_kinds": {
+                  "additionalProperties": false,
+                  "patternProperties": {
+                    "^(?:return-value|raises|default-value|cardinality|state-change)$": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "projects": {"minimum": 10, "type": "integer"},
+                        "seed_claims": {"minimum": 20, "type": "integer"},
+                        "consistent_rows": {"minimum": 40, "type": "integer"},
+                        "inconsistent_rows": {"minimum": 20, "type": "integer"}
+                      },
+                      "required": ["projects", "seed_claims", "consistent_rows", "inconsistent_rows"],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "required": ["language", "projects", "seed_claims", "consistent_rows", "inconsistent_rows", "oracle_kinds"],
+              "type": "object"
+            },
+            "maxItems": 5,
+            "minItems": 5,
+            "type": "array"
+          }
+        },
+        "required": ["split_name", "languages"],
+        "type": "object"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array"
+    }
+  },
+  "required": ["schema_version", "kind", "source_pack_id", "public_inventory_sha256", "artifacts", "toolchain_receipts", "split_aggregates"],
+  "type": "object"
+}
