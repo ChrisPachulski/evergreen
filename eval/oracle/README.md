@@ -10,8 +10,11 @@ across Python, Java, TypeScript, Rust, and Go. Every language must cover all fiv
 at least 40 seeds and 20 projects per kind before splitting. Each public source record binds the
 exact HTTPS origin, commit and tree, SPDX license and license-file hash, shell-free extraction
 recipe and hash, fixed harness and hash, digest-addressed sandbox image, and pinned toolchain
-identity. Public recipes live under `sources/<language>/` only after those facts have been verified;
-none are fabricated as placeholders.
+identity. `sources/toolchain-policy-v1.json` freezes those identities and their exact trusted-CI
+action commits and version variables; validation rejects drift between the policy, provenance, and
+workflow. Public recipes live under `sources/<language>/` only after those facts have been
+verified; none are fabricated as placeholders. Reused origins or projects must keep one lineage,
+and duplicate source/content identities cannot be counted as independent capacity.
 
 The missing deliverable is one owner-only external custody receipt conforming to
 `private-custody-schema-v1.json`, plus the artifacts it commits to: the complete seed manifest,
@@ -20,6 +23,12 @@ That receipt contains hashes and aggregate counts only. It never contains holdou
 documentation, labels, mutation identities, or split key bytes, and it remains outside the
 detector repository. The public manifest may contain commitments to those artifacts after they
 exist, but never their paths or contents.
+
+Custody validation opens those owner-only artifacts through bounded, no-symlink reads without
+printing their rows. It requires four distinct files and an exact 32-byte split key, validates each
+seed with the frozen oracle schema, derives the expected source/mutation/no-op rows, recomputes the
+keyed split and per-language/kind inventories, and compares those results to both private packages
+and the public claims. Self-consistent hashes or receipt totals alone are insufficient.
 
 Validate the checked-in, non-ready contract without network access:
 

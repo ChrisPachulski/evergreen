@@ -16,7 +16,10 @@ import subprocess
 import sys
 from urllib.parse import urlsplit
 
-from .oracle import LANGUAGE_ADAPTERS, MUTATION_OPERATORS, ORACLE_KINDS, run_seed
+from .oracle import (
+    LANGUAGE_ADAPTERS, MUTATION_OPERATORS, ORACLE_KINDS, OracleError, _mutated_source, _row,
+    run_seed, semantic_noop_suffix, validate_seed,
+)
 from .split import (
     LANGUAGES, REFERENCE_CATEGORIES, SimilarityError, assign_split, load_similarity_policy,
     validate_split_isolation,
@@ -85,6 +88,8 @@ SOURCE_ROOT = Path(__file__).with_name("sources")
 PROVENANCE_SCHEMA_PATH = SOURCE_ROOT / "provenance-schema-v1.json"
 RECIPE_SCHEMA_PATH = SOURCE_ROOT / "recipe-schema-v1.json"
 PRIVATE_CUSTODY_SCHEMA_PATH = SOURCE_ROOT / "private-custody-schema-v1.json"
+TOOLCHAIN_POLICY_PATH = SOURCE_ROOT / "toolchain-policy-v1.json"
+TOOLCHAIN_POLICY_SHA256 = "39791dda85debf294b8da1a5f0a46fb62d54b37529f3c6e3a330c575aacf6a4b"
 PROVENANCE_REQUIREMENTS = {
     "languages": list(LANGUAGES),
     "minimum_projects_per_language": MINIMUM_SOURCE_GROUPS,
@@ -209,6 +214,52 @@ def _public_recipe(manifest_path, language, extraction):
         raise PackageError("public extraction recipe is invalid")
 
 
+def _frozen_toolchain_policy():
+    raw = _read_path_nofollow(
+        TOOLCHAIN_POLICY_PATH, 1024 * 1024, "frozen toolchain policy",
+    )
+    try:
+        policy = _loads_strict(raw)
+    except (UnicodeError, json.JSONDecodeError, ValueError):
+        raise PackageError("frozen toolchain policy is invalid") from None
+    if (hashlib.sha256(raw).hexdigest() != TOOLCHAIN_POLICY_SHA256 or
+            not isinstance(policy, dict) or set(policy) != {
+                "schema_version", "kind", "workflow_path", "workflow_environment",
+                "typescript_install", "toolchains",
+            } or policy["schema_version"] != 1 or
+            policy["kind"] != "evergreen-oracle-toolchain-policy" or
+            policy["workflow_path"] != ".github/workflows/test.yml" or
+            not isinstance(policy["toolchains"], list)):
+        raise PackageError("frozen toolchain policy is invalid or drifted")
+    return policy
+
+
+def _validate_toolchain_workflow(policy):
+    workflow = _read_path_nofollow(
+        REPOSITORY_ROOT / policy["workflow_path"], 1024 * 1024,
+        "frozen toolchain workflow",
+    ).decode()
+    marker = "  trusted-oracle-regeneration:\n"
+    if marker not in workflow:
+        raise PackageError("frozen toolchain policy does not match trusted workflow")
+    trusted = workflow.split(marker, 1)[1]
+    for values in policy["workflow_environment"].values():
+        if (not isinstance(values, list) or len(values) not in (2, 4) or
+                any(type(value) is not str or not value for value in values)):
+            raise PackageError("frozen toolchain policy is invalid")
+        for name, version in zip(values[::2], values[1::2]):
+            if not re.search(rf"(?m)^  {re.escape(name)}: [\"']{re.escape(version)}[\"']$", workflow):
+                raise PackageError("frozen toolchain policy does not match trusted workflow")
+    for toolchain in policy["toolchains"]:
+        action = re.escape(toolchain["setup_action"])
+        commit = toolchain["setup_commit"]
+        pins = re.findall(rf"uses:\s*{action}@([^\s#]+)", trusted)
+        if pins != [commit]:
+            raise PackageError("frozen toolchain policy does not match trusted workflow")
+    if trusted.count(policy["typescript_install"]) != 1:
+        raise PackageError("frozen toolchain policy does not match trusted workflow")
+
+
 def _validate_public_sources(manifest_path, sources, toolchains):
     source_keys = {
         "source_id", "language", "project", "lineage_id", "origin", "commit", "tree",
@@ -219,6 +270,10 @@ def _validate_public_sources(manifest_path, sources, toolchains):
     toolchain_by_language = {item["language"]: item for item in toolchains}
     seen_ids = set()
     seen_projects = set()
+    seen_source_identities = set()
+    seen_source_content = set()
+    origin_lineages = {}
+    project_lineages = {}
     for source in sources:
         if not isinstance(source, dict) or set(source) != source_keys:
             raise PackageError("oracle source provenance source fields are invalid")
@@ -295,6 +350,23 @@ def _validate_public_sources(manifest_path, sources, toolchains):
                     if key != "source_identity_sha256"}
         if source["source_identity_sha256"] != hashlib.sha256(_canonical(unsigned)).hexdigest():
             raise PackageError("oracle source provenance source identity hash is invalid")
+        if source["source_identity_sha256"] in seen_source_identities:
+            raise PackageError("oracle source provenance source/content alias is invalid")
+        content_identity = (
+            source["origin"], source["commit"], source["tree"],
+            source["extracted_tree_sha256"], _canonical(source["extraction"]),
+            _canonical(source["harness"]), source["sandbox_image"],
+        )
+        if content_identity in seen_source_content:
+            raise PackageError("oracle source provenance source/content alias is invalid")
+        seen_source_identities.add(source["source_identity_sha256"])
+        seen_source_content.add(content_identity)
+        for identities, identity in (
+            (origin_lineages, source["origin"]), (project_lineages, source["project"]),
+        ):
+            previous = identities.setdefault(identity, source["lineage_id"])
+            if previous != source["lineage_id"]:
+                raise PackageError("oracle source provenance identity has inconsistent lineage")
 
 
 def _source_aggregates(sources):
@@ -345,11 +417,16 @@ def validate_provenance(path, *, require_ready=True):
         "similarity_policy_sha256": _sha256_file(
             Path(__file__).with_name("similarity-policy-v1.json"), "similarity policy",
         ),
+        "toolchain_policy_sha256": TOOLCHAIN_POLICY_SHA256,
     }
     if document["policy"] != expected_policy:
         raise PackageError("oracle source provenance policy hash is invalid")
 
     toolchains = document["toolchains"]
+    toolchain_policy = _frozen_toolchain_policy()
+    _validate_toolchain_workflow(toolchain_policy)
+    if toolchains != toolchain_policy["toolchains"]:
+        raise PackageError("oracle source provenance violates frozen toolchain policy")
     toolchain_keys = {
         "language", "toolchain_id", "runtime", "version", "compiler", "setup_action",
         "setup_commit", "adapter_id", "identity_sha256",
@@ -444,8 +521,128 @@ def validate_provenance(path, *, require_ready=True):
     return report
 
 
+def _custody_rows(raw, label):
+    try:
+        rows = [_loads_strict(line) for line in raw.splitlines() if line]
+    except (UnicodeError, json.JSONDecodeError, ValueError):
+        raise PackageError(f"private custody {label} is invalid") from None
+    if not rows or len(rows) > MAX_PACKAGE_ROWS:
+        raise PackageError(f"private custody {label} row inventory is invalid")
+    return rows
+
+
+def _custody_split_aggregates(rows):
+    aggregates = []
+    for split_name in ("dev", "holdout"):
+        languages = []
+        for language in LANGUAGES:
+            selected = [row for row in rows
+                        if row["split"] == split_name and row["language"] == language]
+            kinds = {}
+            for kind in ORACLE_KINDS:
+                cell = [row for row in selected if row["oracle_kind"] == kind]
+                kinds[kind] = {
+                    "projects": len({row["lineage_id"] for row in cell}),
+                    "seed_claims": sum(row["variant"] == "mutation" for row in cell),
+                    "consistent_rows": sum(row["label"] == "consistent" for row in cell),
+                    "inconsistent_rows": sum(row["label"] == "inconsistent" for row in cell),
+                }
+            languages.append({
+                "language": language,
+                "projects": len({row["lineage_id"] for row in selected}),
+                "seed_claims": sum(row["variant"] == "mutation" for row in selected),
+                "consistent_rows": sum(row["label"] == "consistent" for row in selected),
+                "inconsistent_rows": sum(row["label"] == "inconsistent" for row in selected),
+                "oracle_kinds": kinds,
+            })
+        aggregates.append({"split_name": split_name, "languages": languages})
+    return aggregates
+
+
+def _validate_custody_artifact_semantics(provenance, artifact_paths, artifact_raw):
+    split_key = artifact_raw["split-key"]
+    if len(split_key) != 32:
+        raise PackageError("private custody split key must contain exactly 32 bytes")
+    _policy, policy_hash = load_similarity_policy()
+    try:
+        entries = _manifest(artifact_paths["seed-manifest"], policy_hash)
+        for _identity, _lineage, seed in entries:
+            validate_seed(seed)
+    except (PackageError, OracleError, TypeError, ValueError) as error:
+        raise PackageError("private custody seed manifest semantics are invalid") from error
+    _validate_source_group_splits(entries, split_key)
+
+    source_index = {
+        (source["language"], source["project"], source["lineage_id"]): source
+        for source in provenance["sources"]
+    }
+    source_counts = {
+        key: {kind: 0 for kind in ORACLE_KINDS} for key in source_index
+    }
+    expected_rows = {}
+    for seed_hash, lineage, seed in entries:
+        key = (seed["language"], seed["project"], lineage)
+        source = source_index.get(key)
+        if source is None:
+            raise PackageError("private custody seed manifest does not match public inventory")
+        if (seed["source"]["origin"] != source["origin"] or
+                seed["source"]["commit"] != source["commit"] or
+                seed["source"]["license"] != source["license"]["spdx"] or
+                seed["harness"]["argv"] != source["harness"]["argv"] or
+                seed["sandbox"]["image"] != source["sandbox_image"]):
+            raise PackageError("private custody seed manifest does not match public inventory")
+        source_counts[key][seed["oracle"]["kind"]] += 1
+        source_bytes = seed["source"]["code"].encode()
+        variants = (
+            ("source", source_bytes, "consistent", None),
+            ("mutation", _mutated_source(seed), "inconsistent", seed["mutation"]["operator"]),
+            ("semantic-noop", source_bytes + semantic_noop_suffix(seed["language"]),
+             "consistent", seed["semantic_noop"]["id"]),
+        )
+        split_name = assign_split(split_key, lineage)
+        for variant, code, label, mutation_id in variants:
+            row = _row(seed, variant, code, label, mutation_id)
+            row.update({
+                "id": _public_id(split_key, seed_hash, variant),
+                "lineage_id": lineage,
+                "split": split_name,
+            })
+            if row["id"] in expected_rows:
+                raise PackageError("private custody seed manifest produces duplicate rows")
+            expected_rows[row["id"]] = row
+    for key, source in source_index.items():
+        counts = source_counts[key]
+        if counts != source["oracle_kind_counts"] or sum(counts.values()) != source["seed_claims"]:
+            raise PackageError("private custody seed manifest does not match public inventory")
+
+    rows = []
+    for split_name, role in (("dev", "development-package"),
+                             ("holdout", "holdout-package")):
+        package_rows = _custody_rows(artifact_raw[role], role)
+        validate_package_rows(package_rows)
+        if any(row.get("split") != split_name for row in package_rows):
+            raise PackageError("private custody package split inventory is invalid")
+        rows.extend(package_rows)
+    if len(rows) != len(expected_rows):
+        raise PackageError("private custody package row inventory does not match seed manifest")
+    seen_rows = set()
+    for actual in rows:
+        identity = actual.get("id")
+        expected = expected_rows.get(identity)
+        if identity in seen_rows or expected is None or any(
+                actual.get(key) != value for key, value in expected.items()):
+            raise PackageError("private custody package row semantics do not match seed manifest")
+        seen_rows.add(identity)
+    if seen_rows != set(expected_rows):
+        raise PackageError("private custody package row inventory does not match seed manifest")
+    expected_aggregates = _custody_split_aggregates(rows)
+    if provenance["aggregates"] != _source_aggregates(provenance["sources"]):
+        raise PackageError("private custody public inventory is invalid")
+    return expected_aggregates
+
+
 def validate_private_custody(path, provenance_path):
-    """Validate only a private custody receipt and public commitments, never corpus bytes."""
+    """Validate a private receipt and bounded artifact semantics without disclosing rows."""
     resolved = Path(path).resolve()
     if resolved == REPOSITORY_ROOT or REPOSITORY_ROOT in resolved.parents:
         raise PackageError("private custody receipt must remain outside the detector repository")
@@ -496,6 +693,10 @@ def validate_private_custody(path, provenance_path):
     if not isinstance(artifacts, list) or len(artifacts) != len(expected_artifacts):
         raise PackageError("private custody artifact commitment is invalid")
     artifact_map = {}
+    artifact_paths = {}
+    artifact_raw = {}
+    distinct_paths = set()
+    distinct_files = set()
     for artifact in artifacts:
         if (not isinstance(artifact, dict) or set(artifact) != {
                 "role", "relative_path", "sha256", "bytes"} or
@@ -511,6 +712,14 @@ def validate_private_custody(path, provenance_path):
                 any(part in ("", ".", "..") or part.startswith(".") for part in pure.parts)):
             raise PackageError("private custody artifact path is invalid")
         asset = Path(path).absolute().parent / relative
+        absolute_asset = Path(os.path.abspath(asset))
+        try:
+            file_identity = (os.stat(absolute_asset, follow_symlinks=False).st_dev,
+                             os.stat(absolute_asset, follow_symlinks=False).st_ino)
+        except OSError:
+            raise PackageError("private custody artifact path is invalid") from None
+        if absolute_asset in distinct_paths or file_identity in distinct_files:
+            raise PackageError("private custody requires distinct artifact paths")
         asset_raw = _read_path_nofollow(
             asset, 64 * 1024 * 1024, "private custody artifact", owner_only=True,
         )
@@ -518,6 +727,10 @@ def validate_private_custody(path, provenance_path):
                 hashlib.sha256(asset_raw).hexdigest() != artifact["sha256"]):
             raise PackageError("private custody artifact bytes do not match receipt")
         artifact_map[artifact["role"]] = artifact
+        artifact_paths[artifact["role"]] = absolute_asset
+        artifact_raw[artifact["role"]] = asset_raw
+        distinct_paths.add(absolute_asset)
+        distinct_files.add(file_identity)
     if set(artifact_map) != set(expected_artifacts):
         raise PackageError("private custody artifact commitment is invalid")
 
@@ -553,6 +766,11 @@ def validate_private_custody(path, provenance_path):
         raise PackageError("private custody toolchain receipts are invalid")
 
     split_aggregates = custody["split_aggregates"]
+    recomputed_aggregates = _validate_custody_artifact_semantics(
+        provenance, artifact_paths, artifact_raw,
+    )
+    if split_aggregates != recomputed_aggregates:
+        raise PackageError("private custody split capacity does not match artifact semantics")
     if not isinstance(split_aggregates, list) or len(split_aggregates) != 2:
         raise PackageError("private custody split capacity is invalid")
     split_map = {}

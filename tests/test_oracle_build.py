@@ -641,14 +641,76 @@ class OracleBuildTests(unittest.TestCase):
         return path, document
 
     def ready_custody(self):
+        from eval.oracle import oracle
+        from eval.oracle.build import _custody_split_aggregates, _package_bytes, _public_id
+        from eval.oracle.split import assign_split, load_similarity_policy
+        from tests.test_oracle import OracleTests
+
         path, provenance = self.ready_provenance()
         artifact_root = self.root / "artifacts"
         artifact_root.mkdir(exist_ok=True)
+        for candidate in range(100_000):
+            split_key = hashlib.sha256(f"custody-split-{candidate}".encode()).digest()
+            if all(sum(
+                    assign_split(split_key, source["lineage_id"]) == "dev"
+                    for source in provenance["sources"] if source["language"] == language
+            ) == 10 for language in LANGUAGES):
+                break
+        else:
+            self.fail("could not construct balanced synthetic custody split")
+        fixture = OracleTests()
+        entries = []
+        rows = []
+        suffixes = {
+            "python": "py", "java": "java", "typescript": "ts", "rust": "rs", "go": "go",
+        }
+        for source_index, source in enumerate(provenance["sources"]):
+            for kind, count in source["oracle_kind_counts"].items():
+                for seed_index in range(count):
+                    seed = fixture.seed(source["language"], kind)
+                    seed["group_id"] = (
+                        f"custody-{source['language']}-{source_index}-{kind}-{seed_index}"
+                    )
+                    seed["project"] = source["project"]
+                    seed["source"].update({
+                        "origin": source["origin"], "commit": source["commit"],
+                        "license": source["license"]["spdx"],
+                        "path": f"extracted/source.{suffixes[source['language']]}",
+                    })
+                    seed["harness"]["argv"] = source["harness"]["argv"]
+                    seed["sandbox"]["image"] = source["sandbox_image"]
+                    seed["seed_sha256"] = oracle.seed_sha256(seed)
+                    entries.append({"lineage_id": source["lineage_id"], "seed": seed})
+                    split_name = assign_split(split_key, source["lineage_id"])
+                    source_bytes = seed["source"]["code"].encode()
+                    variants = (
+                        ("source", source_bytes, "consistent", None),
+                        ("mutation", oracle._mutated_source(seed), "inconsistent",
+                         seed["mutation"]["operator"]),
+                        ("semantic-noop",
+                         source_bytes + oracle.semantic_noop_suffix(seed["language"]),
+                         "consistent", seed["semantic_noop"]["id"]),
+                    )
+                    for variant, code, label, mutation_id in variants:
+                        row = oracle._row(seed, variant, code, label, mutation_id)
+                        row.update({
+                            "id": _public_id(split_key, seed["seed_sha256"], variant),
+                            "lineage_id": source["lineage_id"], "split": split_name,
+                        })
+                        rows.append(row)
+        _policy, policy_hash = load_similarity_policy()
+        seed_manifest = json.dumps({
+            "schema_version": 1, "similarity_policy_sha256": policy_hash, "seeds": entries,
+        }, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
         artifact_bytes = {
-            "seed-manifest": b'{"fixture":"private seed manifest"}\n',
-            "split-key": b"k" * 32,
-            "development-package": b'{"fixture":"development package"}\n',
-            "holdout-package": b'{"fixture":"holdout package"}\n',
+            "seed-manifest": seed_manifest,
+            "split-key": split_key,
+            "development-package": _package_bytes([
+                row for row in rows if row["split"] == "dev"
+            ]),
+            "holdout-package": _package_bytes([
+                row for row in rows if row["split"] == "holdout"
+            ]),
         }
         artifacts = []
         commitment_fields = {
@@ -695,28 +757,7 @@ class OracleBuildTests(unittest.TestCase):
                 "adapter_sha256": hashlib.sha256(f"adapter-{language}".encode()).hexdigest(),
                 "sandbox_image": image,
             })
-        for split_name in ("dev", "holdout"):
-            custody["split_aggregates"].append({
-                "split_name": split_name,
-                "languages": [{
-                    "language": language,
-                    "projects": 10,
-                    "seed_claims": 125,
-                    "consistent_rows": 250,
-                    "inconsistent_rows": 125,
-                    "oracle_kinds": {
-                        kind: {
-                            "projects": 10,
-                            "seed_claims": 25,
-                            "consistent_rows": 50,
-                            "inconsistent_rows": 25,
-                        } for kind in (
-                            "return-value", "raises", "default-value", "cardinality",
-                            "state-change",
-                        )
-                    },
-                } for language in LANGUAGES],
-            })
+        custody["split_aggregates"] = _custody_split_aggregates(rows)
         custody_path = self.root / "private-custody.json"
         custody_path.write_text(json.dumps(custody))
         custody_path.chmod(0o600)
@@ -1125,6 +1166,11 @@ class OracleBuildTests(unittest.TestCase):
             document["policy"]["recipe_schema_sha256"],
             hashlib.sha256(recipe_schema.read_bytes()).hexdigest(),
         )
+        toolchain_policy = ROOT / "eval/oracle/sources/toolchain-policy-v1.json"
+        self.assertEqual(
+            document["policy"]["toolchain_policy_sha256"],
+            hashlib.sha256(toolchain_policy.read_bytes()).hexdigest(),
+        )
         self.assertEqual(document["sources"], [])
         self.assertEqual({item["language"] for item in document["aggregates"]}, set(LANGUAGES))
         forbidden = {
@@ -1194,6 +1240,94 @@ class OracleBuildTests(unittest.TestCase):
         recipe = self.root / document["sources"][0]["extraction"]["recipe_path"]
         recipe.write_text("changed\n")
         with self.assertRaisesRegex(PackageError, "recipe"):
+            validate_provenance(path)
+
+    def test_provenance_rejects_self_hashed_toolchain_and_action_pin_substitution(self):
+        from eval.oracle.build import PackageError, validate_provenance
+
+        path, document = self.ready_provenance()
+        toolchain = document["toolchains"][0]
+        toolchain.update({
+            "toolchain_id": "attacker-python-9.9.9",
+            "runtime": "Attacker Python",
+            "version": "9.9.9",
+            "compiler": "attacker 9.9.9",
+            "setup_action": "attacker/setup-python",
+            "setup_commit": "f" * 40,
+        })
+        unsigned = {key: value for key, value in toolchain.items()
+                    if key != "identity_sha256"}
+        toolchain["identity_sha256"] = hashlib.sha256(json.dumps(
+            unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        for source in document["sources"]:
+            if source["language"] != "python":
+                continue
+            source["toolchain_id"] = toolchain["toolchain_id"]
+            unsigned = {key: value for key, value in source.items()
+                        if key != "source_identity_sha256"}
+            source["source_identity_sha256"] = hashlib.sha256(json.dumps(
+                unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                separators=(",", ":"),
+            ).encode()).hexdigest()
+        path.write_text(json.dumps(document))
+        with self.assertRaisesRegex(PackageError, "frozen toolchain policy"):
+            validate_provenance(path)
+
+    def test_provenance_rejects_trusted_workflow_toolchain_drift(self):
+        from eval.oracle import build
+
+        path, _document = self.ready_provenance()
+        original = build._read_path_nofollow
+
+        def drifted(candidate, maximum, label, **kwargs):
+            raw = original(candidate, maximum, label, **kwargs)
+            if Path(candidate).resolve() == (ROOT / ".github/workflows/test.yml").resolve():
+                return raw.replace(
+                    b"actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5",
+                    b"actions/setup-go@" + b"f" * 40,
+                )
+            return raw
+
+        with mock.patch.object(build, "_read_path_nofollow", side_effect=drifted), \
+                self.assertRaisesRegex(build.PackageError, "trusted workflow"):
+            build.validate_provenance(path)
+
+    def test_provenance_rejects_project_and_lineage_aliases_of_one_source_identity(self):
+        from eval.oracle.build import PackageError, validate_provenance
+
+        path, document = self.ready_provenance()
+        first, alias = document["sources"][:2]
+        for key in (
+            "origin", "commit", "tree", "extraction", "harness", "sandbox_image",
+            "extracted_tree_sha256",
+        ):
+            alias[key] = json.loads(json.dumps(first[key]))
+        unsigned = {key: value for key, value in alias.items()
+                    if key != "source_identity_sha256"}
+        alias["source_identity_sha256"] = hashlib.sha256(json.dumps(
+            unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        path.write_text(json.dumps(document))
+        with self.assertRaisesRegex(PackageError, "source/content alias"):
+            validate_provenance(path)
+
+    def test_provenance_requires_consistent_origin_and_project_lineage(self):
+        from eval.oracle.build import PackageError, validate_provenance
+
+        path, document = self.ready_provenance()
+        first, alias = document["sources"][:2]
+        alias["origin"] = first["origin"]
+        unsigned = {key: value for key, value in alias.items()
+                    if key != "source_identity_sha256"}
+        alias["source_identity_sha256"] = hashlib.sha256(json.dumps(
+            unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        path.write_text(json.dumps(document))
+        with self.assertRaisesRegex(PackageError, "lineage"):
             validate_provenance(path)
 
     def test_provenance_requires_all_five_oracle_kinds_with_post_split_capacity(self):
@@ -1275,6 +1409,60 @@ class OracleBuildTests(unittest.TestCase):
         provenance_path, custody_path, _provenance, _custody = self.ready_custody()
         custody_path.chmod(0o644)
         with self.assertRaisesRegex(PackageError, "owner-only"):
+            validate_private_custody(custody_path, provenance_path)
+
+    def test_external_custody_recomputes_artifact_semantics_instead_of_trusting_claims(self):
+        from eval.oracle.build import PackageError, validate_private_custody
+
+        provenance_path, custody_path, provenance, custody = self.ready_custody()
+        seed = next(item for item in custody["artifacts"] if item["role"] == "seed-manifest")
+        asset = self.root / seed["relative_path"]
+        asset.write_bytes(b'{"not":"an oracle seed manifest"}\n')
+        asset.chmod(0o600)
+        seed["bytes"] = asset.stat().st_size
+        seed["sha256"] = hashlib.sha256(asset.read_bytes()).hexdigest()
+        provenance["custody_commitments"]["seed_manifest_sha256"] = seed["sha256"]
+        custody_path.write_text(json.dumps(custody))
+        custody_path.chmod(0o600)
+        provenance["custody_commitments"]["manifest_sha256"] = hashlib.sha256(
+            custody_path.read_bytes()
+        ).hexdigest()
+        provenance_path.write_text(json.dumps(provenance))
+        with self.assertRaisesRegex(PackageError, "seed manifest"):
+            validate_private_custody(custody_path, provenance_path)
+
+    def test_external_custody_requires_exact_split_key_and_distinct_artifact_paths(self):
+        from eval.oracle.build import PackageError, validate_private_custody
+
+        provenance_path, custody_path, provenance, custody = self.ready_custody()
+        split_key = next(item for item in custody["artifacts"] if item["role"] == "split-key")
+        asset = self.root / split_key["relative_path"]
+        asset.write_bytes(b"short")
+        asset.chmod(0o600)
+        split_key["bytes"] = asset.stat().st_size
+        split_key["sha256"] = hashlib.sha256(asset.read_bytes()).hexdigest()
+        provenance["custody_commitments"]["split_key_sha256"] = split_key["sha256"]
+        custody_path.write_text(json.dumps(custody))
+        custody_path.chmod(0o600)
+        provenance["custody_commitments"]["manifest_sha256"] = hashlib.sha256(
+            custody_path.read_bytes()
+        ).hexdigest()
+        provenance_path.write_text(json.dumps(provenance))
+        with self.assertRaisesRegex(PackageError, "split key"):
+            validate_private_custody(custody_path, provenance_path)
+
+        provenance_path, custody_path, provenance, custody = self.ready_custody()
+        custody["artifacts"][1]["relative_path"] = custody["artifacts"][0]["relative_path"]
+        custody["artifacts"][1]["sha256"] = custody["artifacts"][0]["sha256"]
+        custody["artifacts"][1]["bytes"] = custody["artifacts"][0]["bytes"]
+        provenance["custody_commitments"]["split_key_sha256"] = custody["artifacts"][1]["sha256"]
+        custody_path.write_text(json.dumps(custody))
+        custody_path.chmod(0o600)
+        provenance["custody_commitments"]["manifest_sha256"] = hashlib.sha256(
+            custody_path.read_bytes()
+        ).hexdigest()
+        provenance_path.write_text(json.dumps(provenance))
+        with self.assertRaisesRegex(PackageError, "distinct artifact paths"):
             validate_private_custody(custody_path, provenance_path)
 
     def test_provenance_cli_is_deterministic_offline_and_fails_closed_until_curated(self):

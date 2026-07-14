@@ -12,9 +12,10 @@
         "recipe_schema_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
         "private_custody_schema_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
         "oracle_schema_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
-        "similarity_policy_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+        "similarity_policy_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "toolchain_policy_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
       },
-      "required": ["provenance_schema_sha256", "recipe_schema_sha256", "private_custody_schema_sha256", "oracle_schema_sha256", "similarity_policy_sha256"],
+      "required": ["provenance_schema_sha256", "recipe_schema_sha256", "private_custody_schema_sha256", "oracle_schema_sha256", "similarity_policy_sha256", "toolchain_policy_sha256"],
       "type": "object"
     },
     "requirements": {

@@ -3,11 +3,12 @@
   "kind": "evergreen-oracle-source-pack-provenance",
   "source_pack_id": "evergreen-executable-oracle-v1",
   "policy": {
-    "provenance_schema_sha256": "d989bc658f5d1deb7e60ca37194293786ed76811cfbcfe862ae63f3df5c4cf1d",
+    "provenance_schema_sha256": "c29cc1d4672842ab1d44fc13b883e524806bbc1d374ac614ad0193ee0813bc70",
     "recipe_schema_sha256": "5731aa2bca4c17a9e7121431abc49bb88f751ee31bab302bcc758f897f201936",
     "private_custody_schema_sha256": "b389a6228a1f181bae3864703d5e8b47da44d0552f670ad1b2f185b8a6f5744e",
     "oracle_schema_sha256": "f96dc9e4a24cec663f4b39865b5a8186ae62abb9862a6051457476c55cd48148",
-    "similarity_policy_sha256": "afe5010343623c9f413c3304350b751219f25137113422c241460a70260dfeb5"
+    "similarity_policy_sha256": "afe5010343623c9f413c3304350b751219f25137113422c241460a70260dfeb5",
+    "toolchain_policy_sha256": "39791dda85debf294b8da1a5f0a46fb62d54b37529f3c6e3a330c575aacf6a4b"
   },
   "requirements": {
     "languages": ["python", "java", "typescript", "rust", "go"],
