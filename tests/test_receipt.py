@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from evergreen.receipt import ReceiptError, build_receipt
+from evergreen.receipt import ReceiptError, ReceiptOperationalError, build_receipt
 
 
 class ReceiptTests(unittest.TestCase):
@@ -350,8 +350,12 @@ class ReceiptTests(unittest.TestCase):
         empty = self.repo.parent / "empty"
         empty.mkdir()
         self.run_git(empty, "init", "-q", "-b", "main")
-        with self.assertRaises(ReceiptError):
+        with self.assertRaises(ReceiptError) as missing_head:
             build_receipt(empty)
+        self.assertNotIsInstance(
+            missing_head.exception,
+            ReceiptOperationalError,
+        )
 
     def test_remote_credentials_are_redacted(self):
         self.git(
@@ -496,7 +500,7 @@ class ReceiptTests(unittest.TestCase):
             for environment in environments
         ))
 
-    def test_status_uses_isolated_config_and_a_pinned_index(self):
+    def test_status_uses_synthetic_git_metadata_and_a_pinned_index(self):
         from evergreen import receipt as module
 
         status_environments = []
@@ -513,11 +517,48 @@ class ReceiptTests(unittest.TestCase):
 
         self.assertTrue(status_environments)
         for environment in status_environments:
-            self.assertEqual(environment.get("GIT_CONFIG"), os.devnull)
+            self.assertNotEqual(
+                Path(environment["GIT_DIR"]).resolve(),
+                Path(self.git("rev-parse", "--absolute-git-dir")).resolve(),
+            )
+            self.assertEqual(
+                Path(environment["GIT_WORK_TREE"]).resolve(),
+                self.repo.resolve(),
+            )
+            self.assertTrue(environment.get("GIT_OBJECT_DIRECTORY"))
             self.assertRegex(
                 environment.get("GIT_INDEX_FILE", ""),
                 r"^/dev/fd/\d+$",
             )
+
+    def test_status_does_not_read_a_transient_repository_filter(self):
+        from evergreen import receipt as module
+
+        marker = self.repo / "transient-filter-executed"
+        hook = self.repo.parent / "transient-clean-filter"
+        hook.write_text(
+            f"#!{sys.executable}\n"
+            "from pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text('executed')\n"
+            "print('original')\n"
+        )
+        hook.chmod(0o755)
+        (self.repo / ".gitattributes").write_text("tracked filter=transient\n")
+        self.git("add", ".gitattributes")
+        self.git("commit", "-qm", "record filter attribute")
+        self.git("config", "filter.transient.clean", str(hook))
+        (self.repo / "tracked").write_text("changed!\n")
+
+        with mock.patch.object(
+            module,
+            "_external_filter_configuration",
+            return_value=(),
+        ):
+            repository = build_receipt(self.repo)["repository"]
+
+        self.assertFalse(repository["clean"])
+        self.assertEqual(repository["unstaged"], 1)
+        self.assertFalse(marker.exists())
 
     def test_pinned_index_ignores_a_later_visibility_flag(self):
         from evergreen import receipt as module

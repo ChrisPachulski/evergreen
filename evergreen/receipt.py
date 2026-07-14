@@ -9,6 +9,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
@@ -82,7 +83,7 @@ def _git(
     missing_codes=(),
     input_error=False,
     pinned_index=None,
-    isolated_config=False,
+    environment_overrides=None,
 ):
     environment = {
         "GIT_CONFIG_NOSYSTEM": "1",
@@ -95,8 +96,8 @@ def _git(
     if pinned_index is not None:
         environment["GIT_INDEX_FILE"] = f"/dev/fd/{pinned_index}"
         inherited_descriptors = (pinned_index,)
-    if isolated_config:
-        environment["GIT_CONFIG"] = os.devnull
+    if environment_overrides:
+        environment.update(environment_overrides)
     try:
         process = subprocess.Popen(
             [
@@ -337,6 +338,8 @@ def _pinned_index(root):
     )
     try:
         descriptor = os.open(index_path, flags)
+    except FileNotFoundError:
+        raise ReceiptError("Git repository has no index") from None
     except OSError:
         raise ReceiptOperationalError("Git index could not be pinned") from None
     try:
@@ -422,20 +425,56 @@ def _status(root, pinned_index):
         "HEAD",
         missing_codes=(1,),
     )
-    output = _git(
-        root,
-        "status",
-        "--porcelain=v2",
-        "--branch",
-        "-z",
-        "--untracked-files=all",
-        "--ignore-submodules=all",
-        pinned_index=pinned_index,
-        isolated_config=True,
+    head = _one_git_line(
+        _git(root, "rev-parse", "--verify", "HEAD"),
+        "Git HEAD",
     )
+    branch = None if symbolic_branch is None else _one_git_line(
+        symbolic_branch,
+        "Git symbolic branch",
+    )
+    upstream = ahead = behind = None
+    if branch is not None:
+        upstream_output = _git(
+            root,
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+            missing_codes=(128,),
+        )
+        if upstream_output is not None:
+            upstream = _one_git_line(upstream_output, "Git upstream")
+            upstream_commit = _one_git_line(
+                _git(root, "rev-parse", "--verify", "@{upstream}^{commit}"),
+                "Git upstream commit",
+            )
+            counts = _one_git_line(
+                _git(
+                    root,
+                    "rev-list",
+                    "--left-right",
+                    "--count",
+                    f"{head}...{upstream_commit}",
+                ),
+                "Git branch counts",
+            )
+            match = re.fullmatch(r"(\d+)\s+(\d+)", counts)
+            if not match:
+                raise ReceiptError("Git branch counts are invalid")
+            ahead, behind = map(int, match.groups())
+    with _synthetic_git_metadata(root, head) as environment:
+        output = _git(
+            root,
+            "status",
+            "--porcelain=v2",
+            "-z",
+            "--untracked-files=all",
+            "--ignore-submodules=all",
+            pinned_index=pinned_index,
+            environment_overrides=environment,
+        )
     records = output.split("\0")
-    head = upstream = None
-    ahead = behind = None
     staged = unstaged = untracked = 0
     index = 0
     while index < len(records):
@@ -443,16 +482,7 @@ def _status(root, pinned_index):
         index += 1
         if not record:
             continue
-        if record.startswith("# branch.oid "):
-            head = record.removeprefix("# branch.oid ")
-        elif record.startswith("# branch.upstream "):
-            upstream = record.removeprefix("# branch.upstream ")
-        elif record.startswith("# branch.ab "):
-            match = re.fullmatch(r"# branch\.ab \+(\d+) -(\d+)", record)
-            if not match:
-                raise ReceiptError("Git status branch counts are invalid")
-            ahead, behind = map(int, match.groups())
-        elif record.startswith(("1 ", "2 ", "u ")):
+        if record.startswith(("1 ", "2 ", "u ")):
             x, y = record[2:4]
             staged += x != "."
             unstaged += y != "."
@@ -460,17 +490,8 @@ def _status(root, pinned_index):
                 index += 1
         elif record.startswith("? "):
             untracked += 1
-    if not head or head == "(initial)":
+    if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", head):
         raise ReceiptError("Git repository has no HEAD commit")
-    branch = None if symbolic_branch is None else _one_git_line(
-        symbolic_branch,
-        "Git symbolic branch",
-    )
-    if branch is None:
-        upstream = None
-        ahead = behind = None
-    elif upstream is None:
-        ahead = behind = None
     return {
         "branch": branch,
         "detached": branch is None,
@@ -483,6 +504,39 @@ def _status(root, pinned_index):
         "untracked": untracked,
         "clean": staged == unstaged == untracked == 0,
     }
+
+
+@contextmanager
+def _synthetic_git_metadata(root, head):
+    object_directory = _one_git_line(
+        _git(root, "rev-parse", "--path-format=absolute", "--git-path", "objects"),
+        "Git object directory",
+    )
+    object_format = _one_git_line(
+        _git(root, "rev-parse", "--show-object-format"),
+        "Git object format",
+    )
+    if object_format not in {"sha1", "sha256"}:
+        raise ReceiptOperationalError("Git object format is unsupported")
+    with tempfile.TemporaryDirectory(prefix="evergreen-receipt-") as temporary:
+        git_directory = Path(temporary)
+        (git_directory / "objects").mkdir()
+        (git_directory / "refs").mkdir()
+        (git_directory / "HEAD").write_text(f"{head}\n", encoding="ascii")
+        config = "[core]\n\trepositoryformatversion = 0\n"
+        if object_format == "sha256":
+            config = (
+                "[core]\n\trepositoryformatversion = 1\n"
+                "[extensions]\n\tobjectformat = sha256\n"
+            )
+        (git_directory / "config").write_text(config, encoding="ascii")
+        yield {
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_SYSTEM": os.devnull,
+            "GIT_DIR": str(git_directory),
+            "GIT_OBJECT_DIRECTORY": object_directory,
+            "GIT_WORK_TREE": str(root),
+        }
 
 
 def _benchmark_identity(root, benchmark_manifest, head):

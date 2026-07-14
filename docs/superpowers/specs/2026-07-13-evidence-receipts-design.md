@@ -190,8 +190,9 @@ tests fail if any exact shared sentence drifts.
   maintenance, or user/system configuration must not execute or write through a receipt. Effective
   external clean/process filters, including filters supplied by config includes, fail closed before
   status collection and are checked on both sides of each snapshot. Pin the exact non-split index
-  used by all index-dependent reads and isolate repository configuration from status collection, so
-  a concurrent index replacement or transient filter cannot change what status observes.
+  used by all index-dependent reads. Collect status through temporary synthetic Git metadata
+  outside the repository so repository configuration is never loaded and a concurrent index
+  replacement or transient filter cannot change what status observes.
 - Disable lazy object fetching on every Git call. Resolve the manifest's captured-HEAD tree entry
   separately from its local blob read so an absent path is invalid evidence but an unavailable
   promised object is a bounded operational failure, never a network request.

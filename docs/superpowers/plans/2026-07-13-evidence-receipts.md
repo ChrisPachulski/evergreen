@@ -16,7 +16,8 @@
 - Every Git call sets `GIT_NO_LAZY_FETCH=1`; captured-HEAD manifest verification separates the tree
   lookup from a bounded local `cat-file` blob read so unavailable promised objects fail operationally.
 - Receipt collection is macOS/Linux-only and fails before POSIX operations elsewhere. Status uses
-  one pinned non-split index with repository configuration isolated and literal Git paths.
+  one pinned non-split index, temporary synthetic Git metadata outside the repository, and literal
+  Git paths, so it never loads repository configuration.
   Effective external clean/process filters, tracked submodules, split indexes, and hidden-index
   flags fail closed; file mode, symlink, and rename visibility are explicitly enabled.
 - Missing origin/upstream are data, not errors; missing HEAD is an error.
@@ -118,8 +119,9 @@ origin and symbolic-branch lookups to return “missing” without raising. Reda
 user part of SCP-like remotes; fail closed for helpers and unsupported schemes.
 
 Pin the current non-split index through an inherited read-only descriptor, then parse `git status
---porcelain=v2 --branch -z --untracked-files=all` with that index, isolated repository
-configuration, literal pathspec handling, and an explicit rename policy.
+--porcelain=v2 -z --untracked-files=all` with that index and temporary synthetic Git metadata
+outside the repository, literal pathspec handling, and an explicit rename policy. Read symbolic
+branch, upstream, and ahead/behind identity separately through bounded Git commands.
 Count one staged entry when
 the X status is not `.`, one unstaged entry when Y is not `.`, and one untracked entry for each `?`
 record. Correctly consume the second NUL path for `2` rename/copy records. Use branch headers for

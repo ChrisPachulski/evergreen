@@ -137,14 +137,16 @@ publication; without direct authority, external release state remains unverified
 
 The receipt command is a bounded, deterministic, read-only architecture seam. It reads local Git
 metadata and, optionally, one validated in-repository benchmark-publication manifest; it writes no
-repository, index, ref, configuration, or receipt file. It performs no network request and never
+source-repository, index, ref, configuration, or receipt file. Status collection uses disposable
+synthetic Git metadata in the operating system's temporary directory and removes it afterward. It performs no network request and never
 queries GitHub, a registry, a marketplace, a store, a deployment provider, or a benchmark provider.
 No timestamp is emitted, so unchanged input has stable JSON. The human renderer presents the same
 repository, release, and benchmark fields without adding interpretation. Local tags remain local
 evidence, `release.external_state` remains `unverified`, and benchmark state is only
 `declared_publication`; neither rendering claims fresh provider execution or external publication.
 The Git reader forces rename, mode, and symlink visibility; it pins one non-split index for every
-index-dependent read, isolates repository configuration while collecting status, refuses tracked
+index-dependent read and collects status through temporary synthetic Git metadata outside the
+repository, so repository configuration is not loaded. It refuses tracked
 submodules, split indexes, hidden-index flags, and effective external clean/process filters, and
 brackets both Git and captured-HEAD manifest identity to reject concurrent change. Git reads have one streaming output
 cap/deadline with process-group cleanup; manifest bytes come through one no-follow descriptor.
