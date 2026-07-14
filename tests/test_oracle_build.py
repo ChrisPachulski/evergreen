@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -326,6 +327,52 @@ class OracleBuildTests(unittest.TestCase):
                 mock.patch.object(split, "_profile", side_effect=AssertionError("profiled")):
             with self.assertRaisesRegex(split.SimilarityError, "deadline"):
                 split.validate_split_isolation([row], [])
+
+    def test_required_3750_row_corpus_fits_frozen_reference_comparison_cap(self):
+        from eval.oracle import split
+        from eval.oracle.build import _load_reference_inventory
+
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
+        ).strip()
+        tree = subprocess.check_output(
+            ["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True,
+        ).strip()
+        references, _digest = _load_reference_inventory(commit, tree, require_clean=False)
+        self.assertEqual(len(references), 79)
+        required_comparisons = 1875 * 1875 + 3750 * len(references)
+        self.assertEqual(required_comparisons, 3_811_875)
+        self.assertEqual(split.MAX_COMPARISONS, 5_000_000)
+        self.assertLessEqual(required_comparisons, split.MAX_COMPARISONS)
+        rows = [{
+            "id": f"required-{index}",
+            "project": f"org/required-{index}",
+            "lineage_id": f"required-{index}",
+            "split": "dev" if index < 1875 else "holdout",
+            "language": "python",
+            "code": f"def required_{index}(): return {index}",
+            "documentation": f"Required production row {index}",
+        } for index in range(3750)]
+
+        profile = object()
+        overlap_calls = 0
+
+        def no_overlap(*_arguments):
+            nonlocal overlap_calls
+            overlap_calls += 1
+            return False
+
+        started = time.monotonic()
+        with mock.patch.object(split, "_profile", new=lambda *_arguments: profile), \
+                mock.patch.object(
+                    split, "_reference_profile", new=lambda *_arguments: ("code", profile),
+                ), mock.patch.object(split, "_profile_field_overlap", new=no_overlap):
+            self.assertTrue(split.validate_split_isolation(rows, references))
+        self.assertLess(
+            time.monotonic() - started, split.MAX_SIMILARITY_SECONDS / 2,
+            "bounded traversal must leave at least half the deadline for real profile work",
+        )
+        self.assertEqual(overlap_calls, 7_327_500)
 
     def test_private_jsonl_rejects_duplicate_keys_and_nonfinite_numbers(self):
         from eval.oracle.build import PackageError, _read_private_rows

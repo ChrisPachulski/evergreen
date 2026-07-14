@@ -18,6 +18,7 @@ MAX_TEXT_BYTES = 1024 * 1024
 MAX_TOKENS_PER_FIELD = 200_000
 MAX_COMPARISONS = 5_000_000
 MAX_SIMILARITY_SECONDS = 30.0
+DEADLINE_CHECK_INTERVAL = 1024
 _EXPECTED_POLICY = {
     "schema_version": 1,
     "lineage": {"field": "lineage_id", "inference": False, "required": True},
@@ -356,16 +357,12 @@ def validate_split_isolation(rows, references):
         raise SimilarityError("similarity row limit exceeded")
     if len(references) > MAX_REFERENCE_ITEMS:
         raise SimilarityError("similarity reference limit exceeded")
-    comparisons = len(rows) * (len(rows) - 1) // 2 + len(rows) * len(references)
-    if comparisons > MAX_COMPARISONS:
-        raise SimilarityError("similarity comparison limit exceeded")
     deadline = time.monotonic() + MAX_SIMILARITY_SECONDS
-    policy, _digest = load_similarity_policy()
     seen_ids = set()
     project_splits = {}
     lineage_splits = {}
-    profiles = []
-    for row in rows:
+    split_indices = {"dev": [], "holdout": []}
+    for index, row in enumerate(rows):
         if time.monotonic() > deadline:
             raise SimilarityError("similarity deadline exceeded")
         if not isinstance(row, dict):
@@ -387,25 +384,50 @@ def validate_split_isolation(rows, references):
             raise SimilarityError("lineage appears in both splits")
         project_splits[project] = split
         lineage_splits[lineage] = split
+        split_indices[split].append(index)
+    comparisons = (
+        len(split_indices["dev"]) * len(split_indices["holdout"]) +
+        len(rows) * len(references)
+    )
+    if comparisons > MAX_COMPARISONS:
+        raise SimilarityError("similarity comparison limit exceeded")
+    policy, _digest = load_similarity_policy()
+    profiles = []
+    for row in rows:
+        if time.monotonic() > deadline:
+            raise SimilarityError("similarity deadline exceeded")
         profiles.append(_profile(row, policy))
     reference_profiles = []
     for reference in references:
         if time.monotonic() > deadline:
             raise SimilarityError("similarity deadline exceeded")
         reference_profiles.append(_reference_profile(reference, policy))
-    for index, first in enumerate(rows):
-        if time.monotonic() > deadline:
+    overlap = _profile_field_overlap
+    monotonic = time.monotonic
+    checks_until_deadline = DEADLINE_CHECK_INTERVAL
+    development_profiles = [profiles[index] for index in split_indices["dev"]]
+    holdout_profiles = [profiles[index] for index in split_indices["holdout"]]
+    for first_profile in development_profiles:
+        if monotonic() > deadline:
             raise SimilarityError("similarity deadline exceeded")
-        for second_index, second in enumerate(rows[index + 1:], start=index + 1):
-            if time.monotonic() > deadline:
-                raise SimilarityError("similarity deadline exceeded")
-            if (first["split"] != second["split"] and any(
-                    _profile_field_overlap(profiles[index], profiles[second_index], field, policy)
-                    for field in ("code", "documentation"))):
+        for second_profile in holdout_profiles:
+            checks_until_deadline -= 1
+            if checks_until_deadline == 0:
+                if monotonic() > deadline:
+                    raise SimilarityError("similarity deadline exceeded")
+                checks_until_deadline = DEADLINE_CHECK_INTERVAL
+            if (overlap(first_profile, second_profile, "code", policy) or
+                    overlap(first_profile, second_profile, "documentation", policy)):
                 raise SimilarityError("row overlap crosses development and holdout")
+    for profile in profiles:
         for field, reference_profile in reference_profiles:
-            if time.monotonic() > deadline:
-                raise SimilarityError("similarity deadline exceeded")
-            if _profile_field_overlap(profiles[index], reference_profile, field, policy):
+            checks_until_deadline -= 1
+            if checks_until_deadline == 0:
+                if monotonic() > deadline:
+                    raise SimilarityError("similarity deadline exceeded")
+                checks_until_deadline = DEADLINE_CHECK_INTERVAL
+            if overlap(profile, reference_profile, field, policy):
                 raise SimilarityError("row overlaps a reference corpus")
+    if monotonic() > deadline:
+        raise SimilarityError("similarity deadline exceeded")
     return True
