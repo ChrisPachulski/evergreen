@@ -5,16 +5,155 @@ import sys
 import tempfile
 import unittest
 import uuid
+from unittest import mock
 
 from evergreen import host_journal
 from evergreen.host_snapshot import snapshot
-from evergreen.host_types import JournalPhase, JournalRecord, MutationKind, PathSnapshot
+from evergreen.host_types import (
+    JournalPhase, JournalRecord, MutationKind, PathSnapshot, TransactionCommit,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class HostJournalTests(unittest.TestCase):
+    def test_control_json_rejects_duplicates_nonfinite_and_oversized_payloads(self):
+        transaction_id = "a" * 32
+        valid = TransactionCommit(
+            1, transaction_id, ("codex",), ("codex",),
+        ).encode()
+        duplicate = valid.replace(
+            b'"phase":"committed"',
+            b'"phase":"committed","phase":"committed"',
+        )
+        nonfinite = valid.replace(b'"schema_version":1', b'"schema_version":NaN')
+        malformed_participants = valid.replace(
+            b'"participants":["codex"]', b'"participants":[[]]',
+        )
+        for payload in (
+            duplicate, nonfinite, malformed_participants,
+            b"{" + b" " * 4096 + b"}",
+        ):
+            with self.subTest(payload=payload[:32]):
+                with self.assertRaises(ValueError):
+                    TransactionCommit.parse(payload)
+
+        target = Path("target")
+        record = JournalRecord(
+            1, transaction_id, JournalPhase.PUBLISHED,
+            MutationKind.CREATE_REGULAR, target.name, None, None,
+            f".{target.name}.evergreen-journal-{transaction_id}",
+            PathSnapshot(target, "absent").journal_identity(),
+            PathSnapshot(target, "absent").journal_identity(),
+        ).encode()
+        with self.assertRaises(ValueError):
+            JournalRecord.parse(record.replace(
+                b'"schema_version":1', b'"schema_version":Infinity',
+            ))
+
+    def test_marker_scan_has_a_hard_count_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            for index in range(host_journal.MAX_TRANSACTION_MARKERS + 1):
+                transaction_id = f"{index:032x}"
+                marker = parent / host_journal.transaction_commit_name(transaction_id)
+                marker.write_bytes(TransactionCommit(
+                    1, transaction_id, ("codex",), ("codex",),
+                ).encode())
+                marker.chmod(0o600)
+            descriptor = os.open(parent, os.O_RDONLY)
+            try:
+                with self.assertRaises(OSError):
+                    host_journal.read_transaction_commits(descriptor)
+            finally:
+                os.close(descriptor)
+
+    def test_marker_metadata_rejects_mode_hardlink_and_foreign_owner(self):
+        for case in ("mode", "hardlink", "owner"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                parent = Path(directory)
+                transaction_id = "b" * 32
+                marker = parent / host_journal.transaction_commit_name(transaction_id)
+                marker.write_bytes(TransactionCommit(
+                    1, transaction_id, ("codex",), ("codex",),
+                ).encode())
+                marker.chmod(0o600)
+                if case == "mode":
+                    marker.chmod(0o644)
+                elif case == "hardlink":
+                    os.link(marker, parent / "marker-alias")
+                descriptor = os.open(parent, os.O_RDONLY)
+                getuid = (
+                    mock.patch.object(host_journal.os, "getuid", return_value=os.getuid() + 1)
+                    if case == "owner" else mock.patch.object(
+                        host_journal.os, "getuid", wraps=os.getuid,
+                    )
+                )
+                try:
+                    with getuid, self.assertRaises(ValueError):
+                        host_journal.read_transaction_commits(descriptor)
+                finally:
+                    os.close(descriptor)
+
+    def test_marker_writer_never_deletes_a_preexisting_temporary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            transaction_id = "d" * 32
+            update = parent / host_journal.transaction_commit_update_name(
+                transaction_id,
+            )
+            update.write_bytes(b"preexisting")
+            descriptor = os.open(parent, os.O_RDONLY)
+            try:
+                with self.assertRaises(FileExistsError):
+                    host_journal.write_transaction_commit(
+                        descriptor, transaction_id, ("codex",),
+                    )
+            finally:
+                os.close(descriptor)
+            self.assertEqual(update.read_bytes(), b"preexisting")
+
+    def test_journal_metadata_rejects_mode_hardlink_and_foreign_owner(self):
+        for case in ("mode", "hardlink", "owner"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                parent = Path(directory)
+                target = parent / "target"
+                target.write_bytes(b"after")
+                after = snapshot(target)
+                transaction_id = "c" * 32
+                journal = f".{target.name}.evergreen-journal-{transaction_id}"
+                record = JournalRecord(
+                    1, transaction_id, JournalPhase.PUBLISHED,
+                    MutationKind.CREATE_REGULAR, target.name, None, None, journal,
+                    PathSnapshot(target, "absent").journal_identity(),
+                    after.journal_identity(),
+                )
+                descriptor = os.open(parent, os.O_RDONLY)
+                try:
+                    host_journal.write_journal_at(
+                        descriptor, journal, record, create=True,
+                    )
+                    if case == "mode":
+                        (parent / journal).chmod(0o644)
+                    elif case == "hardlink":
+                        os.link(parent / journal, parent / "journal-alias")
+                    getuid = (
+                        mock.patch.object(
+                            host_journal.os, "getuid", return_value=os.getuid() + 1,
+                        )
+                        if case == "owner" else mock.patch.object(
+                            host_journal.os, "getuid", wraps=os.getuid,
+                        )
+                    )
+                    with getuid:
+                        error = host_journal.recover_target_artifacts(
+                            descriptor, target,
+                        )
+                finally:
+                    os.close(descriptor)
+                self.assertIn("manual recovery", error)
+                self.assertTrue((parent / journal).exists())
     def test_prepared_replace_cleanup_survives_second_crash(self):
         for mutation in (MutationKind.REPLACE_REGULAR, MutationKind.REPLACE_SYMLINK):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:

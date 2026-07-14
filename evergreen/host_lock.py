@@ -28,8 +28,12 @@ def acquire(selected, authorization):
     try:
         homes = sorted({status.root.parent for status in selected}, key=str)
         for home in homes:
-            descriptor = open_directory(snapshot(home, allow_directory=True))
+            home_snapshot = snapshot(home, allow_directory=True)
+            if home_snapshot.uid != os.getuid() or home_snapshot.mode & 0o022:
+                raise OSError(f"unsafe host transaction home: {home}")
+            descriptor = open_directory(home_snapshot)
             _lock_directory(descriptor, home, descriptors)
+            roots[home] = descriptor
         for status in sorted(selected, key=lambda item: str(item.resolved_root)):
             if status.resolved_root in roots:
                 continue

@@ -419,7 +419,7 @@ class HostTests(unittest.TestCase):
         managed.parent.mkdir()
         (writable_home / ".claude").rename(managed)
         (writable_home / ".claude").symlink_to(managed, target_is_directory=True)
-        managed.parent.chmod(0o777)
+        managed.parent.chmod(0o775)
         try:
             before = self.snapshot(include_directories=True)
             writable_result = install(writable_home, ROOT, "claude")

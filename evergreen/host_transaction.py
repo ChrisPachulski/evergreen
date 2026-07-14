@@ -18,6 +18,7 @@ from .host_commit import (
     verify_backup as _verify_backup,
 )
 from .host_journal import (
+    CommitPublishedError as _CommitPublishedError,
     recover_transactions as _recover_transactions,
     remove_transaction_commit as _remove_transaction_commit,
     write_transaction_commit as _write_transaction_commit,
@@ -177,12 +178,20 @@ def _apply(plans, dry_run, captured, open_parent=None, verify_roots=lambda: None
             verify_roots()
             _commit_entry(entry, open_parent, verify_roots)
         verify_roots()
-        coordinator = min((status.resolved_root for status in statuses), key=str)
+        coordinator = min((status.root.parent for status in statuses), key=str)
         commit_parent = open_parent(coordinator)
         try:
-            _write_transaction_commit(commit_parent, transaction_id)
+            _write_transaction_commit(
+                commit_parent, transaction_id,
+                tuple(status.name for status in statuses),
+            )
         finally:
             os.close(commit_parent)
+    except _CommitPublishedError as error:
+        return OperationResult(False, tuple(messages + [
+            "error: transaction commit durability is uncertain; automatic "
+            f"recovery pending with rollback artifacts retained: {error}"
+        ]))
     except Exception as error:
         return _rollback_result(
             messages, error, rollback_entries, conflicts, open_parent
@@ -205,8 +214,8 @@ def _apply(plans, dry_run, captured, open_parent=None, verify_roots=lambda: None
             os.close(commit_parent)
     if cleanup_errors:
         return OperationResult(False, tuple(messages + [
-            "error: transaction committed but backup cleanup failed; "
-            "manual recovery required: " + "; ".join(cleanup_errors)
+            "error: transaction committed but artifact cleanup failed; "
+            "automatic recovery pending: " + "; ".join(cleanup_errors)
         ]))
     return OperationResult(True, tuple(messages))
 

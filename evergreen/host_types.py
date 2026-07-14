@@ -8,6 +8,40 @@ from pathlib import Path
 import stat
 
 
+MAX_CONTROL_JSON_BYTES = 4096
+
+
+def _strict_json(payload: bytes):
+    if not isinstance(payload, bytes) or len(payload) > MAX_CONTROL_JSON_BYTES:
+        raise ValueError("control JSON exceeds byte limit")
+
+    def object_from_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    def reject_constant(value):
+        raise ValueError(f"invalid JSON constant: {value}")
+
+    try:
+        return json.loads(
+            payload.decode("utf-8"), object_pairs_hook=object_from_pairs,
+            parse_constant=reject_constant,
+        )
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as error:
+        raise ValueError("invalid control JSON") from error
+
+
+def _transaction_id(value):
+    return (
+        isinstance(value, str) and len(value) == 32 and
+        all(char in "0123456789abcdef" for char in value)
+    )
+
+
 @dataclass(frozen=True)
 class HostStatus:
     name: str
@@ -105,21 +139,41 @@ class JournalPhase(str, Enum):
 class TransactionCommit:
     schema_version: int
     transaction_id: str
+    participants: tuple[str, ...]
+    pending: tuple[str, ...]
     phase: str = "committed"
 
     @classmethod
     def parse(cls, payload: bytes) -> "TransactionCommit":
-        value = json.loads(payload)
-        fields = {"schema_version", "transaction_id", "phase"}
+        value = _strict_json(payload)
+        expected_fields = {
+            "schema_version", "transaction_id", "participants", "pending", "phase",
+        }
         if (
-            not isinstance(value, dict) or set(value) != fields or
+            not isinstance(value, dict) or set(value) != expected_fields or
+            type(value["schema_version"]) is not int or
             value["schema_version"] != 1 or value["phase"] != "committed" or
-            not isinstance(value["transaction_id"], str) or
-            len(value["transaction_id"]) != 32 or
-            any(char not in "0123456789abcdef" for char in value["transaction_id"])
+            not _transaction_id(value["transaction_id"]) or
+            not isinstance(value["participants"], list) or
+            not isinstance(value["pending"], list)
         ):
             raise ValueError("invalid transaction commit")
-        return cls(1, value["transaction_id"])
+        participants = tuple(value["participants"])
+        pending = tuple(value["pending"])
+        allowed = {"claude", "codex"}
+        if (
+            not participants or
+            any(type(item) is not str or item not in allowed for item in participants) or
+            any(type(item) is not str or item not in allowed for item in pending)
+        ):
+            raise ValueError("invalid transaction participants")
+        if (
+            tuple(sorted(set(participants))) != participants or
+            tuple(sorted(set(pending))) != pending or
+            not set(pending).issubset(participants)
+        ):
+            raise ValueError("invalid transaction participants")
+        return cls(1, value["transaction_id"], participants, pending)
 
     def encode(self) -> bytes:
         return json.dumps(
@@ -153,19 +207,33 @@ class JournalRecord:
 
     @classmethod
     def parse(cls, payload: bytes) -> "JournalRecord":
-        value = json.loads(payload)
+        value = _strict_json(payload)
         names = {item.name for item in fields(cls)}
-        if not isinstance(value, dict) or set(value) != names or value["schema_version"] != 1:
+        if (
+            not isinstance(value, dict) or set(value) != names or
+            type(value["schema_version"]) is not int or
+            value["schema_version"] != 1 or
+            not _transaction_id(value["transaction_id"]) or
+            any(type(value[field]) is not str for field in (
+                "phase", "mutation", "target", "journal",
+            )) or
+            any(value[field] is not None and type(value[field]) is not str for field in (
+                "temporary", "backup",
+            ))
+        ):
             raise ValueError("invalid transaction journal")
         if not isinstance(value["before"], dict) or not isinstance(value["after"], dict):
             raise ValueError("invalid transaction snapshots")
-        return cls(
-            schema_version=1, transaction_id=value["transaction_id"],
-            phase=JournalPhase(value["phase"]),
-            mutation=MutationKind(value["mutation"]), target=value["target"],
-            temporary=value["temporary"], backup=value["backup"],
-            journal=value["journal"], before=value["before"], after=value["after"],
-        )
+        try:
+            return cls(
+                schema_version=1, transaction_id=value["transaction_id"],
+                phase=JournalPhase(value["phase"]),
+                mutation=MutationKind(value["mutation"]), target=value["target"],
+                temporary=value["temporary"], backup=value["backup"],
+                journal=value["journal"], before=value["before"], after=value["after"],
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError("invalid transaction journal") from error
 
     def encode(self) -> bytes:
         return json.dumps(

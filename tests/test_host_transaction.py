@@ -589,7 +589,11 @@ class HostTests(HostTestCase):
         self.assertFalse(result.ok)
         self.assertEqual(len(backups), 1)
         self.assertIn(str(backups[0]), " ".join(result.messages))
-        self.assertIn("manual recovery", " ".join(result.messages).lower())
+        self.assertIn("automatic recovery pending", " ".join(result.messages).lower())
+        self.assertNotIn("manual recovery", " ".join(result.messages).lower())
+        recovered = hosts.install(self.home, ROOT, "codex")
+        self.assertTrue(recovered.ok, recovered.messages)
+        self.assertFalse(any("evergreen-backup" in path.name for path in codex.iterdir()))
 
     def test_source_metadata_must_be_durable_before_backup_or_publication(self):
         from evergreen import hosts

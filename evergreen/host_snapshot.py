@@ -19,7 +19,7 @@ def resolve_managed_root(home, root):
         home = normalized_lexical_path(home)
         chain = [root, home]
         home_metadata = home.lstat()
-        if home_metadata.st_uid != os.getuid() or home_metadata.st_mode & 0o002:
+        if home_metadata.st_uid != os.getuid() or home_metadata.st_mode & 0o022:
             raise OSError(f"managed host home is unsafe: {home}")
         root_metadata = root.lstat()
         if root_metadata.st_uid != os.getuid():
@@ -63,7 +63,7 @@ def resolve_managed_root(home, root):
                 continue
             if kind(candidate) != "directory":
                 raise OSError(f"managed host root chain is not a directory: {candidate}")
-            if metadata.st_uid != os.getuid() or metadata.st_mode & 0o002:
+            if metadata.st_uid != os.getuid() or metadata.st_mode & 0o022:
                 raise OSError(f"managed host root chain is unsafe: {candidate}")
             current = candidate
         resolved = current.resolve(strict=True)
@@ -131,7 +131,7 @@ def verify_managed_root_binding(status, captured=None):
             raise OSError(f"managed host root chain changed: {path}")
         if current.uid != os.getuid():
             raise OSError(f"managed host root chain is not user-owned: {path}")
-        if current.kind == "directory" and current.mode & 0o002:
+        if current.kind == "directory" and current.mode & 0o022:
             raise OSError(f"managed host root chain is unsafe: {path}")
         if current.kind not in ("directory", "symlink"):
             raise OSError(f"managed host root chain is unsafe: {path}")
@@ -300,7 +300,8 @@ def snapshot_at(path, parent_fd):
     )
     if item_kind == "regular":
         limit = MAX_STATE_BYTES if (
-            path.name == OWNERSHIP_FILE or "evergreen-journal-" in path.name
+            path.name == OWNERSHIP_FILE or "evergreen-journal-" in path.name or
+            path.name.startswith(".evergreen-transaction-")
         ) else MAX_INSTRUCTION_BYTES
         descriptor = os.open(
             path.name, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0),
