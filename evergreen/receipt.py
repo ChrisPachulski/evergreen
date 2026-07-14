@@ -24,12 +24,13 @@ class ReceiptError(ValueError):
 def build_receipt(repo: Path, benchmark_manifest: Path | None = None) -> dict:
     root = _repository_root(repo)
     status = _status(root)
+    origin = _origin(root)
     receipt = {
         "schema_version": 1,
         "repository": {
             "root": str(root),
-            "name": root.name,
-            "origin": _origin(root),
+            "name": _repository_name(root, origin),
+            "origin": origin,
             **status,
         },
         "release": {
@@ -90,6 +91,27 @@ def _repository_root(repo):
 def _origin(root):
     origin = _git(root, "remote", "get-url", "origin", missing_ok=True)
     return None if origin is None else _redact_remote(origin.strip())
+
+
+def _repository_name(root, origin):
+    path = None
+    if origin and "://" in origin:
+        try:
+            parsed = urlsplit(origin)
+        except ValueError:
+            return root.name
+        if parsed.scheme in {"git", "http", "https", "ssh"}:
+            path = parsed.path
+    elif origin:
+        scp = re.fullmatch(r"(?:[^/@:\s]+@)?[^/:\s]+:(.+)", origin)
+        if scp:
+            path = scp.group(1)
+    if not path:
+        return root.name
+    name = PurePosixPath(path.rstrip("/")).name
+    if name.endswith(".git"):
+        name = name[:-4]
+    return name if name not in ("", ".", "..") else root.name
 
 
 def _redact_remote(remote):

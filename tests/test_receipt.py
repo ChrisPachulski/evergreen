@@ -169,6 +169,38 @@ class ReceiptTests(unittest.TestCase):
             str(self.repo.resolve()),
         )
 
+    def test_origin_project_name_wins_for_ordinary_and_linked_directory_names(self):
+        remotes = (
+            "https://example.invalid/owner/project.git",
+            "example.invalid:owner/project.git",
+        )
+        for directory_name in ("repo", "evidence-receipts"):
+            if self.repo.name != directory_name:
+                renamed = self.repo.with_name(directory_name)
+                self.repo.rename(renamed)
+                self.repo = renamed
+            for remote in remotes:
+                with self.subTest(directory=directory_name, remote=remote):
+                    self.git("remote", "set-url", "origin", remote)
+                    repository = build_receipt(self.repo)["repository"]
+                    self.assertEqual(repository["name"], "project")
+                    self.assertEqual(repository["root"], str(self.repo.resolve()))
+
+    def test_missing_or_unusable_origin_falls_back_to_worktree_name(self):
+        self.git("remote", "remove", "origin")
+        self.assertEqual(build_receipt(self.repo)["repository"]["name"], "repo")
+
+        self.git("remote", "add", "origin", "https://example.invalid/")
+        self.assertEqual(build_receipt(self.repo)["repository"]["name"], "repo")
+
+        self.git(
+            "remote",
+            "set-url",
+            "origin",
+            "helper::https://alice:secret@example.invalid/owner/project.git",
+        )
+        self.assertEqual(build_receipt(self.repo)["repository"]["name"], "repo")
+
     def test_non_repository_and_missing_head_are_rejected(self):
         outside = self.repo.parent / "outside"
         outside.mkdir()
