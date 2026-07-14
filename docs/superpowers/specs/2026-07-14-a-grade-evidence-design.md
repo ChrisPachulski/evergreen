@@ -227,6 +227,14 @@ Symlinked host roots are supported only when their fully resolved destination is
 non-world-writable, and covered by an explicit ownership record. A symlink alone is neither proof
 of ownership nor a reason to reject a legitimate managed configuration.
 
+Host mutation uses one transaction-level commit point. Every per-path journal and backup remains
+rollback-capable until all planned paths have been published and the final managed-root binding
+check passes. Crossing the commit point records the transaction as committed before any backup is
+removed; subsequent artifact removal is recovery-safe housekeeping and cannot turn an already
+committed transaction back into a failed partial rollback. A symlink retarget before that point
+rolls back every published path. A retarget after that point is a new external mutation and is
+reported by the fresh discovery/doctor evidence rather than misclassified as a failed commit.
+
 Host evidence records separate canonical, installed, discovery, and sync observations: lexical and
 resolved roots, resolution-chain UID/mode/world-writable checks, ownership/version/content hashes,
 and a no-mutation boundary. Doctor prose or a stored doctor boolean is insufficient. Evidence

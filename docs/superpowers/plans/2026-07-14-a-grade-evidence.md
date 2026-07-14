@@ -305,12 +305,20 @@ python3 -m unittest tests.test_peers tests.test_bench_report tests.test_frozen_r
 - unrelated user content is never overwritten or removed;
 - dry-run is byte/mode/metadata preserving;
 - rollback restores both lexical and resolved paths after an injected failure;
+- every path retains its journal and backup until one transaction-level commit point;
+- a managed-root retarget before that commit point rolls back every earlier and later published
+  path, including a retarget injected while validating the second or subsequent entry;
+- after the commit point is durably recorded, crash recovery finishes artifact cleanup instead of
+  rolling an already committed transaction back;
 - doctor reports exact source version and canonical content hashes, not merely a target path.
 - `doctor --host all` reports independent evidence for both hosts even when one is invalid.
 
 **GREEN:** Resolve and snapshot the managed root once under the transaction lock, bind lexical and
 resolved identities through preflight/apply, and reuse the existing ownership record. Do not allow a
-symlink alone to establish ownership.
+symlink alone to establish ownership. Preserve all rollback material until all mutations and the
+final root-binding validation succeed, then record one durable transaction commit before performing
+recovery-safe cleanup. Treat a later retarget as a new external mutation for doctor/discovery to
+report, not as grounds for an impossible post-return rollback.
 
 ```sh
 python3 -m unittest tests.test_hosts tests.test_host_snapshot tests.test_host_transaction tests.test_host_recovery
