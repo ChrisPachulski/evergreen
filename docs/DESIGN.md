@@ -107,6 +107,33 @@ metadata integrity lives in `host_metadata.py`; `host_lock.py`, `host_snapshot.p
 `host_transaction.py` coordinates publication, crash recovery, rollback, and commit. Every
 mutation uses the same prepared-to-published protocol rather than a per-action state machine.
 
+## Evidence-backed completion receipts
+
+Before an external mutation, lock the target repository root, origin, branch, pre-mutation HEAD,
+and intended operation. A continuation such as “ship” remains bound to that target.
+
+Before reporting pushed, merged, clean, complete, released, lost, erased, or not run, obtain fresh evidence.
+Never reverse an earlier project, mutation, benchmark, or release-status claim without new evidence.
+Treat pushed to a source branch, tagged, GitHub Release published, marketplace published, and deployed as separate states.
+Empty cleanup output means nothing was removed.
+Stage and commit in separate tool calls.
+
+Use `evergreen receipt --repo PATH` for local repository state. A benchmark claim names the
+evaluated release, resolver/judge, provider, languages, provenance commit, and whether its evidence
+was executed, reverified, published, or merely planned. When a user challenges remembered status,
+inspect the fresh receipt or authoritative artifact before agreeing or defending. Local Git state
+cannot verify external publication; without direct authority, external release state remains
+unverified. A combined staging-and-commit call cannot prove the finalized index passed the guard.
+
+The receipt command is a bounded, deterministic, read-only architecture seam. It reads local Git
+metadata and, optionally, one validated in-repository benchmark-publication manifest; it writes no
+repository, index, ref, configuration, or receipt file. It performs no network request and never
+queries GitHub, a registry, a marketplace, a store, a deployment provider, or a benchmark provider.
+No timestamp is emitted, so unchanged input has stable JSON. The human renderer presents the same
+repository, release, and benchmark fields without adding interpretation. Local tags remain local
+evidence, `release.external_state` remains `unverified`, and benchmark state is only
+`declared_publication`; neither rendering claims fresh provider execution or external publication.
+
 ## Release identity boundary
 
 Release identity spans package manifests, registry versions, and version-reporting CLI output.
