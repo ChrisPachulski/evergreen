@@ -96,6 +96,71 @@ class ReceiptTests(unittest.TestCase):
         )
         self.assertFalse(receipt["repository"]["clean"])
 
+    def test_index_visibility_flags_fail_closed_instead_of_hiding_changes(self):
+        for enable, disable in (
+            ("--assume-unchanged", "--no-assume-unchanged"),
+            ("--skip-worktree", "--no-skip-worktree"),
+        ):
+            with self.subTest(flag=enable):
+                self.git("update-index", enable, "tracked")
+                (self.repo / "tracked").write_text("hidden change\n")
+                with self.assertRaisesRegex(ReceiptError, "visibility"):
+                    build_receipt(self.repo)
+                self.git("update-index", disable, "tracked")
+                (self.repo / "tracked").write_text("original\n")
+
+    def test_submodule_ignore_configuration_cannot_hide_changes(self):
+        source = self.repo.parent / "submodule-source"
+        source.mkdir()
+        self.run_git(source, "init", "-q", "-b", "main")
+        self.run_git(source, "config", "user.email", "test@example.com")
+        self.run_git(source, "config", "user.name", "Test")
+        (source / "tracked").write_text("original\n")
+        self.run_git(source, "add", "tracked")
+        self.run_git(source, "commit", "-qm", "initial")
+        self.git(
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "-q",
+            str(source),
+            "vendor/submodule",
+        )
+        self.git("commit", "-qm", "add submodule")
+        (self.repo / "vendor" / "submodule" / "tracked").write_text("changed\n")
+        self.git("config", "diff.ignoreSubmodules", "all")
+        self.git("config", "submodule.vendor/submodule.ignore", "all")
+
+        repository = build_receipt(self.repo)["repository"]
+
+        self.assertEqual(repository["unstaged"], 1)
+        self.assertFalse(repository["clean"])
+
+    def test_file_mode_configuration_cannot_hide_changes(self):
+        tracked = self.repo / "tracked"
+        tracked.chmod(tracked.stat().st_mode | stat.S_IXUSR)
+        self.git("config", "core.fileMode", "false")
+
+        repository = build_receipt(self.repo)["repository"]
+
+        self.assertEqual(repository["unstaged"], 1)
+        self.assertFalse(repository["clean"])
+
+    def test_symlink_configuration_cannot_hide_type_changes(self):
+        link = self.repo / "link"
+        link.symlink_to("target")
+        self.git("add", "link")
+        self.git("commit", "-qm", "add symlink")
+        link.unlink()
+        link.write_text("target")
+        self.git("config", "core.symlinks", "false")
+
+        repository = build_receipt(self.repo)["repository"]
+
+        self.assertEqual(repository["unstaged"], 1)
+        self.assertFalse(repository["clean"])
+
     def test_rename_source_path_is_not_counted_as_an_untracked_record(self):
         old = self.repo / "? old"
         old.write_text("rename me\n")
@@ -120,6 +185,26 @@ class ReceiptTests(unittest.TestCase):
         repository = build_receipt(self.repo)["repository"]
 
         self.assertEqual(repository["staged"], 1)
+        self.assertEqual(repository["unstaged"], 0)
+
+    def test_repository_rename_limits_cannot_change_counts(self):
+        for index in range(10):
+            path = self.repo / f"old-{index}"
+            path.write_text(f"shared content {index}\nold suffix\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "add rename sources")
+        for index in range(10):
+            old = self.repo / f"old-{index}"
+            new = self.repo / f"new-{index}"
+            old.rename(new)
+            new.write_text(f"shared content {index}\nnew suffix\n")
+        self.git("add", "-A")
+        self.git("config", "status.renameLimit", "1")
+        self.git("config", "diff.renameLimit", "1")
+
+        repository = build_receipt(self.repo)["repository"]
+
+        self.assertEqual(repository["staged"], 10)
         self.assertEqual(repository["unstaged"], 0)
 
     def test_detached_head_has_no_branch_or_upstream(self):
@@ -191,6 +276,18 @@ class ReceiptTests(unittest.TestCase):
             build_receipt(nested)["repository"]["root"],
             str(self.repo.resolve()),
         )
+
+    def test_repository_root_and_origin_preserve_surrounding_spaces(self):
+        renamed = self.repo.with_name(" repo ")
+        self.repo.rename(renamed)
+        self.repo = renamed
+        origin = "/tmp/canonical.git "
+        self.git("remote", "set-url", "origin", origin)
+
+        repository = build_receipt(self.repo)["repository"]
+
+        self.assertEqual(repository["root"], str(self.repo.resolve()))
+        self.assertEqual(repository["origin"], origin)
 
     def test_origin_project_name_wins_for_ordinary_and_linked_directory_names(self):
         remotes = (
@@ -376,6 +473,52 @@ class ReceiptTests(unittest.TestCase):
         self.assertFalse(hook_marker.exists())
         self.assertFalse(trace_marker.exists())
 
+    def test_repository_clean_filter_cannot_execute(self):
+        marker = self.repo / "filter-executed"
+        hook = self.repo.parent / "hostile-clean-filter"
+        hook.write_text(
+            f"#!{sys.executable}\n"
+            "import sys\n"
+            "from pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text('executed')\n"
+            "sys.stdout.buffer.write(sys.stdin.buffer.read())\n"
+        )
+        hook.chmod(0o755)
+        (self.repo / ".gitattributes").write_text("tracked filter=evil\n")
+        self.git("add", ".gitattributes")
+        self.git("commit", "-qm", "add hostile filter attribute")
+        self.git("config", "filter.evil.clean", str(hook))
+        (self.repo / "tracked").write_text("changed\n")
+
+        with self.assertRaisesRegex(ReceiptError, "external Git filters"):
+            build_receipt(self.repo)
+        self.assertFalse(marker.exists())
+
+    def test_repository_long_running_process_filter_cannot_execute(self):
+        marker = self.repo / "process-filter-executed"
+        descendant = self.repo / "process-filter-descendant"
+        hook = self.repo.parent / "hostile-process-filter"
+        hook.write_text(
+            f"#!{sys.executable}\n"
+            "import subprocess, sys, time\n"
+            "from pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text('executed')\n"
+            "subprocess.Popen([sys.executable, '-c', "
+            f"\"import time; from pathlib import Path; time.sleep(1); Path({str(descendant)!r}).write_text('executed')\"] )\n"
+            "time.sleep(10)\n"
+        )
+        hook.chmod(0o755)
+        (self.repo / ".gitattributes").write_text("tracked filter=evil\n")
+        self.git("add", ".gitattributes")
+        self.git("commit", "-qm", "add hostile process-filter attribute")
+        self.git("config", "filter.evil.process", str(hook))
+        (self.repo / "tracked").write_text("changed\n")
+
+        with self.assertRaisesRegex(ReceiptError, "external Git filters"):
+            build_receipt(self.repo)
+        self.assertFalse(marker.exists())
+        self.assertFalse(descendant.exists())
+
     def test_stub_git_timeout_and_output_limit_are_bounded_operational_errors(self):
         from evergreen import receipt as module
 
@@ -406,6 +549,39 @@ class ReceiptTests(unittest.TestCase):
                 self.assertRaisesRegex(module.ReceiptOperationalError, "too much output"):
             build_receipt(self.repo)
         self.assertLess(time.monotonic() - started, 0.75)
+
+    def test_unexpected_output_read_failure_is_bounded_and_operational(self):
+        from evergreen import receipt as module
+
+        with mock.patch.object(
+            module,
+            "_bounded_process_output",
+            side_effect=OSError("read failed"),
+        ), self.assertRaisesRegex(
+            module.ReceiptOperationalError,
+            "could not be read",
+        ):
+            build_receipt(self.repo)
+
+    def test_only_declared_git_exit_codes_are_treated_as_missing(self):
+        from evergreen import receipt as module
+
+        stub = self.repo.parent / "git-stub-exit"
+        stub.write_text(f"#!{sys.executable}\nimport sys\nsys.exit(int(sys.argv[-1]))\n")
+        stub.chmod(0o755)
+        with mock.patch.object(module, "_GIT_EXECUTABLE", str(stub)):
+            self.assertIsNone(module._git(self.repo, "2", missing_codes=(2,)))
+            with self.assertRaises(module.ReceiptOperationalError):
+                module._git(self.repo, "3", missing_codes=(2,))
+
+    def test_unsupported_platform_fails_before_posix_operations(self):
+        from evergreen import receipt as module
+
+        with mock.patch.object(module.os, "name", "nt"), self.assertRaisesRegex(
+            module.ReceiptOperationalError,
+            "macOS or Linux",
+        ):
+            build_receipt(self.repo)
 
     def test_tag_query_is_bound_to_captured_commit_not_symbolic_head(self):
         from evergreen import receipt as module
@@ -439,6 +615,23 @@ class ReceiptTests(unittest.TestCase):
         ):
             build_receipt(self.repo)
 
+    def test_torn_benchmark_identity_is_retried_then_refused(self):
+        from evergreen import receipt as module
+
+        manifest = Path("bench/manifest.json")
+        self.write_benchmark_manifest(self.benchmark_manifest())
+        first = {"evaluated_release": "0.4.0"}
+        second = {"evaluated_release": "0.5.0"}
+        with mock.patch.object(
+            module,
+            "_benchmark_identity",
+            side_effect=(first, second, first, second),
+        ), self.assertRaisesRegex(
+            module.ReceiptOperationalError,
+            "changed while receipt was collected",
+        ):
+            build_receipt(self.repo, manifest)
+
     def test_receipt_does_not_change_repository_bytes(self):
         (self.repo / "untracked").write_text("leave me\n")
 
@@ -446,6 +639,22 @@ class ReceiptTests(unittest.TestCase):
         build_receipt(self.repo)
         after = self.repository_snapshot()
 
+        self.assertEqual(after, before)
+
+    def test_nonmutation_snapshot_covers_modes_and_linked_common_git_dir(self):
+        before_mode = self.repository_snapshot()
+        tracked = self.repo / "tracked"
+        tracked.chmod(tracked.stat().st_mode | stat.S_IXUSR)
+        self.assertNotEqual(self.repository_snapshot(), before_mode)
+        tracked.chmod(tracked.stat().st_mode & ~stat.S_IXUSR)
+
+        linked = self.repo.parent / "linked-worktree"
+        self.git("worktree", "add", "-q", "-b", "receipt-linked", str(linked))
+        before = self.repository_snapshot(linked)
+        build_receipt(linked)
+        after = self.repository_snapshot(linked)
+
+        self.assertNotEqual(before["git_dir_path"], before["git_common_dir_path"])
         self.assertEqual(after, before)
 
     def test_valid_publication_manifest_returns_declaration_only_identity(self):
@@ -468,6 +677,24 @@ class ReceiptTests(unittest.TestCase):
             "report": "bench/report.md",
             "resolver": "unverified",
         })
+
+    def test_untracked_benchmark_manifest_is_not_a_declared_publication(self):
+        manifest = self.benchmark_manifest()
+        path = self.repo / "bench" / "manifest.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(manifest))
+
+        with self.assertRaisesRegex(ReceiptError, "tracked"):
+            build_receipt(self.repo, Path("bench/manifest.json"))
+
+    def test_dirty_benchmark_manifest_cannot_masquerade_as_publication(self):
+        manifest = self.benchmark_manifest()
+        self.write_benchmark_manifest(manifest)
+        manifest["evaluated_release"] = "0.5.0"
+        (self.repo / "bench" / "manifest.json").write_text(json.dumps(manifest))
+
+        with self.assertRaisesRegex(ReceiptError, "captured HEAD"):
+            build_receipt(self.repo, Path("bench/manifest.json"))
 
     def test_benchmark_judge_resolver_and_protocol_identity_are_validated(self):
         manifest = self.benchmark_manifest()
@@ -753,26 +980,50 @@ class ReceiptTests(unittest.TestCase):
         path = self.repo / "bench" / "manifest.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(manifest))
+        self.git("add", "bench/manifest.json")
+        self.git("commit", "-qm", "record benchmark manifest")
 
-    def repository_snapshot(self):
-        git_dir = Path(self.git("rev-parse", "--absolute-git-dir")).resolve()
+    def repository_snapshot(self, repo=None):
+        repo = self.repo if repo is None else Path(repo)
+        git_dir = Path(
+            self.run_git(repo, "rev-parse", "--absolute-git-dir")
+        ).resolve()
+        git_common_dir = Path(
+            self.run_git(
+                repo,
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-common-dir",
+            )
+        ).resolve()
 
         def tree(path):
-            entries = {}
+            root_metadata = path.lstat()
+            entries = {
+                ".": (
+                    stat.S_IFMT(root_metadata.st_mode),
+                    stat.S_IMODE(root_metadata.st_mode),
+                    None,
+                )
+            }
             for item in sorted(path.rglob("*")):
                 relative = item.relative_to(path).as_posix()
                 metadata = item.lstat()
                 kind = stat.S_IFMT(metadata.st_mode)
+                mode = stat.S_IMODE(metadata.st_mode)
                 if stat.S_ISREG(metadata.st_mode):
                     value = item.read_bytes()
                 elif stat.S_ISLNK(metadata.st_mode):
                     value = os.readlink(item)
                 else:
                     value = None
-                entries[relative] = (kind, value)
+                entries[relative] = (kind, mode, value)
             return entries
 
         return {
-            "worktree": tree(self.repo),
+            "worktree": tree(repo),
+            "git_dir_path": str(git_dir),
             "git_dir": tree(git_dir),
+            "git_common_dir_path": str(git_common_dir),
+            "git_common_dir": tree(git_common_dir),
         }

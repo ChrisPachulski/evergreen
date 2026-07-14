@@ -129,6 +129,9 @@ A combined staging-and-commit call cannot prove the finalized index passed the g
 
 Use `evergreen receipt --repo PATH` for the local snapshot. Local Git state cannot verify external
 publication; without direct authority, external release state remains unverified.
+Receipt collection is supported on macOS and Linux; unsupported hosts fail before POSIX operations.
+Repositories with external clean/process filters or assume-unchanged/skip-worktree index flags are refused rather than certified.
+A benchmark manifest is accepted only when its exact bytes match the captured HEAD.
 
 The receipt command is a bounded, deterministic, read-only architecture seam. It reads local Git
 metadata and, optionally, one validated in-repository benchmark-publication manifest; it writes no
@@ -138,6 +141,10 @@ No timestamp is emitted, so unchanged input has stable JSON. The human renderer 
 repository, release, and benchmark fields without adding interpretation. Local tags remain local
 evidence, `release.external_state` remains `unverified`, and benchmark state is only
 `declared_publication`; neither rendering claims fresh provider execution or external publication.
+The Git reader forces rename, mode, symlink, and submodule visibility, refuses hidden-index flags
+and effective external clean/process filters before status collection, and brackets both Git and
+captured-HEAD manifest identity to reject concurrent change. Git reads have one streaming output
+cap/deadline with process-group cleanup; manifest bytes come through one no-follow descriptor.
 
 ## Release identity boundary
 

@@ -107,6 +107,9 @@ Rules:
 - Ignored files do not make the repository dirty.
 - Rename detection is explicitly configured so repository or user Git configuration cannot change
   staged/unstaged counts.
+- File-mode, symlink, and submodule visibility are explicitly enabled. Assume-unchanged,
+  skip-worktree, or effective external clean/process filters make a complete safe snapshot
+  impossible, so the receipt refuses them instead of reporting clean.
 - `local_tags` contains only tags pointing at the receipt's captured commit, sorted bytewise.
 - `external_state` is always `unverified`; local tags never prove external publication.
 - Collection retries once and then fails if two complete repository snapshots disagree; it never
@@ -133,7 +136,8 @@ When `--benchmark-manifest` is present, `benchmark` contains:
 }
 ```
 
-The loader must require schema version `1`, kind
+The manifest path and exact bytes must match a regular blob at the captured HEAD; an untracked,
+staged-only, or dirty working-tree declaration is refused. The loader must require schema version `1`, kind
 `evergreen-benchmark-decision-publication`, a non-empty evaluated release and provider, a full Git
 commit ID, a full lowercase judge SHA-256, unique declared languages, an artifact count matching
 the language set, and normalized repository-relative manifest, artifact, dataset, and report paths.
@@ -182,11 +186,15 @@ tests fail if any exact shared sentence drifts.
 - Reuse standard-library `subprocess`, `json`, `pathlib`, and `urllib.parse`; add no dependency.
 - Invoke Git with argv arrays, `--no-replace-objects`, hardened configuration/environment, bounded
   streaming output, one total timeout, and no shell. Repository-controlled fsmonitor, tracing,
-  maintenance, or user/system configuration must not execute or write through a receipt.
+  maintenance, or user/system configuration must not execute or write through a receipt. Effective
+  external clean/process filters, including filters supplied by config includes, fail closed before
+  status collection and are checked on both sides of each snapshot.
 - Do not print environment variables, Git configuration, credential helpers, or remote credentials.
   HTTP(S) remote userinfo must be redacted; unsupported credential-bearing remote forms are shown
   only in a bounded redacted representation.
 - The command never writes Git state or repository files.
+- Receipt collection is supported on macOS and Linux. Other platforms return a bounded operational
+  error before starting a subprocess or using POSIX descriptor operations.
 
 ## Test design
 
@@ -202,13 +210,16 @@ Unit tests must cover:
 - non-repository and missing-path errors;
 - bounded Git failure and output limits;
 - hostile Git configuration/environment, deterministic rename counts, exact operational exit code,
-  legal `(detached)` branch names, moving-repository refusal, and SHA-bound tags;
+  file/symlink/submodule visibility, external-filter refusal, legal `(detached)` branch names,
+  moving-repository refusal, and SHA-bound tags;
 - credential redaction;
 - valid five-language benchmark and judge/resolver/protocol identity;
 - malformed, oversized, outside-root, traversal, absolute, symlink, duplicate-language, wrong-kind,
   wrong-schema, mismatched-artifact-count, and incomplete benchmark manifests;
 - descriptor-bound manifest reads under path swaps;
-- proof that receipt generation leaves the complete worktree and actual Git directory unchanged.
+- captured-HEAD binding for benchmark manifests;
+- proof that receipt generation leaves modes and bytes unchanged across the complete worktree,
+  linked-worktree Git directory, and common Git directory.
 
 Integration tests must assert:
 

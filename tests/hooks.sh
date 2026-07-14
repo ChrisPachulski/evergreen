@@ -185,7 +185,10 @@ for tok in \
   "Empty cleanup output means nothing was removed." \
   "Stage and commit in separate tool calls." \
   "When a user challenges remembered status, inspect the fresh receipt or authoritative artifact before agreeing or defending." \
-  "A combined staging-and-commit call cannot prove the finalized index passed the guard."; do
+  "A combined staging-and-commit call cannot prove the finalized index passed the guard." \
+  "Receipt collection is supported on macOS and Linux; unsupported hosts fail before POSIX operations." \
+  "Repositories with external clean/process filters or assume-unchanged/skip-worktree index flags are refused rather than certified." \
+  "A benchmark manifest is accepted only when its exact bytes match the captured HEAD."; do
   if grep -Fq "$tok" "$ROOT/README.md" \
      && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
      && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \

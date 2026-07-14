@@ -32,16 +32,26 @@ class ReceiptOperationalError(ReceiptError):
 
 
 def build_receipt(repo: Path, benchmark_manifest: Path | None = None) -> dict:
+    if os.name != "posix":
+        raise ReceiptOperationalError(
+            "receipt requires a macOS or Linux host"
+        )
     root = _repository_root(repo)
-    benchmark = (
-        None
-        if benchmark_manifest is None
-        else _benchmark_identity(root, benchmark_manifest)
-    )
     for _attempt in range(RECEIPT_ATTEMPTS):
         before = _repository_snapshot(root)
+        head = before["status"]["head"]
+        benchmark_before = (
+            None
+            if benchmark_manifest is None
+            else _benchmark_identity(root, benchmark_manifest, head)
+        )
+        benchmark_after = (
+            None
+            if benchmark_manifest is None
+            else _benchmark_identity(root, benchmark_manifest, head)
+        )
         after = _repository_snapshot(root)
-        if before != after:
+        if before != after or benchmark_before != benchmark_after:
             continue
         status = after["status"]
         origin = after["origin"]
@@ -57,12 +67,12 @@ def build_receipt(repo: Path, benchmark_manifest: Path | None = None) -> dict:
                 "local_tags": after["local_tags"],
                 "external_state": "unverified",
             },
-            "benchmark": benchmark,
+            "benchmark": benchmark_after,
         }
     raise ReceiptOperationalError("repository changed while receipt was collected")
 
 
-def _git(root, *args, missing_ok=False, input_error=False):
+def _git(root, *args, missing_codes=(), input_error=False):
     environment = {
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_OPTIONAL_LOCKS": "0",
@@ -78,6 +88,20 @@ def _git(root, *args, missing_ok=False, input_error=False):
                 "core.fsmonitor=false",
                 "-c",
                 "status.renames=true",
+                "-c",
+                "status.renameLimit=0",
+                "-c",
+                "diff.renameLimit=0",
+                "-c",
+                "core.fileMode=true",
+                "-c",
+                "core.symlinks=true",
+                "-c",
+                "core.ignoreStat=false",
+                "-c",
+                "core.trustctime=true",
+                "-c",
+                "core.checkStat=default",
                 "-c",
                 "maintenance.auto=false",
                 "-c",
@@ -98,8 +122,13 @@ def _git(root, *args, missing_ok=False, input_error=False):
     except ReceiptOperationalError:
         _terminate_process_group(process)
         raise
+    except Exception:
+        _terminate_process_group(process)
+        raise ReceiptOperationalError(
+            "Git command output could not be read"
+        ) from None
     if process.returncode:
-        if missing_ok:
+        if process.returncode in missing_codes:
             return None
         error = ReceiptError if input_error else ReceiptOperationalError
         raise error("Git command failed")
@@ -113,8 +142,8 @@ def _bounded_process_output(process):
     deadline = time.monotonic() + GIT_TIMEOUT_SECONDS
     output = bytearray()
     selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ)
     try:
+        selector.register(process.stdout, selectors.EVENT_READ)
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -146,28 +175,50 @@ def _bounded_process_output(process):
 
 def _terminate_process_group(process):
     try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except (OSError, ProcessLookupError):
-        if process.poll() is None:
-            process.kill()
-    process.wait()
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            if process.poll() is None:
+                process.kill()
+        process.wait()
+    finally:
+        if process.stdout is not None:
+            process.stdout.close()
 
 
 def _repository_root(repo):
-    root = _git(
+    root = _one_git_line(_git(
         Path(repo),
         "rev-parse",
         "--show-toplevel",
         input_error=True,
-    ).strip()
+    ), "Git repository root")
     if not root:
         raise ReceiptError("Git repository root is missing")
     return Path(root).resolve()
 
 
 def _origin(root):
-    origin = _git(root, "remote", "get-url", "origin", missing_ok=True)
-    return None if origin is None else _redact_remote(origin.strip())
+    origin = _git(
+        root,
+        "remote",
+        "get-url",
+        "origin",
+        missing_codes=(2,),
+    )
+    return None if origin is None else _redact_remote(
+        _one_git_line(origin, "Git origin")
+    )
+
+
+def _one_git_line(output, name):
+    if output.endswith("\n"):
+        output = output[:-1]
+        if output.endswith("\r"):
+            output = output[:-1]
+    if "\n" in output or "\r" in output:
+        raise ReceiptOperationalError(f"{name} is not a single line")
+    return output
 
 
 def _repository_name(root, origin):
@@ -224,7 +275,16 @@ def _redact_remote(remote):
 
 
 def _repository_snapshot(root):
+    _assert_index_visibility(root)
+    filters_before = _external_filter_configuration(root)
+    if filters_before:
+        raise ReceiptError("external Git filters prevent a safe receipt")
     status = _status(root)
+    filters_after = _external_filter_configuration(root)
+    if filters_after:
+        raise ReceiptOperationalError(
+            "Git filter configuration changed while receipt was collected"
+        )
     head = status["head"]
     return {
         "status": status,
@@ -232,7 +292,35 @@ def _repository_snapshot(root):
         "local_tags": sorted(filter(
             None, _git(root, "tag", "--points-at", head).splitlines()
         )),
+        "filter_configuration": filters_after,
     }
+
+
+def _assert_index_visibility(root):
+    records = _git(root, "ls-files", "-v", "-z").split("\0")
+    for record in records:
+        if not record:
+            continue
+        marker = record[0]
+        if marker == "S" or marker.islower():
+            raise ReceiptError(
+                "Git index visibility flags prevent a complete receipt"
+            )
+
+
+def _external_filter_configuration(root):
+    output = _git(
+        root,
+        "config",
+        "--name-only",
+        "-z",
+        "--get-regexp",
+        r"^filter\..*\.(clean|process)$",
+        missing_codes=(1,),
+    )
+    return () if output is None else tuple(
+        sorted(record for record in output.split("\0") if record)
+    )
 
 
 def _status(root):
@@ -242,7 +330,7 @@ def _status(root):
         "--quiet",
         "--short",
         "HEAD",
-        missing_ok=True,
+        missing_codes=(1,),
     )
     output = _git(
         root,
@@ -251,6 +339,7 @@ def _status(root):
         "--branch",
         "-z",
         "--untracked-files=all",
+        "--ignore-submodules=none",
     )
     records = output.split("\0")
     head = upstream = None
@@ -281,7 +370,10 @@ def _status(root):
             untracked += 1
     if not head or head == "(initial)":
         raise ReceiptError("Git repository has no HEAD commit")
-    branch = None if symbolic_branch is None else symbolic_branch.strip()
+    branch = None if symbolic_branch is None else _one_git_line(
+        symbolic_branch,
+        "Git symbolic branch",
+    )
     if branch is None:
         upstream = None
         ahead = behind = None
@@ -301,7 +393,7 @@ def _status(root):
     }
 
 
-def _benchmark_identity(root, benchmark_manifest):
+def _benchmark_identity(root, benchmark_manifest, head):
     manifest_name = _normalized_path(benchmark_manifest)
     try:
         raw = _read_repo_file(root, manifest_name, max_bytes=MAX_MANIFEST_BYTES)
@@ -379,6 +471,16 @@ def _benchmark_identity(root, benchmark_manifest):
         raise ReceiptError("benchmark report is invalid")
     report_name = _manifest_path(report, "path")
     _safe_repo_file(root, report_name)
+    committed = _git(
+        root,
+        "show",
+        f"{head}:{manifest_name}",
+        missing_codes=(128,),
+    )
+    if committed is None or committed.encode("utf-8") != raw:
+        raise ReceiptError(
+            "benchmark manifest must be Git-tracked and match captured HEAD"
+        )
     return {
         "artifact_count": len(artifacts),
         "evaluated_release": evaluated_release,

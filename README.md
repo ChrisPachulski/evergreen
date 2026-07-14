@@ -96,6 +96,9 @@ A combined staging-and-commit call cannot prove the finalized index passed the g
 Run `./bin/evergreen receipt --repo .` for a fresh, deterministic view of local repository state.
 Local Git state does not verify a GitHub Release, marketplace publication, registry, store, or
 deployment; without direct authority, external release state remains unverified.
+Receipt collection is supported on macOS and Linux; unsupported hosts fail before POSIX operations.
+Repositories with external clean/process filters or assume-unchanged/skip-worktree index flags are refused rather than certified.
+A benchmark manifest is accepted only when its exact bytes match the captured HEAD.
 
 Human output presents the repository, release, and optional benchmark evidence without adding a
 verdict:

@@ -13,6 +13,9 @@
 - No dependency additions, network calls, provider calls, repository writes, Git mutations, pushes, tags, releases, or deployments.
 - Every Git subprocess uses an argv list, no shell, a hardened environment/configuration, one
   five-second deadline, streaming reads capped at one MiB, and process-group termination/reaping.
+- Receipt collection is macOS/Linux-only and fails before POSIX operations elsewhere. Effective
+  external clean/process filters and hidden-index flags fail closed; file mode, symlink, rename,
+  and submodule visibility are explicitly enabled.
 - Missing origin/upstream are data, not errors; missing HEAD is an error.
 - Local Git state never proves an external release.
 - A benchmark manifest produces `evidence_state: declared_publication`, never a fresh-execution, reverified, or quality-PASS claim.
@@ -92,31 +95,16 @@ GIT_TIMEOUT_SECONDS = 5
 MAX_GIT_OUTPUT_BYTES = 1_048_576
 MAX_MANIFEST_BYTES = 1_048_576
 PUBLICATION_KIND = "evergreen-benchmark-decision-publication"
+RECEIPT_ATTEMPTS = 2
 
 class ReceiptError(ValueError):
     pass
 
+class ReceiptOperationalError(ReceiptError):
+    pass
+
 def build_receipt(repo: Path, benchmark_manifest: Path | None = None) -> dict:
-    root = _repository_root(repo)
-    status = _status(root)
-    origin = _origin(root)
-    receipt = {
-        "schema_version": 1,
-        "repository": {
-            "root": str(root),
-            "name": _project_name(root, origin),
-            "origin": origin,
-            **status,
-        },
-        "release": {
-            "local_tags": sorted(filter(None, _git(root, "tag", "--points-at", "HEAD").splitlines())),
-            "external_state": "unverified",
-        },
-        "benchmark": None,
-    }
-    if benchmark_manifest is not None:
-        receipt["benchmark"] = _benchmark_identity(root, benchmark_manifest)
-    return receipt
+    ...
 ```
 
 Implement `_git` with `subprocess.Popen`, an argv list beginning with the resolved Git executable,
@@ -131,8 +119,11 @@ Count one staged entry when
 the X status is not `.`, one unstaged entry when Y is not `.`, and one untracked entry for each `?`
 record. Correctly consume the second NUL path for `2` rename/copy records. Use branch headers for
 HEAD, upstream, and `+ahead -behind`; use `symbolic-ref` to distinguish detached HEAD from a legal
-branch named `(detached)`. Query tags against the captured commit and return only after two complete
-snapshots match, retrying once before a bounded operational failure.
+branch named `(detached)`. Refuse assume-unchanged/skip-worktree entries and effective clean/process
+filters (including config includes), and force deterministic rename limits plus file-mode, symlink,
+and submodule visibility. Query tags against the captured commit and return only after two complete
+snapshots match. When a benchmark manifest is supplied, bracket those snapshots with two identity
+reads and require them to match too, retrying once before a bounded operational failure.
 
 - [ ] **Step 4: Add benchmark-manifest tests and verify RED**
 
@@ -170,6 +161,9 @@ Implement descriptor-relative no-follow traversal to reject symlinks in every re
 component, require a regular file, and enforce the byte ceiling from the same opened descriptor
 used for the manifest read. Implement `_normalized_path` with `PurePosixPath`, rejecting
 absolute, empty, `.`, `..`, backslash, repeated-slash, and non-canonical paths.
+
+Require the normalized manifest path and exact bytes to match the captured HEAD blob. An untracked,
+staged-only, or dirty working-tree manifest is not a declared publication.
 
 Parse only schema version `1` and `PUBLICATION_KIND`. Validate the artifact languages exactly match
 `publication.required_languages`, every language is a non-empty string and unique, provenance
@@ -242,9 +236,10 @@ receipt.add_argument("--json", action="store_true", help="emit one JSON object")
 receipt.set_defaults(run=run_receipt)
 ```
 
-`run_receipt` lazily imports the receipt module, constructs expanded `Path` values, returns `2` on
-`ReceiptError` with terminal-safe bounded output, prints compact sorted JSON under `--json`, and
-otherwise calls `print_receipt`.
+`run_receipt` lazily imports the receipt module and constructs expanded `Path` values. Invalid or
+unsafe repository/evidence input returns `2`; `ReceiptOperationalError` from a bounded Git or
+concurrent-state failure returns `1`. Both paths emit one terminal-safe bounded error line. Success
+prints compact sorted JSON under `--json` and otherwise calls `print_receipt`.
 
 Human output must use these headings and fields in schema order:
 
