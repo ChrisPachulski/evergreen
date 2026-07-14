@@ -76,6 +76,25 @@ def valid_host_evidence(root="/candidate", home="/home"):
             "resolved_root": host_root,
             "instruction_state": "owned",
             "instruction_block_sha256": "f" * 64,
+            "artifacts": {
+                "instructions": {
+                    "path": f"{host_root}/{instruction}", "kind": "regular",
+                    "sha256": "2" * 64, "target": None, "uid": 501, "mode": 384,
+                },
+                "ownership": {
+                    "path": f"{host_root}/.evergreen-owned.json", "kind": "regular",
+                    "sha256": "1" * 64, "target": None, "uid": 501, "mode": 384,
+                },
+                "skill": {
+                    "path": f"{host_root}/skills/evergreen", "kind": "symlink",
+                    "sha256": None, "target": f"{root}/skills/evergreen",
+                    "uid": 501, "mode": 511,
+                },
+                "skills_parent": {
+                    "path": f"{host_root}/skills", "kind": "directory",
+                    "sha256": None, "target": None, "uid": 501, "mode": 493,
+                },
+            },
             "skill_kind": "symlink",
             "skill_target": f"{root}/skills/evergreen",
             "skill_hashes": {"skills/evergreen/SKILL.md": "e" * 64},

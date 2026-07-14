@@ -266,6 +266,7 @@ class EvergreenCLITests(unittest.TestCase):
         home = Path(self.temporary.name) / "grade-host-home"
         (home / ".claude").mkdir(parents=True)
         (home / ".codex").mkdir()
+        (home / ".claude" / "CLAUDE.md").write_text("original user text\n")
         self.assertTrue(install(home, candidate, "all").ok)
         evidence_path = candidate / manifest
         evidence = json.loads(evidence_path.read_text())
@@ -291,6 +292,18 @@ class EvergreenCLITests(unittest.TestCase):
             cwd=candidate, env=env,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
+        stale_link.unlink()
+        stale_link.symlink_to(candidate.resolve() / "skills" / "evergreen")
+        instructions = home / ".claude" / "CLAUDE.md"
+        instructions.write_bytes(
+            instructions.read_bytes().replace(b"original user text", b"changed user text", 1)
+        )
+        changed_instruction = subprocess.run(
+            [sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+             "--repo", str(candidate), "--manifest", manifest, "--json"],
+            cwd=candidate, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
 
         self.assertEqual(healthy.returncode, 2, healthy.stderr)
         healthy_categories = {
@@ -307,6 +320,25 @@ class EvergreenCLITests(unittest.TestCase):
             "skill-link-stale",
             stale_payload["host_observation"]["hosts"]["claude"]["doctor_issues"],
         )
+        changed_payload = json.loads(changed_instruction.stdout)
+        changed_categories = {
+            item["id"]: item
+            for item in changed_payload["categories"]
+        }
+        self.assertEqual(
+            changed_categories["claude_self_application"]["status"], "not-earned"
+        )
+        self.assertEqual(changed_categories["codex_self_application"]["status"], "earned")
+        self.assertEqual(
+            changed_payload["host_observation"]["hosts"]["claude"]["doctor_issues"], []
+        )
+        declared_hash = evidence["host_evidence"]["hosts"]["claude"]["installed"][
+            "artifacts"
+        ]["instructions"]["sha256"]
+        live_hash = changed_payload["host_observation"]["hosts"]["claude"]["installed"][
+            "artifacts"
+        ]["instructions"]["sha256"]
+        self.assertNotEqual(declared_hash, live_hash)
 
     def test_grade_verify_binds_public_policy_to_frozen_subject_policy(self):
         verifier, candidate, _commit, manifest = self.make_grade_repositories()

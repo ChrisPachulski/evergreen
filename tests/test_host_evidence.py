@@ -64,6 +64,14 @@ class HostEvidenceTests(unittest.TestCase):
                     "lexical_root", "resolved_root", "resolution_chain", "ownership",
                     "installed", "doctor_issues", "discovery", "uninstall_owned_paths",
                 })
+                self.assertEqual(
+                    set(host["installed"]["artifacts"]),
+                    {"instructions", "ownership", "skill", "skills_parent"},
+                )
+                for artifact in host["installed"]["artifacts"].values():
+                    self.assertEqual(
+                        set(artifact), {"path", "kind", "sha256", "target", "uid", "mode"}
+                    )
                 self.assertEqual(host["doctor_issues"], [])
                 self.assertEqual(host["installed"], host["discovery"])
                 self.assertEqual(
@@ -114,6 +122,73 @@ class HostEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence["canonical"]["hashes"], {})
         for host in evidence["hosts"].values():
             self.assertIn("canonical-invalid", host["doctor_issues"])
+
+    def test_host_evidence_rejects_writable_canonical_command_from_hashes(self):
+        from evergreen.hosts import collect_host_evidence
+
+        plugin = Path(self.temporary.name) / "canonical"
+        shutil.copytree(ROOT, plugin, symlinks=True)
+        (plugin / "commands" / "impact.md").chmod(0o666)
+
+        evidence = collect_host_evidence(self.home, plugin, "all")
+
+        self.assertEqual(evidence["canonical"]["hashes"], {})
+        for host in evidence["hosts"].values():
+            self.assertIn("canonical-invalid", host["doctor_issues"])
+
+    def test_complete_instruction_hash_detects_text_outside_owned_block_per_host(self):
+        from evergreen.hosts import collect_host_evidence, install
+
+        for directory in (".claude", ".codex"):
+            (self.home / directory).mkdir()
+        self.assertTrue(install(self.home, ROOT, "all").ok)
+        before = collect_host_evidence(self.home, ROOT, "all")
+        instructions = self.home / ".claude" / "CLAUDE.md"
+        instructions.write_bytes(b"user text changed\n" + instructions.read_bytes())
+
+        after = collect_host_evidence(self.home, ROOT, "all")
+
+        self.assertNotEqual(before["hosts"]["claude"], after["hosts"]["claude"])
+        self.assertEqual(before["hosts"]["codex"], after["hosts"]["codex"])
+        self.assertEqual(
+            after["hosts"]["claude"]["installed"]["artifacts"]["instructions"]["sha256"],
+            hashlib.sha256(instructions.read_bytes()).hexdigest(),
+        )
+
+    def test_writable_instruction_file_prevents_only_claude_alignment(self):
+        self.assert_mutable_claude_artifact_isolated(
+            "instructions", 0o666, "instruction-file-unsafe"
+        )
+
+    def test_writable_ownership_file_prevents_only_claude_alignment(self):
+        self.assert_mutable_claude_artifact_isolated(
+            "ownership", 0o666, "ownership-file-unsafe"
+        )
+
+    def test_writable_skills_parent_prevents_only_claude_alignment(self):
+        self.assert_mutable_claude_artifact_isolated(
+            "skills_parent", 0o777, "skills-parent-unsafe"
+        )
+
+    def assert_mutable_claude_artifact_isolated(self, artifact, mode, issue):
+        from evergreen.hosts import collect_host_evidence, host_evidence_aligned, install
+
+        for directory in (".claude", ".codex"):
+            (self.home / directory).mkdir()
+        self.assertTrue(install(self.home, ROOT, "all").ok)
+        paths = {
+            "instructions": self.home / ".claude" / "CLAUDE.md",
+            "ownership": self.home / ".claude" / ".evergreen-owned.json",
+            "skills_parent": self.home / ".claude" / "skills",
+        }
+        paths[artifact].chmod(mode)
+
+        evidence = collect_host_evidence(self.home, ROOT, "all")
+
+        self.assertIn(issue, evidence["hosts"]["claude"]["doctor_issues"])
+        self.assertFalse(host_evidence_aligned(evidence, "claude"))
+        self.assertEqual(evidence["hosts"]["codex"]["doctor_issues"], [])
+        self.assertTrue(host_evidence_aligned(evidence, "codex"))
 
     def snapshot(self, include_directories=False):
         values = {}

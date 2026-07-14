@@ -3,6 +3,7 @@
 import hashlib
 import os
 from pathlib import Path, PurePosixPath
+import stat
 
 from . import hosts as _hosts
 
@@ -16,7 +17,7 @@ HOST_EVIDENCE_FIELDS = {
 }
 INSTALLED_EVIDENCE_FIELDS = {
     "resolved_root", "instruction_state", "instruction_block_sha256",
-    "skill_kind", "skill_target", "skill_hashes", "command_hashes",
+    "artifacts", "skill_kind", "skill_target", "skill_hashes", "command_hashes",
     "manifest_sha256", "version",
 }
 
@@ -140,6 +141,7 @@ def host_evidence_aligned(value, host):
     }
     manifest = canonical["manifests"][host]
     ownership = observation["ownership"]
+    artifacts = installed["artifacts"]
     instruction = "CLAUDE.md" if host == "claude" else "AGENTS.md"
     host_root = Path(observation["resolved_root"])
     expected_uninstall = {
@@ -166,6 +168,17 @@ def host_evidence_aligned(value, host):
         ownership is not None and ownership["sha256"] is not None,
         ownership is not None and ownership["plugin_root"] == canonical["root"],
         ownership is not None and ownership["skill_target"] == expected_skill,
+        _artifact_safe(artifacts["instructions"], "regular"),
+        artifacts["instructions"]["path"] == str(host_root / instruction),
+        artifacts["instructions"]["sha256"] is not None,
+        _artifact_safe(artifacts["ownership"], "regular"),
+        artifacts["ownership"]["path"] == str(host_root / OWNERSHIP_FILE),
+        ownership is not None and artifacts["ownership"]["sha256"] == ownership["sha256"],
+        _artifact_safe(artifacts["skill"], "symlink", protect_mode=False),
+        artifacts["skill"]["path"] == str(host_root / "skills" / "evergreen"),
+        artifacts["skill"]["target"] == expected_skill,
+        _artifact_safe(artifacts["skills_parent"], "directory"),
+        artifacts["skills_parent"]["path"] == str(host_root / "skills"),
         installed["resolved_root"] == observation["resolved_root"],
         installed["instruction_state"] == "owned",
         installed["instruction_block_sha256"] == hashlib.sha256(_block(root)).hexdigest(),
@@ -214,12 +227,28 @@ def _validate_installed_observation(value):
     _evidence_string(value["resolved_root"])
     _evidence_string(value["instruction_state"])
     _optional_evidence_hash(value["instruction_block_sha256"])
+    _validate_artifacts(value["artifacts"])
     _evidence_string(value["skill_kind"])
     _optional_evidence_string(value["skill_target"])
     _evidence_hash_map(value["skill_hashes"])
     _evidence_hash_map(value["command_hashes"])
     _optional_evidence_hash(value["manifest_sha256"])
     _optional_evidence_string(value["version"])
+
+
+def _validate_artifacts(value):
+    _evidence_object(value, {"instructions", "ownership", "skill", "skills_parent"})
+    for artifact in value.values():
+        _evidence_object(artifact, {"path", "kind", "sha256", "target", "uid", "mode"})
+        _evidence_string(artifact["path"])
+        _evidence_string(artifact["kind"])
+        _optional_evidence_hash(artifact["sha256"])
+        _optional_evidence_string(artifact["target"])
+        for field in ("uid", "mode"):
+            if artifact[field] is not None and (
+                type(artifact[field]) is not int or artifact[field] < 0
+            ):
+                raise ValueError("host artifact metadata is invalid")
 
 
 def _contains_boolean(value):
@@ -279,6 +308,7 @@ def _sorted_unique_strings(value):
 
 
 def _active_hashes(root):
+    _secure_active_path(root)
     files = []
     for relative in (
         Path("AGENTS.md"), Path("bin/evergreen"), Path("commands"),
@@ -286,20 +316,24 @@ def _active_hashes(root):
         Path(".codex-plugin/plugin.json"),
     ):
         path = root / relative
+        _secure_active_path(path)
         kind = _kind(path)
         if kind == "regular":
             files.append(path)
         elif kind == "directory":
             for directory, names, filenames in os.walk(path, followlinks=False):
+                _secure_active_path(Path(directory))
                 for name in names:
                     candidate = Path(directory) / name
                     if _kind(candidate) != "directory":
                         raise OSError(f"unsafe active evidence directory: {candidate}")
+                    _secure_active_path(candidate)
                 names[:] = sorted(names)
                 for filename in sorted(filenames):
                     candidate = Path(directory) / filename
                     if _kind(candidate) != "regular":
                         raise OSError(f"unsafe active evidence file: {candidate}")
+                    _secure_active_path(candidate)
                     files.append(candidate)
         else:
             raise OSError(f"missing active evidence path: {path}")
@@ -314,6 +348,12 @@ def _active_hashes(root):
             raise ValueError("active evidence bytes exceed limit")
         output[path.relative_to(root).as_posix()] = hashlib.sha256(payload).hexdigest()
     return output
+
+
+def _secure_active_path(path):
+    metadata = Path(path).lstat()
+    if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) & 0o022:
+        raise OSError(f"unsafe writable active evidence path: {path}")
 
 
 def _collect_one_host(status, canonical, canonical_valid):
@@ -371,6 +411,7 @@ def _installed_observation(status, canonical):
         "resolved_root": str(status.resolved_root),
         "instruction_state": instruction_state,
         "instruction_block_sha256": hashlib.sha256(block).hexdigest() if block else None,
+        "artifacts": _artifact_observations(status, captured),
         "skill_kind": skill.kind,
         "skill_target": skill_target,
         "skill_hashes": skill_hashes,
@@ -378,6 +419,38 @@ def _installed_observation(status, canonical):
         "manifest_sha256": manifest["sha256"] if ownership_aligned else None,
         "version": manifest["version"] if ownership_aligned else None,
     }, ownership_state, captured)
+
+
+def _artifact_observations(status, captured):
+    paths = {
+        "instructions": status.instructions,
+        "ownership": status.ownership,
+        "skill": status.skill,
+        "skills_parent": status.skill.parent,
+    }
+    return {
+        name: _artifact_observation(captured[path]) for name, path in paths.items()
+    }
+
+
+def _artifact_observation(snapshot):
+    return {
+        "path": str(snapshot.path),
+        "kind": snapshot.kind,
+        "sha256": hashlib.sha256(snapshot.data).hexdigest() if snapshot.data is not None else None,
+        "target": snapshot.target,
+        "uid": snapshot.uid,
+        "mode": snapshot.mode,
+    }
+
+
+def _artifact_safe(artifact, kind, *, protect_mode=True):
+    return (
+        artifact["kind"] == kind
+        and artifact["uid"] == os.getuid()
+        and artifact["mode"] is not None
+        and (not protect_mode or not artifact["mode"] & 0o022)
+    )
 
 
 def _ownership_observation(status, captured, state):
@@ -429,6 +502,15 @@ def _host_observation_issues(status, canonical, canonical_valid, installed, stat
         issues.append("skill-link-missing")
     elif installed["skill_target"] != str(Path(canonical["root"]) / "skills" / "evergreen"):
         issues.append("skill-link-stale")
+    artifacts = installed["artifacts"]
+    for name, kind, issue, protect_mode in (
+        ("instructions", "regular", "instruction-file-unsafe", True),
+        ("ownership", "regular", "ownership-file-unsafe", True),
+        ("skill", "symlink", "skill-link-unsafe", False),
+        ("skills_parent", "directory", "skills-parent-unsafe", True),
+    ):
+        if not _artifact_safe(artifacts[name], kind, protect_mode=protect_mode):
+            issues.append(issue)
     expected_skill_hashes = {
         path: digest for path, digest in canonical["hashes"].items()
         if path.startswith("skills/evergreen/")
@@ -456,9 +538,20 @@ def _host_observation_issues(status, canonical, canonical_valid, installed, stat
 
 
 def _failed_host_observation(status):
+    artifacts = {
+        name: {
+            "path": str(path), "kind": "unavailable", "sha256": None,
+            "target": None, "uid": None, "mode": None,
+        }
+        for name, path in {
+            "instructions": status.instructions, "ownership": status.ownership,
+            "skill": status.skill, "skills_parent": status.skill.parent,
+        }.items()
+    }
     empty = {
         "resolved_root": str(status.resolved_root),
         "instruction_state": "unavailable", "instruction_block_sha256": None,
+        "artifacts": artifacts,
         "skill_kind": "unavailable", "skill_target": None, "skill_hashes": {},
         "command_hashes": {}, "manifest_sha256": None, "version": None,
     }
