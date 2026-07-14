@@ -45,7 +45,7 @@ class LiveArtifactIncompatible(ValueError):
     pass
 
 
-def peer_policy(manifest_path, peer_id, rows, *, allow_local=False):
+def peer_policy(manifest_path, peer_id, rows):
     """Bind a label-blind peer lane to one frozen manifest entry."""
     if manifest_path is None or not isinstance(peer_id, str) or not peer_id:
         raise ValueError("peer manifest and peer ID must be declared together")
@@ -68,8 +68,6 @@ def peer_policy(manifest_path, peer_id, rows, *, allow_local=False):
     selected = next((item for item in manifest["peers"] if item["id"] == peer_id), None)
     if selected is None:
         raise ValueError("peer ID is absent from frozen manifest")
-    if selected["source"]["kind"] != "protocol" and not allow_local:
-        raise ValueError("local peer cannot run through the provider lane")
     languages = {row.get("language") for row in rows if isinstance(row, dict)}
     if not languages or not languages <= set(peer_protocol.LANGUAGES):
         raise ValueError("peer input languages are invalid")
@@ -81,10 +79,32 @@ def peer_policy(manifest_path, peer_id, rows, *, allow_local=False):
         raise ValueError("peer is not applicable to: " + ", ".join(unavailable))
     return {
         "peer_id": peer_id,
-        "peer_manifest_sha256": hashlib.sha256(before).hexdigest(),
+        "peer_manifest_sha256": peer_protocol._manifest_sha256(manifest),
         "peer_config_sha256": selected["config_sha256"],
         "peer_source": selected["source"],
+        "peer_source_sha256": peer_protocol._source_sha256(selected["source"]),
     }
+
+
+def load_peer_key(path, repo):
+    path = Path(path)
+    repo = Path(repo).resolve()
+    if not path.is_absolute():
+        raise ValueError("peer key file must be an absolute external path")
+    try:
+        status = os.lstat(path)
+        resolved = path.resolve(strict=True)
+    except OSError as error:
+        raise ValueError("peer key file is unavailable") from error
+    if path == repo or repo in path.parents or resolved == repo or repo in resolved.parents:
+        raise ValueError("peer key file must be outside the repository")
+    if (not stat.S_ISREG(status.st_mode) or status.st_uid != os.getuid() or
+            status.st_nlink != 1 or stat.S_IMODE(status.st_mode) & 0o077):
+        raise ValueError("peer key file must be a private user-owned regular file")
+    key = read_bytes(path, 32, label="peer opaque-ID key")
+    if len(key) != 32:
+        raise ValueError("peer opaque-ID key must contain exactly 32 bytes")
+    return key
 
 
 def run_policy(_dataset, rows, resolver, split_manifest, split, context_protocol):
@@ -198,7 +218,7 @@ def acquire_lock(lock_path):
     return lock
 
 
-def _artifact(raw, expected_metadata, dataset_rows=None):
+def _artifact(raw, expected_metadata, dataset_rows=None, peer_request=None):
     try:
         value = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -206,8 +226,11 @@ def _artifact(raw, expected_metadata, dataset_rows=None):
     if not isinstance(value, dict) or value.get("metadata") != expected_metadata:
         return None
     try:
-        resume_state(value, expected_metadata, dataset_rows=dataset_rows)
-    except ValueError:
+        if peer_request is None:
+            resume_state(value, expected_metadata, dataset_rows=dataset_rows)
+        else:
+            peer_protocol.validate_run_document(value, expected_metadata, peer_request)
+    except (ValueError, peer_protocol.PeerError):
         return None
     return value
 
@@ -265,10 +288,12 @@ def _atomic_bytes(path, raw):
         raise
 
 
-def archive_checkpoint(live_path, archive_root, expected_metadata, dataset_rows=None):
+def archive_checkpoint(
+    live_path, archive_root, expected_metadata, dataset_rows=None, peer_request=None,
+):
     live_path = Path(live_path)
     raw = read_bytes(live_path, MAX_ARTIFACT_BYTES, label="benchmark artifact")
-    value = _artifact(raw, expected_metadata, dataset_rows)
+    value = _artifact(raw, expected_metadata, dataset_rows, peer_request)
     if value is None:
         raise LiveArtifactIncompatible(
             "live benchmark artifact has invalid or incompatible provenance"
@@ -289,7 +314,9 @@ def archive_checkpoint(live_path, archive_root, expected_metadata, dataset_rows=
     return destination
 
 
-def restore_latest(live_path, archive_root, expected_metadata, dataset_rows=None):
+def restore_latest(
+    live_path, archive_root, expected_metadata, dataset_rows=None, peer_request=None,
+):
     live_path = Path(live_path)
     candidates = []
     commit = expected_metadata["git"]["commit"]
@@ -304,7 +331,7 @@ def restore_latest(live_path, archive_root, expected_metadata, dataset_rows=None
             continue
         if hashlib.sha256(raw).hexdigest() != match.group(2):
             continue
-        value = _artifact(raw, expected_metadata, dataset_rows)
+        value = _artifact(raw, expected_metadata, dataset_rows, peer_request)
         if value is None or len(value["rows"]) != int(match.group(1)):
             continue
         candidates.append((len(value["rows"]), path, raw))
@@ -338,17 +365,21 @@ def quarantine_live(live_path, archive_root, expected_metadata):
     return destination
 
 
-def prepare_output(live_path, archive_root, expected_metadata, dataset_rows=None):
+def prepare_output(
+    live_path, archive_root, expected_metadata, dataset_rows=None, peer_request=None,
+):
     live_path = Path(live_path)
     if live_path.exists():
         try:
             archive_checkpoint(
-                live_path, archive_root, expected_metadata, dataset_rows=dataset_rows
+                live_path, archive_root, expected_metadata, dataset_rows=dataset_rows,
+                peer_request=peer_request,
             )
         except LiveArtifactIncompatible:
             quarantine_live(live_path, archive_root, expected_metadata)
     return restore_latest(
-        live_path, archive_root, expected_metadata, dataset_rows=dataset_rows
+        live_path, archive_root, expected_metadata, dataset_rows=dataset_rows,
+        peer_request=peer_request,
     )
 
 
@@ -419,6 +450,8 @@ def parse_args(argv=None):
     parser.add_argument("--split", choices=("dev", "holdout"))
     parser.add_argument("--peer-manifest", type=Path)
     parser.add_argument("--peer-id")
+    parser.add_argument("--peer-key-file", type=Path)
+    parser.add_argument("--peer-checkout", type=Path)
     parser.add_argument(
         "--context-protocol", choices=("none", JAVA_CONTEXT_PROTOCOL), default="none"
     )
@@ -436,21 +469,57 @@ def main(argv=None):
     if args.concurrency < 1 or args.poll_seconds <= 0 or args.minimum_free_gib < 0:
         raise ValueError("concurrency, polling, and free-disk bounds must be positive")
     anchored_workspace = workspace_token(repo)
-    settings = {
-        "provider": args.provider,
-        "models": {"strong": args.strong_model, "cheap": args.cheap_model},
-        "concurrency": args.concurrency,
-    }
     _payload, rows = load_dataset(args.dataset)
-    require_single_language(rows)
     if (args.peer_manifest is None) != (args.peer_id is None):
         raise ValueError("peer manifest and peer ID must be declared together")
-    if args.peer_manifest is not None:
-        settings.update(peer_policy(args.peer_manifest, args.peer_id, rows))
-    settings.update(run_policy(
+    peer_mode = args.peer_manifest is not None
+    if not peer_mode:
+        require_single_language(rows)
+    if peer_mode != (args.peer_key_file is not None):
+        raise ValueError("peer lanes require an external 32-byte opaque-ID key")
+    run_settings = run_policy(
         args.dataset, rows, args.resolver, args.split_manifest, args.split,
         args.context_protocol,
-    ))
+    )
+    peer_request = None
+    peer_key = None
+    peer = None
+    if peer_mode:
+        peer_key = load_peer_key(args.peer_key_file, repo)
+        peer = peer_policy(args.peer_manifest, args.peer_id, rows)
+        if peer["peer_source"]["kind"] == "git":
+            if args.peer_checkout is None:
+                raise ValueError("local peer requires a verified checkout")
+            peer_protocol.verify_git_source(peer["peer_source"], args.peer_checkout)
+        elif args.peer_checkout is not None:
+            raise ValueError("protocol peer does not accept a local checkout")
+        settings = {
+            "provider": args.provider,
+            "model": args.strong_model,
+            "peer_id": args.peer_id,
+            "peer_manifest_sha256": peer["peer_manifest_sha256"],
+            "peer_config_sha256": peer["peer_config_sha256"],
+            "peer_source_sha256": peer["peer_source_sha256"],
+            "concurrency": args.concurrency,
+            **run_settings,
+        }
+        try:
+            from .run_peer import validate_settings
+        except ImportError:
+            from run_peer import validate_settings
+        validate_settings(settings)
+        peer_request = peer_protocol.freeze_request(
+            peer_protocol.benchmark_private_rows(rows), peer_key,
+        )
+    else:
+        if args.peer_checkout is not None:
+            raise ValueError("peer checkout requires a peer lane")
+        settings = {
+            "provider": args.provider,
+            "models": {"strong": args.strong_model, "cheap": args.cheap_model},
+            "concurrency": args.concurrency,
+            **run_settings,
+        }
     expected_metadata = artifact_metadata(args.dataset, repo, settings)
     expected = expected_metadata["git"]
     if expected.get("dirty") is not False or expected.get("commit") == "unavailable":
@@ -474,12 +543,22 @@ def main(argv=None):
     global_lock = Path("/tmp") / f"evergreen-benchmark-{os.getuid()}.lock"
     lock = acquire_lock(global_lock)
     try:
-        output = HERE / "out" / artifact_filename(
-            args.dataset, args.strong_model, args.provider, args.resolver
+        output = HERE / "out" / (
+            peer_protocol.artifact_filename(
+                args.dataset, args.provider, args.strong_model, args.peer_id,
+            ) if peer_mode else artifact_filename(
+                args.dataset, args.strong_model, args.provider, args.resolver,
+            )
         )
-        prepare_output(output, archive, expected_metadata, dataset_rows=rows)
+        if peer_mode:
+            prepare_output(
+                output, archive, expected_metadata, peer_request=peer_request,
+            )
+        else:
+            prepare_output(output, archive, expected_metadata, dataset_rows=rows)
         environment = dict(os.environ)
         read_fd, write_fd = os.pipe()
+        peer_read_fd = None
         token = secrets.token_bytes(32)
         try:
             os.write(write_fd, token)
@@ -499,16 +578,44 @@ def main(argv=None):
             "EVAL_SPLIT_MANIFEST_SHA256": settings["split_manifest_sha256"] or "",
             "EVAL_SPLIT": settings["split"] or "",
         })
+        inherited_fds = [read_fd]
+        if peer_mode:
+            peer_read_fd, peer_write_fd = os.pipe()
+            try:
+                os.write(peer_write_fd, peer_key)
+            finally:
+                os.close(peer_write_fd)
+            inherited_fds.append(peer_read_fd)
+            environment.update({
+                "EVAL_PEER_KEY_FD": str(peer_read_fd),
+                "EVAL_PEER_SETTINGS_JSON": json.dumps(
+                    settings, sort_keys=True, separators=(",", ":"),
+                ),
+            })
+            if args.peer_checkout is not None:
+                environment["EVAL_PEER_CHECKOUT"] = str(args.peer_checkout.resolve())
         if (git_identity(repo) != expected or workspace_token(repo) != anchored_workspace or
                 path_token(archive) != anchored_archive):
             raise ValueError("repository or archive changed before benchmark spawn")
         try:
             process = subprocess.Popen(
-                [sys.executable, str(HERE / "run_bench.py"), "--dataset", str(args.dataset)],
-                cwd=repo, env=environment, start_new_session=True, pass_fds=(read_fd,),
+                [
+                    sys.executable,
+                    str(HERE / ("run_peer.py" if peer_mode else "run_bench.py")),
+                    "--dataset", str(args.dataset),
+                ],
+                cwd=repo, env=environment, start_new_session=True,
+                pass_fds=tuple(inherited_fds),
             )
         finally:
             os.close(read_fd)
+            if peer_read_fd is not None:
+                os.close(peer_read_fd)
+        archive_fn = (
+            lambda live, root, metadata: archive_checkpoint(
+                live, root, metadata, peer_request=peer_request,
+            )
+        ) if peer_mode else archive_checkpoint
         return monitor_process(
             process=process, output=output, archive=archive,
             expected_metadata=expected_metadata,
@@ -520,6 +627,7 @@ def main(argv=None):
             free_fn=lambda: min(
                 shutil.disk_usage(repo).free, shutil.disk_usage(archive).free
             ),
+            archive_fn=archive_fn,
         )
     finally:
         lock.close()

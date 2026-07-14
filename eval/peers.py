@@ -7,6 +7,7 @@ import hmac
 import json
 import math
 from pathlib import Path
+import re
 
 
 LANGUAGES = ("go", "java", "python", "rust", "typescript")
@@ -113,11 +114,11 @@ def load_manifest_bytes(payload):
     for item in items:
         _exact(
             item,
-            {"id", "required", "source", "config", "config_sha256", "applicability"},
+            {"id", "source", "config", "config_sha256", "applicability"},
             "peer",
         )
         identifier = _text(item["id"], "peer ID", 128)
-        if identifier in seen or type(item["required"]) is not bool:
+        if identifier in seen:
             raise PeerError("peer identity is invalid")
         seen.add(identifier)
         source = item["source"]
@@ -169,7 +170,7 @@ def load_manifest_bytes(payload):
     if "direct-baseline" not in seen:
         raise PeerError("direct baseline is required")
     baseline = next(item for item in items if item["id"] == "direct-baseline")
-    if not baseline["required"] or any(
+    if any(
             state["state"] != "applicable" for state in baseline["applicability"].values()
     ):
         raise PeerError("direct baseline must apply to every language")
@@ -239,6 +240,33 @@ def _private_rows(rows):
     return sorted(normalized, key=lambda row: row["id"].encode())
 
 
+def benchmark_private_rows(rows):
+    """Project benchmark/oracle rows to the only private fields the trusted scorer needs."""
+    if not isinstance(rows, list):
+        raise PeerError("benchmark peer rows are invalid")
+    projected = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise PeerError("benchmark peer row is invalid")
+        documentation = row.get("documentation", row.get("doc"))
+        projected.append({
+            "id": row.get("id"),
+            "language": row.get("language"),
+            "code": row.get("code"),
+            "documentation": documentation,
+            "label": row.get("label"),
+        })
+    return _private_rows(projected)
+
+
+def artifact_filename(dataset, provider, model, peer_id):
+    parts = (Path(dataset).stem, provider, model, peer_id)
+    if any(not isinstance(part, str) or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", part) for part in parts):
+        raise PeerError("peer artifact name is invalid")
+    return f"peer-{parts[0]}-{provider}-{model}-{peer_id}.json"
+
+
 def id_set_sha256(rows):
     ordered = _private_rows(rows)
     digest = hashlib.sha256()
@@ -302,6 +330,71 @@ def validate_output(output, request):
     return tuple(sorted(decisions.items()))
 
 
+def run_document(
+    metadata, request, rows, *, started_at, elapsed_seconds, provider_usage=None,
+):
+    """Build a resumable peer checkpoint that contains no oracle labels or private IDs."""
+    document = {
+        "schema_version": 1,
+        "kind": "evergreen-peer-run",
+        "metadata": metadata,
+        "request": {
+            "id_set_sha256": request["id_set_sha256"],
+            "input_sha256": request["input_sha256"],
+        },
+        "rows": rows,
+        "timing": {
+            "started_at": started_at,
+            "elapsed_seconds": elapsed_seconds,
+        },
+    }
+    if provider_usage is not None:
+        document["provider_usage"] = provider_usage
+    validate_run_document(document, metadata, request)
+    return document
+
+
+def validate_run_document(document, expected_metadata, request):
+    from eval.bench.artifact import valid_iso_time, validate_usage
+
+    required = {"schema_version", "kind", "metadata", "request", "rows", "timing"}
+    if isinstance(document, dict) and "provider_usage" in document:
+        required.add("provider_usage")
+    _exact(document, required, "peer run")
+    if type(document["schema_version"]) is not int or document["schema_version"] != 1:
+        raise PeerError("peer run schema is invalid")
+    if document["kind"] != "evergreen-peer-run" or document["metadata"] != expected_metadata:
+        raise PeerError("peer run provenance is invalid")
+    _exact(document["request"], {"id_set_sha256", "input_sha256"}, "peer run request")
+    if document["request"] != {
+            "id_set_sha256": request["id_set_sha256"],
+            "input_sha256": request["input_sha256"]}:
+        raise PeerError("peer run request identity is invalid")
+    timing = document["timing"]
+    _exact(timing, {"started_at", "elapsed_seconds"}, "peer run timing")
+    elapsed = timing["elapsed_seconds"]
+    if (not valid_iso_time(timing["started_at"]) or type(elapsed) not in (int, float) or
+            not math.isfinite(elapsed) or elapsed < 0):
+        raise PeerError("peer run timing is invalid")
+    if "provider_usage" in document:
+        try:
+            validate_usage(document["provider_usage"])
+        except ValueError as error:
+            raise PeerError("peer run provider usage is invalid") from error
+    expected_ids = {item["opaque_id"] for item in request["rows"]}
+    rows = document["rows"]
+    if not isinstance(rows, list) or len(rows) > len(expected_ids):
+        raise PeerError("peer run rows are invalid")
+    decisions = {}
+    for item in rows:
+        _exact(item, {"opaque_id", "decision"}, "peer run decision")
+        identifier = item["opaque_id"]
+        if identifier not in expected_ids or identifier in decisions or item["decision"] not in DECISIONS:
+            raise PeerError("peer run decision is invalid")
+        decisions[identifier] = item["decision"]
+    return decisions
+
+
 def _language_score(rows):
     tp = fp = fn = tn = abstained = 0
     for label, decision in rows:
@@ -330,10 +423,31 @@ def _language_score(rows):
     }
 
 
-def score_output(*, peer_id, subject_commit, private_rows, secret, request, output):
+def _manifest_sha256(manifest):
+    return hashlib.sha256(canonical_bytes(manifest)).hexdigest()
+
+
+def _source_sha256(source):
+    return hashlib.sha256(canonical_bytes(source)).hexdigest()
+
+
+def score_output(
+    *, manifest, peer_id, subject_commit, private_rows, secret, request, output,
+):
     _text(peer_id, "peer ID", 128)
     _hex(subject_commit, "subject commit", (40, 64))
+    try:
+        peer = next(item for item in manifest["peers"] if item["id"] == peer_id)
+    except (KeyError, StopIteration, TypeError):
+        raise PeerError("peer is absent from frozen manifest") from None
     ordered = _private_rows(private_rows)
+    languages = {row["language"] for row in ordered}
+    applicable = {
+        language for language, state in peer["applicability"].items()
+        if state["state"] == "applicable"
+    }
+    if not languages or not languages <= applicable:
+        raise PeerError("peer input contains a non-applicable language")
     expected_request = freeze_request(ordered, secret)
     if request != expected_request:
         raise PeerError("peer request does not match private holdout rows")
@@ -347,50 +461,55 @@ def score_output(*, peer_id, subject_commit, private_rows, secret, request, outp
         "kind": "evergreen-peer-result",
         "peer_id": peer_id,
         "subject_commit": subject_commit,
+        "peer_manifest_sha256": _manifest_sha256(manifest),
+        "peer_config_sha256": peer["config_sha256"],
+        "peer_source_sha256": _source_sha256(peer["source"]),
         "id_set_sha256": request["id_set_sha256"],
         "input_sha256": request["input_sha256"],
+        "output_sha256": hashlib.sha256(canonical_bytes(output)).hexdigest(),
         "languages": {
-            language: _language_score(by_language[language]) for language in LANGUAGES
+            language: _language_score(by_language[language]) for language in sorted(languages)
         },
     }
 
 
-def comparison_complete(
-    manifest, results, subject_commit, expected_id_set_sha256, *, required_only=False,
-):
+def comparison_complete(manifest, bundles, subject_commit, expected_id_set_sha256s):
     try:
         _hex(subject_commit, "subject commit", (40, 64))
-        _hex(expected_id_set_sha256, "holdout ID-set hash")
-        expected = {
-            item["id"]: item for item in manifest["peers"]
-            if item["required"] or not required_only
-        }
-        if not isinstance(results, list):
+        expected = {item["id"]: item for item in manifest["peers"]}
+        if (not isinstance(expected_id_set_sha256s, dict) or
+                set(expected_id_set_sha256s) != set(expected)):
+            return False
+        for digest in expected_id_set_sha256s.values():
+            _hex(digest, "holdout ID-set hash")
+        if not isinstance(bundles, list):
             return False
         observed = {}
-        for result in results:
+        for bundle in bundles:
+            if not isinstance(bundle, dict) or set(bundle) != {
+                    "private_rows", "secret", "request", "output", "result"}:
+                return False
+            result = bundle["result"]
             peer_id = result.get("peer_id") if isinstance(result, dict) else None
             if peer_id in observed or peer_id not in expected:
                 return False
-            if (result.get("subject_commit") != subject_commit or
-                    result.get("id_set_sha256") != expected_id_set_sha256):
+            recomputed = score_output(
+                manifest=manifest, peer_id=peer_id, subject_commit=subject_commit,
+                private_rows=bundle["private_rows"], secret=bundle["secret"],
+                request=bundle["request"], output=bundle["output"],
+            )
+            if result != recomputed:
                 return False
-            languages = result.get("languages")
-            if not isinstance(languages, dict):
+            if result["id_set_sha256"] != expected_id_set_sha256s[peer_id]:
                 return False
-            applicable = {
+            required_languages = {
                 language for language, state in expected[peer_id]["applicability"].items()
                 if state["state"] == "applicable"
             }
-            if set(languages) != applicable:
+            if set(result["languages"]) != required_languages:
                 return False
-            for language, state in expected[peer_id]["applicability"].items():
-                if state["state"] == "applicable":
-                    metrics = languages.get(language)
-                    if (not isinstance(metrics, dict) or
-                            type(metrics.get("attempted")) is not int or
-                            metrics["attempted"] <= 0):
-                        return False
+            if any(metrics["attempted"] <= 0 for metrics in result["languages"].values()):
+                return False
             observed[peer_id] = result
         return set(observed) == set(expected)
     except (AttributeError, KeyError, PeerError, TypeError):

@@ -478,7 +478,7 @@ def render_markdown(
 
 
 def render_peer_markdown(
-    manifest, results, subject_commit, id_set_sha256, *, required_only=False,
+    manifest, bundles, subject_commit, id_set_sha256s,
 ):
     """Render comparison coverage and raw metrics without declaring a winner."""
     try:
@@ -489,8 +489,7 @@ def render_peer_markdown(
         from eval import peers as peer_protocol
 
     complete = peer_protocol.comparison_complete(
-        manifest, results, subject_commit, id_set_sha256,
-        required_only=required_only,
+        manifest, bundles, subject_commit, id_set_sha256s,
     )
     lines = [
         "# Evergreen same-corpus peer report",
@@ -498,7 +497,11 @@ def render_peer_markdown(
         f"Comparison completeness: **{'COMPLETE' if complete else 'INCOMPLETE'}**.",
         "",
         f"Subject commit: `{_safe_text(subject_commit)}`.",
-        f"Holdout ID-set SHA-256: `{_safe_text(id_set_sha256)}`.",
+        "Holdout ID-set SHA-256 values are bound separately for each applicable peer subset.",
+    ]
+    results = [
+        bundle.get("result") for bundle in bundles if isinstance(bundle, dict)
+        and isinstance(bundle.get("result"), dict)
     ]
     for result in sorted(
             (item for item in results if isinstance(item, dict)),

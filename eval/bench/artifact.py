@@ -27,8 +27,10 @@ MAX_METADATA_HASH_SECONDS = 30
 VALID_CATEGORIES = {None, "direct-mismatch", "over-promise", "under-promise"}
 JUDGE_MODULES = (
     "artifact.py", "frozen_run.py", "java_context.py", "metrics.py",
-    "model-output.schema.json", "report.py", "resolver.py", "run_bench.py", "runner.py",
-    "split_manifest.py", "trial.py",
+    "model-output.schema.json", "report.py", "resolver.py", "run_bench.py", "run_peer.py",
+    "runner.py", "split_manifest.py", "trial.py", "../peer_adapters/common.py",
+    "../peer_adapters/drift_guardian.py", "../peer_adapters/drift_guardian_runner.js",
+    "../peers-v1.json", "../peers.py",
 )
 
 

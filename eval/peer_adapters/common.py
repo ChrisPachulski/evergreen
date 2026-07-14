@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 import selectors
 import signal
-import stat
 import subprocess
 import time
 
@@ -20,11 +19,6 @@ DEFAULT_MANIFEST = ROOT / "eval" / "peers-v1.json"
 MAX_INPUT_BYTES = 512 * 1024 * 1024
 MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 MAX_STDERR_BYTES = 64 * 1024
-MAX_RUNTIME_RECEIPT_BYTES = 64 * 1024
-MAX_RUNTIME_FILES = 100_000
-MAX_RUNTIME_FILE_BYTES = 256 * 1024 * 1024
-MAX_RUNTIME_BYTES = 1024 * 1024 * 1024
-MAX_RUNTIME_SCAN_SECONDS = 30
 
 
 def _peer(peer_id, manifest_path=DEFAULT_MANIFEST):
@@ -33,17 +27,6 @@ def _peer(peer_id, manifest_path=DEFAULT_MANIFEST):
         if item["id"] == peer_id:
             return item
     raise peers.PeerError("peer is absent from the frozen manifest")
-
-
-def _read_bounded(path, maximum, label):
-    try:
-        with Path(path).open("rb") as handle:
-            payload = handle.read(maximum + 1)
-    except OSError as error:
-        raise peers.PeerError(f"{label} is unavailable") from error
-    if len(payload) > maximum:
-        raise peers.PeerError(f"{label} is too large")
-    return payload
 
 
 def _validate_request_bytes(payload, applicable_languages):
@@ -187,108 +170,3 @@ def run_adapter(*, peer_id, payload, checkout, runner, applicable_languages,
     output = peers._load(raw_output)
     peers.validate_output(output, request)
     return peers.canonical_bytes(output)
-
-
-def runtime_inventory(runtime):
-    root = Path(runtime)
-    try:
-        root_stat = root.lstat()
-    except OSError as error:
-        raise peers.PeerError("peer runtime is unavailable") from error
-    if not stat.S_ISDIR(root_stat.st_mode) or stat.S_ISLNK(root_stat.st_mode):
-        raise peers.PeerError("peer runtime root is invalid")
-    digest = hashlib.sha256()
-    files = 0
-    total = 0
-    deadline = time.monotonic() + MAX_RUNTIME_SCAN_SECONDS
-
-    def scan(directory, prefix=""):
-        nonlocal files, total
-        if time.monotonic() > deadline:
-            raise peers.PeerError("peer runtime inventory timed out")
-        try:
-            with os.scandir(directory) as listing:
-                entries = sorted(listing, key=lambda item: item.name.encode())
-        except OSError as error:
-            raise peers.PeerError("peer runtime inventory is unavailable") from error
-        for entry in entries:
-            relative = f"{prefix}/{entry.name}" if prefix else entry.name
-            encoded = relative.encode("utf-8")
-            try:
-                metadata = entry.stat(follow_symlinks=False)
-            except OSError as error:
-                raise peers.PeerError("peer runtime inventory is unavailable") from error
-            if stat.S_ISLNK(metadata.st_mode):
-                raise peers.PeerError("peer runtime inventory contains a symlink")
-            digest.update(len(encoded).to_bytes(8, "big"))
-            digest.update(encoded)
-            digest.update(stat.S_IMODE(metadata.st_mode).to_bytes(4, "big"))
-            if stat.S_ISDIR(metadata.st_mode):
-                digest.update(b"d")
-                scan(entry.path, relative)
-            elif stat.S_ISREG(metadata.st_mode):
-                files += 1
-                if files > MAX_RUNTIME_FILES or metadata.st_size > MAX_RUNTIME_FILE_BYTES:
-                    raise peers.PeerError("peer runtime inventory exceeds its bound")
-                total += metadata.st_size
-                if total > MAX_RUNTIME_BYTES:
-                    raise peers.PeerError("peer runtime inventory exceeds its bound")
-                content_hash = hashlib.sha256()
-                try:
-                    descriptor = os.open(entry.path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-                    with os.fdopen(descriptor, "rb") as handle:
-                        opened = os.fstat(handle.fileno())
-                        if (opened.st_dev, opened.st_ino, opened.st_size) != (
-                                metadata.st_dev, metadata.st_ino, metadata.st_size):
-                            raise peers.PeerError("peer runtime changed during inventory")
-                        while chunk := handle.read(1024 * 1024):
-                            content_hash.update(chunk)
-                except OSError as error:
-                    raise peers.PeerError("peer runtime inventory is unavailable") from error
-                digest.update(b"f")
-                digest.update(metadata.st_size.to_bytes(8, "big"))
-                digest.update(content_hash.digest())
-            else:
-                raise peers.PeerError("peer runtime inventory has a special file")
-
-    scan(root)
-    return {"inventory_sha256": digest.hexdigest(), "files": files, "bytes": total}
-
-
-def make_runtime_receipt(peer_id, runtime, *, manifest_path=DEFAULT_MANIFEST):
-    item = _peer(peer_id, manifest_path)
-    source = item["source"]
-    inventory = runtime_inventory(runtime)
-    return {
-        "schema_version": 1,
-        "kind": "evergreen-peer-runtime-receipt",
-        "peer_id": peer_id,
-        "source_commit": source["commit"],
-        "source_tree": source["tree"],
-        "lock_sha256": source["lock_sha256"],
-        **inventory,
-    }
-
-
-def verify_runtime_receipt(peer_id, runtime, receipt_path, expected_sha256, *,
-                           manifest_path=DEFAULT_MANIFEST):
-    peers._hex(expected_sha256, "peer runtime receipt hash")
-    payload = _read_bounded(receipt_path, MAX_RUNTIME_RECEIPT_BYTES, "peer runtime receipt")
-    if hashlib.sha256(payload).hexdigest() != expected_sha256:
-        raise peers.PeerError("peer runtime receipt hash does not match")
-    receipt = peers._load(payload)
-    fields = {
-        "schema_version", "kind", "peer_id", "source_commit", "source_tree",
-        "lock_sha256", "inventory_sha256", "files", "bytes",
-    }
-    if not isinstance(receipt, dict) or set(receipt) != fields:
-        raise peers.PeerError("peer runtime receipt fields are invalid")
-    if (type(receipt["schema_version"]) is not int or
-            type(receipt["files"]) is not int or type(receipt["bytes"]) is not int):
-        raise peers.PeerError("peer runtime receipt values are invalid")
-    if payload != peers.canonical_bytes(receipt):
-        raise peers.PeerError("peer runtime receipt is not canonical")
-    expected = make_runtime_receipt(peer_id, runtime, manifest_path=manifest_path)
-    if receipt != expected:
-        raise peers.PeerError("peer runtime inventory does not match receipt")
-    return expected

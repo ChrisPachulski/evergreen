@@ -5,7 +5,6 @@
   "peers": [
     {
       "id": "direct-baseline",
-      "required": true,
       "source": {
         "kind": "protocol",
         "url": "evergreen://direct-classification-v1",
@@ -34,7 +33,6 @@
     },
     {
       "id": "drift-guardian",
-      "required": true,
       "source": {
         "kind": "git",
         "url": "https://github.com/killytoronto/drift-guardian.git",
@@ -47,46 +45,17 @@
         "lock_sha256": "60fa3e966019f56048dba30e4c0e460cd9da743b5f5147dfce671fc0687f088d"
       },
       "config": {
-        "adapter": "git-two-commit-v1",
-        "entrypoint": ["node", "src/cli.js", "--format", "json"],
-        "install": "npm-ci-offline",
+        "adapter": "drift-guardian-pinned-api-v1",
+        "entrypoint": ["python3", "-m", "eval.peer_adapters.drift_guardian"],
+        "install": "none",
         "network": "none"
       },
-      "config_sha256": "bf11f3d958935c5cd87c46d52163f4d2dc91ebc1565a2acb80dd5d736c6b1c75",
+      "config_sha256": "d9479704c46c069d4d548a71bd9d06e8d949be193e2db48d07546613a4a7c06a",
       "applicability": {
         "go": {"state": "applicable", "reason": ""},
         "java": {"state": "applicable", "reason": ""},
         "python": {"state": "applicable", "reason": ""},
         "rust": {"state": "not-applicable", "reason": "upstream commit does not declare Rust support"},
-        "typescript": {"state": "applicable", "reason": ""}
-      }
-    },
-    {
-      "id": "documentation-drift-detector",
-      "required": true,
-      "source": {
-        "kind": "git",
-        "url": "https://github.com/Damienb123/Documentation-Drift-Detector.git",
-        "commit": "9237c9c28dd6d884dd3f8d29998933c4dadde403",
-        "tree": "84dbc12f969065014c328f5dc0f089dde14dcfd8",
-        "license": "MIT",
-        "license_path": "LICENSE",
-        "license_sha256": "661bea54f2cfed338374defb205c0a4023f1bb156983c25194784cb0ea649fb2",
-        "lock_path": "package-lock.json",
-        "lock_sha256": "92f48665aa354962de92b4da1599eb7bc725e756c17ab4a4394b0b72aa72c3fa"
-      },
-      "config": {
-        "adapter": "upstream-core-v1",
-        "entrypoint": ["node", "evergreen-peer-adapter.js"],
-        "install": "npm-ci-offline",
-        "network": "none"
-      },
-      "config_sha256": "ed51f456f8a4a75fd60d9b5698c50466cc3dbe58860dec74fe315d7567b511e7",
-      "applicability": {
-        "go": {"state": "not-applicable", "reason": "upstream commit supports only JavaScript and TypeScript"},
-        "java": {"state": "not-applicable", "reason": "upstream commit supports only JavaScript and TypeScript"},
-        "python": {"state": "not-applicable", "reason": "upstream commit supports only JavaScript and TypeScript"},
-        "rust": {"state": "not-applicable", "reason": "upstream commit supports only JavaScript and TypeScript"},
         "typescript": {"state": "applicable", "reason": ""}
       }
     }

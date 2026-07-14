@@ -44,6 +44,41 @@ def rows():
     return values
 
 
+def peer_bundle(manifest, peer_id, source_rows=None):
+    from eval import peers
+
+    peer = next(item for item in manifest["peers"] if item["id"] == peer_id)
+    applicable = {
+        language for language, state in peer["applicability"].items()
+        if state["state"] == "applicable"
+    }
+    private_rows = [
+        row for row in (source_rows or rows()) if row["language"] in applicable
+    ]
+    secret = b"s" * 32
+    request = peers.freeze_request(private_rows, secret)
+    output = {
+        "schema_version": 1,
+        "kind": "evergreen-peer-decisions",
+        "input_sha256": request["input_sha256"],
+        "rows": [
+            {
+                "opaque_id": item["opaque_id"],
+                "decision": "inconsistent" if "mutated" in item["code"] else "consistent",
+            }
+            for item in request["rows"]
+        ],
+    }
+    result = peers.score_output(
+        manifest=manifest, peer_id=peer_id, subject_commit="a" * 40,
+        private_rows=private_rows, secret=secret, request=request, output=output,
+    )
+    return {
+        "private_rows": private_rows, "secret": secret, "request": request,
+        "output": output, "result": result,
+    }
+
+
 class PeerProtocolTests(unittest.TestCase):
     def test_frozen_manifest_has_exact_sources_configs_and_applicability(self):
         from eval import peers
@@ -53,15 +88,15 @@ class PeerProtocolTests(unittest.TestCase):
         by_id = {item["id"]: item for item in manifest["peers"]}
         self.assertEqual(
             set(by_id),
-            {"direct-baseline", "drift-guardian", "documentation-drift-detector"},
+            {"direct-baseline", "drift-guardian"},
         )
         self.assertEqual(
             by_id["drift-guardian"]["source"]["commit"],
             "444021d47ce1c0319c6532488ec4cb886c9ac472",
         )
         self.assertEqual(
-            by_id["documentation-drift-detector"]["source"]["commit"],
-            "9237c9c28dd6d884dd3f8d29998933c4dadde403",
+            by_id["drift-guardian"]["config_sha256"],
+            "d9479704c46c069d4d548a71bd9d06e8d949be193e2db48d07546613a4a7c06a",
         )
         for item in manifest["peers"]:
             self.assertRegex(item["config_sha256"], r"^[0-9a-f]{64}$")
@@ -76,7 +111,6 @@ class PeerProtocolTests(unittest.TestCase):
             state["state"] == "applicable"
             for state in by_id["direct-baseline"]["applicability"].values()
         ))
-        self.assertTrue(all(item["required"] for item in manifest["peers"]))
 
     def test_manifest_rejects_unknown_fields_hash_drift_and_missing_direct_baseline(self):
         from eval import peers
@@ -159,6 +193,31 @@ class PeerProtocolTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(peers.PeerError):
                 peers.validate_output(case, request)
 
+    def test_peer_checkpoint_contains_only_opaque_decisions_and_revalidates_raw_rows(self):
+        from eval import peers
+
+        request = peers.freeze_request(rows(), b"s" * 32)
+        decisions = [
+            {"opaque_id": item["opaque_id"], "decision": "consistent"}
+            for item in request["rows"][:3]
+        ]
+        metadata = {"frozen": "identity"}
+        document = peers.run_document(
+            metadata, request, decisions, started_at="2026-07-14T12:00:00Z",
+            elapsed_seconds=1.25, provider_usage=None,
+        )
+        self.assertEqual(
+            peers.validate_run_document(document, metadata, request),
+            {item["opaque_id"]: item["decision"] for item in decisions},
+        )
+        raw = peers.canonical_bytes(document)
+        for forbidden in (b'"label"', b'"project"', b'"mutation_id"', b'private-'):
+            self.assertNotIn(forbidden, raw)
+        forged = copy.deepcopy(document)
+        forged["rows"][0]["label"] = "consistent"
+        with self.assertRaises(peers.PeerError):
+            peers.validate_run_document(forged, metadata, request)
+
     def test_results_are_scored_from_private_oracle_labels_not_peer_claims(self):
         from eval import peers
 
@@ -176,8 +235,10 @@ class PeerProtocolTests(unittest.TestCase):
             "input_sha256": request["input_sha256"],
             "rows": list(reversed(decisions)),
         }
+        manifest = peers.load_manifest(MANIFEST)
         result = peers.score_output(
-            peer_id="direct-baseline", subject_commit="a" * 40, private_rows=source,
+            manifest=manifest, peer_id="direct-baseline", subject_commit="a" * 40,
+            private_rows=source,
             secret=b"s" * 32, request=request, output=output,
         )
         self.assertEqual(result["id_set_sha256"], request["id_set_sha256"])
@@ -194,22 +255,37 @@ class PeerProtocolTests(unittest.TestCase):
         from eval import peers
 
         manifest = peers.load_manifest(MANIFEST)
-        results = []
-        for peer in manifest["peers"]:
-            results.append({
-                "peer_id": peer["id"], "subject_commit": "a" * 40,
-                "id_set_sha256": "b" * 64,
-                "languages": {
-                    language: {"attempted": 2}
-                    for language, state in peer["applicability"].items()
-                    if state["state"] == "applicable"
-                },
-            })
-        self.assertTrue(peers.comparison_complete(manifest, results, "a" * 40, "b" * 64,
-                                                  required_only=True))
-        results[0]["languages"]["rust"]["attempted"] = 0
-        self.assertFalse(peers.comparison_complete(manifest, results, "a" * 40, "b" * 64,
-                                                   required_only=True))
+        bundles = [peer_bundle(manifest, peer["id"]) for peer in manifest["peers"]]
+        expected_id_sets = {
+            peer["id"]: bundle["request"]["id_set_sha256"]
+            for peer, bundle in zip(manifest["peers"], bundles)
+        }
+        self.assertTrue(peers.comparison_complete(
+            manifest, bundles, "a" * 40, expected_id_sets,
+        ))
+        fabricated = copy.deepcopy(bundles)
+        fabricated[0]["result"]["languages"]["rust"]["attempted"] = 0
+        self.assertFalse(peers.comparison_complete(
+            manifest, fabricated, "a" * 40, expected_id_sets,
+        ))
+
+    def test_completeness_rejects_fabricated_unbound_summaries(self):
+        from eval import peers
+
+        manifest = peers.load_manifest(MANIFEST)
+        summaries = [{
+            "peer_id": peer["id"], "subject_commit": "a" * 40,
+            "id_set_sha256": "b" * 64,
+            "languages": {
+                language: {"attempted": 1}
+                for language, state in peer["applicability"].items()
+                if state["state"] == "applicable"
+            },
+        } for peer in manifest["peers"]]
+        self.assertFalse(peers.comparison_complete(
+            manifest, summaries, "a" * 40,
+            {peer["id"]: "b" * 64 for peer in manifest["peers"]},
+        ))
 
     def test_local_peer_checkout_must_match_frozen_clean_source_identity(self):
         from eval import peers
@@ -262,35 +338,26 @@ class PeerProtocolTests(unittest.TestCase):
                          "2cf97be3532042e22a9061d985d1dfeab4f58592525980f7c0c6b80f69eaa60c")
         self.assertEqual(policy["peer_source"]["kind"], "protocol")
         self.assertRegex(policy["peer_manifest_sha256"], r"^[0-9a-f]{64}$")
-        with self.assertRaisesRegex(ValueError, "provider lane"):
-            frozen_run.peer_policy(MANIFEST, "drift-guardian", rows())
+        local = frozen_run.peer_policy(MANIFEST, "drift-guardian", [
+            row for row in rows() if row["language"] != "rust"
+        ])
+        self.assertEqual(local["peer_source"]["kind"], "git")
         rust = [row for row in rows() if row["language"] == "rust"]
         with self.assertRaisesRegex(ValueError, "not applicable"):
-            frozen_run.peer_policy(MANIFEST, "documentation-drift-detector", rust,
-                                   allow_local=True)
+            frozen_run.peer_policy(MANIFEST, "drift-guardian", rust)
 
     def test_peer_report_states_completeness_without_claiming_a_winner(self):
         from eval import peers
         from eval.bench import report
 
         manifest = peers.load_manifest(MANIFEST)
-        manifest = copy.deepcopy(manifest)
-        for peer in manifest["peers"]:
-            peer["required"] = peer["id"] == "direct-baseline"
-        result = {
-            "peer_id": "direct-baseline", "subject_commit": "a" * 40,
-            "id_set_sha256": "b" * 64,
-            "languages": {
-                language: {
-                    "attempted": 2, "completed": 2, "abstained": 0,
-                    "tp": 0, "fp": 0, "fn": 1, "tn": 1,
-                    "precision": 0.0, "recall": 0.0, "f1": 0.0,
-                    "specificity": 1.0,
-                } for language in LANGUAGES
-            },
+        bundles = [peer_bundle(manifest, peer["id"]) for peer in manifest["peers"]]
+        expected_id_sets = {
+            peer["id"]: bundle["request"]["id_set_sha256"]
+            for peer, bundle in zip(manifest["peers"], bundles)
         }
         text, complete = report.render_peer_markdown(
-            manifest, [result], "a" * 40, "b" * 64, required_only=True,
+            manifest, bundles, "a" * 40, expected_id_sets,
         )
         self.assertTrue(complete)
         self.assertIn("Comparison completeness: **COMPLETE**", text)
