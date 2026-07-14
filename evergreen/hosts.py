@@ -2,6 +2,7 @@
 
 import ast
 from dataclasses import asdict
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -84,6 +85,8 @@ def _install_locked(selected, root, target, dry_run, engine):
         states[status.name] = state
         if state_error:
             errors.append(f"{status.name}: {state_error}")
+        elif status.root != status.resolved_root and state is None:
+            errors.append(f"{status.name}: managed host root lacks ownership proof")
     if errors:
         return OperationResult(False, tuple(errors))
 
@@ -155,6 +158,8 @@ def _uninstall_locked(selected, dry_run, engine):
         states[status.name] = state
         if state_error:
             errors.append(f"{status.name}: {state_error}")
+        elif status.root != status.resolved_root and state is None:
+            errors.append(f"{status.name}: managed host root lacks ownership proof")
     if errors:
         return OperationResult(False, tuple(errors))
 
@@ -176,10 +181,6 @@ def doctor(home: Path, plugin_root: Path, host: str = "all") -> OperationResult:
     selected, error = _select(home, host)
     if error:
         return OperationResult(False, tuple(messages + [error]))
-    host_errors = _host_errors(selected)
-    if host_errors:
-        return OperationResult(False, tuple(messages + host_errors))
-
     root = canonical[0] if canonical else _absolute(plugin_root)
     expected_skill = canonical[1] if canonical else root / "skills" / "evergreen"
     expected_block = _block(root)
@@ -191,6 +192,11 @@ def doctor(home: Path, plugin_root: Path, host: str = "all") -> OperationResult:
         else:
             messages.append("ok command static validation")
     for status in selected:
+        host_errors = _host_errors([status])
+        if host_errors:
+            healthy = False
+            messages.extend(host_errors)
+            continue
         state, state_error = _load_ownership(status)
         if state_error:
             healthy = False
@@ -244,10 +250,11 @@ def _canonical(plugin_root):
         if _kind(path) != "directory":
             errors.append(f"error canonical directory missing or unsafe: {path}")
     required_files = (
-        root / "AGENTS.md", root / "skills" / "evergreen" / "SKILL.md",
-        root / "bin" / "evergreen",
+        (root / "AGENTS.md", MAX_INSTRUCTION_BYTES),
+        (root / "skills" / "evergreen" / "SKILL.md", MAX_INSTRUCTION_BYTES),
+        (root / "bin" / "evergreen", MAX_COMMAND_BYTES),
     )
-    for path in required_files:
+    for path, _limit in required_files:
         if _kind(path) != "regular":
             errors.append(f"error canonical file missing or unsafe: {path}")
     command = root / "bin" / "evergreen"
@@ -272,11 +279,23 @@ def _canonical(plugin_root):
             errors.append(f"error canonical manifests {path}: {error}")
     if len(versions) == 2 and versions[0] != versions[1]:
         errors.append("error canonical manifest versions differ")
+    hashes = {}
+    if not errors:
+        for path, limit in required_files:
+            try:
+                hashes[path.relative_to(root).as_posix()] = hashlib.sha256(
+                    _read_regular_bounded(path, limit, "canonical file")
+                ).hexdigest()
+            except (OSError, ValueError) as error:
+                errors.append(f"error canonical file {path}: {error}")
     if errors:
         return None, errors
     version = versions[0]
     return (root, root / "skills" / "evergreen", version), [
         f"ok canonical version {version}; manifests agree",
+        "ok canonical hashes " + " ".join(
+            f"{name}={digest}" for name, digest in hashes.items()
+        ),
         "ok canonical rules",
         "ok command available",
     ]
@@ -284,17 +303,46 @@ def _canonical(plugin_root):
 
 def _status(home, name, directory, instruction_name):
     root = home / directory
-    kind = _kind(root)
-    problem = None if kind in ("absent", "directory") else f"host root is {kind}, not a directory"
+    root_kind = _kind(root)
+    resolved_root = root
+    problem = None
+    if root_kind == "symlink":
+        resolved_root, problem = _managed_host_root(home, root)
+    elif root_kind not in ("absent", "directory"):
+        problem = f"host root is {root_kind}, not a directory"
     return HostStatus(
         name=name,
-        present=kind != "absent",
+        present=root_kind != "absent",
         root=root,
-        instructions=root / instruction_name,
-        skill=root / "skills" / "evergreen",
-        ownership=root / OWNERSHIP_FILE,
+        resolved_root=resolved_root,
+        instructions=resolved_root / instruction_name,
+        skill=resolved_root / "skills" / "evergreen",
+        ownership=resolved_root / OWNERSHIP_FILE,
         problem=problem,
     )
+
+
+def _managed_host_root(home, root):
+    try:
+        if root.lstat().st_uid != os.getuid():
+            raise OSError("host root link is not user-owned")
+        target = Path(os.readlink(root))
+        target = _normalized_lexical_path(
+            target if target.is_absolute() else root.parent / target
+        )
+        resolved = target.resolve(strict=True)
+        resolved.relative_to(home)
+        current = home
+        for part in resolved.relative_to(home).parts:
+            current = current / part
+            metadata = current.lstat()
+            if _kind(current) != "directory":
+                raise OSError(f"managed host root chain is not a directory: {current}")
+            if metadata.st_uid != os.getuid() or metadata.st_mode & 0o002:
+                raise OSError(f"managed host root chain is unsafe: {current}")
+        return resolved, None
+    except (OSError, RuntimeError, ValueError) as error:
+        return root, f"unsafe managed host root: {error}"
 
 
 def _select(home, requested):

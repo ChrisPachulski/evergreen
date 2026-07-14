@@ -13,6 +13,7 @@ class HostStatus:
     name: str
     present: bool
     root: Path
+    resolved_root: Path
     instructions: Path
     skill: Path
     ownership: Path

@@ -26,8 +26,8 @@ def acquire(selected):
     descriptors = []
     missing = []
     try:
-        for status in sorted(selected, key=lambda item: str(item.root)):
-            root = open_directory(snapshot(status.root, allow_directory=True))
+        for status in sorted(selected, key=lambda item: str(item.resolved_root)):
+            root = open_directory(snapshot(status.resolved_root, allow_directory=True))
             try:
                 flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
                 try:

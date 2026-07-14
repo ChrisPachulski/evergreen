@@ -17,6 +17,7 @@ from .host_snapshot import (
     OWNERSHIP_FILE, normalized_lexical_path as _normalized_lexical_path,
     normalized_snapshot_target as _normalized_snapshot_target,
     open_directory as _open_directory, snapshot_at as _snapshot_at,
+    verify_managed_root_binding as _verify_managed_root_binding,
     verify_open_directory_path as _verify_open_directory_path,
     verify_preflight as _verify_preflight, verify_snapshot_at as _verify_snapshot_at,
 )
@@ -59,6 +60,12 @@ def _apply(plans, dry_run, captured):
     )
     rollback_entries = []
     conflicts = []
+    mutation_paths = {path for _action, _detail, path, _value in mutations}
+    guard_snapshots = {
+        path: snapshot for path, snapshot in captured.items()
+        if path not in mutation_paths and
+        not any(path in mutation_path.parents for mutation_path in mutation_paths)
+    }
     try:
         for action, _detail, path, value in mutations:
             parent_fd = _prepare_parent(
@@ -92,6 +99,9 @@ def _apply(plans, dry_run, captured):
                 _verify_open_directory_path(path.parent, parent_fd)
             finally:
                 os.close(parent_fd)
+        _verify_preflight(guard_snapshots)
+        for status in dict.fromkeys(status for status, _plan in plans):
+            _verify_managed_root_binding(status)
     except Exception as error:
         rollback_errors = []
         for entry in reversed(rollback_entries):

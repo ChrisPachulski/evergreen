@@ -1,10 +1,12 @@
 import stat
 from pathlib import Path
 from types import SimpleNamespace
+import tempfile
 import unittest
 from unittest import mock
 
 from evergreen import host_snapshot
+from evergreen.host_types import HostStatus
 
 
 class HostSnapshotTests(unittest.TestCase):
@@ -21,6 +23,46 @@ class HostSnapshotTests(unittest.TestCase):
 
         self.assertEqual(captured.target, "target")
         self.assertIsNone(captured.atime_ns)
+
+    def test_capture_binds_managed_root_link_to_resolved_destination(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            managed = home / "managed"
+            (managed / "skills").mkdir(parents=True)
+            root = home / ".claude"
+            root.symlink_to(managed, target_is_directory=True)
+            resolved = managed.resolve()
+            status = HostStatus(
+                name="claude", present=True, root=root, resolved_root=resolved,
+                instructions=resolved / "CLAUDE.md",
+                skill=resolved / "skills" / "evergreen",
+                ownership=resolved / ".evergreen-owned.json",
+            )
+
+            captured = host_snapshot.capture_preflight([status])
+
+            self.assertEqual(captured[root].kind, "symlink")
+            self.assertEqual(captured[resolved].kind, "directory")
+
+    def test_capture_refuses_changed_managed_root_destination(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            managed = home / "managed"
+            replacement = home / "replacement"
+            (managed / "skills").mkdir(parents=True)
+            replacement.mkdir()
+            root = home / ".claude"
+            root.symlink_to(replacement, target_is_directory=True)
+            resolved = managed.resolve()
+            status = HostStatus(
+                name="claude", present=True, root=root, resolved_root=resolved,
+                instructions=resolved / "CLAUDE.md",
+                skill=resolved / "skills" / "evergreen",
+                ownership=resolved / ".evergreen-owned.json",
+            )
+
+            with self.assertRaisesRegex(OSError, "managed host root changed"):
+                host_snapshot.capture_preflight([status])
 
 
 if __name__ == "__main__":

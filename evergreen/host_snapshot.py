@@ -20,11 +20,44 @@ def capture_preflight(selected):
         for path, allow_directory in (
             (status.instructions, False), (status.skill, False),
             (status.ownership, False), (status.skill.parent, True),
-            (status.root, True),
+            (status.root, True), (status.resolved_root, True),
         ):
             if path not in captured:
                 captured[path] = snapshot(path, allow_directory=allow_directory)
+        if status.root != status.resolved_root:
+            root = captured[status.root]
+            verify_managed_root_binding(status, root)
     return captured
+
+
+def verify_managed_root_binding(status, root_snapshot=None):
+    if status.root == status.resolved_root:
+        return
+    root = root_snapshot or snapshot(status.root, allow_directory=True)
+    target = normalized_snapshot_target(root)
+    try:
+        resolved = target.resolve(strict=True) if target is not None else None
+    except (OSError, RuntimeError, ValueError) as error:
+        raise OSError(f"managed host root changed: {status.root}: {error}") from error
+    if (
+        root.kind != "symlink" or root.uid != os.getuid() or
+        resolved != status.resolved_root
+    ):
+        raise OSError(f"managed host root changed: {status.root}")
+    home = status.root.parent.resolve()
+    try:
+        relative = status.resolved_root.relative_to(home)
+    except ValueError as error:
+        raise OSError(f"managed host root escaped home: {status.root}") from error
+    current = home
+    for part in relative.parts:
+        current = current / part
+        metadata = current.lstat()
+        if (
+            not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid() or
+            stat.S_IMODE(metadata.st_mode) & 0o002
+        ):
+            raise OSError(f"managed host root chain is unsafe: {current}")
 
 
 def verify_preflight(captured):
