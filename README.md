@@ -73,6 +73,55 @@ while leaving registry and deployment state deliberately unverified.
 
 One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — so this one never does.
 
+### Evidence-backed completion receipts
+
+Before an external mutation, lock the target repository root, origin, branch, pre-mutation HEAD,
+and intended operation. A continuation such as “ship” remains bound to that target.
+
+Before reporting pushed, merged, clean, complete, released, lost, erased, or not run, obtain fresh evidence.
+Never reverse an earlier project, mutation, benchmark, or release-status claim without new evidence.
+Treat pushed to a source branch, tagged, GitHub Release published, marketplace published, and deployed as separate states.
+Empty cleanup output means nothing was removed.
+Stage and commit in separate tool calls.
+
+Run `./bin/evergreen receipt --repo .` for a fresh, deterministic view of local repository state.
+A benchmark claim names the evaluated release, resolver/judge, provider, languages, provenance
+commit, and whether its evidence was executed, reverified, published, or merely planned. When a
+user challenges remembered status, inspect the receipt or authoritative artifact before agreeing
+or defending. Local Git state does not verify a GitHub Release, marketplace publication, registry,
+store, or deployment; without direct authority, external release state remains unverified. A
+combined staging-and-commit call cannot prove the finalized index passed the guard.
+
+Human output presents the repository, release, and optional benchmark evidence without adding a
+verdict:
+
+```text
+Repository receipt:
+- root: /path/to/evergreen
+- name: evergreen
+- origin: https://github.com/ChrisPachulski/evergreen.git
+- branch: main
+- HEAD: 0123456789abcdef0123456789abcdef01234567
+- upstream: origin/main
+- ahead/behind: 0/0
+- changes: staged=0 unstaged=0 untracked=0
+- clean: true
+Release evidence:
+- local tags at HEAD: none
+- external state: unverified
+Benchmark evidence:
+- none
+```
+
+Use `--json` when another tool needs the same fields:
+
+```json
+{"benchmark":null,"release":{"external_state":"unverified","local_tags":[]},"repository":{"ahead":0,"behind":0,"branch":"main","clean":true,"detached":false,"head":"0123456789abcdef0123456789abcdef01234567","name":"evergreen","origin":"https://github.com/ChrisPachulski/evergreen.git","root":"/path/to/evergreen","staged":0,"unstaged":0,"untracked":0,"upstream":"origin/main"},"schema_version":1}
+```
+
+An optional checked-in public benchmark manifest identifies declared evidence; it does not prove a
+fresh provider execution, artifact reverification, or detector-quality result.
+
 The semantic pass may gather optional local evidence with read, grep, diff, or a scratch test. In CI,
 the deterministic trust layer does the mechanical work: it binds a bounded change manifest and
 matched documentation excerpts to the exact base/head commits, validates counts and citations
@@ -118,6 +167,7 @@ No host install or provider dependency is required to rank documentation affecte
 
 ```sh
 ./bin/evergreen impact --repo . path/to/changed-source.py
+./bin/evergreen receipt --repo .
 ```
 
 Add trusted, passive provider facts when available:
@@ -268,6 +318,7 @@ Three axes — **truth · craft · hygiene** — one creed: prove it or drop it,
 | `/evergreen:flourish <file> [--all] [--manual]` | **Craft.** Rewrite an accurate-but-ugly doc to a gold standard (mined from 28 top READMEs), then prove every claim against the code. Emits a diff — never a silent overwrite. The only sanctioned prose-rewrite. |
 | `/evergreen:cultivate [path]` | **Hygiene.** Local-only files leaking into git, gitignore gaps, AI-slop that shouldn't be tracked or public. Proposes untrack/ignore/delete — never auto. A commit-time guard backstops it (the one thing that *blocks*). |
 | `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` | **Truth, candidate query.** Rank documentation related to changed paths and optional provider evidence. Read-only; never emits findings or verdicts. |
+| `bin/evergreen receipt [--repo PATH] [--benchmark-manifest PATH] [--json]` | **Operational evidence.** Emit deterministic local repository, release-boundary, and optional declared benchmark identity without network access or mutation. |
 
 ## Non-goals
 

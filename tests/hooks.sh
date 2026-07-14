@@ -168,6 +168,24 @@ for tok in \
   fi
 done
 
+# Completion and status claims must use one evidence contract on every host surface.
+for tok in \
+  "Before reporting pushed, merged, clean, complete, released, lost, erased, or not run, obtain fresh evidence." \
+  "Never reverse an earlier project, mutation, benchmark, or release-status claim without new evidence." \
+  "Treat pushed to a source branch, tagged, GitHub Release published, marketplace published, and deployed as separate states." \
+  "Empty cleanup output means nothing was removed." \
+  "Stage and commit in separate tool calls."; do
+  if grep -Fq "$tok" "$ROOT/README.md" \
+     && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
+     && grep -Fq "$tok" "$ROOT/AGENTS.md"; then
+    ok "completion receipt policy agrees across product/Claude/Codex: $tok"
+  else
+    no "completion receipt policy agrees across product/Claude/Codex: $tok"
+  fi
+done
+
 if ROOT="$ROOT" python3 - <<'PY'
 import os
 import json
@@ -230,6 +248,7 @@ done
 
 for tok in \
   "./bin/evergreen impact --repo ." \
+  "./bin/evergreen receipt --repo ." \
   "./bin/evergreen install --host claude" \
   "./bin/evergreen install --host codex" \
   "./bin/evergreen doctor --host all --repo ." \
@@ -238,6 +257,28 @@ for tok in \
     && ok "README documents shipped local/host command: $tok" \
     || no "README documents shipped local/host command: $tok"
 done
+
+if ROOT="$ROOT" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+root = Path(os.environ["ROOT"])
+completed = subprocess.run(
+    [sys.executable, str(root / "bin/evergreen"), "receipt", "--json", "--repo", str(root)],
+    check=True, capture_output=True, text=True,
+)
+payload = json.loads(completed.stdout)
+assert {"repository", "release", "benchmark"} <= payload.keys()
+assert payload["release"]["external_state"] == "unverified"
+PY
+then
+  ok "receipt JSON reports repository, release, benchmark, and unverified external state"
+else
+  no "receipt JSON reports repository, release, benchmark, and unverified external state"
+fi
 
 if ROOT="$ROOT" python3 - <<'PY'
 import json

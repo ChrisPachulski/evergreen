@@ -128,6 +128,29 @@ moving from an initial shell through eight evidenced pre-1.0 milestone waves may
 rules, not a universal eight-waves formula. Reserve `1.0.0` for the repository's evidenced stable
 or public-release gate.
 
+## Evidence-backed completion receipts
+
+Before an external mutation, lock the target repository root, origin, branch, pre-mutation HEAD,
+and intended operation. A continuation such as “ship” remains bound to that target.
+
+Before reporting pushed, merged, clean, complete, released, lost, erased, or not run, obtain fresh evidence.
+Never reverse an earlier project, mutation, benchmark, or release-status claim without new evidence.
+Treat pushed to a source branch, tagged, GitHub Release published, marketplace published, and deployed as separate states.
+Empty cleanup output means nothing was removed.
+Stage and commit in separate tool calls.
+
+Use `evergreen receipt --repo PATH` for local repository state. A benchmark claim names the
+evaluated release, resolver/judge, provider, languages, provenance commit, and whether its evidence
+was executed, reverified, published, or merely planned. When a user challenges remembered status,
+inspect the fresh receipt or authoritative artifact before agreeing or defending. Local Git state
+cannot verify external publication; without direct authority, external release state remains
+unverified. A combined staging-and-commit call cannot prove the finalized index passed the guard.
+
+The receipt is deterministic, read-only, and network-free. It reports local Git evidence and may
+name a validated in-repository benchmark-publication manifest, but it never queries an external
+release or benchmark provider. A declared benchmark publication does not prove fresh provider
+execution, artifact reverification, or detector quality.
+
 ## Two depths: flag vs winnow
 
 - **flag** (light, every turn) — falsification-biased: report the drift you can cite, move on.

@@ -89,6 +89,24 @@ Worked behavior: eight evidenced pre-1.0 milestone waves can justify `0.1.0 (71)
 `0.9.0 (72)`. This is evidence-guided, not a fixed eight-waves formula; reserve `1.0.0` for the
 repository's evidenced stable/public-release gate.
 
+## Evidence-backed completion receipts
+
+Before an external mutation, lock the target repository root, origin, branch, pre-mutation HEAD,
+and intended operation. A continuation such as “ship” remains bound to that target.
+
+Before reporting pushed, merged, clean, complete, released, lost, erased, or not run, obtain fresh evidence.
+Never reverse an earlier project, mutation, benchmark, or release-status claim without new evidence.
+Treat pushed to a source branch, tagged, GitHub Release published, marketplace published, and deployed as separate states.
+Empty cleanup output means nothing was removed.
+Stage and commit in separate tool calls.
+
+Use `evergreen receipt --repo PATH` for local repository state. A benchmark claim names the
+evaluated release, resolver/judge, provider, languages, provenance commit, and whether its evidence
+was executed, reverified, published, or merely planned. When a user challenges remembered status,
+inspect the fresh receipt or authoritative artifact before agreeing or defending. Local Git state
+cannot verify external publication; without direct authority, external release state remains
+unverified. A combined staging-and-commit call cannot prove the finalized index passed the guard.
+
 ## Two depths
 
 - **flag** (default) — report the drift you can cite, every turn.
