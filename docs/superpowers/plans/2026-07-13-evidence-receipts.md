@@ -11,7 +11,8 @@
 ## Global Constraints
 
 - No dependency additions, network calls, provider calls, repository writes, Git mutations, pushes, tags, releases, or deployments.
-- Every Git subprocess uses an argv list, no shell, a five-second timeout, `GIT_OPTIONAL_LOCKS=0`, and a one-MiB output ceiling.
+- Every Git subprocess uses an argv list, no shell, a hardened environment/configuration, one
+  five-second deadline, streaming reads capped at one MiB, and process-group termination/reaping.
 - Missing origin/upstream are data, not errors; missing HEAD is an error.
 - Local Git state never proves an external release.
 - A benchmark manifest produces `evidence_state: declared_publication`, never a fresh-execution, reverified, or quality-PASS claim.
@@ -118,16 +119,20 @@ def build_receipt(repo: Path, benchmark_manifest: Path | None = None) -> dict:
     return receipt
 ```
 
-Implement `_git` with `subprocess.run`, an argv list beginning with the resolved Git executable,
-`--no-optional-locks`, `--no-replace-objects`, and `-C`; set `GIT_OPTIONAL_LOCKS=0`; use
-`stdout=PIPE`, `stderr=DEVNULL`, `timeout=5`, and reject output above one MiB before UTF-8 decoding.
-Allow only the origin lookup to return “missing” without raising. Redact URL userinfo and the user
-part of SCP-like remotes before returning it.
+Implement `_git` with `subprocess.Popen`, an argv list beginning with the resolved Git executable,
+`--no-optional-locks`, `--no-replace-objects`, hardened `-c` overrides, and `-C`. Use a minimal
+environment, read incrementally to at most one MiB plus one byte under one total deadline, and
+terminate/reap the process group on timeout or overflow before UTF-8 decoding. Allow only the
+origin and symbolic-branch lookups to return “missing” without raising. Redact URL userinfo and the
+user part of SCP-like remotes; fail closed for helpers and unsupported schemes.
 
-Parse `git status --porcelain=v2 --branch -z --untracked-files=all`. Count one staged entry when
+Parse `git status --porcelain=v2 --branch -z --untracked-files=all` under an explicit rename policy.
+Count one staged entry when
 the X status is not `.`, one unstaged entry when Y is not `.`, and one untracked entry for each `?`
 record. Correctly consume the second NUL path for `2` rename/copy records. Use branch headers for
-HEAD, branch/detached state, upstream, and `+ahead -behind`.
+HEAD, upstream, and `+ahead -behind`; use `symbolic-ref` to distinguish detached HEAD from a legal
+branch named `(detached)`. Query tags against the captured commit and return only after two complete
+snapshots match, retrying once before a bounded operational failure.
 
 - [ ] **Step 4: Add benchmark-manifest tests and verify RED**
 
@@ -139,11 +144,14 @@ self.assertEqual(receipt["benchmark"], {
     "artifact_count": 5,
     "evaluated_release": "0.4.0",
     "evidence_state": "declared_publication",
+    "judge_sha256": "e" * 64,
     "languages": ["Java", "Python", "go", "rust", "typescript"],
     "manifest": "bench/manifest.json",
+    "protocol": "unverified",
     "provenance_commit": "a" * 40,
     "provider": "codex",
     "report": "bench/report.md",
+    "resolver": "unverified",
 })
 ```
 
@@ -158,15 +166,17 @@ missing or incomplete.
 
 - [ ] **Step 5: Implement strict declaration-only benchmark identity**
 
-Implement `_safe_repo_file(root, supplied, *, max_bytes=None)` to reject symlinks in every
-repository-relative component, require a regular file, keep the resolved path below `root`, and
-enforce an optional byte ceiling. Implement `_normalized_path` with `PurePosixPath`, rejecting
+Implement descriptor-relative no-follow traversal to reject symlinks in every repository-relative
+component, require a regular file, and enforce the byte ceiling from the same opened descriptor
+used for the manifest read. Implement `_normalized_path` with `PurePosixPath`, rejecting
 absolute, empty, `.`, `..`, backslash, repeated-slash, and non-canonical paths.
 
 Parse only schema version `1` and `PUBLICATION_KIND`. Validate the artifact languages exactly match
 `publication.required_languages`, every language is a non-empty string and unique, provenance
-commit is 40 or 64 lowercase hex characters, and every referenced artifact, dataset, and report is
-a safe regular file. Return only the approved identity fields and `declared_publication` state.
+commit is 40 or 64 lowercase hex characters, judge identity is a lowercase SHA-256, optional
+resolver/protocol values are non-empty text, and every referenced artifact, dataset, and report is
+a safe regular file. Return only the approved identity fields and `declared_publication` state;
+missing resolver/protocol values are explicitly `unverified`.
 
 - [ ] **Step 6: Run focused and neighboring tests**
 

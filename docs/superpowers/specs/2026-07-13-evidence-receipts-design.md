@@ -26,8 +26,9 @@ mutation and allowed an empty prune operation to be described as cleanup perform
 1. `evergreen receipt` produces a bounded, deterministic, read-only repository receipt.
 2. The receipt identifies repository root, origin, branch or detached state, HEAD, upstream,
    ahead/behind counts, and staged, unstaged, and untracked state.
-3. The receipt distinguishes local source state from external release state. It never infers a
-   registry, marketplace, deployment, store, or GitHub Release from local Git evidence.
+3. The receipt distinguishes a local snapshot from authoritative remote and external release
+   state. It never infers a push, merge, registry, marketplace, deployment, store, or GitHub
+   Release from local Git evidence.
 4. An optional Evergreen public benchmark manifest adds a fully named benchmark identity without
    turning a manifest declaration into a provider-execution or quality claim.
 5. Claude and Codex receive one synchronized instruction contract requiring fresh receipts for
@@ -104,8 +105,12 @@ Rules:
 - `ahead` and `behind` are `null` when no upstream exists.
 - `clean` is true only when staged, unstaged, and untracked counts are all zero.
 - Ignored files do not make the repository dirty.
-- `local_tags` contains only tags pointing at HEAD, sorted bytewise.
+- Rename detection is explicitly configured so repository or user Git configuration cannot change
+  staged/unstaged counts.
+- `local_tags` contains only tags pointing at the receipt's captured commit, sorted bytewise.
 - `external_state` is always `unverified`; local tags never prove external publication.
+- Collection retries once and then fails if two complete repository snapshots disagree; it never
+  returns fields collected from different repository states.
 - No timestamps are emitted, so unchanged state produces byte-identical JSON.
 
 ## Benchmark identity
@@ -117,20 +122,25 @@ When `--benchmark-manifest` is present, `benchmark` contains:
   "artifact_count": 5,
   "evaluated_release": "0.4.0",
   "evidence_state": "declared_publication",
+  "judge_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "languages": ["Java", "Python", "go", "rust", "typescript"],
   "manifest": "eval/bench/public/0.4.0/manifest.json",
+  "protocol": "unverified",
   "provenance_commit": "0123456789abcdef0123456789abcdef01234567",
   "provider": "codex",
-  "report": "eval/bench/results-0.4.0.md"
+  "report": "eval/bench/results-0.4.0.md",
+  "resolver": "unverified"
 }
 ```
 
 The loader must require schema version `1`, kind
 `evergreen-benchmark-decision-publication`, a non-empty evaluated release and provider, a full Git
-commit ID, unique declared languages, an artifact count matching the language set, and normalized
-repository-relative manifest, artifact, dataset, and report paths. It refuses absolute paths,
-traversal, symlinks, non-regular files, malformed UTF-8/JSON, duplicate languages, oversized
-manifests, and evidence outside the repository.
+commit ID, a full lowercase judge SHA-256, unique declared languages, an artifact count matching
+the language set, and normalized repository-relative manifest, artifact, dataset, and report paths.
+Resolver and protocol are validated when declared and otherwise explicitly `unverified`. It refuses
+absolute paths, traversal, symlinks, non-regular files, malformed UTF-8/JSON, duplicate languages,
+oversized manifests, and evidence outside the repository. The manifest is opened and bounded
+through one no-follow descriptor so path swaps cannot change the bytes after validation.
 
 `evidence_state` deliberately says `declared_publication`. The receipt names the publication but
 does not claim that provider calls were freshly executed, that artifact hashes were reverified, or
@@ -144,9 +154,11 @@ The canonical `AGENTS.md`, full skill, and digest must share these exact operati
 1. Before an external mutation, lock the target using repository root, origin, branch, pre-mutation
    HEAD, and intended operation. A continuation such as “ship” remains bound to that target.
 2. Before reporting pushed, merged, clean, complete, released, lost, erased, or not run, obtain
-   fresh evidence. For repository state, run `evergreen receipt --repo PATH`; for benchmarks, name
-   evaluated release, resolver/judge, provider, languages, provenance commit, and whether the
-   evidence was executed, reverified, published, or merely planned.
+   fresh evidence. The receipt proves only a local snapshot: an ahead count of zero does not prove
+   a remote contains HEAD, and pushed/merged require authoritative remote evidence bound to the
+   exact SHA. Absence does not prove not-run, lost, or erased; without an authoritative ledger those
+   states remain unverified. For benchmarks, name evaluated release, resolver/judge, provider,
+   languages, provenance commit, and every independently evidenced lifecycle state.
 3. Never reverse an earlier project, mutation, benchmark, or release-status claim without new
    evidence. State the prior claim and the evidence that changes it.
 4. Treat “pushed to source branch,” “tagged,” “GitHub Release published,” “marketplace published,”
@@ -156,6 +168,8 @@ The canonical `AGENTS.md`, full skill, and digest must share these exact operati
    index passed the guard.
 7. When a user challenges remembered status, inspect the receipt or authoritative artifact before
    agreeing or defending.
+8. Benchmark executed, reverified, published, and planned are independent states; report every
+   applicable state and never infer one from another.
 
 The installed Claude and Codex surfaces must inherit the same contract from canonical files. Hook
 tests fail if any exact shared sentence drifts.
@@ -166,8 +180,9 @@ tests fail if any exact shared sentence drifts.
 - Extend `bin/evergreen` with the `receipt` subcommand and rendering only; keep business logic out
   of the entry point.
 - Reuse standard-library `subprocess`, `json`, `pathlib`, and `urllib.parse`; add no dependency.
-- Invoke Git with argv arrays, `--no-replace-objects`, bounded timeouts, bounded decoded output, and
-  no shell.
+- Invoke Git with argv arrays, `--no-replace-objects`, hardened configuration/environment, bounded
+  streaming output, one total timeout, and no shell. Repository-controlled fsmonitor, tracing,
+  maintenance, or user/system configuration must not execute or write through a receipt.
 - Do not print environment variables, Git configuration, credential helpers, or remote credentials.
   HTTP(S) remote userinfo must be redacted; unsupported credential-bearing remote forms are shown
   only in a bounded redacted representation.
@@ -186,11 +201,14 @@ Unit tests must cover:
 - deterministic compact JSON and equivalent human output;
 - non-repository and missing-path errors;
 - bounded Git failure and output limits;
+- hostile Git configuration/environment, deterministic rename counts, exact operational exit code,
+  legal `(detached)` branch names, moving-repository refusal, and SHA-bound tags;
 - credential redaction;
-- valid five-language benchmark identity;
+- valid five-language benchmark and judge/resolver/protocol identity;
 - malformed, oversized, outside-root, traversal, absolute, symlink, duplicate-language, wrong-kind,
   wrong-schema, mismatched-artifact-count, and incomplete benchmark manifests;
-- proof that receipt generation leaves HEAD, index, worktree, refs, and filesystem unchanged.
+- descriptor-bound manifest reads under path swaps;
+- proof that receipt generation leaves the complete worktree and actual Git directory unchanged.
 
 Integration tests must assert:
 
