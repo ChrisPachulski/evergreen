@@ -97,6 +97,9 @@ JSON output has this shape:
 Rules:
 
 - Missing origin and upstream are represented as `null`, not errors.
+- `name` is the final repository component of the redacted origin with a trailing `.git` removed;
+  if origin is missing or unusable, it falls back to the repository-root directory name. A linked
+  worktree directory name must not replace an available canonical origin name.
 - Detached HEAD uses `branch: null`, `detached: true`, and `upstream: null`.
 - `ahead` and `behind` are `null` when no upstream exists.
 - `clean` is true only when staged, unstaged, and untracked counts are all zero.

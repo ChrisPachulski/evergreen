@@ -68,7 +68,9 @@ def test_counts_staged_unstaged_and_untracked_without_counting_ignored(self):
 Also add explicit tests for detached HEAD, no origin, no upstream, ahead/behind, sorted tags pointing
 at HEAD, a path inside the worktree, non-repository input, missing HEAD, credential redaction for
 HTTP and SCP-like remotes, timeout/output-limit errors through a stub Git executable seam, and
-byte-for-byte snapshots of HEAD, index, refs, and worktree before/after receipt creation.
+byte-for-byte snapshots of HEAD, index, refs, and worktree before/after receipt creation. Cover
+canonical project names derived from HTTP and SCP-like origins in linked-worktree-style directories,
+plus the repository-root directory fallback when origin is missing or unusable.
 
 - [ ] **Step 2: Run the focused tests and verify RED**
 
@@ -96,12 +98,13 @@ class ReceiptError(ValueError):
 def build_receipt(repo: Path, benchmark_manifest: Path | None = None) -> dict:
     root = _repository_root(repo)
     status = _status(root)
+    origin = _origin(root)
     receipt = {
         "schema_version": 1,
         "repository": {
             "root": str(root),
-            "name": root.name,
-            "origin": _origin(root),
+            "name": _project_name(root, origin),
+            "origin": origin,
             **status,
         },
         "release": {
