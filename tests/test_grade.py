@@ -46,6 +46,77 @@ def policy_bytes():
     return POLICY_PATH.read_bytes()
 
 
+def valid_host_evidence(root="/candidate", home="/home"):
+    hashes = {
+        ".claude-plugin/plugin.json": "a" * 64,
+        ".codex-plugin/plugin.json": "b" * 64,
+        "bin/evergreen": "c" * 64,
+        "commands/impact.md": "d" * 64,
+        "skills/evergreen/SKILL.md": "e" * 64,
+    }
+    manifests = {
+        "claude": {
+            "path": f"{root}/.claude-plugin/plugin.json",
+            "sha256": hashes[".claude-plugin/plugin.json"],
+            "version": "0.5.0",
+        },
+        "codex": {
+            "path": f"{root}/.codex-plugin/plugin.json",
+            "sha256": hashes[".codex-plugin/plugin.json"],
+            "version": "0.5.0",
+        },
+    }
+    hosts = {}
+    for name, directory, instruction in (
+        ("claude", ".claude", "CLAUDE.md"),
+        ("codex", ".codex", "AGENTS.md"),
+    ):
+        host_root = f"{home}/{directory}"
+        installed = {
+            "resolved_root": host_root,
+            "instruction_state": "owned",
+            "instruction_block_sha256": "f" * 64,
+            "skill_kind": "symlink",
+            "skill_target": f"{root}/skills/evergreen",
+            "skill_hashes": {"skills/evergreen/SKILL.md": "e" * 64},
+            "command_hashes": {
+                "bin/evergreen": "c" * 64,
+                "commands/impact.md": "d" * 64,
+            },
+            "manifest_sha256": manifests[name]["sha256"],
+            "version": "0.5.0",
+        }
+        hosts[name] = {
+            "lexical_root": host_root,
+            "resolved_root": host_root,
+            "resolution_chain": [{
+                "path": host_root, "kind": "directory", "uid": 501, "mode": 448,
+            }],
+            "ownership": {
+                "path": f"{host_root}/.evergreen-owned.json",
+                "kind": "regular", "sha256": "1" * 64,
+                "plugin_root": root, "skill_target": f"{root}/skills/evergreen",
+            },
+            "installed": installed,
+            "doctor_issues": [],
+            "discovery": copy.deepcopy(installed),
+            "uninstall_owned_paths": sorted([
+                f"{host_root}/{instruction}",
+                f"{host_root}/.evergreen-owned.json",
+                f"{host_root}/skills/evergreen",
+            ]),
+        }
+    return {
+        "schema_version": 1,
+        "kind": "evergreen-host-evidence",
+        "canonical": {
+            "root": root, "version": "0.5.0", "hashes": hashes,
+            "manifests": manifests,
+        },
+        "hosts": hosts,
+    }
+
+
 def valid_evidence():
     oracle_kinds = {
         kind: {
@@ -112,6 +183,7 @@ def valid_evidence():
                 "evidence_sha256": "6" * 64,
             }
         ],
+        "host_evidence": valid_host_evidence(),
         "external_states": {
             "adoption": "unverified",
             "human_review": "unverified",
@@ -254,6 +326,24 @@ class EvidenceValidationTests(unittest.TestCase):
                 evidence["external_states"][field] = True
                 with self.assertRaisesRegex(GradeError, "self-asserted field"):
                     self.load(evidence)
+
+    def test_host_evidence_requires_separate_raw_hosts_and_rejects_shared_boolean(self):
+        self.load(valid_evidence())
+
+        missing = valid_evidence()
+        del missing["host_evidence"]["hosts"]["codex"]
+        with self.assertRaisesRegex(GradeError, "host evidence"):
+            self.load(missing)
+
+        malformed = valid_evidence()
+        malformed["host_evidence"]["hosts"] = [{"claude": "not-an-object"}]
+        with self.assertRaisesRegex(GradeError, "host evidence"):
+            self.load(malformed)
+
+        asserted = valid_evidence()
+        asserted["host_evidence"]["hosts"]["claude"]["ok"] = True
+        with self.assertRaisesRegex(GradeError, "self-asserted field: ok"):
+            self.load(asserted)
 
     def test_manifest_cannot_contain_its_runtime_evidence_head(self):
         evidence = valid_evidence()
@@ -695,8 +785,8 @@ class TrustedRepositoryVerificationTests(unittest.TestCase):
 
         for forbidden in (
             "import subprocess", "from subprocess", "import socket", "urllib.request",
-            "evergreen.hosts", "provider_completed(", "open(\"w", "write_text(",
-            "write_bytes(",
+            "provider_completed(", "install(", "uninstall(", "TransactionEngine",
+            "open(\"w", "write_text(", "write_bytes(",
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)

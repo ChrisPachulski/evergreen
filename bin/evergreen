@@ -81,6 +81,7 @@ def parser():
     check = commands.add_parser("doctor", help="check canonical files and host ownership")
     check.add_argument("--host", choices=("claude", "codex", "all"), default="all")
     check.add_argument("--repo", default=str(PLUGIN_ROOT), help="canonical Evergreen root")
+    check.add_argument("--json", action="store_true", help="emit raw host evidence")
     check.set_defaults(run=run_doctor)
     return root
 
@@ -96,7 +97,15 @@ def run_uninstall(args):
 
 
 def run_doctor(args):
-    from evergreen.hosts import doctor
+    from evergreen.hosts import collect_host_evidence, doctor
+    if args.json:
+        payload = collect_host_evidence(
+            Path.home(), Path(args.repo).expanduser(), args.host
+        )
+        print(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        return 1 if any(
+            host["doctor_issues"] for host in payload["hosts"].values()
+        ) else 0
     result = doctor(Path.home(), Path(args.repo).expanduser(), args.host)
     code = _print_operation(result, 1)
     if result.ok:

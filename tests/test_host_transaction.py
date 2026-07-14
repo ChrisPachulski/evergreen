@@ -661,7 +661,7 @@ class HostTests(HostTestCase):
         hosts_lines = (ROOT / "evergreen" / "hosts.py").read_text().splitlines()
         self.assertLess(len(hosts_lines), 700)
         for name in (
-            "host_lock.py", "host_snapshot.py", "host_journal.py",
+            "host_evidence.py", "host_lock.py", "host_snapshot.py", "host_journal.py",
             "host_commit.py", "host_transaction.py",
         ):
             module = ROOT / "evergreen" / name

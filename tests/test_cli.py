@@ -259,6 +259,55 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertEqual(before_verifier, self.file_snapshot(verifier))
         self.assertEqual(before_candidate, self.file_snapshot(candidate))
 
+    def test_grade_verify_recomputes_claude_and_codex_independently_from_live_hosts(self):
+        from evergreen.hosts import collect_host_evidence, install
+
+        verifier, candidate, _commit, manifest = self.make_grade_repositories()
+        home = Path(self.temporary.name) / "grade-host-home"
+        (home / ".claude").mkdir(parents=True)
+        (home / ".codex").mkdir()
+        self.assertTrue(install(home, candidate, "all").ok)
+        evidence_path = candidate / manifest
+        evidence = json.loads(evidence_path.read_text())
+        evidence["host_evidence"] = collect_host_evidence(home, candidate, "all")
+        evidence_path.write_text(json.dumps(evidence, sort_keys=True, separators=(",", ":")))
+        self.run_git(candidate, "add", manifest)
+        self.run_git(candidate, "commit", "-qm", "record raw host evidence")
+        env = os.environ.copy()
+        env["HOME"] = str(home)
+
+        healthy = subprocess.run(
+            [sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+             "--repo", str(candidate), "--manifest", manifest, "--json"],
+            cwd=candidate, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        stale_link = home / ".claude" / "skills" / "evergreen"
+        stale_link.unlink()
+        stale_link.symlink_to(home / "stale-plugin-cache")
+        stale = subprocess.run(
+            [sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+             "--repo", str(candidate), "--manifest", manifest, "--json"],
+            cwd=candidate, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+
+        self.assertEqual(healthy.returncode, 2, healthy.stderr)
+        healthy_categories = {
+            item["id"]: item for item in json.loads(healthy.stdout)["categories"]
+        }
+        self.assertEqual(healthy_categories["claude_self_application"]["status"], "earned")
+        self.assertEqual(healthy_categories["codex_self_application"]["status"], "earned")
+        self.assertEqual(stale.returncode, 2, stale.stderr)
+        stale_payload = json.loads(stale.stdout)
+        stale_categories = {item["id"]: item for item in stale_payload["categories"]}
+        self.assertEqual(stale_categories["claude_self_application"]["status"], "not-earned")
+        self.assertEqual(stale_categories["codex_self_application"]["status"], "earned")
+        self.assertIn(
+            "skill-link-stale",
+            stale_payload["host_observation"]["hosts"]["claude"]["doctor_issues"],
+        )
+
     def test_grade_verify_binds_public_policy_to_frozen_subject_policy(self):
         verifier, candidate, _commit, manifest = self.make_grade_repositories()
         policy_path = candidate / "eval" / "grade" / "public" / "0.5.0" / "policy.json"
@@ -854,6 +903,7 @@ runpy.run_path({str(SCRIPT)!r}, run_name='__main__')
             self.assertIn("--dry-run", result.stdout)
         self.assertIn("--host", doctor_help.stdout)
         self.assertIn("--repo", doctor_help.stdout)
+        self.assertIn("--json", doctor_help.stdout)
 
     def test_host_cli_uses_fake_home_and_dry_run_and_uninstall_are_reversible(self):
         home = Path(self.temporary.name) / "fake home with spaces"
@@ -880,6 +930,28 @@ runpy.run_path({str(SCRIPT)!r}, run_name='__main__')
         self.assertEqual(agents.read_text(), "user-owned\n")
         self.assertFalse((home / ".claude" / "skills" / "evergreen").is_symlink())
         self.assertFalse((home / ".codex" / "skills" / "evergreen").is_symlink())
+
+    def test_doctor_json_emits_raw_host_evidence_without_shared_verdict(self):
+        from evergreen.hosts import install
+
+        home = Path(self.temporary.name) / "doctor-json-home"
+        (home / ".claude").mkdir(parents=True)
+        (home / ".codex").mkdir()
+        self.assertTrue(install(home, ROOT, "all").ok)
+        env = os.environ.copy()
+        env["HOME"] = str(home)
+
+        result = self.run_cli(
+            "doctor", "--host", "all", "--repo", str(ROOT), "--json", env=env
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["kind"], "evergreen-host-evidence")
+        self.assertEqual(set(payload["hosts"]), {"claude", "codex"})
+        serialized = result.stdout.lower()
+        for forbidden in ('"ok"', '"pass"', '"passed"', '"grade"', '"success"'):
+            self.assertNotIn(forbidden, serialized)
 
     def test_explicit_absent_host_refuses_without_creating_configuration(self):
         home = Path(self.temporary.name) / "empty-home"

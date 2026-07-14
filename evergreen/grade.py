@@ -41,7 +41,7 @@ POLICY_FIELDS = {
 EVIDENCE_FIELDS = {
     "schema_version", "kind", "evaluated_release", "subject", "policy",
     "required_categories", "required_languages", "detector", "peers", "changed_paths",
-    "subject_executables", "external_states",
+    "subject_executables", "host_evidence", "external_states",
 }
 GATES = {
     "detector_quality": ("detector_metrics",),
@@ -371,7 +371,7 @@ def load_evidence(payload, policy):
         raise GradeError("manifest cannot contain its runtime evidence_head")
     if any("threshold" in key.lower() for key in keys):
         raise GradeError("evidence cannot contain a threshold override")
-    asserted = {"grade", "pass", "passed", "success"} & set(keys)
+    asserted = {"grade", "ok", "pass", "passed", "success"} & set(keys)
     if asserted:
         raise GradeError(f"evidence contains self-asserted field: {sorted(asserted)[0]}")
     _exact_object(evidence, EVIDENCE_FIELDS, "evidence")
@@ -392,6 +392,11 @@ def load_evidence(payload, policy):
         raise GradeError("evidence languages are invalid")
     _validate_detector(evidence["detector"], policy, subject)
     _validate_peers(evidence["peers"], subject)
+    try:
+        from evergreen.hosts import validate_host_evidence
+        validate_host_evidence(evidence["host_evidence"])
+    except ValueError:
+        raise GradeError("host evidence is invalid") from None
 
     changed_paths = _string_list(evidence["changed_paths"], "changed paths")
     if changed_paths != tuple(sorted(changed_paths)):
@@ -685,12 +690,21 @@ def _is_ancestor(root, older, newer):
     ) is not None
 
 
-def _trusted_predicates(policy):
+def _trusted_predicates(policy, declared_hosts=None, runtime_hosts=None):
     predicates = {
         category: {gate: False for gate in policy["category_gates"][category]}
         for category in CATEGORIES
     }
     predicates["detector_quality"]["detector_metrics"] = True
+    if declared_hosts is not None and runtime_hosts is not None:
+        from evergreen.hosts import host_evidence_aligned
+        canonical_matches = declared_hosts["canonical"] == runtime_hosts["canonical"]
+        for host in ("claude", "codex"):
+            predicates[f"{host}_self_application"][f"{host}_active_installation"] = (
+                canonical_matches
+                and declared_hosts["hosts"][host] == runtime_hosts["hosts"][host]
+                and host_evidence_aligned(runtime_hosts, host)
+            )
     return predicates
 
 
@@ -860,16 +874,19 @@ def _verify_snapshot(snapshot, manifest, verifier):
                 f"subject executable digest is invalid: {path}",
             )
 
+    from evergreen.hosts import collect_host_evidence
+    runtime_hosts = collect_host_evidence(Path.home(), root, "all")
     result = evaluate(
         policy,
         evidence,
         {"commit": head, "tree": head_tree},
-        _trusted_predicates(policy),
+        _trusted_predicates(policy, _plain(evidence["host_evidence"]), runtime_hosts),
         {
             "subject_ancestor_of_evidence_head": True,
             "evidence_head_is_exact": True,
         },
     )
+    result["host_observation"] = runtime_hosts
     return result
 
 

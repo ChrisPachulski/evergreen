@@ -244,6 +244,21 @@ def doctor(home: Path, plugin_root: Path, host: str = "all") -> OperationResult:
     return OperationResult(healthy, tuple(messages))
 
 
+def collect_host_evidence(home: Path, plugin_root: Path, host: str = "all") -> dict:
+    from .host_evidence import collect_host_evidence as collect
+    return collect(home, plugin_root, host)
+
+
+def validate_host_evidence(value, *, require_all=True):
+    from .host_evidence import validate_host_evidence as validate
+    return validate(value, require_all=require_all)
+
+
+def host_evidence_aligned(value, host):
+    from .host_evidence import host_evidence_aligned as aligned
+    return aligned(value, host)
+
+
 def _canonical(plugin_root):
     lexical_root = _normalized_lexical_path(Path(plugin_root))
     errors = []
@@ -252,7 +267,7 @@ def _canonical(plugin_root):
     root = lexical_root.resolve()
     required_directories = (
         root / ".claude-plugin", root / ".codex-plugin", root / "skills",
-        root / "skills" / "evergreen", root / "bin",
+        root / "skills" / "evergreen", root / "bin", root / "commands",
     )
     for path in required_directories:
         if _kind(path) != "directory":
