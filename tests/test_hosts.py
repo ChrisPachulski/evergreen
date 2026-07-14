@@ -272,6 +272,8 @@ class HostTests(unittest.TestCase):
         managed = self.home / "managed-claude"
         claude.rename(managed)
         claude.symlink_to(managed, target_is_directory=True)
+        legacy_lock = managed / ".evergreen-host.lock"
+        legacy_lock.unlink(missing_ok=True)
         paths = (
             claude,
             managed,
@@ -299,6 +301,7 @@ class HostTests(unittest.TestCase):
 
         self.assertTrue(preview.ok, preview.messages)
         self.assertEqual(after, before)
+        self.assertFalse(legacy_lock.exists())
 
     def test_owned_host_root_retarget_during_apply_rolls_back_resolved_changes(self):
         from evergreen import host_transaction
@@ -447,6 +450,105 @@ class HostTests(unittest.TestCase):
         cycle_result = install(cycle_home, ROOT, "claude")
         self.assertFalse(cycle_result.ok)
         self.assertEqual(self.snapshot(include_directories=True), before)
+
+    def test_unowned_safe_managed_root_and_dry_run_make_no_filesystem_change(self):
+        from evergreen.hosts import install
+
+        managed = self.home / "managed-claude"
+        managed.mkdir()
+        root = self.home / ".claude"
+        root.symlink_to(managed, target_is_directory=True)
+
+        def exact_tree():
+            values = {}
+            for path in self.home.rglob("*"):
+                relative = path.relative_to(self.home).as_posix()
+                metadata = path.lstat()
+                values[relative] = (
+                    metadata.st_mode, metadata.st_ino, metadata.st_size,
+                    os.readlink(path) if path.is_symlink() else (
+                        path.read_bytes() if path.is_file() else None
+                    ),
+                )
+            return values
+
+        before = exact_tree()
+        preview = install(self.home, ROOT, "claude", dry_run=True)
+        after_preview = exact_tree()
+        attempted = install(self.home, ROOT, "claude")
+
+        self.assertFalse(preview.ok)
+        self.assertFalse(attempted.ok)
+        self.assertEqual(after_preview, before)
+        self.assertEqual(exact_tree(), before)
+
+    def test_managed_root_refuses_world_writable_lexical_alias_chain(self):
+        from evergreen.hosts import install
+
+        root = self.home / ".claude"
+        root.mkdir()
+        self.assertTrue(install(self.home, ROOT, "claude").ok)
+        managed = self.home / "managed-claude"
+        root.rename(managed)
+        shared = self.home / "shared"
+        shared.mkdir(mode=0o777)
+        shared.chmod(0o777)
+        alias = shared / "alias"
+        alias.symlink_to(managed, target_is_directory=True)
+        root.symlink_to(alias, target_is_directory=True)
+        try:
+            before = self.snapshot(include_directories=True)
+            result = install(self.home, ROOT, "claude")
+
+            self.assertFalse(result.ok)
+            self.assertEqual(self.snapshot(include_directories=True), before)
+        finally:
+            shared.chmod(0o755)
+
+    def test_managed_destination_swap_rolls_back_through_pinned_directory(self):
+        from evergreen import host_transaction
+        from evergreen.hosts import install
+
+        root = self.home / ".claude"
+        root.mkdir()
+        self.assertTrue(install(self.home, ROOT, "claude").ok)
+        managed = self.home / "managed-claude"
+        root.rename(managed)
+        root.symlink_to(managed, target_is_directory=True)
+        plugin = Path(self.temporary.name) / "destination swap plugin"
+        shutil.copytree(ROOT, plugin, symlinks=True)
+        before = {
+            "instructions": (managed / "CLAUDE.md").read_bytes(),
+            "skill": os.readlink(managed / "skills" / "evergreen"),
+            "ownership": (managed / ".evergreen-owned.json").read_bytes(),
+        }
+        displaced = self.home / "displaced-managed-claude"
+        original = host_transaction._perform_action
+        swapped = False
+
+        def swap_destination_after_first_action(*args, **kwargs):
+            nonlocal swapped
+            result = original(*args, **kwargs)
+            if not swapped:
+                swapped = True
+                managed.rename(displaced)
+                managed.mkdir()
+                (managed / "CLAUDE.md").write_text("replacement user content\n")
+            return result
+
+        with mock.patch.object(
+            host_transaction,
+            "_perform_action",
+            side_effect=swap_destination_after_first_action,
+        ):
+            result = install(self.home, plugin, "claude")
+
+        self.assertFalse(result.ok)
+        self.assertEqual((managed / "CLAUDE.md").read_text(), "replacement user content\n")
+        self.assertEqual((displaced / "CLAUDE.md").read_bytes(), before["instructions"])
+        self.assertEqual(os.readlink(displaced / "skills" / "evergreen"), before["skill"])
+        self.assertEqual((displaced / ".evergreen-owned.json").read_bytes(), before["ownership"])
+        self.assertNotIn("rollback incomplete", " ".join(result.messages).lower())
 
     def test_owned_symlinked_host_migrates_stale_source_without_touching_user_content(self):
         from evergreen.hosts import BEGIN_MARKER, doctor, install

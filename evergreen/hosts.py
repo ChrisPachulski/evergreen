@@ -10,8 +10,10 @@ from pathlib import Path
 from .host_lock import runtime_error as _runtime_error
 from .host_metadata import native_copy_available as _native_copy_available
 from .host_snapshot import (
+    capture_authorization as _capture_authorization,
     capture_preflight as _capture_preflight, kind as _kind,
     read_regular_bounded as _read_regular_bounded,
+    resolve_managed_root as _resolve_managed_root,
     snapshot as _snapshot,
 )
 from .host_transaction import TransactionEngine
@@ -49,7 +51,10 @@ def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> 
     selected, error = _select(home, host)
     if error:
         return OperationResult(False, (error,))
-    engine, lock_error = TransactionEngine.acquire(selected)
+    authorization, authorization_error = _authorize_selection(selected)
+    if authorization_error:
+        return OperationResult(False, tuple(authorization_error))
+    engine, lock_error = TransactionEngine.acquire(selected, authorization)
     if lock_error:
         return OperationResult(False, (lock_error,))
     return _with_engine_close(engine, lambda: _install_acquired(
@@ -111,7 +116,10 @@ def uninstall(home: Path, host: str, dry_run: bool = False) -> OperationResult:
     selected, error = _select(home, host)
     if error:
         return OperationResult(False, (error,))
-    engine, lock_error = TransactionEngine.acquire(selected)
+    authorization, authorization_error = _authorize_selection(selected)
+    if authorization_error:
+        return OperationResult(False, tuple(authorization_error))
+    engine, lock_error = TransactionEngine.acquire(selected, authorization)
     if lock_error:
         return OperationResult(False, (lock_error,))
     return _with_engine_close(engine, lambda: _uninstall_acquired(
@@ -306,8 +314,9 @@ def _status(home, name, directory, instruction_name):
     root_kind = _kind(root)
     resolved_root = root
     problem = None
+    managed_chain = ()
     if root_kind == "symlink":
-        resolved_root, problem = _managed_host_root(home, root)
+        resolved_root, managed_chain, problem = _resolve_managed_root(home, root)
     elif root_kind not in ("absent", "directory"):
         problem = f"host root is {root_kind}, not a directory"
     return HostStatus(
@@ -319,37 +328,30 @@ def _status(home, name, directory, instruction_name):
         skill=resolved_root / "skills" / "evergreen",
         ownership=resolved_root / OWNERSHIP_FILE,
         problem=problem,
+        managed_chain=managed_chain,
     )
 
-
-def _managed_host_root(home, root):
+def _authorize_selection(selected):
     try:
-        if root.lstat().st_uid != os.getuid():
-            raise OSError("host root link is not user-owned")
-        target = Path(os.readlink(root))
-        target = _normalized_lexical_path(
-            target if target.is_absolute() else root.parent / target
-        )
-        resolved = target.resolve(strict=True)
-        resolved.relative_to(home)
-        current = home
-        for part in resolved.relative_to(home).parts:
-            current = current / part
-            metadata = current.lstat()
-            if _kind(current) != "directory":
-                raise OSError(f"managed host root chain is not a directory: {current}")
-            if metadata.st_uid != os.getuid() or metadata.st_mode & 0o002:
-                raise OSError(f"managed host root chain is unsafe: {current}")
-        return resolved, None
-    except (OSError, RuntimeError, ValueError) as error:
-        return root, f"unsafe managed host root: {error}"
+        captured = _capture_authorization(selected)
+    except Exception as error:
+        return None, [f"error: host authorization failed: {error}"]
+    errors = []
+    for status in selected:
+        if status.root == status.resolved_root:
+            continue
+        state, state_error = _ownership_from_snapshot(status, captured[status.ownership])
+        if state_error:
+            errors.append(f"{status.name}: {state_error}")
+        elif state is None:
+            errors.append(f"{status.name}: managed host root lacks ownership proof")
+    return (captured, None) if not errors else (None, errors)
 
 
 def _select(home, requested):
-    home = Path(home).expanduser()
+    home = _normalized_lexical_path(Path(home).expanduser())
     if _kind(home) != "directory":
         return [], f"home must be a real directory: {home}"
-    home = home.resolve()
     statuses = detect_hosts(home)
     if requested == "all":
         selected = [status for status in statuses if status.present]

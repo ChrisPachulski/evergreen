@@ -679,8 +679,7 @@ class HostTests(HostTestCase):
         codex.mkdir()
         stale = claude / (".CLAUDE.md.evergreen-" + "a" * 32)
         stale.write_bytes(b"must remain untouched")
-        lock_path = codex / ".evergreen-host.lock"
-        lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        lock_fd = os.open(self.home, os.O_RDONLY)
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         before = self.snapshot()
         try:

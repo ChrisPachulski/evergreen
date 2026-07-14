@@ -18,6 +18,7 @@ class HostStatus:
     skill: Path
     ownership: Path
     problem: str | None = None
+    managed_chain: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)

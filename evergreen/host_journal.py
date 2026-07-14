@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import time
 
-from .host_snapshot import kind, open_directory, snapshot, snapshot_at
+from .host_snapshot import open_directory, snapshot, snapshot_at
 from .host_types import JournalPhase, JournalRecord, MutationKind, PathSnapshot
 
 READ_ELAPSED_LIMIT_SECONDS = 3
@@ -13,13 +13,19 @@ MAX_MATCHING_ARTIFACTS = 128
 MAX_SCANNED_ENTRIES = 4096
 
 
-def recover_transactions(selected):
+def recover_transactions(selected, open_parent=None):
     errors = []
     for status in selected:
         for target in (status.instructions, status.ownership, status.skill, status.skill.parent):
-            if kind(target.parent) != "directory":
+            try:
+                parent = (
+                    open_parent(target.parent)
+                    if open_parent else open_directory(
+                        snapshot(target.parent, allow_directory=True)
+                    )
+                )
+            except (FileNotFoundError, NotADirectoryError):
                 continue
-            parent = open_directory(snapshot(target.parent, allow_directory=True))
             try:
                 error = recover_target_artifacts(parent, target)
                 if error:

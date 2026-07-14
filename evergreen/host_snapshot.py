@@ -14,6 +14,92 @@ MAX_INSTRUCTION_BYTES = 1024 * 1024
 READ_ELAPSED_LIMIT_SECONDS = 3
 
 
+def resolve_managed_root(home, root):
+    try:
+        home = normalized_lexical_path(home)
+        chain = [root, home]
+        home_metadata = home.lstat()
+        if home_metadata.st_uid != os.getuid() or home_metadata.st_mode & 0o002:
+            raise OSError(f"managed host home is unsafe: {home}")
+        root_metadata = root.lstat()
+        if root_metadata.st_uid != os.getuid():
+            raise OSError("host root link is not user-owned")
+        raw_target = Path(os.readlink(root))
+        target = raw_target if raw_target.is_absolute() else root.parent / raw_target
+        try:
+            pending = list(target.relative_to(home).parts)
+        except ValueError as error:
+            raise OSError("managed host root target leaves home") from error
+        current = home
+        seen_links = {(root_metadata.st_dev, root_metadata.st_ino)}
+        hops = 0
+        while pending:
+            part = pending.pop(0)
+            if part in ("", "."):
+                continue
+            if part == "..":
+                raise OSError("managed host root chain leaves home")
+            candidate = current / part
+            metadata = candidate.lstat()
+            chain.append(candidate)
+            if kind(candidate) == "symlink":
+                hops += 1
+                identity = metadata.st_dev, metadata.st_ino
+                if hops > 40 or identity in seen_links:
+                    raise OSError("managed host root chain has a cycle")
+                if metadata.st_uid != os.getuid():
+                    raise OSError(f"managed host root link is not user-owned: {candidate}")
+                seen_links.add(identity)
+                link_target = Path(os.readlink(candidate))
+                if link_target.is_absolute():
+                    try:
+                        pending = list(link_target.relative_to(home).parts) + pending
+                    except ValueError as error:
+                        raise OSError("managed host root link leaves home") from error
+                    current = home
+                else:
+                    pending = list(link_target.parts) + pending
+                    current = candidate.parent
+                continue
+            if kind(candidate) != "directory":
+                raise OSError(f"managed host root chain is not a directory: {candidate}")
+            if metadata.st_uid != os.getuid() or metadata.st_mode & 0o002:
+                raise OSError(f"managed host root chain is unsafe: {candidate}")
+            current = candidate
+        resolved = current.resolve(strict=True)
+        resolved.relative_to(home.resolve())
+        return resolved, tuple(dict.fromkeys(chain)), None
+    except (OSError, RuntimeError, ValueError) as error:
+        return root, (), f"unsafe managed host root: {error}"
+
+
+def capture_authorization(selected):
+    captured = {}
+    for status in selected:
+        paths = (status.root,) if not status.managed_chain else (
+            *status.managed_chain, status.resolved_root, status.ownership,
+        )
+        for path in paths:
+            if path not in captured:
+                if path == status.ownership:
+                    parent = os.open(
+                        path.parent,
+                        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) |
+                        getattr(os, "O_NOFOLLOW", 0),
+                    )
+                    try:
+                        captured[path] = snapshot_at(path, parent)
+                    finally:
+                        os.close(parent)
+                    if captured[path].kind == "regular" and captured[path].nlink > 2:
+                        raise OSError(f"refusing hard-linked authorization path: {path}")
+                else:
+                    captured[path] = snapshot(path, allow_directory=True)
+        if status.managed_chain:
+            verify_managed_root_binding(status, captured)
+    return captured
+
+
 def capture_preflight(selected):
     captured = {}
     for status in selected:
@@ -25,39 +111,78 @@ def capture_preflight(selected):
             if path not in captured:
                 captured[path] = snapshot(path, allow_directory=allow_directory)
         if status.root != status.resolved_root:
-            root = captured[status.root]
-            verify_managed_root_binding(status, root)
+            verify_managed_root_binding(status)
     return captured
 
 
-def verify_managed_root_binding(status, root_snapshot=None):
+def verify_managed_root_binding(status, captured=None):
     if status.root == status.resolved_root:
         return
-    root = root_snapshot or snapshot(status.root, allow_directory=True)
-    target = normalized_snapshot_target(root)
     try:
-        resolved = target.resolve(strict=True) if target is not None else None
+        resolved = status.root.resolve(strict=True)
     except (OSError, RuntimeError, ValueError) as error:
         raise OSError(f"managed host root changed: {status.root}: {error}") from error
-    if (
-        root.kind != "symlink" or root.uid != os.getuid() or
-        resolved != status.resolved_root
-    ):
+    if resolved != status.resolved_root:
         raise OSError(f"managed host root changed: {status.root}")
-    home = status.root.parent.resolve()
-    try:
-        relative = status.resolved_root.relative_to(home)
-    except ValueError as error:
-        raise OSError(f"managed host root escaped home: {status.root}") from error
-    current = home
-    for part in relative.parts:
-        current = current / part
-        metadata = current.lstat()
-        if (
-            not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid() or
-            stat.S_IMODE(metadata.st_mode) & 0o002
-        ):
-            raise OSError(f"managed host root chain is unsafe: {current}")
+    for path in status.managed_chain:
+        current = snapshot(path, allow_directory=True)
+        expected = captured.get(path) if captured is not None else None
+        if expected is not None and current != expected:
+            raise OSError(f"managed host root chain changed: {path}")
+        if current.uid != os.getuid():
+            raise OSError(f"managed host root chain is not user-owned: {path}")
+        if current.kind == "directory" and current.mode & 0o002:
+            raise OSError(f"managed host root chain is unsafe: {path}")
+        if current.kind not in ("directory", "symlink"):
+            raise OSError(f"managed host root chain is unsafe: {path}")
+
+
+def verify_locked_authorization(selected, captured, root_descriptors):
+    ownership_paths = {status.ownership for status in selected if status.managed_chain}
+    verify_preflight({
+        path: item for path, item in captured.items() if path not in ownership_paths
+    })
+    for status in selected:
+        root = captured[status.resolved_root]
+        metadata = os.fstat(root_descriptors[status.resolved_root])
+        if not root.matches_stat(metadata):
+            raise OSError(f"managed host root changed before locking: {status.root}")
+        if status.managed_chain:
+            verify_managed_root_binding(status, captured)
+            ownership = snapshot_at(
+                status.ownership, root_descriptors[status.resolved_root]
+            )
+            if ownership != captured[status.ownership]:
+                raise OSError(f"managed host ownership changed before locking: {status.root}")
+
+
+def verify_pinned_roots(selected, captured, root_descriptors):
+    for status in selected:
+        expected = captured[status.resolved_root]
+        descriptor_metadata = os.fstat(root_descriptors[status.resolved_root])
+        live = snapshot(status.resolved_root, allow_directory=True)
+        identity = lambda item: (
+            item.kind, item.dev, item.ino, item.mode, item.uid, item.gid,
+        )
+        descriptor_identity = (
+            kind_from_mode(descriptor_metadata.st_mode), descriptor_metadata.st_dev,
+            descriptor_metadata.st_ino, stat.S_IMODE(descriptor_metadata.st_mode),
+            descriptor_metadata.st_uid, descriptor_metadata.st_gid,
+        )
+        if identity(live) != identity(expected) or descriptor_identity != identity(expected):
+            raise OSError(f"managed host destination changed: {status.root}")
+        if not status.managed_chain:
+            continue
+        if status.root.resolve(strict=True) != status.resolved_root:
+            raise OSError(f"managed host root changed: {status.root}")
+        for path in status.managed_chain:
+            chain_expected = captured[path]
+            chain_live = snapshot(path, allow_directory=True)
+            if chain_expected.kind == "directory":
+                if identity(chain_live) != identity(chain_expected):
+                    raise OSError(f"managed host root chain changed: {path}")
+            elif chain_live != chain_expected:
+                raise OSError(f"managed host root chain changed: {path}")
 
 
 def verify_preflight(captured):

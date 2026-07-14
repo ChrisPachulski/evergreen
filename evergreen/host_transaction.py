@@ -2,6 +2,7 @@
 from dataclasses import replace
 import os
 from pathlib import Path
+import stat
 import uuid
 from .host_types import (JournalPhase, JournalRecord, Mutation, MutationKind, OperationResult,
     PathSnapshot, RollbackEntry,
@@ -18,23 +19,66 @@ from .host_snapshot import (
     normalized_snapshot_target as _normalized_snapshot_target,
     open_directory as _open_directory, snapshot_at as _snapshot_at,
     verify_managed_root_binding as _verify_managed_root_binding,
-    verify_open_directory_path as _verify_open_directory_path,
+    verify_pinned_roots as _verify_pinned_roots,
     verify_preflight as _verify_preflight, verify_snapshot_at as _verify_snapshot_at,
 )
 
 class TransactionEngine:
-    def __init__(self, selected, locks):
+    def __init__(self, selected, locks, roots=None, authorization=None):
         self.selected, self._locks = tuple(selected), locks
+        self._roots = roots or {}
+        self._authorization = authorization or {}
     @classmethod
-    def acquire(cls, selected):
-        locks, error = _lock_hosts(selected)
-        return (None, error) if error else (cls(selected, locks), None)
+    def acquire(cls, selected, authorization):
+        locks, roots, error = _lock_hosts(selected, authorization)
+        return (None, error) if error else (
+            cls(selected, locks, roots, authorization), None
+        )
 
     def recover(self):
-        return _recover_transactions(self.selected)
+        self.verify_roots()
+        result = _recover_transactions(self.selected, self.open_parent)
+        self.verify_roots()
+        return result
 
     def apply(self, plans, dry_run, captured):
-        return _apply(plans, dry_run, captured)
+        return _apply(plans, dry_run, captured, self.open_parent, self.verify_roots)
+    def verify_roots(self):
+        if self._roots:
+            _verify_pinned_roots(
+                self.selected, self._authorization, self._roots
+            )
+    def open_parent(self, path, expected=None):
+        path = Path(path)
+        matches = [root for root in self._roots if path == root or root in path.parents]
+        if not matches:
+            raise OSError(f"transaction path is outside locked hosts: {path}")
+        root = max(matches, key=lambda item: len(item.parts))
+        descriptor = os.dup(self._roots[root])
+        try:
+            current = root
+            for part in path.relative_to(root).parts:
+                child = os.open(
+                    part,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) |
+                    getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=descriptor,
+                )
+                os.close(descriptor)
+                descriptor = child
+                current = current / part
+            if expected is not None:
+                metadata = os.fstat(descriptor)
+                if (
+                    not stat.S_ISDIR(metadata.st_mode) or
+                    (metadata.st_dev, metadata.st_ino, stat.S_IMODE(metadata.st_mode)) !=
+                    (expected.dev, expected.ino, expected.mode)
+                ):
+                    raise OSError(f"transaction directory changed: {path}")
+            return descriptor
+        except BaseException:
+            os.close(descriptor)
+            raise
     def close(self):
         locks, self._locks = self._locks, []
         if not locks:
@@ -42,7 +86,10 @@ class TransactionEngine:
         errors = _unlock_hosts(locks)
         return None if not errors else "error: host lock cleanup failed: " + "; ".join(errors)
 
-def _apply(plans, dry_run, captured):
+def _apply(plans, dry_run, captured, open_parent=None, verify_roots=lambda: None):
+    open_parent = open_parent or (
+        lambda path, expected=None: _open_directory(expected or captured[path])
+    )
     messages = []
     for status, (action, detail, path, value) in plans:
         prefix = "would " if dry_run and action not in ("unchanged", "unowned") else ""
@@ -67,9 +114,10 @@ def _apply(plans, dry_run, captured):
         not any(path in mutation_path.parents for mutation_path in mutation_paths)
     }
     try:
+        verify_roots()
         for action, _detail, path, value in mutations:
             parent_fd = _prepare_parent(
-                path.parent, captured, rollback_entries, conflicts
+                path.parent, captured, rollback_entries, conflicts, open_parent
             )
             try:
                 _verify_snapshot_at(captured[path], parent_fd)
@@ -96,17 +144,18 @@ def _apply(plans, dry_run, captured):
                     rollback_entries.append(RollbackEntry(
                         captured[path], postimage, captured[path.parent]
                     ))
-                _verify_open_directory_path(path.parent, parent_fd)
+                verify_roots()
             finally:
                 os.close(parent_fd)
         _verify_preflight(guard_snapshots)
         for status in dict.fromkeys(status for status, _plan in plans):
             _verify_managed_root_binding(status)
+        verify_roots()
     except Exception as error:
         rollback_errors = []
         for entry in reversed(rollback_entries):
             try:
-                _restore_entry(entry)
+                _restore_entry(entry, open_parent)
             except Exception as rollback_error:
                 rollback_errors.append(f"{entry.before.path}: {rollback_error}")
         recovery = conflicts + rollback_errors
@@ -125,7 +174,7 @@ def _apply(plans, dry_run, captured):
         if entry.backup is None and entry.journal is None:
             continue
         try:
-            _commit_entry(entry)
+            _commit_entry(entry, open_parent)
         except Exception as cleanup_error:
             cleanup_errors.append(f"{entry.before.path}: {cleanup_error}")
     if cleanup_errors:
@@ -138,15 +187,16 @@ def _apply(plans, dry_run, captured):
 def _entry_for_path(entries, path):
     return next((entry for entry in reversed(entries) if entry.before.path == path), None)
 
-def _prepare_parent(path, captured, rollback_entries, conflicts):
+def _prepare_parent(path, captured, rollback_entries, conflicts, open_parent):
     snapshot = captured[path]
     if snapshot.kind == "directory":
-        return _open_directory(snapshot)
+        return open_parent(path, snapshot)
     if snapshot.kind != "absent":
         raise OSError(f"transaction parent is {snapshot.kind}: {path}")
     grandparent = captured[path.parent]
-    descriptor = _open_directory(grandparent)
+    descriptor = open_parent(path.parent, grandparent)
     created = None
+    child = None
     try:
         _verify_snapshot_at(snapshot, descriptor)
         created = _publish_path(
@@ -154,7 +204,22 @@ def _prepare_parent(path, captured, rollback_entries, conflicts):
                 MutationKind.CREATE_DIRECTORY, path, snapshot, grandparent, mode=0o755,
             ), rollback_entries, conflicts,
         )
+        child = os.open(
+            path.name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) |
+            getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=descriptor,
+        )
+        metadata = os.fstat(child)
+        if (
+            not stat.S_ISDIR(metadata.st_mode) or
+            (metadata.st_dev, metadata.st_ino, stat.S_IMODE(metadata.st_mode)) !=
+            (created.dev, created.ino, created.mode)
+        ):
+            raise OSError(f"transaction directory changed: {path}")
     except Exception as error:
+        if child is not None:
+            os.close(child)
         if created is None:
             try:
                 current = _snapshot_at(path, descriptor)
@@ -166,7 +231,7 @@ def _prepare_parent(path, captured, rollback_entries, conflicts):
     finally:
         os.close(descriptor)
     captured[path] = created
-    return _open_directory(created)
+    return child
 
 def _matches_postimage(action, value, snapshot, expected):
     if action == "write":
@@ -406,8 +471,11 @@ def _cleanup_artifact(parent_fd, name, path, label, conflicts):
     except OSError as error:
         conflicts.append(f"{path}: manual recovery required; {error}")
 
-def _restore_entry(entry):
-    parent_fd = _open_directory(entry.parent)
+def _restore_entry(entry, open_parent=None):
+    parent_fd = (
+        open_parent(entry.parent.path, entry.parent)
+        if open_parent else _open_directory(entry.parent)
+    )
     try:
         try:
             actual = _snapshot_at(entry.after.path, parent_fd)
@@ -486,8 +554,11 @@ def _restore_entry(entry):
     finally:
         os.close(parent_fd)
 
-def _commit_entry(entry):
-    parent_fd = _open_directory(entry.parent)
+def _commit_entry(entry, open_parent=None):
+    parent_fd = (
+        open_parent(entry.parent.path, entry.parent)
+        if open_parent else _open_directory(entry.parent)
+    )
     try:
         if entry.backup is None:
             if entry.after.kind == "directory":
