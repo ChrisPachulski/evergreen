@@ -91,21 +91,26 @@ repository's evidenced stable/public-release gate.
 
 ## Evidence-backed completion receipts
 
-Before an external mutation, lock the target repository root, origin, branch, pre-mutation HEAD,
-and intended operation. A continuation such as “ship” remains bound to that target.
+Before an external mutation, lock the target repository root, origin, branch, pre-mutation HEAD, and intended operation.
+A continuation such as “ship” remains bound to that target.
 
 Before reporting pushed, merged, clean, complete, released, lost, erased, or not run, obtain fresh evidence.
 Never reverse an earlier project, mutation, benchmark, or release-status claim without new evidence.
+State the prior claim and the evidence that changes it.
 Treat pushed to a source branch, tagged, GitHub Release published, marketplace published, and deployed as separate states.
+Evergreen receipt is a local snapshot only.
+An ahead count of zero does not prove the remote branch contains HEAD.
+Reporting pushed or merged requires authoritative remote evidence bound to the exact commit SHA.
+Absence of a receipt, artifact, or log does not prove that work was not run, lost, or erased; without an authoritative ledger, report the state as unverified.
+A benchmark claim names the evaluated release, resolver/judge, provider, languages, provenance commit, and every applicable evidence state.
+Benchmark executed, reverified, published, and planned are independent states; report each applicable state and never infer one from another.
 Empty cleanup output means nothing was removed.
 Stage and commit in separate tool calls.
+When a user challenges remembered status, inspect the fresh receipt or authoritative artifact before agreeing or defending.
+A combined staging-and-commit call cannot prove the finalized index passed the guard.
 
-Use `evergreen receipt --repo PATH` for local repository state. A benchmark claim names the
-evaluated release, resolver/judge, provider, languages, provenance commit, and whether its evidence
-was executed, reverified, published, or merely planned. When a user challenges remembered status,
-inspect the fresh receipt or authoritative artifact before agreeing or defending. Local Git state
-cannot verify external publication; without direct authority, external release state remains
-unverified. A combined staging-and-commit call cannot prove the finalized index passed the guard.
+Use `evergreen receipt --repo PATH` for the local snapshot. Local Git state cannot verify external
+publication; without direct authority, external release state remains unverified.
 
 ## Two depths
 
