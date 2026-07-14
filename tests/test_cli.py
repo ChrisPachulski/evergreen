@@ -177,11 +177,14 @@ class EvergreenCLITests(unittest.TestCase):
                 "artifact_count": 2,
                 "evaluated_release": "0.4.0",
                 "evidence_state": "declared_publication",
+                "judge_sha256": "c" * 64,
                 "languages": ["Python", "rust"],
                 "manifest": "bench/manifest.json",
+                "protocol": "java-git-window-v1",
                 "provenance_commit": "b" * 40,
                 "provider": "codex",
                 "report": "bench/report.md",
+                "resolver": "v2",
             },
         }
 
@@ -206,12 +209,42 @@ class EvergreenCLITests(unittest.TestCase):
             "- artifact count: 2\n"
             "- evaluated release: 0.4.0\n"
             "- evidence state: declared_publication\n"
+            f"- judge SHA-256: {'c' * 64}\n"
             "- languages: Python,rust\n"
             "- manifest: bench/manifest.json\n"
+            "- protocol: java-git-window-v1\n"
             f"- provenance commit: {'b' * 40}\n"
             "- provider: codex\n"
             "- report: bench/report.md\n"
+            "- resolver: v2\n"
         ))
+
+    def test_receipt_operational_git_failure_exits_one_with_safe_error(self):
+        git_repo = self.make_git_repo()
+        stub_dir = Path(self.temporary.name) / "stub-bin"
+        stub_dir.mkdir()
+        stub = stub_dir / "git"
+        stub.write_text(
+            f"#!{sys.executable}\n"
+            "import sys, time\n"
+            "sys.stdout.buffer.write(b'x' * 1048577)\n"
+            "sys.stdout.buffer.flush()\n"
+            "time.sleep(1)\n"
+        )
+        stub.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = str(stub_dir)
+
+        result = self.run_cli(
+            "receipt", "--repo", str(git_repo), "--json", env=env
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr.count("\n"), 1)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertLessEqual(len(result.stderr), 530)
+        self.assertIn("too much output", result.stderr)
 
     def test_receipt_errors_are_single_terminal_safe_lines(self):
         git_repo = self.make_git_repo()

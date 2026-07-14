@@ -1,9 +1,11 @@
 import copy
 import json
 import os
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -52,7 +54,7 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(first["schema_version"], 1)
         self.assertEqual(first["repository"]["root"], str(self.repo.resolve()))
-        self.assertEqual(first["repository"]["name"], "repo")
+        self.assertEqual(first["repository"]["name"], "origin")
         self.assertEqual(first["repository"]["branch"], "main")
         self.assertEqual(first["repository"]["head"], self.git("rev-parse", "HEAD"))
         self.assertEqual(first["repository"]["upstream"], "origin/main")
@@ -107,6 +109,19 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(repository["unstaged"], 0)
         self.assertEqual(repository["untracked"], 0)
 
+    def test_repository_rename_configuration_cannot_change_counts(self):
+        self.git("config", "status.renames", "false")
+        old = self.repo / "old"
+        old.write_text("rename me\n")
+        self.git("add", old.name)
+        self.git("commit", "-qm", "add rename source")
+        self.git("mv", old.name, "new")
+
+        repository = build_receipt(self.repo)["repository"]
+
+        self.assertEqual(repository["staged"], 1)
+        self.assertEqual(repository["unstaged"], 0)
+
     def test_detached_head_has_no_branch_or_upstream(self):
         self.git("checkout", "-q", "--detach")
 
@@ -117,6 +132,14 @@ class ReceiptTests(unittest.TestCase):
         self.assertIsNone(repository["upstream"])
         self.assertIsNone(repository["ahead"])
         self.assertIsNone(repository["behind"])
+
+    def test_legal_branch_named_detached_is_not_reported_as_detached_head(self):
+        self.git("checkout", "-qb", "(detached)")
+
+        repository = build_receipt(self.repo)["repository"]
+
+        self.assertEqual(repository["branch"], "(detached)")
+        self.assertFalse(repository["detached"])
 
     def test_missing_origin_and_upstream_are_data(self):
         self.git("branch", "--unset-upstream")
@@ -172,6 +195,8 @@ class ReceiptTests(unittest.TestCase):
     def test_origin_project_name_wins_for_ordinary_and_linked_directory_names(self):
         remotes = (
             "https://example.invalid/owner/project.git",
+            "ssh://example.invalid/owner/project.git",
+            "git://example.invalid/owner/project.git",
             "example.invalid:owner/project.git",
         )
         for directory_name in ("repo", "evidence-receipts"):
@@ -185,6 +210,20 @@ class ReceiptTests(unittest.TestCase):
                     repository = build_receipt(self.repo)["repository"]
                     self.assertEqual(repository["name"], "project")
                     self.assertEqual(repository["root"], str(self.repo.resolve()))
+
+    def test_file_and_filesystem_origins_supply_canonical_project_name(self):
+        remotes = (
+            "file:///srv/git/canonical.git",
+            "/srv/git/canonical.git",
+            "../git/canonical.git",
+        )
+        for remote in remotes:
+            with self.subTest(remote=remote):
+                self.git("remote", "set-url", "origin", remote)
+                self.assertEqual(
+                    build_receipt(self.repo)["repository"]["name"],
+                    "canonical",
+                )
 
     def test_missing_or_unusable_origin_falls_back_to_worktree_name(self):
         self.git("remote", "remove", "origin")
@@ -272,6 +311,20 @@ class ReceiptTests(unittest.TestCase):
 
         self.assertEqual(origin, "[redacted]")
 
+    def test_remote_helpers_and_unsupported_schemes_fail_closed_without_at_sign(self):
+        remotes = (
+            "tokenhelper::SUPERSECRET/owner/repo",
+            "ext::sh -c curl -H Authorization:Bearer-SECRET https://example.invalid/repo",
+            "unknown://example.invalid/secret/repo.git",
+        )
+        for remote in remotes:
+            with self.subTest(remote=remote):
+                self.git("remote", "set-url", "origin", remote)
+                self.assertEqual(
+                    build_receipt(self.repo)["repository"]["origin"],
+                    "[redacted]",
+                )
+
     def test_malformed_bracketed_remote_fails_closed(self):
         self.git(
             "remote",
@@ -287,8 +340,11 @@ class ReceiptTests(unittest.TestCase):
     def test_benign_normal_remotes_are_preserved(self):
         remotes = (
             "https://example.invalid/owner/repo.git",
+            "ssh://example.invalid/owner/repo.git",
+            "git://example.invalid/owner/repo.git",
             "file:///tmp/repo.git",
             "/tmp/repo.git",
+            "../tmp/repo.git",
             "example.invalid:owner/repo.git",
         )
         for remote in remotes:
@@ -298,30 +354,89 @@ class ReceiptTests(unittest.TestCase):
                     build_receipt(self.repo)["repository"]["origin"], remote
                 )
 
-    def test_stub_git_timeout_and_output_limit_are_errors(self):
+    def test_hostile_fsmonitor_and_trace_environment_cannot_execute_or_write(self):
+        hook_marker = self.repo / "fsmonitor-executed"
+        trace_marker = self.repo / "git-trace"
+        hook = self.repo.parent / "hostile-fsmonitor"
+        hook.write_text(
+            f"#!{sys.executable}\n"
+            "from pathlib import Path\n"
+            f"Path({str(hook_marker)!r}).write_text('executed')\n"
+        )
+        hook.chmod(0o755)
+        self.git("config", "core.fsmonitor", str(hook))
+
+        with mock.patch.dict(
+            os.environ,
+            {"GIT_TRACE2_EVENT": str(trace_marker)},
+            clear=False,
+        ):
+            build_receipt(self.repo)
+
+        self.assertFalse(hook_marker.exists())
+        self.assertFalse(trace_marker.exists())
+
+    def test_stub_git_timeout_and_output_limit_are_bounded_operational_errors(self):
         from evergreen import receipt as module
 
-        stub = self.repo.parent / "git-stub"
-        stub.write_text(
+        stub_source = (
             f"#!{sys.executable}\n"
-            "import os, sys, time\n"
-            "mode = os.environ['RECEIPT_STUB_MODE']\n"
-            "if mode == 'timeout':\n"
+            "import sys, time\n"
+            "if 'timeout' in __file__:\n"
             "    time.sleep(1)\n"
             "else:\n"
             f"    sys.stdout.buffer.write(b'x' * ({module.MAX_GIT_OUTPUT_BYTES} + 1))\n"
+            "    sys.stdout.buffer.flush()\n"
+            "    time.sleep(1)\n"
         )
-        stub.chmod(0o755)
+        timeout_stub = self.repo.parent / "git-stub-timeout"
+        output_stub = self.repo.parent / "git-stub-output"
+        for stub in (timeout_stub, output_stub):
+            stub.write_text(stub_source)
+            stub.chmod(0o755)
 
-        with mock.patch.object(module, "_GIT_EXECUTABLE", str(stub)), \
+        with mock.patch.object(module, "_GIT_EXECUTABLE", str(timeout_stub)), \
                 mock.patch.object(module, "GIT_TIMEOUT_SECONDS", 0.01), \
-                mock.patch.dict(os.environ, {"RECEIPT_STUB_MODE": "timeout"}), \
-                self.assertRaisesRegex(ReceiptError, "timed out"):
+                self.assertRaisesRegex(module.ReceiptOperationalError, "timed out"):
             build_receipt(self.repo)
 
-        with mock.patch.object(module, "_GIT_EXECUTABLE", str(stub)), \
-                mock.patch.dict(os.environ, {"RECEIPT_STUB_MODE": "output"}), \
-                self.assertRaisesRegex(ReceiptError, "too much output"):
+        started = time.monotonic()
+        with mock.patch.object(module, "_GIT_EXECUTABLE", str(output_stub)), \
+                mock.patch.object(module, "GIT_TIMEOUT_SECONDS", 2), \
+                self.assertRaisesRegex(module.ReceiptOperationalError, "too much output"):
+            build_receipt(self.repo)
+        self.assertLess(time.monotonic() - started, 0.75)
+
+    def test_tag_query_is_bound_to_captured_commit_not_symbolic_head(self):
+        from evergreen import receipt as module
+
+        calls = []
+        original = module._git
+
+        def recording_git(root, *args, **kwargs):
+            calls.append(args)
+            return original(root, *args, **kwargs)
+
+        with mock.patch.object(module, "_git", side_effect=recording_git):
+            receipt = build_receipt(self.repo)
+
+        head = receipt["repository"]["head"]
+        self.assertIn(("tag", "--points-at", head), calls)
+        self.assertNotIn(("tag", "--points-at", "HEAD"), calls)
+
+    def test_torn_repository_state_is_retried_then_refused(self):
+        from evergreen import receipt as module
+
+        stable = module._status(self.repo)
+        moving = {**stable, "staged": stable["staged"] + 1, "clean": False}
+        with mock.patch.object(
+            module,
+            "_status",
+            side_effect=(stable, moving, stable, moving),
+        ), self.assertRaisesRegex(
+            module.ReceiptOperationalError,
+            "changed while receipt was collected",
+        ):
             build_receipt(self.repo)
 
     def test_receipt_does_not_change_repository_bytes(self):
@@ -344,12 +459,49 @@ class ReceiptTests(unittest.TestCase):
             "artifact_count": 5,
             "evaluated_release": "0.4.0",
             "evidence_state": "declared_publication",
+            "judge_sha256": "e" * 64,
             "languages": ["Java", "Python", "go", "rust", "typescript"],
             "manifest": "bench/manifest.json",
+            "protocol": "unverified",
             "provenance_commit": "a" * 40,
             "provider": "codex",
             "report": "bench/report.md",
+            "resolver": "unverified",
         })
+
+    def test_benchmark_judge_resolver_and_protocol_identity_are_validated(self):
+        manifest = self.benchmark_manifest()
+        manifest["provenance"]["resolver"] = "v2"
+        manifest["provenance"]["protocol"] = "java-git-window-v1"
+        self.write_benchmark_manifest(manifest)
+
+        benchmark = build_receipt(
+            self.repo, Path("bench/manifest.json")
+        )["benchmark"]
+
+        self.assertEqual(benchmark["judge_sha256"], "e" * 64)
+        self.assertEqual(benchmark["resolver"], "v2")
+        self.assertEqual(benchmark["protocol"], "java-git-window-v1")
+
+        for value in (None, "short", "E" * 64, "g" * 64):
+            with self.subTest(judge_sha256=value):
+                invalid = self.benchmark_manifest()
+                if value is None:
+                    invalid["provenance"].pop("judge_sha256")
+                else:
+                    invalid["provenance"]["judge_sha256"] = value
+                self.write_benchmark_manifest(invalid)
+                with self.assertRaisesRegex(ReceiptError, "judge"):
+                    build_receipt(self.repo, Path("bench/manifest.json"))
+
+        for field in ("resolver", "protocol"):
+            for value in ("", "  ", 2):
+                with self.subTest(field=field, value=value):
+                    invalid = self.benchmark_manifest()
+                    invalid["provenance"][field] = value
+                    self.write_benchmark_manifest(invalid)
+                    with self.assertRaisesRegex(ReceiptError, field):
+                        build_receipt(self.repo, Path("bench/manifest.json"))
 
     def test_manifest_bytes_and_json_are_bounded_and_well_formed(self):
         from evergreen import receipt as module
@@ -399,6 +551,39 @@ class ReceiptTests(unittest.TestCase):
         for supplied in invalid:
             with self.subTest(supplied=supplied), self.assertRaises(ReceiptError):
                 build_receipt(self.repo, supplied)
+
+    def test_manifest_read_remains_bound_to_opened_file_during_path_swap(self):
+        from evergreen import receipt as module
+
+        inside = self.benchmark_manifest()
+        outside = copy.deepcopy(inside)
+        outside["evaluated_release"] = "outside"
+        self.write_benchmark_manifest(inside)
+        manifest = self.repo / "bench" / "manifest.json"
+        displaced = self.repo / "bench" / "opened-manifest.json"
+        outside_path = self.repo.parent / "outside-manifest.json"
+        outside_path.write_text(json.dumps(outside))
+        original_open = os.open
+        swapped = False
+
+        def swapping_open(path, flags, *args, **kwargs):
+            nonlocal swapped
+            descriptor = original_open(path, flags, *args, **kwargs)
+            if path == "manifest.json" and not swapped:
+                swapped = True
+                manifest.rename(displaced)
+                manifest.symlink_to(outside_path)
+            return descriptor
+
+        with mock.patch("os.open", side_effect=swapping_open):
+            raw = module._read_repo_file(
+                self.repo,
+                "bench/manifest.json",
+                max_bytes=module.MAX_MANIFEST_BYTES,
+            )
+
+        self.assertTrue(swapped)
+        self.assertEqual(json.loads(raw)["evaluated_release"], "0.4.0")
 
     def test_manifest_requires_publication_identity_fields(self):
         cases = (
@@ -570,25 +755,24 @@ class ReceiptTests(unittest.TestCase):
         path.write_text(json.dumps(manifest))
 
     def repository_snapshot(self):
-        git_dir = self.repo / ".git"
+        git_dir = Path(self.git("rev-parse", "--absolute-git-dir")).resolve()
 
-        def files_below(path):
-            if not path.exists():
-                return {}
-            return {
-                item.relative_to(git_dir).as_posix(): item.read_bytes()
-                for item in path.rglob("*")
-                if item.is_file()
-            }
+        def tree(path):
+            entries = {}
+            for item in sorted(path.rglob("*")):
+                relative = item.relative_to(path).as_posix()
+                metadata = item.lstat()
+                kind = stat.S_IFMT(metadata.st_mode)
+                if stat.S_ISREG(metadata.st_mode):
+                    value = item.read_bytes()
+                elif stat.S_ISLNK(metadata.st_mode):
+                    value = os.readlink(item)
+                else:
+                    value = None
+                entries[relative] = (kind, value)
+            return entries
 
-        worktree = {
-            item.relative_to(self.repo).as_posix(): item.read_bytes()
-            for item in self.repo.rglob("*")
-            if item.is_file() and git_dir not in item.parents
-        }
         return {
-            "HEAD": (git_dir / "HEAD").read_bytes(),
-            "index": (git_dir / "index").read_bytes(),
-            "refs": files_below(git_dir / "refs"),
-            "worktree": worktree,
+            "worktree": tree(self.repo),
+            "git_dir": tree(git_dir),
         }

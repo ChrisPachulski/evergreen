@@ -127,7 +127,7 @@ def run_impact(args):
 
 
 def run_receipt(args):
-    from evergreen.receipt import ReceiptError, build_receipt
+    from evergreen.receipt import ReceiptError, ReceiptOperationalError, build_receipt
 
     try:
         repo = Path(args.repo).expanduser()
@@ -141,6 +141,9 @@ def run_receipt(args):
         return 2
     try:
         payload = build_receipt(repo, benchmark_manifest)
+    except ReceiptOperationalError as error:
+        print(f"evergreen: {error_display(error)}", file=sys.stderr)
+        return 1
     except ReceiptError as error:
         print(f"evergreen: {error_display(error)}", file=sys.stderr)
         return 2
@@ -194,11 +197,14 @@ def print_receipt(payload):
     print(f"- artifact count: {benchmark['artifact_count']}")
     print(f"- evaluated release: {terminal_display(benchmark['evaluated_release'])}")
     print(f"- evidence state: {terminal_display(benchmark['evidence_state'])}")
+    print(f"- judge SHA-256: {terminal_display(benchmark['judge_sha256'])}")
     print(f"- languages: {terminal_display(','.join(benchmark['languages']))}")
     print(f"- manifest: {terminal_display(benchmark['manifest'])}")
+    print(f"- protocol: {terminal_display(benchmark['protocol'])}")
     print(f"- provenance commit: {terminal_display(benchmark['provenance_commit'])}")
     print(f"- provider: {terminal_display(benchmark['provider'])}")
     print(f"- report: {terminal_display(benchmark['report'])}")
+    print(f"- resolver: {terminal_display(benchmark['resolver'])}")
 
 
 def print_human(payload):

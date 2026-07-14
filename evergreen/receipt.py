@@ -3,8 +3,12 @@
 import json
 import os
 import re
+import selectors
+import signal
 import shutil
+import stat
 import subprocess
+import time
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit, urlunsplit
 
@@ -13,76 +17,149 @@ GIT_TIMEOUT_SECONDS = 5
 MAX_GIT_OUTPUT_BYTES = 1_048_576
 MAX_MANIFEST_BYTES = 1_048_576
 PUBLICATION_KIND = "evergreen-benchmark-decision-publication"
+RECEIPT_ATTEMPTS = 2
 
 _GIT_EXECUTABLE = str(Path(shutil.which("git") or "git").resolve())
+_REMOTE_SCHEMES = {"file", "git", "http", "https", "ssh"}
 
 
 class ReceiptError(ValueError):
     pass
 
 
+class ReceiptOperationalError(ReceiptError):
+    pass
+
+
 def build_receipt(repo: Path, benchmark_manifest: Path | None = None) -> dict:
     root = _repository_root(repo)
-    status = _status(root)
-    origin = _origin(root)
-    receipt = {
-        "schema_version": 1,
-        "repository": {
-            "root": str(root),
-            "name": _repository_name(root, origin),
-            "origin": origin,
-            **status,
-        },
-        "release": {
-            "local_tags": sorted(filter(
-                None, _git(root, "tag", "--points-at", "HEAD").splitlines()
-            )),
-            "external_state": "unverified",
-        },
-        "benchmark": None,
+    benchmark = (
+        None
+        if benchmark_manifest is None
+        else _benchmark_identity(root, benchmark_manifest)
+    )
+    for _attempt in range(RECEIPT_ATTEMPTS):
+        before = _repository_snapshot(root)
+        after = _repository_snapshot(root)
+        if before != after:
+            continue
+        status = after["status"]
+        origin = after["origin"]
+        return {
+            "schema_version": 1,
+            "repository": {
+                "root": str(root),
+                "name": _repository_name(root, origin),
+                "origin": origin,
+                **status,
+            },
+            "release": {
+                "local_tags": after["local_tags"],
+                "external_state": "unverified",
+            },
+            "benchmark": benchmark,
+        }
+    raise ReceiptOperationalError("repository changed while receipt was collected")
+
+
+def _git(root, *args, missing_ok=False, input_error=False):
+    environment = {
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "LC_ALL": "C",
     }
-    if benchmark_manifest is not None:
-        receipt["benchmark"] = _benchmark_identity(root, benchmark_manifest)
-    return receipt
-
-
-def _git(root, *args, missing_ok=False):
-    environment = os.environ.copy()
-    environment["GIT_OPTIONAL_LOCKS"] = "0"
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             [
                 _GIT_EXECUTABLE,
                 "--no-optional-locks",
                 "--no-replace-objects",
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "status.renames=true",
+                "-c",
+                "maintenance.auto=false",
+                "-c",
+                "gc.auto=0",
                 "-C",
                 str(root),
                 *args,
             ],
-            check=False,
             env=environment,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            timeout=GIT_TIMEOUT_SECONDS,
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired:
-        raise ReceiptError("Git command timed out") from None
     except OSError:
-        raise ReceiptError("Git command could not be executed") from None
-    if result.returncode:
+        raise ReceiptOperationalError("Git command could not be executed") from None
+    try:
+        output = _bounded_process_output(process)
+    except ReceiptOperationalError:
+        _terminate_process_group(process)
+        raise
+    if process.returncode:
         if missing_ok:
             return None
-        raise ReceiptError("Git command failed")
-    if len(result.stdout) > MAX_GIT_OUTPUT_BYTES:
-        raise ReceiptError("Git command produced too much output")
+        error = ReceiptError if input_error else ReceiptOperationalError
+        raise error("Git command failed")
     try:
-        return result.stdout.decode("utf-8")
+        return output.decode("utf-8")
     except UnicodeDecodeError:
-        raise ReceiptError("Git output is not valid UTF-8") from None
+        raise ReceiptOperationalError("Git output is not valid UTF-8") from None
+
+
+def _bounded_process_output(process):
+    deadline = time.monotonic() + GIT_TIMEOUT_SECONDS
+    output = bytearray()
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ)
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ReceiptOperationalError("Git command timed out")
+            events = selector.select(remaining)
+            if not events:
+                raise ReceiptOperationalError("Git command timed out")
+            chunk = os.read(
+                process.stdout.fileno(),
+                min(65_536, MAX_GIT_OUTPUT_BYTES + 1 - len(output)),
+            )
+            if not chunk:
+                break
+            output.extend(chunk)
+            if len(output) > MAX_GIT_OUTPUT_BYTES:
+                raise ReceiptOperationalError("Git command produced too much output")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ReceiptOperationalError("Git command timed out")
+        try:
+            process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            raise ReceiptOperationalError("Git command timed out") from None
+        return bytes(output)
+    finally:
+        selector.close()
+        process.stdout.close()
+
+
+def _terminate_process_group(process):
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        if process.poll() is None:
+            process.kill()
+    process.wait()
 
 
 def _repository_root(repo):
-    root = _git(Path(repo), "rev-parse", "--show-toplevel").strip()
+    root = _git(
+        Path(repo),
+        "rev-parse",
+        "--show-toplevel",
+        input_error=True,
+    ).strip()
     if not root:
         raise ReceiptError("Git repository root is missing")
     return Path(root).resolve()
@@ -100,12 +177,14 @@ def _repository_name(root, origin):
             parsed = urlsplit(origin)
         except ValueError:
             return root.name
-        if parsed.scheme in {"git", "http", "https", "ssh"}:
+        if parsed.scheme in _REMOTE_SCHEMES:
             path = parsed.path
     elif origin:
         scp = re.fullmatch(r"(?:[^/@:\s]+@)?[^/:\s]+:(.+)", origin)
         if scp:
             path = scp.group(1)
+        elif origin != "[redacted]":
+            path = origin
     if not path:
         return root.name
     name = PurePosixPath(path.rstrip("/")).name
@@ -115,8 +194,12 @@ def _repository_name(root, origin):
 
 
 def _redact_remote(remote):
+    if re.match(r"[A-Za-z][A-Za-z0-9+.-]*::", remote):
+        return "[redacted]"
     try:
         parsed = urlsplit(remote)
+        if "://" in remote and parsed.scheme not in _REMOTE_SCHEMES:
+            return "[redacted]"
         remote = urlunsplit(parsed._replace(query="", fragment=""))
         if parsed.scheme and parsed.username is not None:
             host = parsed.hostname or ""
@@ -135,10 +218,32 @@ def _redact_remote(remote):
     scp = re.fullmatch(r"([^/@:\s]+)@([^:\s]+):(.+)", remote)
     if scp:
         return f"[redacted]@{scp.group(2)}:{scp.group(3)}"
+    if remote.startswith(("/", "./", "../", "~/")):
+        return remote
     return "[redacted]" if "@" in remote else remote
 
 
+def _repository_snapshot(root):
+    status = _status(root)
+    head = status["head"]
+    return {
+        "status": status,
+        "origin": _origin(root),
+        "local_tags": sorted(filter(
+            None, _git(root, "tag", "--points-at", head).splitlines()
+        )),
+    }
+
+
 def _status(root):
+    symbolic_branch = _git(
+        root,
+        "symbolic-ref",
+        "--quiet",
+        "--short",
+        "HEAD",
+        missing_ok=True,
+    )
     output = _git(
         root,
         "status",
@@ -148,7 +253,7 @@ def _status(root):
         "--untracked-files=all",
     )
     records = output.split("\0")
-    head = branch = upstream = None
+    head = upstream = None
     ahead = behind = None
     staged = unstaged = untracked = 0
     index = 0
@@ -159,9 +264,6 @@ def _status(root):
             continue
         if record.startswith("# branch.oid "):
             head = record.removeprefix("# branch.oid ")
-        elif record.startswith("# branch.head "):
-            value = record.removeprefix("# branch.head ")
-            branch = None if value == "(detached)" else value
         elif record.startswith("# branch.upstream "):
             upstream = record.removeprefix("# branch.upstream ")
         elif record.startswith("# branch.ab "):
@@ -179,6 +281,7 @@ def _status(root):
             untracked += 1
     if not head or head == "(initial)":
         raise ReceiptError("Git repository has no HEAD commit")
+    branch = None if symbolic_branch is None else symbolic_branch.strip()
     if branch is None:
         upstream = None
         ahead = behind = None
@@ -200,15 +303,10 @@ def _status(root):
 
 def _benchmark_identity(root, benchmark_manifest):
     manifest_name = _normalized_path(benchmark_manifest)
-    manifest_path = _safe_repo_file(
-        root, manifest_name, max_bytes=MAX_MANIFEST_BYTES
-    )
     try:
-        raw = manifest_path.read_bytes()
-    except OSError:
-        raise ReceiptError("benchmark manifest could not be read") from None
-    if len(raw) > MAX_MANIFEST_BYTES:
-        raise ReceiptError("benchmark manifest is too large")
+        raw = _read_repo_file(root, manifest_name, max_bytes=MAX_MANIFEST_BYTES)
+    except ReceiptError:
+        raise
     try:
         document = json.loads(
             raw.decode("utf-8"), parse_constant=_reject_json_constant
@@ -236,6 +334,13 @@ def _benchmark_identity(root, benchmark_manifest):
         r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit
     ):
         raise ReceiptError("benchmark provenance commit is invalid")
+    judge_sha256 = provenance.get("judge_sha256")
+    if not isinstance(judge_sha256, str) or not re.fullmatch(
+        r"[0-9a-f]{64}", judge_sha256
+    ):
+        raise ReceiptError("benchmark judge SHA-256 is invalid")
+    resolver = _optional_identity(provenance, "resolver")
+    protocol = _optional_identity(provenance, "protocol")
 
     publication = document.get("publication")
     if not isinstance(publication, dict):
@@ -278,11 +383,14 @@ def _benchmark_identity(root, benchmark_manifest):
         "artifact_count": len(artifacts),
         "evaluated_release": evaluated_release,
         "evidence_state": "declared_publication",
+        "judge_sha256": judge_sha256,
         "languages": sorted(required_languages),
         "manifest": manifest_name,
+        "protocol": protocol,
         "provenance_commit": commit,
         "provider": provider,
         "report": report_name,
+        "resolver": resolver,
     }
 
 
@@ -303,6 +411,12 @@ def _nonempty_text(value, name):
     return value
 
 
+def _optional_identity(container, field):
+    if field not in container:
+        return "unverified"
+    return _nonempty_text(container[field], f"benchmark {field}")
+
+
 def _normalized_path(supplied):
     value = str(supplied)
     pure = PurePosixPath(value)
@@ -320,26 +434,61 @@ def _normalized_path(supplied):
     return value
 
 
-def _safe_repo_file(root, supplied, *, max_bytes=None):
+def _open_repo_file(root, supplied, *, max_bytes=None):
     relative = _normalized_path(supplied)
-    root = root.resolve()
-    current = root
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    if hasattr(os, "O_CLOEXEC"):
+        directory_flags |= os.O_CLOEXEC
+        file_flags |= os.O_CLOEXEC
+    directory = None
+    descriptor = None
     try:
-        for part in PurePosixPath(relative).parts:
-            current /= part
-            current.lstat()
-            if current.is_symlink():
-                raise ReceiptError("benchmark path must not contain symlinks")
-        resolved = current.resolve(strict=True)
-        if root not in resolved.parents:
-            raise ReceiptError("benchmark path escapes repository")
-        stat = resolved.stat()
-    except ReceiptError:
-        raise
-    except (OSError, RuntimeError):
+        directory = os.open(str(root), directory_flags)
+        parts = PurePosixPath(relative).parts
+        for part in parts[:-1]:
+            next_directory = os.open(part, directory_flags, dir_fd=directory)
+            os.close(directory)
+            directory = next_directory
+        descriptor = os.open(parts[-1], file_flags, dir_fd=directory)
+        metadata = os.fstat(descriptor)
+    except OSError:
+        if descriptor is not None:
+            os.close(descriptor)
         raise ReceiptError("benchmark path must be a regular file") from None
-    if not resolved.is_file():
+    finally:
+        if directory is not None:
+            os.close(directory)
+    if not stat.S_ISREG(metadata.st_mode):
+        os.close(descriptor)
         raise ReceiptError("benchmark path must be a regular file")
-    if max_bytes is not None and stat.st_size > max_bytes:
+    if max_bytes is not None and metadata.st_size > max_bytes:
+        os.close(descriptor)
         raise ReceiptError("benchmark manifest is too large")
-    return resolved
+    return descriptor
+
+
+def _read_repo_file(root, supplied, *, max_bytes):
+    descriptor = _open_repo_file(root, supplied, max_bytes=max_bytes)
+    output = bytearray()
+    try:
+        while len(output) <= max_bytes:
+            chunk = os.read(
+                descriptor,
+                min(65_536, max_bytes + 1 - len(output)),
+            )
+            if not chunk:
+                break
+            output.extend(chunk)
+    except OSError:
+        raise ReceiptError("benchmark manifest could not be read") from None
+    finally:
+        os.close(descriptor)
+    if len(output) > max_bytes:
+        raise ReceiptError("benchmark manifest is too large")
+    return bytes(output)
+
+
+def _safe_repo_file(root, supplied, *, max_bytes=None):
+    descriptor = _open_repo_file(root, supplied, max_bytes=max_bytes)
+    os.close(descriptor)
