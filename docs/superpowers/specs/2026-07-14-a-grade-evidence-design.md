@@ -34,9 +34,14 @@ manifest. Evergreen must keep that boundary visible in every grade and release c
 
 ## Grade contract
 
-The checked-in policy defines categories, evidence inputs, thresholds, and failure precedence. The
-grade verifier emits `A` only when every required predicate for that category passes. Otherwise it
-emits `not-earned` with machine-readable reasons. It does not emit partial letter grades.
+The checked-in policy defines categories, evidence inputs, thresholds, and failure precedence. A
+trusted prior verifier checkout evaluates the exact untrusted candidate, matching Evergreen's
+trusted-base CI pattern. The candidate may not run its own verifier or oracle adapter and award
+itself. The first verifier commit is bootstrap-only and cannot grade itself; after independent
+review it becomes the prior verifier for later candidate commits.
+
+The verifier emits `A` only when every required predicate for that category passes. Otherwise it
+emits `not-earned` with stable machine-readable reasons. It does not emit partial letter grades.
 
 The overall internally controllable grade is `A` only when every category below is `A` in one
 receipt bound to the same source commit:
@@ -45,7 +50,7 @@ receipt bound to the same source commit:
 | --- | --- |
 | Detector quality | Untouched five-language oracle holdout clears all absolute quality and coverage gates. |
 | Same-corpus comparison | Every declared runnable peer is scored from the identical holdout IDs and labels; omissions fail closed. |
-| Trust and security | Complete repository security/trust matrix passes on the bound commit with no unresolved critical or important review finding. |
+| Trust and security | Fixed repository security tests and mechanical trust invariants pass under the trusted verifier. Independent review is supplementary challenge evidence. |
 | Claude self-application | Active Claude installation hashes and ownership record match the bound release source; doctor passes. |
 | Codex self-application | Active Codex installation hashes and ownership record match the bound release source; doctor passes. |
 | Documentation and release honesty | Canonical version surfaces agree; benchmark and external-state claims match their receipts; freshness checks pass. |
@@ -78,25 +83,34 @@ oracle grade does not claim coverage of them.
 - Derive examples from hash-pinned, license-compatible public repositories or checked-in benchmark
   sources with recorded origin, commit, license, and extraction recipe.
 - Keep whole repositories in one split. A source claim and every derivative remain in one split.
-- A consistent row must pass its declared oracle. An inconsistent row is created by one recorded
-  mutation and must fail the same oracle for the intended factual reason while continuing to parse
-  or compile as required by that mutation class.
+- A consistent row must pass its declared oracle. An inconsistent row keeps the documentation and
+  oracle fixed, applies exactly one recorded code mutation, must continue to parse or compile, and
+  must fail with the intended structured oracle mismatch rather than an arbitrary crash. This
+  models code changing while documentation lags.
+- Each mutation family includes a semantic-no-op code control that must remain consistent.
 - Mutation operators are finite and versioned. The corpus generator cannot accept a free-form label.
 - Every row records source hash, mutation ID or `none`, oracle kind, harness hash, expected outcome,
   observed outcome, and project identity.
-- Corpus validation is offline, bounded, network-free, and all-or-nothing. One unresolved oracle
-  invalidates the package.
+- Corpus validation is offline, bounded, network-free, and all-or-nothing. Oracle programs run only
+  through pinned, digest-addressed sandboxes with read-only inputs, disposable scratch, an
+  unprivileged user, no capabilities or network, bounded CPU/memory/processes/output/time, and
+  process-group termination. One unresolved oracle invalidates the package.
 
 ### Split and freeze
 
 - Select development and holdout membership by keyed repository-group hashing before detector work.
-- Commit only the ID-only, hash-bound split manifest. Keep the holdout rows unavailable to detector
-  development.
+- Commit only the ID-only, hash-bound split manifest. Keep holdout code, documentation, labels,
+  oracle specifications, mutation identities, and project mappings unavailable to detector
+  development. Give the detector opaque per-run IDs only.
 - Require at least 100 positive and 100 negative holdout decisions per language, drawn from at
   least 10 source repositories per language, with no repository contributing more than 20% of one
   language's holdout.
+- Before admission, reject exact, normalized-token, structural-fingerprint, and fuzzy overlap with
+  development rows, prompts, examples, tests, fixtures, and prior benchmark corpora. Group forks,
+  mirrors, vendored copies, and near-duplicate code together.
 - Freeze source commit, skill/prompt digest, resolver, provider, model, runtime versions, oracle
-  package, split manifest, peer set, and all thresholds before holdout access.
+  adapters, mutators, sandbox policy, package, split manifest, peer set, and all thresholds before
+  holdout access.
 - Run the holdout once. A failure starts a new versioned split; row-level holdout reasoning may not
   be used to tune the failed candidate.
 
@@ -109,9 +123,10 @@ For every language independently:
 - precision `>= 0.80`;
 - recall `>= 0.80`;
 - F1 `>= 0.80`;
-- specificity `>= 0.90`;
+- specificity `>= 0.98`;
 - no unreported or dropped row;
-- two-sided 95% confidence intervals and raw confusion counts are published.
+- raw confusion counts and repository-clustered two-sided 95% confidence intervals are published;
+- the lower 95% confidence bound for prevalence-adjusted precision, recall, and F1 is `>= 0.70`.
 
 Report balanced metrics and prevalence-adjusted metrics at 10% drift. The grade uses the 10%
 prevalence result. Thresholds are fixed before the candidate sees holdout rows.
@@ -138,9 +153,21 @@ Use one versioned, standard-library JSON policy and one evidence manifest. Reuse
 bounded-path, exact-HEAD, deterministic-serialization, public-manifest, receipt, and report helpers
 instead of introducing a second trust framework.
 
+The evidence model uses two non-circular identities:
+
+- `subject` is the predeclared frozen candidate commit/tree and the hashes of every executable
+  policy, prompt, resolver, oracle, adapter, and peer configuration byte;
+- `evidence_head` is the later commit containing results and manifests. The trusted verifier
+  captures it at runtime rather than asking a file to contain its own commit hash.
+
+Only an allowlisted evidence/report path set may change between `subject` and `evidence_head`; every
+executable candidate byte must still match `subject`. The final derived grade receipt is runtime
+output and is not committed, avoiding a cryptographic self-reference.
+
 The evidence manifest binds:
 
-- schema/kind and evaluated release;
+- schema/kind, evaluated release, trusted verifier commit/tree, and verifier artifact hash;
+- subject commit/tree and every subject executable digest;
 - exact source commit and tree;
 - policy, split, dataset, oracle, resolver, prompt, peer-manifest, result, report, and CI-run hashes;
 - per-category evidence states and commands;
@@ -148,6 +175,16 @@ The evidence manifest binds:
 - peer applicability and exact ID-set hashes;
 - host installation roots, ownership records, canonical-file hashes, and doctor results;
 - external states without converting them to grades.
+
+The verifier interface is intentionally narrow:
+
+```text
+evergreen grade verify --repo PATH --manifest PATH [--json]
+```
+
+There are no award, export, threshold, skip, waive, or arbitrary-command flags. Exit `0` means the
+derived overall grade is A; exit `2` covers invalid evidence and valid-but-not-earned evidence with
+stable reason codes; exit `1` is operationally inconclusive.
 
 The verifier must:
 
@@ -159,6 +196,10 @@ The verifier must:
 5. emit deterministic JSON and human output with every failure reason;
 6. perform no network call, provider call, installation, publication, or Git mutation.
 
+CI has two layers: macOS/Linux offline content re-verification from the trusted prior verifier, and
+a trusted Linux oracle-regeneration job using pinned sandbox/toolchain images. A candidate may
+declare evidence identities but cannot certify its own policy, adapters, or execution.
+
 ## Self-application
 
 Source-only support is not self-application. Claude and Codex each earn A only when:
@@ -167,7 +208,8 @@ Source-only support is not self-application. Claude and Codex each earn A only w
   have identical declared version and content hashes;
 - installation safely migrates a stale Evergreen-owned link or tree but refuses paths without
   ownership proof and refuses to overwrite unrelated user content;
-- `evergreen doctor --host claude`, `--host codex`, and `--host all` pass after installation;
+- `evergreen doctor --host claude`, `--host codex`, and `--host all` independently inspect and pass
+  after installation; one invalid host may not short-circuit evidence collection for the other;
 - a fresh host discovery check loads the current release rather than an older plugin cache or sync
   link;
 - uninstall dry-run names only Evergreen-owned paths.
@@ -175,6 +217,11 @@ Source-only support is not self-application. Claude and Codex each earn A only w
 Symlinked host roots are supported only when their fully resolved destination is user-owned,
 non-world-writable, and covered by an explicit ownership record. A symlink alone is neither proof
 of ownership nor a reason to reject a legitimate managed configuration.
+
+Host evidence records separate canonical, installed, discovery, and sync observations: lexical and
+resolved roots, resolution-chain UID/mode/world-writable checks, ownership/version/content hashes,
+and a no-mutation boundary. Doctor prose or a stored doctor boolean is insufficient. Evidence
+collection may not invoke install/uninstall dry-runs that can recover transaction journals.
 
 ## Release and claim policy
 
@@ -195,7 +242,8 @@ of ownership nor a reason to reject a legitimate managed configuration.
 5. Freeze the candidate and peer manifest, then run the development set.
 6. Tune only on development evidence until its thresholds pass.
 7. Freeze a clean candidate, run the untouched holdout and peers once, and generate the grade receipt.
-8. Run independent security, specification, and verdict-on-trial reviews for every proposed A.
+8. Run independent security, specification, and verdict-on-trial challenges for every proposed A;
+   use findings to improve the candidate, never as a substitute for mechanical evidence.
 9. Only after all internal categories pass: update release identity once, install both hosts, run CI,
    merge, push with exact remote evidence, and clean obsolete Evergreen-owned installations.
 
@@ -206,3 +254,7 @@ of ownership nor a reason to reject a legitimate managed configuration.
 - Manufacturing adoption, publication, marketplace state, or social proof.
 - Assigning an A from implementation intent, test count, a narrow passing fixture, or a reviewer opinion.
 - Claiming best-in-class performance without a separately sustained superiority verdict.
+- Proving from local files that an operator never inspected a holdout or ran it twice. Process-level
+  isolation is internally verified; operator-level secrecy/one-shot execution requires an external
+  access-controlled evaluator or transparency attestation and remains unverified without one.
+- Proving proprietary-model training-data absence or bit-for-bit inference reproducibility.
