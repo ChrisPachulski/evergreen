@@ -172,6 +172,24 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(GradeError, "policy identity"):
             load_policy(encode(source))
 
+    def test_policy_required_sets_reject_null_non_lists_and_non_strings_as_grade_errors(self):
+        expected = {
+            "required_categories": list(CATEGORIES),
+            "required_languages": list(LANGUAGES),
+        }
+        for field, valid in expected.items():
+            for malformed in (None, 7, [*valid[:-1], 7]):
+                with self.subTest(field=field, malformed=malformed):
+                    source = json.loads(policy_bytes())
+                    source[field] = malformed
+                    try:
+                        load_policy(encode(source))
+                    except GradeError:
+                        continue
+                    except TypeError:
+                        self.fail(f"{field} leaked raw TypeError")
+                    self.fail(f"{field} accepted malformed list")
+
 
 class EvidenceValidationTests(unittest.TestCase):
     def setUp(self):
@@ -234,6 +252,24 @@ class EvidenceValidationTests(unittest.TestCase):
 
         with self.assertRaisesRegex(GradeError, "evidence identity"):
             self.load(evidence)
+
+    def test_evidence_required_sets_reject_null_non_lists_and_non_strings_as_grade_errors(self):
+        expected = {
+            "required_categories": list(CATEGORIES),
+            "required_languages": list(LANGUAGES),
+        }
+        for field, valid in expected.items():
+            for malformed in (None, 7, [*valid[:-1], 7]):
+                with self.subTest(field=field, malformed=malformed):
+                    evidence = valid_evidence()
+                    evidence[field] = malformed
+                    try:
+                        self.load(evidence)
+                    except GradeError:
+                        continue
+                    except TypeError:
+                        self.fail(f"{field} leaked raw TypeError")
+                    self.fail(f"{field} accepted malformed list")
 
     def test_categories_and_languages_must_be_exact(self):
         cases = []
@@ -341,6 +377,32 @@ class GradeTests(unittest.TestCase):
         self.assertEqual(metrics, recompute_metrics(
             valid_evidence()["detector"]["python"], 0.10
         ))
+
+    def test_zero_predicted_positives_return_zero_adjusted_precision_and_not_earned(self):
+        counts = valid_evidence()["detector"]["python"]
+        counts.update({"tp": 0, "fp": 0, "fn": 100, "tn": 100})
+        try:
+            metrics = recompute_metrics(counts, 0.10)
+        except ZeroDivisionError:
+            self.fail("zero predicted positives must not raise ZeroDivisionError")
+        self.assertEqual(metrics["prevalence_precision"], 0.0)
+        self.assertEqual(metrics["prevalence_f1"], 0.0)
+
+        evidence = valid_evidence()
+        for language_counts in evidence["detector"].values():
+            language_counts.update({"tp": 0, "fp": 0, "fn": 100, "tn": 100})
+        receipt = evaluate(
+            self.policy,
+            load_evidence(encode(evidence), self.policy),
+            EVIDENCE_HEAD,
+            valid_predicates(self.policy),
+            TRUSTED_REPOSITORY,
+        )
+        detector = next(
+            item for item in receipt["categories"] if item["id"] == "detector_quality"
+        )
+        self.assertEqual(detector["status"], "not-earned")
+        self.assertIn("detector:go:precision", detector["reasons"])
 
     def test_counts_only_evidence_cannot_earn_without_clustered_confidence_bounds(self):
         receipt = evaluate(

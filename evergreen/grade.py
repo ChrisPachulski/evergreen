@@ -150,9 +150,9 @@ def load_policy(payload):
             policy["kind"] != "evergreen-a-grade-policy" or
             policy["policy_id"] != "a-grade-v1"):
         raise GradeError("policy identity is invalid")
-    if tuple(policy["required_categories"]) != CATEGORIES:
+    if _string_list(policy["required_categories"], "policy categories") != CATEGORIES:
         raise GradeError("policy categories are invalid")
-    if tuple(policy["required_languages"]) != LANGUAGES:
+    if _string_list(policy["required_languages"], "policy languages") != LANGUAGES:
         raise GradeError("policy languages are invalid")
     if not isinstance(policy["category_gates"], dict) or set(policy["category_gates"]) != set(CATEGORIES):
         raise GradeError("policy category gates are invalid")
@@ -313,9 +313,9 @@ def load_evidence(payload, policy):
     if policy_identity["id"] != policy["policy_id"]:
         raise GradeError("evidence policy ID is invalid")
     _hex(policy_identity["sha256"], "policy SHA-256", (64,))
-    if tuple(evidence["required_categories"]) != CATEGORIES:
+    if _string_list(evidence["required_categories"], "evidence categories") != CATEGORIES:
         raise GradeError("evidence categories are invalid")
-    if tuple(evidence["required_languages"]) != LANGUAGES:
+    if _string_list(evidence["required_languages"], "evidence languages") != LANGUAGES:
         raise GradeError("evidence languages are invalid")
     _validate_detector(evidence["detector"], policy, subject)
     _validate_peers(evidence["peers"], subject)
@@ -377,7 +377,8 @@ def recompute_metrics(counts, prevalence):
         "fn": prevalence * (1 - recall),
         "tn": (1 - prevalence) * specificity,
     }
-    adjusted_precision = matrix["tp"] / (matrix["tp"] + matrix["fp"])
+    adjusted_positive = matrix["tp"] + matrix["fp"]
+    adjusted_precision = matrix["tp"] / adjusted_positive if adjusted_positive else 0.0
     adjusted_recall = recall
     adjusted_f1 = (
         2 * adjusted_precision * adjusted_recall / (adjusted_precision + adjusted_recall)
