@@ -167,8 +167,8 @@ def derive_from_repository(spec, catalog, repository):
         or record["source"]["sha256"] != spec["blob_sha256"]
     ):
         raise ValueError("Rust derivation source is not in the catalog")
-    source_bytes = generate._blob(
-        repository, record["commit"], record["source"]["path"], record["source"]["bytes"]
+    source_bytes = generate.verified_source_blob(
+        repository, record["commit"], record["source"]
     )
     return derive(spec, source_bytes)
 

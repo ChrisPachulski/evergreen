@@ -1,9 +1,10 @@
 # Executable-oracle source pack
 
 This directory defines the public provenance and external-custody boundary for the planned
-five-language executable-oracle corpus. No curated source identities or private oracle packages
-are present in this checkout. The checked-in `provenance.json` therefore reports zero sources and
-zero claims, and readiness validation fails closed.
+five-language executable-oracle corpus. Pinned, non-ready source-candidate inputs or catalogs and
+extraction recipes are present for all five languages, but no candidate has been admitted to the
+public source pack and no private oracle package is present. The checked-in `provenance.json`
+therefore reports zero sources and zero claims, and readiness validation fails closed.
 
 The public contract requires at least 20 source-project groups and 250 seed claims per language
 across Python, Java, TypeScript, Rust, and Go. Every language must cover all five oracle kinds with
@@ -14,9 +15,19 @@ extracted input path, and oracle kind, the adapter hash, digest-addressed sandbo
 toolchain identity. The extracted-tree commitment is recomputed from that canonical blob inventory.
 `sources/toolchain-policy-v1.json` freezes those identities and their exact trusted-CI
 action commits and version variables; validation rejects drift between the policy, provenance, and
-workflow. Public recipes live under `sources/<language>/` only after those facts have been
-verified; none are fabricated as placeholders. Reused origins or projects must keep one lineage,
+workflow. Candidate recipes and catalogs live under `sources/<language>/`; their records remain
+non-capacity evidence until the shared provenance, derivation, adapter, and custody gates accept
+them. Reused origins or projects must keep one lineage,
 and duplicate source/content identities cannot be counted as independent capacity.
+
+The candidate work has already falsified the original raw-fixture strategy. The pinned Python and
+Go inputs name 20 projects each, but their verifier makes no semantic-witness or executable-seed
+claim. Rust has 20 pinned project candidates and one exact-span return-value derivation prototype.
+The smaller Java and TypeScript catalogs demonstrate exact-span discovery but report zero
+executable seeds.
+Generated wrappers are not upstream blobs and are not counted by the current custody contract;
+doing so requires a closed derivation receipt that recomputes the wrapper from the exact Git blob,
+semantic span, and generator identity. Human review is supplementary and is not a readiness gate.
 
 The missing deliverable is one owner-only external custody receipt conforming to
 `private-custody-schema-v1.json`, plus the artifacts it commits to: the complete seed manifest,

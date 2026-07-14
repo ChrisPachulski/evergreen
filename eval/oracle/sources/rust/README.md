@@ -15,7 +15,11 @@ python3 -m eval.oracle.sources.rust.generate \
 
 The command emits a canonical public-source inventory to standard output. A nonzero exit means at
 least one origin, commit, tree, license, source blob, byte count, hash, or recipe binding did not
-verify.
+verify. Source verification uses the same object-database boundary as the shared verifier: Git
+replacement objects and user/system configuration are disabled, the path must resolve to a regular
+`100644` or `100755` blob, and the blob object ID, size, and SHA-256 must all match. The Rust catalog
+shape is a candidate inventory, not a `provenance.json` source record; `provenance_record()` therefore
+fails closed until a runnable adapter receipt exists.
 
 `prototype-return-value.json` demonstrates the missing source-to-seed bridge without asserting a
 label. It selects the exact `const INITIALIZING: usize = 1;` byte span from the pinned `rust-lang/log`

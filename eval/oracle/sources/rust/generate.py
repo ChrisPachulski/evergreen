@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
@@ -56,6 +57,13 @@ def _safe_path(value):
 
 
 def _git(repository, *arguments, maximum=4096):
+    environment = os.environ.copy()
+    environment.update({
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+        "LC_ALL": "C",
+    })
     try:
         result = subprocess.run(
             ["git", "--no-replace-objects", "-C", str(repository), *arguments],
@@ -63,12 +71,7 @@ def _git(repository, *arguments, maximum=4096):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=15,
-            env={
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "GIT_TERMINAL_PROMPT": "0",
-                "LC_ALL": "C",
-                "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-            },
+            env=environment,
         )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         raise ValueError("source does not match pinned Git objects") from None
@@ -87,6 +90,41 @@ def _blob(repository, commit, path, expected_size):
     if size != expected_size or not 0 < size <= MAXIMUM_BLOB_BYTES:
         raise ValueError("source does not match pinned Git objects")
     return _git(repository, "show", "--no-ext-diff", object_name, maximum=size)
+
+
+def verified_source_blob(repository, commit, source):
+    """Return bytes only for the exact regular blob named by the witness."""
+    listing = _git(repository, "ls-tree", "-z", commit, "--", source["path"])
+    records = [record for record in listing.split(b"\0") if record]
+    if len(records) != 1 or b"\t" not in records[0]:
+        raise ValueError("source does not match pinned Git objects")
+    metadata, raw_path = records[0].split(b"\t", 1)
+    fields = metadata.split()
+    try:
+        path = raw_path.decode()
+    except UnicodeError:
+        raise ValueError("source does not match pinned Git objects") from None
+    if (
+        path != source["path"]
+        or len(fields) != 3
+        or fields[0] not in (b"100644", b"100755")
+        or fields[1] != b"blob"
+        or fields[2].decode() != source["blob_oid"]
+    ):
+        raise ValueError("source does not match pinned Git objects")
+    size_raw = _git(repository, "cat-file", "-s", source["blob_oid"], maximum=64)
+    try:
+        size = int(size_raw)
+    except ValueError:
+        raise ValueError("source does not match pinned Git objects") from None
+    if size != source["bytes"] or not 0 < size <= MAXIMUM_BLOB_BYTES:
+        raise ValueError("source does not match pinned Git objects")
+    source_bytes = _git(
+        repository, "cat-file", "blob", source["blob_oid"], maximum=size
+    )
+    if len(source_bytes) != size or hashlib.sha256(source_bytes).hexdigest() != source["sha256"]:
+        raise ValueError("source does not match pinned Git objects")
+    return source_bytes
 
 
 def _validate_record(record):
@@ -137,9 +175,6 @@ def _verified_record(record, repository, recipe_sha256):
         remote = _git(repository, "remote", "get-url", "origin").decode().strip()
         commit = _git(repository, "rev-parse", f"{record['commit']}^{{commit}}").decode().strip()
         tree = _git(repository, "rev-parse", f"{record['commit']}^{{tree}}").decode().strip()
-        source_oid = _git(
-            repository, "rev-parse", f"{record['commit']}:{record['source']['path']}"
-        ).decode().strip()
         license_bytes = _blob(
             repository,
             record["commit"],
@@ -151,18 +186,14 @@ def _verified_record(record, repository, recipe_sha256):
                 f"{record['commit']}:{record['license']['path']}",
             )),
         )
-        source_bytes = _blob(
-            repository, record["commit"], record["source"]["path"], record["source"]["bytes"]
-        )
+        verified_source_blob(repository, record["commit"], record["source"])
     except (UnicodeError, ValueError):
         raise ValueError("source does not match pinned Git objects") from None
     if (
         remote != record["origin"]
         or commit != record["commit"]
         or tree != record["tree"]
-        or source_oid != record["source"]["blob_oid"]
         or hashlib.sha256(license_bytes).hexdigest() != record["license"]["sha256"]
-        or hashlib.sha256(source_bytes).hexdigest() != record["source"]["sha256"]
     ):
         raise ValueError("source does not match pinned Git objects")
     return {
@@ -227,6 +258,10 @@ def load_catalog(path):
     ):
         raise ValueError("Rust source catalog is invalid")
     return document
+
+
+def provenance_record(_record):
+    raise ValueError("a runnable adapter receipt is required before candidates become seed claims")
 
 
 def main(argv=None):

@@ -2,6 +2,7 @@
 """Verify exact public Java source witnesses without assigning oracle labels."""
 
 import argparse
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -10,6 +11,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from types import MappingProxyType
 from urllib.parse import urlsplit
 
 
@@ -17,19 +19,41 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from eval.oracle.oracle import (  # noqa: E402
-    CONTROL_PATH, LANGUAGE_ADAPTERS, MUTATION_OPERATORS, ORACLE_KINDS,
+from eval.oracle.oracle import MUTATION_OPERATORS, ORACLE_KINDS  # noqa: E402
+
+
+@dataclass(frozen=True)
+class LanguageConfig:
+    language: str
+    source_directory: Path
+    toolchain_id: str
+    toolchain_identity_sha256: str
+
+
+JAVA_CONFIG = LanguageConfig(
+    language="java",
+    source_directory=Path(__file__).resolve().parent,
+    toolchain_id="temurin-21.0.7+6",
+    toolchain_identity_sha256=(
+        "1fd86aa5958aa36d57f3d34748c762a1c6aed3067e549523c3d5d3f70e26f51c"
+    ),
 )
-
-
-LANGUAGE = "java"
-SOURCE_DIRECTORY = Path(__file__).resolve().parent
-TOOLCHAIN = {
-    "toolchain_id": "temurin-21.0.7+6",
-    "identity_sha256": "1fd86aa5958aa36d57f3d34748c762a1c6aed3067e549523c3d5d3f70e26f51c",
-}
+LANGUAGE = JAVA_CONFIG.language
+SOURCE_DIRECTORY = JAVA_CONFIG.source_directory
+TOOLCHAIN = MappingProxyType(
+    {
+        "toolchain_id": JAVA_CONFIG.toolchain_id,
+        "identity_sha256": JAVA_CONFIG.toolchain_identity_sha256,
+    }
+)
 ALLOWED_LICENSES = {
-    "0BSD", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MIT", "Python-2.0",
+    "0BSD",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "Python-2.0",
 }
 HEX = re.compile(r"[0-9a-f]{64}")
 COMMIT = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
@@ -44,7 +68,11 @@ class CatalogError(ValueError):
 
 def canonical(value):
     return json.dumps(
-        value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"),
+        value,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
     ).encode()
 
 
@@ -53,9 +81,16 @@ def _safe_path(value):
         return False
     path = PurePosixPath(value)
     return (
-        bool(value) and len(value.encode()) <= 4096 and not path.is_absolute()
-        and path.as_posix() == value and "\\" not in value and "//" not in value
-        and all(part not in ("", ".", "..") and not part.startswith(".") for part in path.parts)
+        bool(value)
+        and len(value.encode()) <= 4096
+        and not path.is_absolute()
+        and path.as_posix() == value
+        and "\\" not in value
+        and "//" not in value
+        and all(
+            part not in ("", ".", "..") and not part.startswith(".")
+            for part in path.parts
+        )
     )
 
 
@@ -73,7 +108,8 @@ def _strict_load(path):
         if len(raw) > MAX_BLOB_BYTES:
             raise CatalogError("catalog is too large")
         return json.loads(
-            raw, parse_constant=lambda item: (_ for _ in ()).throw(ValueError(item)),
+            raw,
+            parse_constant=lambda item: (_ for _ in ()).throw(ValueError(item)),
             object_pairs_hook=unique,
         )
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
@@ -82,83 +118,133 @@ def _strict_load(path):
         raise CatalogError("catalog is unavailable or invalid") from None
 
 
-def validate_catalog(document):
+def validate_catalog(document, *, _config=JAVA_CONFIG):
     if not isinstance(document, dict) or set(document) != {
-            "schema_version", "kind", "language", "sources"}:
+        "schema_version",
+        "kind",
+        "language",
+        "sources",
+    }:
         raise CatalogError("catalog fields are invalid")
-    if (type(document["schema_version"]) is not int or document["schema_version"] != 1
-            or document["kind"] != "evergreen-oracle-language-source-catalog"
-            or document["language"] != LANGUAGE or not isinstance(document["sources"], list)):
+    if (
+        type(document["schema_version"]) is not int
+        or document["schema_version"] != 1
+        or document["kind"] != "evergreen-oracle-language-source-catalog"
+        or document["language"] != _config.language
+        or not isinstance(document["sources"], list)
+    ):
         raise CatalogError("catalog contract is invalid")
     seen_ids = set()
     seen_projects = set()
     for source in document["sources"]:
         if not isinstance(source, dict) or set(source) != {
-                "source_id", "project", "lineage_id", "origin", "commit", "tree",
-                "license", "source", "witnesses"}:
+            "source_id",
+            "project",
+            "lineage_id",
+            "origin",
+            "commit",
+            "tree",
+            "license",
+            "source",
+            "witnesses",
+        }:
             raise CatalogError("catalog source fields are invalid")
         parsed = urlsplit(source["origin"]) if type(source["origin"]) is str else None
-        if (type(source["source_id"]) is not str or not NAME.fullmatch(source["source_id"])
-                or source["source_id"] in seen_ids
-                or type(source["project"]) is not str or not PROJECT.fullmatch(source["project"])
-                or source["project"] in seen_projects
-                or type(source["lineage_id"]) is not str or not NAME.fullmatch(source["lineage_id"])
-                or parsed is None or parsed.scheme != "https" or not parsed.hostname
-                or parsed.username is not None or parsed.password is not None
-                or parsed.query or parsed.fragment
-                or type(source["commit"]) is not str or not COMMIT.fullmatch(source["commit"])
-                or type(source["tree"]) is not str or not COMMIT.fullmatch(source["tree"])):
+        if (
+            type(source["source_id"]) is not str
+            or not NAME.fullmatch(source["source_id"])
+            or source["source_id"] in seen_ids
+            or type(source["project"]) is not str
+            or not PROJECT.fullmatch(source["project"])
+            or source["project"] in seen_projects
+            or type(source["lineage_id"]) is not str
+            or not NAME.fullmatch(source["lineage_id"])
+            or parsed is None
+            or parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or type(source["commit"]) is not str
+            or not COMMIT.fullmatch(source["commit"])
+            or type(source["tree"]) is not str
+            or not COMMIT.fullmatch(source["tree"])
+        ):
             raise CatalogError("catalog source identity is invalid")
         seen_ids.add(source["source_id"])
         seen_projects.add(source["project"])
         license_record = source["license"]
-        if (not isinstance(license_record, dict) or set(license_record) != {
-                "spdx", "path", "sha256"}
-                or license_record["spdx"] not in ALLOWED_LICENSES
-                or not _safe_path(license_record["path"])
-                or type(license_record["sha256"]) is not str
-                or not HEX.fullmatch(license_record["sha256"])):
+        if (
+            not isinstance(license_record, dict)
+            or set(license_record) != {"spdx", "path", "sha256"}
+            or license_record["spdx"] not in ALLOWED_LICENSES
+            or not _safe_path(license_record["path"])
+            or type(license_record["sha256"]) is not str
+            or not HEX.fullmatch(license_record["sha256"])
+        ):
             raise CatalogError("catalog license identity is invalid")
         blob = source["source"]
-        if (not isinstance(blob, dict) or set(blob) != {"path", "blob_oid", "sha256"}
-                or not _safe_path(blob["path"])
-                or type(blob["blob_oid"]) is not str or not COMMIT.fullmatch(blob["blob_oid"])
-                or type(blob["sha256"]) is not str or not HEX.fullmatch(blob["sha256"])):
+        if (
+            not isinstance(blob, dict)
+            or set(blob) != {"path", "blob_oid", "sha256"}
+            or not _safe_path(blob["path"])
+            or type(blob["blob_oid"]) is not str
+            or not COMMIT.fullmatch(blob["blob_oid"])
+            or type(blob["sha256"]) is not str
+            or not HEX.fullmatch(blob["sha256"])
+        ):
             raise CatalogError("catalog source blob identity is invalid")
         witnesses = source["witnesses"]
         if not isinstance(witnesses, list):
             raise CatalogError("catalog witnesses are invalid")
         identities = set()
         for witness in witnesses:
-            if not isinstance(witness, dict) or set(witness) != {"kind", "operator", "offset"}:
+            if not isinstance(witness, dict) or set(witness) != {
+                "kind",
+                "operator",
+                "offset",
+            }:
                 raise CatalogError("catalog witness fields are invalid")
             contract = MUTATION_OPERATORS.get(witness["operator"])
             identity = (witness["operator"], witness["offset"])
-            if (witness["kind"] not in ORACLE_KINDS or contract is None
-                    or contract["kind"] != witness["kind"] or LANGUAGE not in contract["variants"]
-                    or type(witness["offset"]) is not int or witness["offset"] < 0
-                    or identity in identities):
+            if (
+                witness["kind"] not in ORACLE_KINDS
+                or contract is None
+                or contract["kind"] != witness["kind"]
+                or _config.language not in contract["variants"]
+                or type(witness["offset"]) is not int
+                or witness["offset"] < 0
+                or identity in identities
+            ):
                 raise CatalogError("catalog witness is invalid")
             identities.add(identity)
     return document
 
 
-def discover_witnesses(code):
+def discover_witnesses(code, *, _config=JAVA_CONFIG):
     witnesses = []
     for operator, contract in MUTATION_OPERATORS.items():
-        variant = contract["variants"][LANGUAGE]
+        variant = contract["variants"][_config.language]
         for match in re.finditer(variant["source_pattern"], code):
             cursor = match.start()
             while True:
                 offset = code.find(variant["before"], cursor, match.end())
                 if offset < 0:
                     break
-                witnesses.append({
-                    "kind": contract["kind"], "operator": operator, "offset": offset,
-                })
+                witnesses.append(
+                    {
+                        "kind": contract["kind"],
+                        "operator": operator,
+                        "offset": offset,
+                    }
+                )
                 cursor = offset + len(variant["before"])
     order = {kind: index for index, kind in enumerate(ORACLE_KINDS)}
-    return sorted(witnesses, key=lambda item: (order[item["kind"]], item["offset"], item["operator"]))
+    return sorted(
+        witnesses,
+        key=lambda item: (order[item["kind"]], item["offset"], item["operator"]),
+    )
 
 
 _OPERATOR_BY_KIND = {
@@ -198,32 +284,33 @@ _SOURCE_CONTEXT_PATTERNS = {
 }
 
 
-def _mask_comments_and_literals(code):
+def _mask_comments_and_literals(code, *, _config=JAVA_CONFIG):
     """Preserve byte offsets while hiding non-code Java/TypeScript regions."""
     masked = bytearray(code)
     index = 0
     state = "code"
     quote = None
     while index < len(code):
-        pair = code[index:index + 2]
+        pair = code[index : index + 2]
         if state == "code":
             if pair == b"//":
-                masked[index:index + 2] = b"  "
+                masked[index : index + 2] = b"  "
                 state = "line-comment"
                 index += 2
                 continue
             if pair == b"/*":
-                masked[index:index + 2] = b"  "
+                masked[index : index + 2] = b"  "
                 state = "block-comment"
                 index += 2
                 continue
-            if code[index:index + 3] == b'"""':
-                masked[index:index + 3] = b"   "
+            if code[index : index + 3] == b'"""':
+                masked[index : index + 3] = b"   "
                 state = "triple-string"
                 index += 3
                 continue
             if code[index] in (ord("'"), ord('"')) or (
-                    LANGUAGE == "typescript" and code[index] == ord("`")):
+                _config.language == "typescript" and code[index] == ord("`")
+            ):
                 quote = code[index]
                 masked[index] = 32
                 state = "string"
@@ -240,7 +327,7 @@ def _mask_comments_and_literals(code):
             continue
         if state == "block-comment":
             if pair == b"*/":
-                masked[index:index + 2] = b"  "
+                masked[index : index + 2] = b"  "
                 state = "code"
                 index += 2
             else:
@@ -249,8 +336,8 @@ def _mask_comments_and_literals(code):
                 index += 1
             continue
         if state == "triple-string":
-            if code[index:index + 3] == b'"""':
-                masked[index:index + 3] = b"   "
+            if code[index : index + 3] == b'"""':
+                masked[index : index + 3] = b"   "
                 state = "code"
                 index += 3
             else:
@@ -276,21 +363,27 @@ def _mask_comments_and_literals(code):
     return bytes(masked)
 
 
-def discover_source_witnesses(code):
+def discover_source_witnesses(code, *, _config=JAVA_CONFIG):
     """Find exact source spans that the wrapper recipe can consume."""
     if not isinstance(code, bytes):
         raise CatalogError("source witness input is invalid")
-    searchable = _mask_comments_and_literals(code)
+    searchable = _mask_comments_and_literals(code, _config=_config)
     witnesses = []
     for kind in ORACLE_KINDS:
-        span = _SOURCE_SPANS[LANGUAGE][kind]
-        for match in re.finditer(_SOURCE_CONTEXT_PATTERNS[LANGUAGE][kind], searchable):
+        span = _SOURCE_SPANS[_config.language][kind]
+        for match in re.finditer(
+            _SOURCE_CONTEXT_PATTERNS[_config.language][kind], searchable
+        ):
             offset = searchable.find(span, match.start(), match.end())
             if offset < 0:
                 raise CatalogError("source wrapper context omitted its bound span")
-            witnesses.append({
-                "kind": kind, "operator": _OPERATOR_BY_KIND[kind], "offset": offset,
-            })
+            witnesses.append(
+                {
+                    "kind": kind,
+                    "operator": _OPERATOR_BY_KIND[kind],
+                    "offset": offset,
+                }
+            )
     return witnesses
 
 
@@ -353,34 +446,40 @@ console.log(`state:${state ? "changed" : "unchanged"}`);
 }
 
 
-def generate_wrapper(code, witness):
+def generate_wrapper(code, witness, *, _config=JAVA_CONFIG):
     """Derive one deterministic wrapper from an exact pinned source span."""
     if not isinstance(code, bytes) or not isinstance(witness, dict):
         raise CatalogError("wrapper input is invalid")
     operator = MUTATION_OPERATORS.get(witness.get("operator"))
-    if (operator is None or witness.get("kind") != operator["kind"]
-            or type(witness.get("offset")) is not int or witness["offset"] < 0):
+    if (
+        operator is None
+        or witness.get("kind") != operator["kind"]
+        or type(witness.get("offset")) is not int
+        or witness["offset"] < 0
+    ):
         raise CatalogError("wrapper witness is invalid")
-    if LANGUAGE not in operator["variants"]:
+    if _config.language not in operator["variants"]:
         raise CatalogError("wrapper language is unsupported")
     offset = witness["offset"]
-    expected_span = _SOURCE_SPANS[LANGUAGE][operator["kind"]]
-    span = code[offset:offset + len(expected_span)]
-    if span != expected_span or witness not in discover_source_witnesses(code):
+    expected_span = _SOURCE_SPANS[_config.language][operator["kind"]]
+    span = code[offset : offset + len(expected_span)]
+    if span != expected_span or witness not in discover_source_witnesses(
+        code, _config=_config
+    ):
         raise CatalogError("wrapper witness is not an exact pinned source span")
     try:
         fragment = span.decode("ascii")
     except UnicodeError:
         raise CatalogError("wrapper source span is not ASCII") from None
-    template = _WRAPPER_TEMPLATES[LANGUAGE][operator["kind"]]
+    template = _WRAPPER_TEMPLATES[_config.language][operator["kind"]]
     wrapper_code = template % {"fragment": fragment}
     return {
         "schema_version": 1,
         "kind": "evergreen-source-bound-oracle-wrapper",
-        "language": LANGUAGE,
+        "language": _config.language,
         "oracle_kind": operator["kind"],
         "operator": witness["operator"],
-        "recipe_id": f"{LANGUAGE}-exact-span-wrapper-v1",
+        "recipe_id": f"{_config.language}-exact-span-wrapper-v1",
         "source_binding": {
             "offset": offset,
             "length": len(span),
@@ -394,19 +493,29 @@ def generate_wrapper(code, witness):
 
 def _git(repo, *arguments, maximum=MAX_BLOB_BYTES):
     environment = os.environ.copy()
-    environment.update({
-        "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C",
-    })
+    environment.update(
+        {
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_OPTIONAL_LOCKS": "0",
+            "LC_ALL": "C",
+        }
+    )
     try:
         completed = subprocess.run(
             ["git", "--no-replace-objects", "-C", str(repo), *arguments],
             capture_output=True,
-            timeout=120, check=False, env=environment,
+            timeout=120,
+            check=False,
+            env=environment,
         )
     except (OSError, subprocess.TimeoutExpired):
         raise CatalogError("Git verification failed") from None
-    if completed.returncode or len(completed.stdout) > maximum or len(completed.stderr) > 64 * 1024:
+    if (
+        completed.returncode
+        or len(completed.stdout) > maximum
+        or len(completed.stderr) > 64 * 1024
+    ):
         raise CatalogError("Git verification failed")
     return completed.stdout
 
@@ -427,78 +536,111 @@ def _regular_blob(repo, commit, path, label):
     return object_id, _git(repo, "show", "--no-ext-diff", f"{commit}:{path}")
 
 
-def verify_checkout(source, checkout):
-    commit = _git(checkout, "rev-parse", "--verify", f'{source["commit"]}^{{commit}}', maximum=256).decode().strip()
-    tree = _git(checkout, "rev-parse", "--verify", f'{source["commit"]}^{{tree}}', maximum=256).decode().strip()
+def verify_checkout(source, checkout, *, _config=JAVA_CONFIG):
+    commit = (
+        _git(
+            checkout,
+            "rev-parse",
+            "--verify",
+            f"{source['commit']}^{{commit}}",
+            maximum=256,
+        )
+        .decode()
+        .strip()
+    )
+    tree = (
+        _git(
+            checkout,
+            "rev-parse",
+            "--verify",
+            f"{source['commit']}^{{tree}}",
+            maximum=256,
+        )
+        .decode()
+        .strip()
+    )
     if commit != source["commit"]:
         raise CatalogError("source commit identity does not match")
     if tree != source["tree"]:
         raise CatalogError("source tree identity does not match")
     _license_oid, license_bytes = _regular_blob(
-        checkout, source["commit"], source["license"]["path"], "license",
+        checkout,
+        source["commit"],
+        source["license"]["path"],
+        "license",
     )
     if hashlib.sha256(license_bytes).hexdigest() != source["license"]["sha256"]:
         raise CatalogError("license bytes do not match")
     blob_oid, code = _regular_blob(
-        checkout, source["commit"], source["source"]["path"], "source blob",
+        checkout,
+        source["commit"],
+        source["source"]["path"],
+        "source blob",
     )
     if blob_oid != source["source"]["blob_oid"]:
         raise CatalogError("source blob Git object does not match")
     if hashlib.sha256(code).hexdigest() != source["source"]["sha256"]:
         raise CatalogError("source blob bytes do not match")
-    discovered = discover_source_witnesses(code)
+    discovered = discover_source_witnesses(code, _config=_config)
     if source["witnesses"] != discovered:
         raise CatalogError("catalog witnesses do not match exact source bytes")
     counts = {kind: 0 for kind in ORACLE_KINDS}
     for witness in discovered:
         counts[witness["kind"]] += 1
-    extracted_identity = [{
-        "repository_path": source["source"]["path"],
-        "input_path": source["source"]["path"],
-        "blob_oid": blob_oid,
-        "sha256": source["source"]["sha256"],
-        "oracle_kind": kind,
-    } for kind in ORACLE_KINDS if counts[kind]]
+    extracted_identity = [
+        {
+            "repository_path": source["source"]["path"],
+            "input_path": source["source"]["path"],
+            "blob_oid": blob_oid,
+            "sha256": source["source"]["sha256"],
+            "oracle_kind": kind,
+        }
+        for kind in ORACLE_KINDS
+        if counts[kind]
+    ]
     return {
-        "source_id": source["source_id"], "project": source["project"],
-        "lineage_id": source["lineage_id"], "origin": source["origin"],
-        "commit": commit, "tree": tree, "license": source["license"],
-        "source": source["source"], "witnesses": discovered,
+        "source_id": source["source_id"],
+        "project": source["project"],
+        "lineage_id": source["lineage_id"],
+        "origin": source["origin"],
+        "commit": commit,
+        "tree": tree,
+        "license": source["license"],
+        "source": source["source"],
+        "witnesses": discovered,
         "source_blobs": extracted_identity,
         "oracle_kind_counts": counts,
-        "extracted_tree_sha256": hashlib.sha256(canonical(extracted_identity)).hexdigest(),
+        "extracted_tree_sha256": hashlib.sha256(
+            canonical(extracted_identity)
+        ).hexdigest(),
     }
 
 
-def build_report(catalog, verified_sources):
+def build_report(catalog, verified_sources, *, _config=JAVA_CONFIG):
     expected_ids = [source["source_id"] for source in catalog["sources"]]
     if [source["source_id"] for source in verified_sources] != expected_ids:
         raise CatalogError("verified source set does not match catalog")
-    recipe_path = SOURCE_DIRECTORY / "extract-v1.json"
+    recipe_path = _config.source_directory / "extract-v1.json"
     recipe_raw = recipe_path.read_bytes()
     recipe_sha256 = hashlib.sha256(recipe_raw).hexdigest()
     records = []
     for source in verified_sources:
-        argv = ["git", "show", "--no-ext-diff", f'{source["commit"]}:{source["source"]["path"]}']
-        harness_unsigned = {
-            "adapter_id": f"{LANGUAGE}-oracle-v1",
-            "argv": [LANGUAGE_ADAPTERS[LANGUAGE], f'/input/{source["source"]["path"]}', CONTROL_PATH],
-        }
-        records.append({
-            **source,
-            "extraction": {
-                "recipe_path": f"{LANGUAGE}/extract-v1.json",
-                "recipe_sha256": recipe_sha256,
-                "argv": argv,
-            },
-            "harness": {
-                **harness_unsigned,
-                "sha256": hashlib.sha256(canonical(harness_unsigned)).hexdigest(),
-            },
-            "toolchain_id": TOOLCHAIN["toolchain_id"],
-            "toolchain_identity_sha256": TOOLCHAIN["identity_sha256"],
-            "execution_receipt": None,
-        })
+        argv = [
+            "git",
+            "show",
+            "--no-ext-diff",
+            f"{source['commit']}:{source['source']['path']}",
+        ]
+        records.append(
+            {
+                **source,
+                "extraction": {
+                    "recipe_path": f"{_config.language}/extract-v1.json",
+                    "recipe_sha256": recipe_sha256,
+                    "argv": argv,
+                },
+            }
+        )
     byte_bound = sum(sum(item["oracle_kind_counts"].values()) for item in records)
     reasons = ["digest-addressed-adapter-execution-receipt-missing"]
     if len(records) < 20:
@@ -507,7 +649,7 @@ def build_report(catalog, verified_sources):
     return {
         "schema_version": 1,
         "kind": "evergreen-oracle-language-source-catalog-verification",
-        "language": LANGUAGE,
+        "language": _config.language,
         "projects": len(records),
         "byte_bound_candidates": byte_bound,
         "executable_seeds": 0,
@@ -519,25 +661,45 @@ def build_report(catalog, verified_sources):
     }
 
 
-def _fetch_and_verify(source):
-    with tempfile.TemporaryDirectory(prefix=f"evergreen-{LANGUAGE}-source-") as temporary:
+def _fetch_and_verify(source, *, _config=JAVA_CONFIG):
+    with tempfile.TemporaryDirectory(
+        prefix=f"evergreen-{_config.language}-source-"
+    ) as temporary:
         repo = Path(temporary) / "repo"
         _git(temporary, "init", "-q", str(repo), maximum=4096)
         _git(repo, "remote", "add", "origin", source["origin"], maximum=4096)
         _git(
-            repo, "-c", "protocol.file.allow=never", "fetch", "--quiet", "--depth=1",
-            "--filter=blob:none", "origin", source["commit"], maximum=4096,
+            repo,
+            "-c",
+            "protocol.file.allow=never",
+            "fetch",
+            "--quiet",
+            "--depth=1",
+            "--filter=blob:none",
+            "origin",
+            source["commit"],
+            maximum=4096,
         )
-        return verify_checkout(source, repo)
+        return verify_checkout(source, repo, _config=_config)
 
 
-def main(argv=None):
+def main(argv=None, *, _config=JAVA_CONFIG):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--catalog", default=str(SOURCE_DIRECTORY / "catalog.json"))
+    parser.add_argument(
+        "--catalog",
+        default=str(_config.source_directory / "catalog.json"),
+    )
     arguments = parser.parse_args(argv)
     try:
-        catalog = validate_catalog(_strict_load(arguments.catalog))
-        report = build_report(catalog, [_fetch_and_verify(source) for source in catalog["sources"]])
+        catalog = validate_catalog(_strict_load(arguments.catalog), _config=_config)
+        report = build_report(
+            catalog,
+            [
+                _fetch_and_verify(source, _config=_config)
+                for source in catalog["sources"]
+            ],
+            _config=_config,
+        )
     except CatalogError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

@@ -395,9 +395,9 @@ class OracleBuildTests(unittest.TestCase):
             ["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True,
         ).strip()
         references, _digest = _load_reference_inventory(commit, tree, require_clean=False)
-        self.assertEqual(len(references), 83)
+        self.assertEqual(len(references), 86)
         required_comparisons = 1875 * 1875 + 3750 * len(references)
-        self.assertEqual(required_comparisons, 3_826_875)
+        self.assertEqual(required_comparisons, 3_838_125)
         self.assertEqual(split.MAX_COMPARISONS, 5_000_000)
         self.assertLessEqual(required_comparisons, split.MAX_COMPARISONS)
         rows = self.required_scale_rows()
@@ -1783,7 +1783,7 @@ class OracleBuildTests(unittest.TestCase):
         root_readme = (ROOT / "README.md").read_text()
         normalized = " ".join(oracle_readme.split())
         for claim in (
-            "No curated source identities or private oracle packages are present",
+            "no candidate has been admitted to the public source pack",
             "20 source-project groups and 250 seed claims per language",
             "owner-only external custody receipt",
             "never contains holdout code, documentation, labels, mutation identities, or split key",

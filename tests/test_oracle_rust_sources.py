@@ -102,6 +102,67 @@ class RustSourceInventoryTests(unittest.TestCase):
                             [changed], lambda _source_id: repository, minimum_sources=1
                         )
 
+    def test_rejects_non_regular_source_blob(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository, _record = self.fixture(root)
+            (repository / "src" / "lib.rs").unlink()
+            (repository / "src" / "lib.rs").symlink_to("../LICENSE-MIT")
+            self.git(repository, "add", "src/lib.rs")
+            self.git(repository, "commit", "-qm", "replace source with symlink")
+            commit = self.git(repository, "rev-parse", "HEAD").decode().strip()
+            source_bytes = self.git(repository, "show", f"{commit}:src/lib.rs")
+            record = {
+                "source_id": "rust-example-fixture",
+                "project": "example/fixture",
+                "lineage_id": "github-example-fixture",
+                "origin": "https://github.com/example/fixture.git",
+                "commit": commit,
+                "tree": self.git(repository, "rev-parse", "HEAD^{tree}").decode().strip(),
+                "license": {
+                    "spdx": "MIT",
+                    "path": "LICENSE-MIT",
+                    "sha256": hashlib.sha256(
+                        self.git(repository, "show", f"{commit}:LICENSE-MIT")
+                    ).hexdigest(),
+                },
+                "source": {
+                    "path": "src/lib.rs",
+                    "blob_oid": self.git(
+                        repository, "rev-parse", f"{commit}:src/lib.rs"
+                    ).decode().strip(),
+                    "sha256": hashlib.sha256(source_bytes).hexdigest(),
+                    "bytes": len(source_bytes),
+                },
+            }
+            record["extracted_tree_sha256"] = generate.extracted_tree_sha256(
+                record["source"]
+            )
+
+            with self.assertRaisesRegex(ValueError, "does not match pinned Git objects"):
+                generate.verify_sources(
+                    [record], lambda _source_id: repository, minimum_sources=1
+                )
+
+    def test_git_replace_cannot_redirect_pinned_commit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository, record = self.fixture(Path(directory))
+            original_commit = record["commit"]
+            (repository / "src" / "lib.rs").write_text("pub fn answer() -> i32 { 7 }\n")
+            self.git(repository, "add", "src/lib.rs")
+            self.git(repository, "commit", "-qm", "replacement")
+            replacement_commit = self.git(repository, "rev-parse", "HEAD").decode().strip()
+            self.git(repository, "replace", original_commit, replacement_commit)
+
+            self.assertNotEqual(
+                self.git(repository, "rev-parse", f"{original_commit}^{{tree}}").decode().strip(),
+                record["tree"],
+            )
+            inventory = generate.verify_sources(
+                [record], lambda _source_id: repository, minimum_sources=1
+            )
+            self.assertEqual(inventory[0]["tree"], record["tree"])
+
     def test_rejects_duplicate_projects_lineages_content_and_too_few_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             repository, record = self.fixture(Path(directory))
@@ -135,6 +196,10 @@ class RustSourceInventoryTests(unittest.TestCase):
             {"seed_claims", "oracle_kind_counts", "sandbox_image"}
             & set().union(*(item.keys() for item in sources))
         )
+
+    def test_candidate_inventory_cannot_be_promoted_to_ready_provenance(self):
+        with self.assertRaisesRegex(ValueError, "adapter receipt"):
+            generate.provenance_record({})
 
 
 class RustDerivationReceiptTests(unittest.TestCase):
