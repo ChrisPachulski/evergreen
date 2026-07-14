@@ -201,6 +201,71 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(scp_origin, "[redacted]@example.invalid:owner/repo.git")
         self.assertNotIn("deploy", scp_origin)
 
+    def test_remote_https_query_is_removed(self):
+        self.git(
+            "remote",
+            "set-url",
+            "origin",
+            "https://example.invalid/owner/repo.git?access_token=query-secret",
+        )
+
+        origin = build_receipt(self.repo)["repository"]["origin"]
+
+        self.assertEqual(origin, "https://example.invalid/owner/repo.git")
+        self.assertNotIn("access_token", origin)
+        self.assertNotIn("query-secret", origin)
+
+    def test_remote_fragment_is_removed(self):
+        self.git(
+            "remote",
+            "set-url",
+            "origin",
+            "https://example.invalid/owner/repo.git#fragment-secret",
+        )
+
+        origin = build_receipt(self.repo)["repository"]["origin"]
+
+        self.assertEqual(origin, "https://example.invalid/owner/repo.git")
+        self.assertNotIn("fragment-secret", origin)
+
+    def test_remote_helper_with_nested_credentials_fails_closed(self):
+        self.git(
+            "remote",
+            "set-url",
+            "origin",
+            "helper::https://alice:secret@example.invalid/owner/repo.git",
+        )
+
+        origin = build_receipt(self.repo)["repository"]["origin"]
+
+        self.assertEqual(origin, "[redacted]")
+
+    def test_malformed_bracketed_remote_fails_closed(self):
+        self.git(
+            "remote",
+            "set-url",
+            "origin",
+            "https://alice:secret@[example.invalid/owner/repo.git",
+        )
+
+        origin = build_receipt(self.repo)["repository"]["origin"]
+
+        self.assertEqual(origin, "[redacted]")
+
+    def test_benign_normal_remotes_are_preserved(self):
+        remotes = (
+            "https://example.invalid/owner/repo.git",
+            "file:///tmp/repo.git",
+            "/tmp/repo.git",
+            "example.invalid:owner/repo.git",
+        )
+        for remote in remotes:
+            with self.subTest(remote=remote):
+                self.git("remote", "set-url", "origin", remote)
+                self.assertEqual(
+                    build_receipt(self.repo)["repository"]["origin"], remote
+                )
+
     def test_stub_git_timeout_and_output_limit_are_errors(self):
         from evergreen import receipt as module
 

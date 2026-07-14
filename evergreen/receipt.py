@@ -93,23 +93,27 @@ def _origin(root):
 
 
 def _redact_remote(remote):
-    parsed = urlsplit(remote)
-    if parsed.scheme and parsed.username is not None:
-        host = parsed.hostname or ""
-        if ":" in host:
-            host = f"[{host}]"
-        try:
+    try:
+        parsed = urlsplit(remote)
+        remote = urlunsplit(parsed._replace(query="", fragment=""))
+        if parsed.scheme and parsed.username is not None:
+            host = parsed.hostname or ""
+            if ":" in host:
+                host = f"[{host}]"
             port = f":{parsed.port}" if parsed.port is not None else ""
-        except ValueError:
-            port = ""
-        return urlunsplit((
-            parsed.scheme,
-            f"[redacted]@{host}{port}",
-            parsed.path,
-            parsed.query,
-            parsed.fragment,
-        ))
-    return re.sub(r"^[^/@:\s]+@(?=[^:\s]+:)", "[redacted]@", remote)
+            return urlunsplit((
+                parsed.scheme,
+                f"[redacted]@{host}{port}",
+                parsed.path,
+                "",
+                "",
+            ))
+    except ValueError:
+        return "[redacted]"
+    scp = re.fullmatch(r"([^/@:\s]+)@([^:\s]+):(.+)", remote)
+    if scp:
+        return f"[redacted]@{scp.group(2)}:{scp.group(3)}"
+    return "[redacted]" if "@" in remote else remote
 
 
 def _status(root):
