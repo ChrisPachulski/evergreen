@@ -18,6 +18,7 @@ import tempfile
 import time
 
 try:
+    from .. import peers as peer_protocol
     from .artifact import (
         MAX_ARTIFACT_BYTES, artifact_metadata, git_identity, read_bytes, resume_state,
     )
@@ -25,6 +26,8 @@ try:
     from .java_context import PROTOCOL as JAVA_CONTEXT_PROTOCOL, validate_context
     from .split_manifest import MAX_MANIFEST_BYTES, load_split_assignments
 except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from eval import peers as peer_protocol
     from artifact import (
         MAX_ARTIFACT_BYTES, artifact_metadata, git_identity, read_bytes, resume_state,
     )
@@ -40,6 +43,48 @@ ARCHIVE_NAME = re.compile(r"\.rows-(\d+)\.([0-9a-f]{64})\.json$")
 
 class LiveArtifactIncompatible(ValueError):
     pass
+
+
+def peer_policy(manifest_path, peer_id, rows, *, allow_local=False):
+    """Bind a label-blind peer lane to one frozen manifest entry."""
+    if manifest_path is None or not isinstance(peer_id, str) or not peer_id:
+        raise ValueError("peer manifest and peer ID must be declared together")
+    path = Path(manifest_path)
+    try:
+        before = read_bytes(
+            path, peer_protocol.MAX_MANIFEST_BYTES, label="peer manifest provenance",
+        )
+    except (OSError, ValueError) as error:
+        raise ValueError("peer manifest is unavailable") from error
+    manifest = peer_protocol.load_manifest_bytes(before)
+    try:
+        after = read_bytes(
+            path, peer_protocol.MAX_MANIFEST_BYTES, label="peer manifest provenance",
+        )
+    except (OSError, ValueError) as error:
+        raise ValueError("peer manifest is unavailable") from error
+    if before != after:
+        raise ValueError("peer manifest changed during frozen preflight")
+    selected = next((item for item in manifest["peers"] if item["id"] == peer_id), None)
+    if selected is None:
+        raise ValueError("peer ID is absent from frozen manifest")
+    if selected["source"]["kind"] != "protocol" and not allow_local:
+        raise ValueError("local peer cannot run through the provider lane")
+    languages = {row.get("language") for row in rows if isinstance(row, dict)}
+    if not languages or not languages <= set(peer_protocol.LANGUAGES):
+        raise ValueError("peer input languages are invalid")
+    unavailable = sorted(
+        language for language in languages
+        if selected["applicability"][language]["state"] != "applicable"
+    )
+    if unavailable:
+        raise ValueError("peer is not applicable to: " + ", ".join(unavailable))
+    return {
+        "peer_id": peer_id,
+        "peer_manifest_sha256": hashlib.sha256(before).hexdigest(),
+        "peer_config_sha256": selected["config_sha256"],
+        "peer_source": selected["source"],
+    }
 
 
 def run_policy(_dataset, rows, resolver, split_manifest, split, context_protocol):
@@ -372,6 +417,8 @@ def parse_args(argv=None):
     parser.add_argument("--resolver", choices=("v1", "v2"), default="v1")
     parser.add_argument("--split-manifest", type=Path)
     parser.add_argument("--split", choices=("dev", "holdout"))
+    parser.add_argument("--peer-manifest", type=Path)
+    parser.add_argument("--peer-id")
     parser.add_argument(
         "--context-protocol", choices=("none", JAVA_CONTEXT_PROTOCOL), default="none"
     )
@@ -396,6 +443,10 @@ def main(argv=None):
     }
     _payload, rows = load_dataset(args.dataset)
     require_single_language(rows)
+    if (args.peer_manifest is None) != (args.peer_id is None):
+        raise ValueError("peer manifest and peer ID must be declared together")
+    if args.peer_manifest is not None:
+        settings.update(peer_policy(args.peer_manifest, args.peer_id, rows))
     settings.update(run_policy(
         args.dataset, rows, args.resolver, args.split_manifest, args.split,
         args.context_protocol,

@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "kind": "evergreen-peer-manifest",
+  "languages": ["go", "java", "python", "rust", "typescript"],
+  "peers": [
+    {
+      "id": "direct-baseline",
+      "required": true,
+      "source": {
+        "kind": "protocol",
+        "url": "evergreen://direct-classification-v1",
+        "commit": "direct-classification-v1",
+        "tree": "2cf97be3532042e22a9061d985d1dfeab4f58592525980f7c0c6b80f69eaa60c",
+        "license": "not-applicable",
+        "license_path": "",
+        "license_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "lock_path": "",
+        "lock_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "config": {
+        "adapter": "direct-classification-v1",
+        "input": "code-documentation-v1",
+        "label_access": false,
+        "mode": "single-pass"
+      },
+      "config_sha256": "2cf97be3532042e22a9061d985d1dfeab4f58592525980f7c0c6b80f69eaa60c",
+      "applicability": {
+        "go": {"state": "applicable", "reason": ""},
+        "java": {"state": "applicable", "reason": ""},
+        "python": {"state": "applicable", "reason": ""},
+        "rust": {"state": "applicable", "reason": ""},
+        "typescript": {"state": "applicable", "reason": ""}
+      }
+    },
+    {
+      "id": "drift-guardian",
+      "required": true,
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/killytoronto/drift-guardian.git",
+        "commit": "444021d47ce1c0319c6532488ec4cb886c9ac472",
+        "tree": "f5ab260b14849c9471248eebabebf5c9f1cd320a",
+        "license": "MIT",
+        "license_path": "LICENSE",
+        "license_sha256": "d0f5675b36b9ec3bacdcec27e4cbe5b55356ae3f23a29b79778d92560242679e",
+        "lock_path": "package-lock.json",
+        "lock_sha256": "60fa3e966019f56048dba30e4c0e460cd9da743b5f5147dfce671fc0687f088d"
+      },
+      "config": {
+        "adapter": "git-two-commit-v1",
+        "entrypoint": ["node", "src/cli.js", "--format", "json"],
+        "install": "npm-ci-offline",
+        "network": "none"
+      },
+      "config_sha256": "bf11f3d958935c5cd87c46d52163f4d2dc91ebc1565a2acb80dd5d736c6b1c75",
+      "applicability": {
+        "go": {"state": "applicable", "reason": ""},
+        "java": {"state": "applicable", "reason": ""},
+        "python": {"state": "applicable", "reason": ""},
+        "rust": {"state": "not-applicable", "reason": "upstream commit does not declare Rust support"},
+        "typescript": {"state": "applicable", "reason": ""}
+      }
+    },
+    {
+      "id": "documentation-drift-detector",
+      "required": true,
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/Damienb123/Documentation-Drift-Detector.git",
+        "commit": "9237c9c28dd6d884dd3f8d29998933c4dadde403",
+        "tree": "84dbc12f969065014c328f5dc0f089dde14dcfd8",
+        "license": "MIT",
+        "license_path": "LICENSE",
+        "license_sha256": "661bea54f2cfed338374defb205c0a4023f1bb156983c25194784cb0ea649fb2",
+        "lock_path": "package-lock.json",
+        "lock_sha256": "92f48665aa354962de92b4da1599eb7bc725e756c17ab4a4394b0b72aa72c3fa"
+      },
+      "config": {
+        "adapter": "upstream-core-v1",
+        "entrypoint": ["node", "evergreen-peer-adapter.js"],
+        "install": "npm-ci-offline",
+        "network": "none"
+      },
+      "config_sha256": "ed51f456f8a4a75fd60d9b5698c50466cc3dbe58860dec74fe315d7567b511e7",
+      "applicability": {
+        "go": {"state": "not-applicable", "reason": "upstream commit supports only JavaScript and TypeScript"},
+        "java": {"state": "not-applicable", "reason": "upstream commit supports only JavaScript and TypeScript"},
+        "python": {"state": "not-applicable", "reason": "upstream commit supports only JavaScript and TypeScript"},
+        "rust": {"state": "not-applicable", "reason": "upstream commit supports only JavaScript and TypeScript"},
+        "typescript": {"state": "applicable", "reason": ""}
+      }
+    }
+  ]
+}
