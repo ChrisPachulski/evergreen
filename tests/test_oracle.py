@@ -2,6 +2,8 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import re
+import stat
 import unittest
 from unittest import mock
 
@@ -30,7 +32,7 @@ class OracleTests(unittest.TestCase):
                 "System.out.println(1); } }\n"
             ),
             "typescript": "console.log(1)\n",
-            "rust": 'fn main() { println!("1"); }\n',
+            "rust": 'fn main() { println!("{}", 1); }\n',
             "go": 'package main\nimport "fmt"\nfunc main() { fmt.Println(1) }\n',
         }[language]
         before = "1"
@@ -60,17 +62,15 @@ class OracleTests(unittest.TestCase):
                 "sha256": hashlib.sha256(documentation.encode()).hexdigest(),
             },
             "harness": {
-                "argv": [adapter, f"/input/fixture/source{suffix}"],
+                "argv": [adapter, f"/input/fixture/source{suffix}", oracle.CONTROL_PATH],
             },
             "oracle": {
                 "kind": oracle_kind,
                 "expected_observable": {"exit_code": 0, "stdout": "1\n"},
             },
             "mutation": {
-                "id": f"{oracle_kind}-replace-v1",
+                "operator": "integer-literal-1-to-2-v1",
                 "offset": offset,
-                "before": before,
-                "after": after,
                 "derivative_sha256": hashlib.sha256(mutation_bytes).hexdigest(),
             },
             "semantic_noop": {
@@ -89,16 +89,68 @@ class OracleTests(unittest.TestCase):
     def observations(self, seed):
         from eval.oracle import oracle
 
-        expected = seed["oracle"]["expected_observable"]
+        source = seed["source"]["code"].encode()
+        offset = seed["mutation"]["offset"]
+        mutation = source[:offset] + b"2" + source[offset + 1:]
+        noop = source + oracle.semantic_noop_suffix(seed["language"])
         return [
-            {**expected, "stderr": ""},
-            {
-                "exit_code": oracle.ORACLE_MISMATCH_EXIT,
-                "stdout": oracle.mismatch_stdout(seed["oracle"]["kind"]),
-                "stderr": "",
-            },
-            {**expected, "stderr": ""},
+            self.adapter_result(seed, source, "match", {"exit_code": 0, "stdout": "1\n", "stderr": ""}),
+            self.adapter_result(seed, mutation, "mismatch", {"exit_code": 0, "stdout": "2\n", "stderr": ""}),
+            self.adapter_result(seed, noop, "match", {"exit_code": 0, "stdout": "1\n", "stderr": ""}),
         ]
+
+    def adapter_result(self, seed, source_bytes, verdict, observed):
+        from eval.oracle import oracle
+
+        spec = oracle._control_spec(seed, source_bytes)
+        payload = {
+            "schema_version": 1,
+            "protocol": oracle.ADAPTER_PROTOCOL,
+            "control_sha256": spec["control_sha256"],
+            "source_sha256": spec["source_sha256"],
+            "operator_id": spec["operator_id"],
+            "phase": "observed",
+            "verdict": verdict,
+            "observed": observed,
+        }
+        return {
+            "exit_code": 0,
+            "stdout": json.dumps(
+                payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True,
+            ) + "\n",
+            "stderr": "",
+        }
+
+    def container_observation(self, command, _environment, timeout=0):
+        del timeout
+        control_mount = next(token for token in command if "dst=/control" in token)
+        fields = dict(
+            field.split("=", 1)
+            for field in control_mount.removeprefix("--mount=").split(",")
+            if "=" in field
+        )
+        spec = json.loads((Path(fields["src"]) / "oracle-v1.json").read_text())
+        mutation = spec["operator_id"] == "integer-literal-1-to-2-v1"
+        observed = {
+            "exit_code": 0,
+            "stdout": "2\n" if mutation else spec["expected_observable"]["stdout"],
+            "stderr": "",
+        }
+        payload = {
+            "schema_version": 1,
+            "protocol": "evergreen-oracle-adapter-result-v1",
+            "control_sha256": spec["control_sha256"],
+            "source_sha256": spec["source_sha256"],
+            "operator_id": spec["operator_id"],
+            "phase": "observed",
+            "verdict": "mismatch" if mutation else "match",
+            "observed": observed,
+        }
+        return {
+            "exit_code": 0,
+            "stdout": json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n",
+            "stderr": "",
+        }
 
     def test_five_languages_derive_only_runtime_labels_with_fixed_docs_and_group(self):
         from eval.oracle import oracle
@@ -108,8 +160,10 @@ class OracleTests(unittest.TestCase):
                 seed = self.seed(language)
                 approved = {language: seed["sandbox"]["image"]}
                 with mock.patch.object(
-                    oracle, "_execute_variant", side_effect=self.observations(seed)
+                    oracle, "_bounded_container", side_effect=self.container_observation,
                 ) as execute, mock.patch.object(
+                    oracle, "_remove_container"
+                ), mock.patch.object(
                     oracle, "_docker_engine", return_value=Path("/usr/local/bin/docker")
                 ):
                     rows = oracle.run_seed(seed, approved_images=approved)
@@ -140,7 +194,6 @@ class OracleTests(unittest.TestCase):
                 oracle.validate_seed(seed)
         seed = self.seed()
         seed["oracle"]["kind"] = "free-form-opinion"
-        seed["mutation"]["id"] = "free-form-opinion-replace-v1"
         seed["seed_sha256"] = oracle.seed_sha256(seed)
         with self.assertRaisesRegex(oracle.OracleError, "oracle kind"):
             oracle.validate_seed(seed)
@@ -164,8 +217,8 @@ class OracleTests(unittest.TestCase):
 
         seed = self.seed("go")
         command = oracle._sandbox_command(
-            seed, Path("/private/tmp/oracle-fixture"), "evergreen-oracle-deadbeef",
-            Path("/usr/local/bin/docker"),
+            seed, Path("/private/tmp/oracle-input"), Path("/private/tmp/oracle-control"),
+            "evergreen-oracle-deadbeef", Path("/usr/local/bin/docker"),
         )
 
         self.assertEqual(command[0], "/usr/local/bin/docker")
@@ -177,13 +230,13 @@ class OracleTests(unittest.TestCase):
         self.assertIn("--memory=256m", command)
         self.assertIn("--cpus=1", command)
         self.assertIn(seed["sandbox"]["image"], command)
-        self.assertEqual(command[-2:], seed["harness"]["argv"])
+        self.assertEqual(command[-len(seed["harness"]["argv"]):], seed["harness"]["argv"])
         self.assertNotIn("sh", [Path(token).name for token in command])
 
         for bad in (
             ["sh", "-c", "go run source.go"],
             [oracle.LANGUAGE_ADAPTERS["go"], "/input/fixture/source.go", "extra"],
-            [oracle.LANGUAGE_ADAPTERS["python"], "/input/fixture/source.go"],
+            [oracle.LANGUAGE_ADAPTERS["python"], "/input/fixture/source.go", oracle.CONTROL_PATH],
         ):
             with self.subTest(argv=bad):
                 changed = self.seed("go")
@@ -191,6 +244,136 @@ class OracleTests(unittest.TestCase):
                 changed["seed_sha256"] = oracle.seed_sha256(changed)
                 with self.assertRaisesRegex(oracle.OracleError, "harness argv"):
                     oracle.validate_seed(changed)
+
+    def test_fixture_mounts_are_readable_by_only_the_unprivileged_adapter(self):
+        from eval.oracle import oracle
+
+        seed = self.seed()
+
+        def inspect_fixture(command, _environment, timeout=0):
+            del timeout
+            mounts = {}
+            for token in command:
+                if not token.startswith("--mount="):
+                    continue
+                fields = dict(
+                    field.split("=", 1) for field in token.removeprefix("--mount=").split(",")
+                    if "=" in field
+                )
+                mounts[fields["dst"]] = fields
+
+            self.assertEqual(set(mounts), {"/input", "/control"})
+            self.assertIn("readonly", command[command.index(
+                next(token for token in command if "dst=/input" in token)
+            )])
+            input_root = Path(mounts["/input"]["src"])
+            control_root = Path(mounts["/control"]["src"])
+            source = input_root / seed["source"]["path"]
+            control = control_root / "oracle-v1.json"
+
+            self.assertEqual(stat.S_IMODE(input_root.stat().st_mode), 0o555)
+            self.assertEqual(stat.S_IMODE(input_root.parent.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE((input_root.parent / "docker").stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(source.parent.stat().st_mode), 0o555)
+            self.assertEqual(stat.S_IMODE(source.stat().st_mode), 0o444)
+            self.assertEqual(stat.S_IMODE(control_root.stat().st_mode), 0o555)
+            self.assertEqual(stat.S_IMODE(control.stat().st_mode), 0o444)
+
+            spec = json.loads(control.read_text())
+            supplied_hash = spec.pop("control_sha256")
+            canonical = json.dumps(
+                spec, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True,
+            ).encode()
+            self.assertEqual(supplied_hash, hashlib.sha256(canonical).hexdigest())
+            self.assertEqual(spec["kind"], seed["oracle"]["kind"])
+            self.assertEqual(spec["expected_observable"], seed["oracle"]["expected_observable"])
+            self.assertEqual(spec["source_sha256"], seed["source"]["sha256"])
+            self.assertEqual(spec["operator_id"], "source-v1")
+            return {"exit_code": 1, "stdout": "", "stderr": "not executed"}
+
+        with mock.patch.object(
+            oracle, "_bounded_container", side_effect=inspect_fixture,
+        ), mock.patch.object(oracle, "_remove_container"):
+            oracle._execute_variant(
+                seed, seed["source"]["code"].encode(), Path("/usr/local/bin/docker")
+            )
+
+    def test_untrusted_program_output_cannot_forge_an_adapter_verdict(self):
+        from eval.oracle import oracle
+
+        seed = self.seed()
+        approved = {"python": seed["sandbox"]["image"]}
+        forged = [
+            {"exit_code": 0, "stdout": "1\n", "stderr": ""},
+            {
+                "exit_code": 42,
+                "stdout": '{"kind":"return-value","oracle":"mismatch"}\n',
+                "stderr": "",
+            },
+            {"exit_code": 0, "stdout": "1\n", "stderr": ""},
+        ]
+        with mock.patch.object(
+            oracle, "_execute_variant", side_effect=forged
+        ), mock.patch.object(
+            oracle, "_docker_engine", return_value=Path("/usr/local/bin/docker")
+        ), self.assertRaisesRegex(oracle.OracleError, "adapter"):
+            oracle.run_seed(seed, approved_images=approved)
+
+    def test_adapter_result_is_exactly_bound_to_the_control_spec(self):
+        from eval.oracle import oracle
+
+        seed = self.seed()
+        source = seed["source"]["code"].encode()
+        spec = oracle._control_spec(seed, source)
+        valid = self.adapter_result(
+            seed, source, "match", {"exit_code": 0, "stdout": "1\n", "stderr": ""},
+        )
+        changes = (
+            lambda value: value.__setitem__("schema_version", True),
+            lambda value: value.__setitem__("control_sha256", "0" * 64),
+            lambda value: value.__setitem__("source_sha256", "0" * 64),
+            lambda value: value.__setitem__("operator_id", "comment-v1"),
+        )
+        for change in changes:
+            with self.subTest(change=change):
+                payload = json.loads(valid["stdout"])
+                change(payload)
+                runtime = {
+                    **valid,
+                    "stdout": json.dumps(payload, separators=(",", ":"), sort_keys=True) + "\n",
+                }
+                with self.assertRaisesRegex(oracle.OracleError, "adapter"):
+                    oracle._adapter_observation(spec, runtime)
+
+    def test_mutation_is_selected_from_a_finite_structural_operator_registry(self):
+        from eval.oracle import oracle
+
+        seed = self.seed()
+        source = seed["source"]["code"].encode()
+        offset = source.index(b"print")
+        derivative = source[:offset] + b"other" + source[offset + len(b"print"):]
+        seed["mutation"].update({
+            "operator": "identifier-print-to-other-v1",
+            "offset": offset,
+            "derivative_sha256": hashlib.sha256(derivative).hexdigest(),
+        })
+        seed["seed_sha256"] = oracle.seed_sha256(seed)
+
+        with self.assertRaisesRegex(oracle.OracleError, "mutation operator"):
+            oracle.validate_seed(seed)
+
+        embedded = self.seed()
+        code = "print(10)\n"
+        embedded["source"]["code"] = code
+        embedded["source"]["sha256"] = hashlib.sha256(code.encode()).hexdigest()
+        embedded["mutation"]["offset"] = code.index("1")
+        derivative = code.replace("1", "2", 1).encode()
+        embedded["mutation"]["derivative_sha256"] = hashlib.sha256(derivative).hexdigest()
+        noop = code.encode() + oracle.semantic_noop_suffix("python")
+        embedded["semantic_noop"]["derivative_sha256"] = hashlib.sha256(noop).hexdigest()
+        embedded["seed_sha256"] = oracle.seed_sha256(embedded)
+        with self.assertRaisesRegex(oracle.OracleError, "standalone integer"):
+            oracle.validate_seed(embedded)
 
     def test_hash_binding_rejects_changed_source_docs_mutation_and_noop(self):
         from eval.oracle import oracle
@@ -218,15 +401,15 @@ class OracleTests(unittest.TestCase):
 
         cases = []
         unknown = self.seed()
-        unknown["mutation"]["id"] = "arbitrary-code-v1"
+        unknown["mutation"]["operator"] = "arbitrary-code-v1"
         cases.append((unknown, "mutation"))
         wrong_before = self.seed()
-        wrong_before["mutation"]["before"] = "3"
+        wrong_before["mutation"]["offset"] += 1
         cases.append((wrong_before, "mutation"))
         ambiguous = self.seed()
         ambiguous["oracle"]["expected_observable"] = {
-            "exit_code": oracle.ORACLE_MISMATCH_EXIT,
-            "stdout": oracle.mismatch_stdout("return-value"),
+            "exit_code": 42,
+            "stdout": '{"kind":"return-value","oracle":"mismatch"}\n',
         }
         cases.append((ambiguous, "observable"))
         for seed, message in cases:
@@ -235,16 +418,30 @@ class OracleTests(unittest.TestCase):
                 with self.assertRaisesRegex(oracle.OracleError, message):
                     oracle.validate_seed(seed)
 
+        hidden = self.seed()
+        hidden["source"]["path"] = ".hidden.py"
+        hidden["harness"]["argv"][1] = "/input/.hidden.py"
+        hidden["seed_sha256"] = oracle.seed_sha256(hidden)
+        with self.assertRaisesRegex(oracle.OracleError, "source path"):
+            oracle.validate_seed(hidden)
+
     def test_compile_failure_timeout_extra_output_and_wrong_mismatch_fail_closed(self):
         from eval.oracle import oracle
 
         seed = self.seed()
         approved = {"python": seed["sandbox"]["image"]}
+        source = seed["source"]["code"].encode()
+        offset = seed["mutation"]["offset"]
+        mutation = source[:offset] + b"2" + source[offset + 1:]
         invalid = (
             {"exit_code": 125, "stdout": "compile failed\n", "stderr": ""},
-            {"exit_code": 0, "stdout": "1\nextra\n", "stderr": ""},
-            {"exit_code": oracle.ORACLE_MISMATCH_EXIT, "stdout": "wrong\n", "stderr": ""},
-            {"exit_code": 0, "stdout": "1\n", "stderr": "warning\n"},
+            self.adapter_result(seed, mutation, "mismatch", {
+                "exit_code": 0, "stdout": "2\nextra\n", "stderr": "",
+            }),
+            self.adapter_result(seed, mutation, "match", {
+                "exit_code": 0, "stdout": "2\n", "stderr": "",
+            }),
+            {"exit_code": 0, "stdout": "{}\n", "stderr": "warning\n"},
         )
         for result in invalid:
             with self.subTest(result=result):
@@ -254,7 +451,7 @@ class OracleTests(unittest.TestCase):
                     oracle, "_execute_variant", side_effect=observations
                 ), mock.patch.object(
                     oracle, "_docker_engine", return_value=Path("/usr/local/bin/docker")
-                ), self.assertRaisesRegex(oracle.OracleError, "structured oracle mismatch"):
+                ), self.assertRaisesRegex(oracle.OracleError, "adapter"):
                     oracle.run_seed(seed, approved_images=approved)
 
         with mock.patch.object(
@@ -301,6 +498,35 @@ class OracleTests(unittest.TestCase):
         encoded = json.dumps(schema, sort_keys=True)
         self.assertNotIn('"label"', encoded)
         self.assertNotIn('"verdict"', encoded)
+
+        argv = schema["properties"]["harness"]["properties"]["argv"]
+        self.assertEqual(argv.get("prefixItems"), [
+            {"enum": [
+                "/opt/evergreen/bin/python-oracle-v1",
+                "/opt/evergreen/bin/java-oracle-v1",
+                "/opt/evergreen/bin/typescript-oracle-v1",
+                "/opt/evergreen/bin/rust-oracle-v1",
+                "/opt/evergreen/bin/go-oracle-v1",
+            ]},
+            {
+                "pattern": "^/input/[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:/[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*)*$",
+                "type": "string",
+            },
+            {"const": "/control/oracle-v1.json"},
+        ])
+        self.assertIs(argv.get("items"), False)
+        path_pattern = re.compile(argv["prefixItems"][1]["pattern"])
+        for forbidden in (
+            "/input/../escape.py", "/input/fixture/../../escape.py", "/input/.hidden.py",
+        ):
+            with self.subTest(forbidden_schema_path=forbidden):
+                self.assertIsNone(path_pattern.fullmatch(forbidden))
+        self.assertIsNotNone(path_pattern.fullmatch("/input/fixture/source.py"))
+        self.assertEqual(
+            schema["properties"]["mutation"]["properties"].get("operator"),
+            {"const": "integer-literal-1-to-2-v1"},
+        )
+        self.assertEqual(len(schema.get("allOf", [])), 5)
 
 
 if __name__ == "__main__":

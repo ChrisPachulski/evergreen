@@ -16,9 +16,25 @@
       "additionalProperties": false,
       "properties": {
         "argv": {
-          "items": {"minLength": 1, "type": "string"},
-          "maxItems": 2,
-          "minItems": 2,
+          "items": false,
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "enum": [
+                "/opt/evergreen/bin/python-oracle-v1",
+                "/opt/evergreen/bin/java-oracle-v1",
+                "/opt/evergreen/bin/typescript-oracle-v1",
+                "/opt/evergreen/bin/rust-oracle-v1",
+                "/opt/evergreen/bin/go-oracle-v1"
+              ]
+            },
+            {
+              "pattern": "^/input/[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:/[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*)*$",
+              "type": "string"
+            },
+            {"const": "/control/oracle-v1.json"}
+          ],
           "type": "array"
         }
       },
@@ -30,13 +46,11 @@
     "mutation": {
       "additionalProperties": false,
       "properties": {
-        "after": {"minLength": 1, "type": "string"},
-        "before": {"minLength": 1, "type": "string"},
         "derivative_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
-        "id": {"type": "string"},
+        "operator": {"const": "integer-literal-1-to-2-v1"},
         "offset": {"minimum": 0, "type": "integer"}
       },
-      "required": ["id", "offset", "before", "after", "derivative_sha256"],
+      "required": ["operator", "offset", "derivative_sha256"],
       "type": "object"
     },
     "oracle": {
@@ -111,6 +125,70 @@
     "semantic_noop",
     "sandbox",
     "seed_sha256"
+  ],
+  "allOf": [
+    {
+      "if": {"properties": {"language": {"const": "python"}}, "required": ["language"]},
+      "then": {
+        "properties": {
+          "harness": {
+            "properties": {
+              "argv": {"prefixItems": [{"const": "/opt/evergreen/bin/python-oracle-v1"}]}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"language": {"const": "java"}}, "required": ["language"]},
+      "then": {
+        "properties": {
+          "harness": {
+            "properties": {
+              "argv": {"prefixItems": [{"const": "/opt/evergreen/bin/java-oracle-v1"}]}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"language": {"const": "typescript"}}, "required": ["language"]},
+      "then": {
+        "properties": {
+          "harness": {
+            "properties": {
+              "argv": {
+                "prefixItems": [{"const": "/opt/evergreen/bin/typescript-oracle-v1"}]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"language": {"const": "rust"}}, "required": ["language"]},
+      "then": {
+        "properties": {
+          "harness": {
+            "properties": {
+              "argv": {"prefixItems": [{"const": "/opt/evergreen/bin/rust-oracle-v1"}]}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"language": {"const": "go"}}, "required": ["language"]},
+      "then": {
+        "properties": {
+          "harness": {
+            "properties": {
+              "argv": {"prefixItems": [{"const": "/opt/evergreen/bin/go-oracle-v1"}]}
+            }
+          }
+        }
+      }
+    }
   ],
   "type": "object"
 }
