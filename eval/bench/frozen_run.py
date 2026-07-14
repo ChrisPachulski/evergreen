@@ -91,20 +91,57 @@ def load_peer_key(path, repo):
     repo = Path(repo).resolve()
     if not path.is_absolute():
         raise ValueError("peer key file must be an absolute external path")
+    descriptor = None
     try:
-        status = os.lstat(path)
+        before = os.lstat(path)
         resolved = path.resolve(strict=True)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.getuid()
+            or before.st_nlink != 1
+            or stat.S_IMODE(before.st_mode) & 0o077
+        ):
+            raise ValueError("peer key file must be a private user-owned regular file")
+        flags = os.O_RDONLY
+        for name in ("O_CLOEXEC", "O_NOFOLLOW", "O_NONBLOCK"):
+            flags |= getattr(os, name, 0)
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+        after_open = os.lstat(path)
     except OSError as error:
+        if descriptor is not None:
+            os.close(descriptor)
         raise ValueError("peer key file is unavailable") from error
     if path == repo or repo in path.parents or resolved == repo or repo in resolved.parents:
+        os.close(descriptor)
         raise ValueError("peer key file must be outside the repository")
-    if (not stat.S_ISREG(status.st_mode) or status.st_uid != os.getuid() or
-            status.st_nlink != 1 or stat.S_IMODE(status.st_mode) & 0o077):
-        raise ValueError("peer key file must be a private user-owned regular file")
-    key = read_bytes(path, 32, label="peer opaque-ID key")
-    if len(key) != 32:
-        raise ValueError("peer opaque-ID key must contain exactly 32 bytes")
-    return key
+    def identity(value):
+        return (
+            value.st_dev, value.st_ino, value.st_mode, value.st_uid, value.st_nlink,
+            value.st_size, value.st_mtime_ns, value.st_ctime_ns,
+        )
+    try:
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.getuid()
+            or before.st_nlink != 1
+            or stat.S_IMODE(before.st_mode) & 0o077
+            or identity(before) != identity(opened)
+            or identity(opened) != identity(after_open)
+        ):
+            raise ValueError("peer key file must be a private user-owned regular file")
+        key = os.read(descriptor, 33)
+        after_read = os.fstat(descriptor)
+        after_path = os.lstat(path)
+        if identity(opened) != identity(after_read) or identity(opened) != identity(after_path):
+            raise ValueError("peer key file changed while it was read")
+        if len(key) != 32:
+            raise ValueError("peer opaque-ID key must contain exactly 32 bytes")
+        return key
+    except OSError as error:
+        raise ValueError("peer key file changed while it was read") from error
+    finally:
+        os.close(descriptor)
 
 
 def run_policy(_dataset, rows, resolver, split_manifest, split, context_protocol):

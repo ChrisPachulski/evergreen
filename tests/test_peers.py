@@ -85,6 +85,20 @@ class PeerProtocolTests(unittest.TestCase):
 
         manifest = peers.load_manifest(MANIFEST)
         self.assertEqual(manifest["languages"], list(LANGUAGES))
+        self.assertEqual(
+            manifest["exclusions"],
+            [{
+                "id": "documentation-drift-detector",
+                "source_url": "https://github.com/Damienb123/Documentation-Drift-Detector.git",
+                "source_commit": "9237c9c28dd6d884dd3f8d29998933c4dadde403",
+                "reason_code": "runtime-receipt-unfrozen",
+                "detail": (
+                    "The pinned source requires a built Node runtime, but no reproducible "
+                    "runtime receipt is frozen as a release input. Declaring it runnable would "
+                    "make the comparison irreproducible."
+                ),
+            }],
+        )
         by_id = {item["id"]: item for item in manifest["peers"]}
         self.assertEqual(
             set(by_id),
@@ -256,17 +270,32 @@ class PeerProtocolTests(unittest.TestCase):
 
         manifest = peers.load_manifest(MANIFEST)
         bundles = [peer_bundle(manifest, peer["id"]) for peer in manifest["peers"]]
-        expected_id_sets = {
-            peer["id"]: bundle["request"]["id_set_sha256"]
-            for peer, bundle in zip(manifest["peers"], bundles)
-        }
         self.assertTrue(peers.comparison_complete(
-            manifest, bundles, "a" * 40, expected_id_sets,
+            manifest, bundles, "a" * 40, rows(),
         ))
         fabricated = copy.deepcopy(bundles)
         fabricated[0]["result"]["languages"]["rust"]["attempted"] = 0
         self.assertFalse(peers.comparison_complete(
-            manifest, fabricated, "a" * 40, expected_id_sets,
+            manifest, fabricated, "a" * 40, rows(),
+        ))
+
+    def test_completeness_requires_every_peer_projection_from_one_canonical_corpus(self):
+        from eval import peers
+
+        manifest = peers.load_manifest(MANIFEST)
+        bundles = [peer_bundle(manifest, peer["id"]) for peer in manifest["peers"]]
+        self.assertTrue(peers.comparison_complete(manifest, bundles, "a" * 40, rows()))
+        disjoint = copy.deepcopy(bundles)
+        drift = next(bundle for bundle in disjoint
+                     if bundle["result"]["peer_id"] == "drift-guardian")
+        replacement = copy.deepcopy(drift["private_rows"])
+        for item in replacement:
+            item["id"] = "corpus-b-" + item["id"]
+        disjoint[disjoint.index(drift)] = peer_bundle(
+            manifest, "drift-guardian", replacement,
+        )
+        self.assertFalse(peers.comparison_complete(
+            manifest, disjoint, "a" * 40, rows(),
         ))
 
     def test_completeness_rejects_fabricated_unbound_summaries(self):
@@ -284,7 +313,7 @@ class PeerProtocolTests(unittest.TestCase):
         } for peer in manifest["peers"]]
         self.assertFalse(peers.comparison_complete(
             manifest, summaries, "a" * 40,
-            {peer["id"]: "b" * 64 for peer in manifest["peers"]},
+            rows(),
         ))
 
     def test_local_peer_checkout_must_match_frozen_clean_source_identity(self):
@@ -352,12 +381,8 @@ class PeerProtocolTests(unittest.TestCase):
 
         manifest = peers.load_manifest(MANIFEST)
         bundles = [peer_bundle(manifest, peer["id"]) for peer in manifest["peers"]]
-        expected_id_sets = {
-            peer["id"]: bundle["request"]["id_set_sha256"]
-            for peer, bundle in zip(manifest["peers"], bundles)
-        }
         text, complete = report.render_peer_markdown(
-            manifest, bundles, "a" * 40, expected_id_sets,
+            manifest, bundles, "a" * 40, rows(),
         )
         self.assertTrue(complete)
         self.assertIn("Comparison completeness: **COMPLETE**", text)

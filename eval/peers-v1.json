@@ -2,6 +2,15 @@
   "schema_version": 1,
   "kind": "evergreen-peer-manifest",
   "languages": ["go", "java", "python", "rust", "typescript"],
+  "exclusions": [
+    {
+      "id": "documentation-drift-detector",
+      "source_url": "https://github.com/Damienb123/Documentation-Drift-Detector.git",
+      "source_commit": "9237c9c28dd6d884dd3f8d29998933c4dadde403",
+      "reason_code": "runtime-receipt-unfrozen",
+      "detail": "The pinned source requires a built Node runtime, but no reproducible runtime receipt is frozen as a release input. Declaring it runnable would make the comparison irreproducible."
+    }
+  ],
   "peers": [
     {
       "id": "direct-baseline",

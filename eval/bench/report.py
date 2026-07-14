@@ -478,7 +478,7 @@ def render_markdown(
 
 
 def render_peer_markdown(
-    manifest, bundles, subject_commit, id_set_sha256s,
+    manifest, bundles, subject_commit, canonical_private_rows,
 ):
     """Render comparison coverage and raw metrics without declaring a winner."""
     try:
@@ -489,7 +489,7 @@ def render_peer_markdown(
         from eval import peers as peer_protocol
 
     complete = peer_protocol.comparison_complete(
-        manifest, bundles, subject_commit, id_set_sha256s,
+        manifest, bundles, subject_commit, canonical_private_rows,
     )
     lines = [
         "# Evergreen same-corpus peer report",

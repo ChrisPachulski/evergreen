@@ -524,6 +524,31 @@ class FrozenRunMainTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "outside"):
                 frozen_run.load_peer_key(inside, repo)
 
+    def test_peer_key_path_swap_during_descriptor_read_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            key = root / "peer.key"
+            key.write_bytes(b"a" * 32)
+            key.chmod(0o600)
+            replacement = root / "replacement"
+            replacement.write_bytes(b"b" * 32)
+            replacement.chmod(0o600)
+            real_read = os.read
+            swapped = False
+
+            def swap_then_read(descriptor, size):
+                nonlocal swapped
+                if not swapped:
+                    os.replace(replacement, key)
+                    swapped = True
+                return real_read(descriptor, size)
+
+            with mock.patch.object(frozen_run.os, "read", side_effect=swap_then_read):
+                with self.assertRaisesRegex(ValueError, "changed"):
+                    frozen_run.load_peer_key(key, repo)
+
 
 if __name__ == "__main__":
     unittest.main()

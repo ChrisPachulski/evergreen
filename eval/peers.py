@@ -100,7 +100,10 @@ def load_manifest_bytes(payload):
     if not isinstance(payload, bytes) or len(payload) > MAX_MANIFEST_BYTES:
         raise PeerError("peer manifest bytes are invalid")
     document = _load(payload)
-    _exact(document, {"schema_version", "kind", "languages", "peers"}, "manifest")
+    _exact(
+        document, {"schema_version", "kind", "languages", "peers", "exclusions"},
+        "manifest",
+    )
     if type(document["schema_version"]) is not int or document["schema_version"] != 1:
         raise PeerError("peer manifest schema is invalid")
     if document["kind"] != "evergreen-peer-manifest":
@@ -174,6 +177,25 @@ def load_manifest_bytes(payload):
             state["state"] != "applicable" for state in baseline["applicability"].values()
     ):
         raise PeerError("direct baseline must apply to every language")
+    exclusions = document["exclusions"]
+    if not isinstance(exclusions, list) or len(exclusions) > 64:
+        raise PeerError("peer exclusions are invalid")
+    excluded = set()
+    for item in exclusions:
+        _exact(
+            item, {"id", "source_url", "source_commit", "reason_code", "detail"},
+            "peer exclusion",
+        )
+        identifier = _text(item["id"], "excluded peer ID", 128)
+        if identifier in seen or identifier in excluded:
+            raise PeerError("excluded peer identity is invalid")
+        excluded.add(identifier)
+        url = _text(item["source_url"], "excluded peer source URL", 2048)
+        if not url.startswith("https://"):
+            raise PeerError("excluded peer source URL is invalid")
+        _hex(item["source_commit"], "excluded peer source commit", (40, 64))
+        _text(item["reason_code"], "peer exclusion reason", 128)
+        _text(item["detail"], "peer exclusion detail", MAX_REASON_CHARS)
     return document
 
 
@@ -473,15 +495,22 @@ def score_output(
     }
 
 
-def comparison_complete(manifest, bundles, subject_commit, expected_id_set_sha256s):
+def comparison_complete(manifest, bundles, subject_commit, canonical_private_rows):
     try:
         _hex(subject_commit, "subject commit", (40, 64))
         expected = {item["id"]: item for item in manifest["peers"]}
-        if (not isinstance(expected_id_set_sha256s, dict) or
-                set(expected_id_set_sha256s) != set(expected)):
-            return False
-        for digest in expected_id_set_sha256s.values():
-            _hex(digest, "holdout ID-set hash")
+        canonical = benchmark_private_rows(canonical_private_rows)
+        projected = {}
+        for peer_id, peer in expected.items():
+            applicable = {
+                language for language, state in peer["applicability"].items()
+                if state["state"] == "applicable"
+            }
+            projected[peer_id] = [
+                row for row in canonical if row["language"] in applicable
+            ]
+            if not projected[peer_id]:
+                return False
         if not isinstance(bundles, list):
             return False
         observed = {}
@@ -500,7 +529,10 @@ def comparison_complete(manifest, bundles, subject_commit, expected_id_set_sha25
             )
             if result != recomputed:
                 return False
-            if result["id_set_sha256"] != expected_id_set_sha256s[peer_id]:
+            bundle_rows = benchmark_private_rows(bundle["private_rows"])
+            if bundle_rows != projected[peer_id]:
+                return False
+            if result["id_set_sha256"] != id_set_sha256(projected[peer_id]):
                 return False
             required_languages = {
                 language for language, state in expected[peer_id]["applicability"].items()
