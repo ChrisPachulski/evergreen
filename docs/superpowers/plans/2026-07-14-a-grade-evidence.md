@@ -217,7 +217,7 @@ runnable without network access after checkout and must record the exact origin,
 extraction, and harness. Prefer small pure functions and existing examples; do not vendor package
 managers, build caches, repositories, or unrelated source trees.
 
-Build at least 10 source-project groups and 100 mechanically decidable seed claims per language.
+Build at least 10 source-project groups and 250 mechanically decidable seed claims per language.
 Each seed produces a baseline consistent row, a semantic-no-op code control that remains consistent,
 and one lagging-documentation row from a code mutation. The private holdout must clear the
 100-positive/100-negative requirement after repository grouping.
