@@ -400,7 +400,8 @@ def _git(repo, *arguments, maximum=MAX_BLOB_BYTES):
     })
     try:
         completed = subprocess.run(
-            ["git", "-C", str(repo), *arguments], capture_output=True,
+            ["git", "--no-replace-objects", "-C", str(repo), *arguments],
+            capture_output=True,
             timeout=120, check=False, env=environment,
         )
     except (OSError, subprocess.TimeoutExpired):

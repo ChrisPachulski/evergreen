@@ -58,7 +58,7 @@ def _safe_path(value):
 def _git(repository, *arguments, maximum=4096):
     try:
         result = subprocess.run(
-            ["git", "-C", str(repository), *arguments],
+            ["git", "--no-replace-objects", "-C", str(repository), *arguments],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

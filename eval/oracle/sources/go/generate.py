@@ -84,7 +84,8 @@ def sha256(value):
 
 def git(checkout, *arguments, maximum=64 * 1024 * 1024):
     completed = subprocess.run(
-        ["git", "-C", str(checkout), *arguments], capture_output=True, timeout=30,
+        ["git", "--no-replace-objects", "-C", str(checkout), *arguments],
+        capture_output=True, timeout=30,
         check=False,
     )
     if completed.returncode or len(completed.stdout) > maximum:
