@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "kind": "evergreen-rust-derivation-spec",
+  "generator_id": "rust-const-usize-return-v1",
+  "source_id": "rust-rust-lang-log",
+  "repository_path": "src/lib.rs",
+  "input_path": "derived/log-initializing.rs",
+  "blob_oid": "41c5d5f3db8387bf8cee433a070694c5723bf0b7",
+  "blob_sha256": "7b605f1702b0a97c5ba5371aba62d6297cad21c00f1097040d201eb7cc28fa7e",
+  "span": {
+    "start": 17355,
+    "end": 17385,
+    "sha256": "e58b20b5f8622dd7e345a83dc7bd33833421d650243b6b7d3596c05d1f040f52"
+  },
+  "symbol": "INITIALIZING",
+  "oracle_kind": "return-value",
+  "documentation_template": "The INITIALIZING state constant has value 1."
+}
