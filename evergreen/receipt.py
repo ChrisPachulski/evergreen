@@ -8,6 +8,7 @@ import signal
 import shutil
 import stat
 import subprocess
+import sys
 import time
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit, urlunsplit
@@ -32,7 +33,9 @@ class ReceiptOperationalError(ReceiptError):
 
 
 def build_receipt(repo: Path, benchmark_manifest: Path | None = None) -> dict:
-    if os.name != "posix":
+    if os.name != "posix" or not (
+        sys.platform == "darwin" or sys.platform.startswith("linux")
+    ):
         raise ReceiptOperationalError(
             "receipt requires a macOS or Linux host"
         )
@@ -75,6 +78,7 @@ def build_receipt(repo: Path, benchmark_manifest: Path | None = None) -> dict:
 def _git(root, *args, missing_codes=(), input_error=False):
     environment = {
         "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_LAZY_FETCH": "1",
         "GIT_OPTIONAL_LOCKS": "0",
         "LC_ALL": "C",
     }
@@ -275,6 +279,9 @@ def _redact_remote(remote):
 
 
 def _repository_snapshot(root):
+    gitlinks = _gitlinks(root)
+    if gitlinks:
+        raise ReceiptError("tracked submodules prevent a complete safe receipt")
     _assert_index_visibility(root)
     filters_before = _external_filter_configuration(root)
     if filters_before:
@@ -293,7 +300,24 @@ def _repository_snapshot(root):
             None, _git(root, "tag", "--points-at", head).splitlines()
         )),
         "filter_configuration": filters_after,
+        "gitlinks": gitlinks,
     }
+
+
+def _gitlinks(root):
+    output = _git(root, "ls-files", "--stage", "-z")
+    paths = []
+    for record in output.split("\0"):
+        if not record:
+            continue
+        try:
+            metadata, path = record.split("\t", 1)
+            mode = metadata.split(" ", 1)[0]
+        except ValueError:
+            raise ReceiptOperationalError("Git index entry is invalid") from None
+        if mode == "160000":
+            paths.append(path)
+    return tuple(sorted(paths))
 
 
 def _assert_index_visibility(root):
@@ -339,7 +363,7 @@ def _status(root):
         "--branch",
         "-z",
         "--untracked-files=all",
-        "--ignore-submodules=none",
+        "--ignore-submodules=all",
     )
     records = output.split("\0")
     head = upstream = None
@@ -471,13 +495,8 @@ def _benchmark_identity(root, benchmark_manifest, head):
         raise ReceiptError("benchmark report is invalid")
     report_name = _manifest_path(report, "path")
     _safe_repo_file(root, report_name)
-    committed = _git(
-        root,
-        "show",
-        f"{head}:{manifest_name}",
-        missing_codes=(128,),
-    )
-    if committed is None or committed.encode("utf-8") != raw:
+    committed = _head_regular_blob(root, head, manifest_name)
+    if committed != raw:
         raise ReceiptError(
             "benchmark manifest must be Git-tracked and match captured HEAD"
         )
@@ -494,6 +513,30 @@ def _benchmark_identity(root, benchmark_manifest, head):
         "report": report_name,
         "resolver": resolver,
     }
+
+
+def _head_regular_blob(root, head, path):
+    listing = _git(root, "ls-tree", "-z", head, "--", path)
+    records = [record for record in listing.split("\0") if record]
+    if not records:
+        raise ReceiptError(
+            "benchmark manifest must be Git-tracked and match captured HEAD"
+        )
+    if len(records) != 1:
+        raise ReceiptOperationalError("benchmark HEAD entry is ambiguous")
+    try:
+        metadata, listed_path = records[0].split("\t", 1)
+        mode, kind, object_id = metadata.split(" ")
+    except ValueError:
+        raise ReceiptOperationalError("benchmark HEAD entry is invalid") from None
+    if (
+        listed_path != path
+        or mode not in {"100644", "100755"}
+        or kind != "blob"
+        or not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", object_id)
+    ):
+        raise ReceiptError("benchmark manifest must be a regular file at captured HEAD")
+    return _git(root, "cat-file", "blob", object_id).encode("utf-8")
 
 
 def _manifest_path(container, field):

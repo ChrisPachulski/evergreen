@@ -13,9 +13,11 @@
 - No dependency additions, network calls, provider calls, repository writes, Git mutations, pushes, tags, releases, or deployments.
 - Every Git subprocess uses an argv list, no shell, a hardened environment/configuration, one
   five-second deadline, streaming reads capped at one MiB, and process-group termination/reaping.
+- Every Git call sets `GIT_NO_LAZY_FETCH=1`; captured-HEAD manifest verification separates the tree
+  lookup from a bounded local `cat-file` blob read so unavailable promised objects fail operationally.
 - Receipt collection is macOS/Linux-only and fails before POSIX operations elsewhere. Effective
-  external clean/process filters and hidden-index flags fail closed; file mode, symlink, rename,
-  and submodule visibility are explicitly enabled.
+  external clean/process filters, tracked submodules, and hidden-index flags fail closed; file
+  mode, symlink, and rename visibility are explicitly enabled.
 - Missing origin/upstream are data, not errors; missing HEAD is an error.
 - Local Git state never proves an external release.
 - A benchmark manifest produces `evidence_state: declared_publication`, never a fresh-execution, reverified, or quality-PASS claim.
@@ -119,9 +121,9 @@ Count one staged entry when
 the X status is not `.`, one unstaged entry when Y is not `.`, and one untracked entry for each `?`
 record. Correctly consume the second NUL path for `2` rename/copy records. Use branch headers for
 HEAD, upstream, and `+ahead -behind`; use `symbolic-ref` to distinguish detached HEAD from a legal
-branch named `(detached)`. Refuse assume-unchanged/skip-worktree entries and effective clean/process
-filters (including config includes), and force deterministic rename limits plus file-mode, symlink,
-and submodule visibility. Query tags against the captured commit and return only after two complete
+branch named `(detached)`. Refuse tracked submodules, assume-unchanged/skip-worktree entries, and
+effective clean/process filters (including config includes), and force deterministic rename limits
+plus file-mode and symlink visibility. Query tags against the captured commit and return only after two complete
 snapshots match. When a benchmark manifest is supplied, bracket those snapshots with two identity
 reads and require them to match too, retrying once before a bounded operational failure.
 

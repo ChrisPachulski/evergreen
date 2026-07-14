@@ -169,6 +169,37 @@ for tok in \
 done
 
 # Completion and status claims must use one evidence contract on every host surface.
+if python3 - "$ROOT" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+paths = (
+    root / "README.md",
+    root / "docs/DESIGN.md",
+    root / "skills/evergreen/SKILL.md",
+    root / "skills/evergreen/DIGEST.md",
+    root / "AGENTS.md",
+)
+start = "<!-- evergreen-receipt-policy:start -->"
+end = "<!-- evergreen-receipt-policy:end -->"
+blocks = []
+for path in paths:
+    text = path.read_text()
+    assert text.count(start) == 1, path
+    assert text.count(end) == 1, path
+    block = text.split(start, 1)[1].split(end, 1)[0].strip()
+    blocks.append(block)
+    for line in (line for line in block.splitlines() if line):
+        assert text.count(line) == 1, (path, line)
+assert all(block == blocks[0] for block in blocks[1:])
+PY
+then
+  ok "completion receipt policy block is exact, ordered, and singular"
+else
+  no "completion receipt policy block is exact, ordered, and singular"
+fi
+
 for tok in \
   "Before an external mutation, lock the target repository root, origin, branch, pre-mutation HEAD, and intended operation." \
   "A continuation such as “ship” remains bound to that target." \
@@ -187,7 +218,7 @@ for tok in \
   "When a user challenges remembered status, inspect the fresh receipt or authoritative artifact before agreeing or defending." \
   "A combined staging-and-commit call cannot prove the finalized index passed the guard." \
   "Receipt collection is supported on macOS and Linux; unsupported hosts fail before POSIX operations." \
-  "Repositories with external clean/process filters or assume-unchanged/skip-worktree index flags are refused rather than certified." \
+  "Repositories with external clean/process filters, tracked submodules, or assume-unchanged/skip-worktree index flags are refused rather than certified." \
   "A benchmark manifest is accepted only when its exact bytes match the captured HEAD."; do
   if grep -Fq "$tok" "$ROOT/README.md" \
      && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \

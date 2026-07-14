@@ -132,10 +132,8 @@ class ReceiptTests(unittest.TestCase):
         self.git("config", "diff.ignoreSubmodules", "all")
         self.git("config", "submodule.vendor/submodule.ignore", "all")
 
-        repository = build_receipt(self.repo)["repository"]
-
-        self.assertEqual(repository["unstaged"], 1)
-        self.assertFalse(repository["clean"])
+        with self.assertRaisesRegex(ReceiptError, "submodules"):
+            build_receipt(self.repo)
 
     def test_file_mode_configuration_cannot_hide_changes(self):
         tracked = self.repo / "tracked"
@@ -473,6 +471,25 @@ class ReceiptTests(unittest.TestCase):
         self.assertFalse(hook_marker.exists())
         self.assertFalse(trace_marker.exists())
 
+    def test_every_git_call_disables_lazy_fetching(self):
+        from evergreen import receipt as module
+
+        environments = []
+        original = module.subprocess.Popen
+
+        def recording_popen(*args, **kwargs):
+            environments.append(dict(kwargs["env"]))
+            return original(*args, **kwargs)
+
+        with mock.patch.object(module.subprocess, "Popen", side_effect=recording_popen):
+            build_receipt(self.repo)
+
+        self.assertTrue(environments)
+        self.assertTrue(all(
+            environment.get("GIT_NO_LAZY_FETCH") == "1"
+            for environment in environments
+        ))
+
     def test_repository_clean_filter_cannot_execute(self):
         marker = self.repo / "filter-executed"
         hook = self.repo.parent / "hostile-clean-filter"
@@ -577,11 +594,20 @@ class ReceiptTests(unittest.TestCase):
     def test_unsupported_platform_fails_before_posix_operations(self):
         from evergreen import receipt as module
 
-        with mock.patch.object(module.os, "name", "nt"), self.assertRaisesRegex(
-            module.ReceiptOperationalError,
-            "macOS or Linux",
-        ):
-            build_receipt(self.repo)
+        for os_name, platform in (("nt", "win32"), ("posix", "freebsd14")):
+            with self.subTest(platform=platform), mock.patch.object(
+                module.os,
+                "name",
+                os_name,
+            ), mock.patch.object(
+                module.sys,
+                "platform",
+                platform,
+            ), self.assertRaisesRegex(
+                module.ReceiptOperationalError,
+                "macOS or Linux",
+            ):
+                build_receipt(self.repo)
 
     def test_tag_query_is_bound_to_captured_commit_not_symbolic_head(self):
         from evergreen import receipt as module
@@ -695,6 +721,29 @@ class ReceiptTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ReceiptError, "captured HEAD"):
             build_receipt(self.repo, Path("bench/manifest.json"))
+
+    def test_missing_head_path_and_unavailable_promised_blob_have_distinct_errors(self):
+        from evergreen import receipt as module
+
+        with mock.patch.object(module, "_git", return_value=""), self.assertRaises(
+            ReceiptError
+        ) as absent:
+            module._head_regular_blob(self.repo, "a" * 40, "bench/manifest.json")
+        self.assertNotIsInstance(absent.exception, module.ReceiptOperationalError)
+
+        listing = f"100644 blob {'b' * 40}\tbench/manifest.json\0"
+        with mock.patch.object(
+            module,
+            "_git",
+            side_effect=(
+                listing,
+                module.ReceiptOperationalError("promised blob is unavailable"),
+            ),
+        ), self.assertRaisesRegex(
+            module.ReceiptOperationalError,
+            "promised blob",
+        ):
+            module._head_regular_blob(self.repo, "a" * 40, "bench/manifest.json")
 
     def test_benchmark_judge_resolver_and_protocol_identity_are_validated(self):
         manifest = self.benchmark_manifest()

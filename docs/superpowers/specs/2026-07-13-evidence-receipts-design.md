@@ -107,9 +107,10 @@ Rules:
 - Ignored files do not make the repository dirty.
 - Rename detection is explicitly configured so repository or user Git configuration cannot change
   staged/unstaged counts.
-- File-mode, symlink, and submodule visibility are explicitly enabled. Assume-unchanged,
+- File-mode and symlink visibility are explicitly enabled. Tracked submodules, assume-unchanged,
   skip-worktree, or effective external clean/process filters make a complete safe snapshot
-  impossible, so the receipt refuses them instead of reporting clean.
+  impossible without executing nested repository behavior, so the receipt refuses them instead of
+  reporting clean.
 - `local_tags` contains only tags pointing at the receipt's captured commit, sorted bytewise.
 - `external_state` is always `unverified`; local tags never prove external publication.
 - Collection retries once and then fails if two complete repository snapshots disagree; it never
@@ -189,6 +190,9 @@ tests fail if any exact shared sentence drifts.
   maintenance, or user/system configuration must not execute or write through a receipt. Effective
   external clean/process filters, including filters supplied by config includes, fail closed before
   status collection and are checked on both sides of each snapshot.
+- Disable lazy object fetching on every Git call. Resolve the manifest's captured-HEAD tree entry
+  separately from its local blob read so an absent path is invalid evidence but an unavailable
+  promised object is a bounded operational failure, never a network request.
 - Do not print environment variables, Git configuration, credential helpers, or remote credentials.
   HTTP(S) remote userinfo must be redacted; unsupported credential-bearing remote forms are shown
   only in a bounded redacted representation.
@@ -210,7 +214,7 @@ Unit tests must cover:
 - non-repository and missing-path errors;
 - bounded Git failure and output limits;
 - hostile Git configuration/environment, deterministic rename counts, exact operational exit code,
-  file/symlink/submodule visibility, external-filter refusal, legal `(detached)` branch names,
+  file/symlink visibility, submodule and external-filter refusal, legal `(detached)` branch names,
   moving-repository refusal, and SHA-bound tags;
 - credential redaction;
 - valid five-language benchmark and judge/resolver/protocol identity;

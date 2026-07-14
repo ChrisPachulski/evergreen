@@ -109,6 +109,7 @@ mutation uses the same prepared-to-published protocol rather than a per-action s
 
 ## Evidence-backed completion receipts
 
+<!-- evergreen-receipt-policy:start -->
 Before an external mutation, lock the target repository root, origin, branch, pre-mutation HEAD, and intended operation.
 A continuation such as “ship” remains bound to that target.
 
@@ -126,12 +127,13 @@ Empty cleanup output means nothing was removed.
 Stage and commit in separate tool calls.
 When a user challenges remembered status, inspect the fresh receipt or authoritative artifact before agreeing or defending.
 A combined staging-and-commit call cannot prove the finalized index passed the guard.
+Receipt collection is supported on macOS and Linux; unsupported hosts fail before POSIX operations.
+Repositories with external clean/process filters, tracked submodules, or assume-unchanged/skip-worktree index flags are refused rather than certified.
+A benchmark manifest is accepted only when its exact bytes match the captured HEAD.
+<!-- evergreen-receipt-policy:end -->
 
 Use `evergreen receipt --repo PATH` for the local snapshot. Local Git state cannot verify external
 publication; without direct authority, external release state remains unverified.
-Receipt collection is supported on macOS and Linux; unsupported hosts fail before POSIX operations.
-Repositories with external clean/process filters or assume-unchanged/skip-worktree index flags are refused rather than certified.
-A benchmark manifest is accepted only when its exact bytes match the captured HEAD.
 
 The receipt command is a bounded, deterministic, read-only architecture seam. It reads local Git
 metadata and, optionally, one validated in-repository benchmark-publication manifest; it writes no
@@ -141,10 +143,13 @@ No timestamp is emitted, so unchanged input has stable JSON. The human renderer 
 repository, release, and benchmark fields without adding interpretation. Local tags remain local
 evidence, `release.external_state` remains `unverified`, and benchmark state is only
 `declared_publication`; neither rendering claims fresh provider execution or external publication.
-The Git reader forces rename, mode, symlink, and submodule visibility, refuses hidden-index flags
-and effective external clean/process filters before status collection, and brackets both Git and
+The Git reader forces rename, mode, and symlink visibility; it refuses tracked submodules,
+hidden-index flags, and effective external clean/process filters before status collection, and brackets both Git and
 captured-HEAD manifest identity to reject concurrent change. Git reads have one streaming output
 cap/deadline with process-group cleanup; manifest bytes come through one no-follow descriptor.
+Lazy object fetching is disabled for every Git call. Captured-HEAD identity uses a non-fetching tree
+lookup followed by a bounded local blob read, so an unavailable promised blob is operationally
+unverified rather than fetched or misreported as a missing manifest.
 
 ## Release identity boundary
 

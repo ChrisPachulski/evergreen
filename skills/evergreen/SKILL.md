@@ -130,6 +130,7 @@ or public-release gate.
 
 ## Evidence-backed completion receipts
 
+<!-- evergreen-receipt-policy:start -->
 Before an external mutation, lock the target repository root, origin, branch, pre-mutation HEAD, and intended operation.
 A continuation such as “ship” remains bound to that target.
 
@@ -147,12 +148,13 @@ Empty cleanup output means nothing was removed.
 Stage and commit in separate tool calls.
 When a user challenges remembered status, inspect the fresh receipt or authoritative artifact before agreeing or defending.
 A combined staging-and-commit call cannot prove the finalized index passed the guard.
+Receipt collection is supported on macOS and Linux; unsupported hosts fail before POSIX operations.
+Repositories with external clean/process filters, tracked submodules, or assume-unchanged/skip-worktree index flags are refused rather than certified.
+A benchmark manifest is accepted only when its exact bytes match the captured HEAD.
+<!-- evergreen-receipt-policy:end -->
 
 Use `evergreen receipt --repo PATH` for the local snapshot. Local Git state cannot verify external
 publication; without direct authority, external release state remains unverified.
-Receipt collection is supported on macOS and Linux; unsupported hosts fail before POSIX operations.
-Repositories with external clean/process filters or assume-unchanged/skip-worktree index flags are refused rather than certified.
-A benchmark manifest is accepted only when its exact bytes match the captured HEAD.
 
 The receipt is deterministic, read-only, and network-free. It reports local Git evidence and may
 name a validated in-repository benchmark-publication manifest, but it never queries an external
