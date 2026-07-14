@@ -15,6 +15,35 @@ import runpy
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "bin" / "evergreen"
+INVENTORY_PREFIXES = ("bin/", "commands/", "evergreen/", "eval/oracle/", "skills/evergreen/")
+INVENTORY_PATHS = {
+    "AGENTS.md",
+    "eval/grade-policy-v1.json",
+    "eval/prompt.md",
+    "eval/peers.py",
+    "eval/peers-v1.json",
+    "eval/bench/frozen_run.py",
+    "eval/bench/report.py",
+    "eval/bench/resolver.py",
+    "eval/bench/human-label.schema.json",
+    "eval/bench/model-output.schema.json",
+    "eval/bench/human-audit/source-pools.json",
+}
+
+
+def is_inventory_path(path):
+    return (
+        path in INVENTORY_PATHS
+        or path.startswith(INVENTORY_PREFIXES)
+        or (
+            path.startswith("eval/bench/")
+            and (path.endswith((".py", ".sh")) or path in INVENTORY_PATHS)
+        )
+        or (
+            path.startswith(".github/workflows/")
+            and path.endswith((".yml", ".yaml"))
+        )
+    )
 
 
 class EvergreenCLITests(unittest.TestCase):
@@ -57,7 +86,7 @@ class EvergreenCLITests(unittest.TestCase):
         self.run_git(repo, "commit", "-qm", "initial")
         return repo
 
-    def make_grade_repositories(self, *, bootstrap=False):
+    def make_grade_repositories(self, *, bootstrap=False, subject_files=None):
         from tests.test_grade import valid_evidence
 
         suffix = "-bootstrap" if bootstrap else ""
@@ -82,7 +111,11 @@ class EvergreenCLITests(unittest.TestCase):
         self.run_git(candidate, "config", "user.name", "Test")
         if not bootstrap:
             (candidate / "subject-marker").write_text("candidate subject\n")
-            self.run_git(candidate, "add", "subject-marker")
+            for path, content in (subject_files or {}).items():
+                target = candidate / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            self.run_git(candidate, "add", ".")
             self.run_git(candidate, "commit", "-qm", "candidate subject")
         subject_commit = self.run_git(candidate, "rev-parse", "HEAD")
         subject_tree = self.run_git(candidate, "rev-parse", "HEAD^{tree}")
@@ -90,7 +123,6 @@ class EvergreenCLITests(unittest.TestCase):
         release = candidate / "eval" / "grade" / "public" / "0.5.0"
         release.mkdir(parents=True)
         policy = (candidate / "eval" / "grade-policy-v1.json").read_bytes()
-        executable = (candidate / "skills" / "evergreen" / "SKILL.md").read_bytes()
         evidence = valid_evidence()
         evidence["subject"] = {"commit": subject_commit, "tree": subject_tree}
         evidence["policy"]["sha256"] = hashlib.sha256(policy).hexdigest()
@@ -98,12 +130,20 @@ class EvergreenCLITests(unittest.TestCase):
             counts["subject_commit"] = subject_commit
         for result in evidence["peers"][0]["results"]:
             result["subject_commit"] = subject_commit
-        executable_sha = hashlib.sha256(executable).hexdigest()
-        evidence["subject_executables"] = [{
-            "path": "skills/evergreen/SKILL.md",
-            "subject_sha256": executable_sha,
-            "evidence_sha256": executable_sha,
-        }]
+        inventory = [
+            path for path in self.run_git(
+                candidate, "ls-tree", "-r", "--name-only", subject_commit
+            ).splitlines()
+            if is_inventory_path(path)
+        ]
+        evidence["subject_executables"] = []
+        for path in inventory:
+            digest = hashlib.sha256((candidate / path).read_bytes()).hexdigest()
+            evidence["subject_executables"].append({
+                "path": path,
+                "subject_sha256": digest,
+                "evidence_sha256": digest,
+            })
         manifest = release / "evidence.json"
         manifest.write_text(json.dumps(evidence, sort_keys=True, separators=(",", ":")) + "\n")
         (release / "policy.json").write_bytes(policy)
@@ -221,6 +261,14 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertEqual(payload["status"], "not-earned")
         self.assertIsNone(payload["grade"])
         self.assertEqual(set(payload["verifier"]), {"commit", "tree", "artifact_sha256"})
+        categories = {item["id"]: item for item in payload["categories"]}
+        for category, reason in (
+            ("same_corpus_comparison", "predicate:peer_applicability"),
+            ("reproducibility_ci", "predicate:macos_linux"),
+            ("cleanup", "predicate:clean_tree"),
+        ):
+            self.assertEqual(categories[category]["status"], "not-earned")
+            self.assertIn(reason, categories[category]["reasons"])
         self.assertIn("status: not-earned", human.stdout)
         self.assertIn("grade: none", human.stdout)
         for category in payload["categories"]:
@@ -228,6 +276,131 @@ class EvergreenCLITests(unittest.TestCase):
                 self.assertIn(reason, human.stdout)
         self.assertEqual(before_verifier, self.file_snapshot(verifier))
         self.assertEqual(before_candidate, self.file_snapshot(candidate))
+
+    def test_grade_verify_binds_public_policy_to_frozen_subject_policy(self):
+        verifier, candidate, _commit, manifest = self.make_grade_repositories()
+        policy_path = candidate / "eval" / "grade" / "public" / "0.5.0" / "policy.json"
+        policy = json.loads(policy_path.read_text())
+        policy["detector"]["thresholds"]["f1"] = 0.81
+        policy_bytes = json.dumps(policy, sort_keys=True, separators=(",", ":")).encode()
+        policy_path.write_bytes(policy_bytes)
+        evidence_path = candidate / manifest
+        evidence = json.loads(evidence_path.read_text())
+        evidence["policy"]["sha256"] = hashlib.sha256(policy_bytes).hexdigest()
+        evidence_path.write_text(json.dumps(evidence, sort_keys=True, separators=(",", ":")))
+        self.run_git(candidate, "add", "eval/grade/public/0.5.0")
+        self.run_git(candidate, "commit", "-qm", "replace public policy after freeze")
+
+        result = subprocess.run(
+            [sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+             "--repo", str(candidate), "--manifest", manifest, "--json"],
+            cwd=candidate, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "invalid")
+        self.assertEqual(payload["failures"][0]["code"], "policy-subject-mismatch")
+
+    def test_grade_verify_requires_exact_trusted_executable_inventory(self):
+        verifier, candidate, _commit, manifest = self.make_grade_repositories()
+        evidence_path = candidate / manifest
+        complete = json.loads(evidence_path.read_text())
+
+        missing = json.loads(json.dumps(complete))
+        missing["subject_executables"].pop()
+        evidence_path.write_text(json.dumps(missing, sort_keys=True, separators=(",", ":")))
+        self.run_git(candidate, "add", manifest)
+        self.run_git(candidate, "commit", "-qm", "omit required executable")
+        missing_result = subprocess.run(
+            [sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+             "--repo", str(candidate), "--manifest", manifest, "--json"],
+            cwd=candidate, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+
+        extra = json.loads(json.dumps(complete))
+        readme_hash = hashlib.sha256((candidate / "README.md").read_bytes()).hexdigest()
+        extra["subject_executables"].append({
+            "path": "README.md", "subject_sha256": readme_hash,
+            "evidence_sha256": readme_hash,
+        })
+        extra["subject_executables"].sort(key=lambda item: item["path"])
+        evidence_path.write_text(json.dumps(extra, sort_keys=True, separators=(",", ":")))
+        self.run_git(candidate, "add", manifest)
+        self.run_git(candidate, "commit", "-qm", "add candidate-selected executable")
+        extra_result = subprocess.run(
+            [sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+             "--repo", str(candidate), "--manifest", manifest, "--json"],
+            cwd=candidate, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+
+        for result in (missing_result, extra_result):
+            self.assertEqual(result.returncode, 2)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["status"], "invalid")
+            self.assertEqual(
+                payload["failures"][0]["code"], "executable-inventory-mismatch"
+            )
+
+    def test_grade_verify_rejects_inventory_over_trusted_depth_limit(self):
+        deep = "eval/oracle/" + "/".join(["nested"] * 14) + "/adapter.py"
+        verifier, candidate, _commit, manifest = self.make_grade_repositories(
+            subject_files={deep: b"# adapter\n"}
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+             "--repo", str(candidate), "--manifest", manifest, "--json"],
+            cwd=candidate, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "invalid")
+        self.assertEqual(payload["failures"][0]["code"], "executable-inventory-limit")
+
+    def test_grade_verify_bounds_hostile_expanduser_as_operational_result(self):
+        verifier, candidate, _commit, manifest = self.make_grade_repositories()
+        missing_user = "~evergreen_missing_user_7f8f1"
+        command = [
+            sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+            "--repo", missing_user, "--manifest", manifest,
+        ]
+        json_result = subprocess.run(
+            [*command, "--json"], cwd=candidate,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        human_result = subprocess.run(
+            command, cwd=candidate, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+
+        for result in (json_result, human_result):
+            self.assertEqual(result.returncode, 1)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual(result.stderr, "")
+        payload = json.loads(json_result.stdout)
+        self.assertEqual(payload["status"], "inconclusive")
+        self.assertEqual(payload["failures"][0]["code"], "operational-error")
+        self.assertEqual(set(payload["verifier"]), {"commit", "tree", "artifact_sha256"})
+        self.assertIn("status: inconclusive", human_result.stdout)
+        self.assertIn("operational-error", human_result.stdout)
+
+    def test_grade_verify_reuses_one_expanded_repository_path_for_both_snapshots(self):
+        verifier, candidate, _commit, manifest = self.make_grade_repositories()
+        env = os.environ.copy()
+        env["HOME"] = str(Path(self.temporary.name))
+
+        result = subprocess.run(
+            [sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+             "--repo", "~/grade-candidate", "--manifest", manifest, "--json"],
+            cwd=candidate, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "not-earned")
+        self.assertNotEqual(payload.get("failures", [{}])[0].get("code"), "operational-error")
 
     def test_grade_verify_refuses_unsafe_files_dirty_state_and_bootstrap(self):
         verifier, candidate, _commit, manifest = self.make_grade_repositories()

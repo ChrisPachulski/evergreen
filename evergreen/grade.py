@@ -6,6 +6,7 @@ import math
 import re
 from collections.abc import Mapping
 from pathlib import Path
+from pathlib import PurePosixPath
 from types import MappingProxyType
 
 from evergreen import receipt
@@ -22,6 +23,14 @@ CATEGORIES = (
     "cleanup",
 )
 LANGUAGES = ("go", "java", "python", "rust", "typescript")
+ORACLE_KINDS = (
+    "return-value", "raises", "default-value", "cardinality", "state-change",
+)
+COUNT_FIELDS = {
+    "expected_rows", "attempted", "provider_completed", "decided", "tp", "fp", "fn", "tn",
+}
+ORACLE_KIND_MINIMUM_POSITIVE = 20
+ORACLE_KIND_MINIMUM_NEGATIVE = 40
 POLICY_FIELDS = {
     "schema_version", "kind", "policy_id", "required_categories", "category_gates",
     "required_languages", "artifact_roles", "detector", "required_command_ids",
@@ -60,6 +69,41 @@ VERIFIER_ARTIFACTS = (
     "evergreen/receipt.py",
     "eval/grade-policy-v1.json",
 )
+SUBJECT_EXECUTABLE_PREFIXES = (
+    "bin/",
+    "commands/",
+    "evergreen/",
+    "eval/oracle/",
+    "skills/evergreen/",
+)
+SUBJECT_EXECUTABLE_PATHS = frozenset({
+    "AGENTS.md",
+    "eval/grade-policy-v1.json",
+    "eval/prompt.md",
+    "eval/peers.py",
+    "eval/peers-v1.json",
+    "eval/bench/frozen_run.py",
+    "eval/bench/report.py",
+    "eval/bench/resolver.py",
+    "eval/bench/human-label.schema.json",
+    "eval/bench/model-output.schema.json",
+    "eval/bench/human-audit/source-pools.json",
+})
+SUBJECT_EXECUTABLE_PATHSPECS = (
+    ".github/workflows",
+    "bin",
+    "commands",
+    "evergreen",
+    "eval/bench",
+    "eval/oracle",
+    "skills/evergreen",
+    *sorted(SUBJECT_EXECUTABLE_PATHS),
+)
+TRUSTED_LIMIT_CEILINGS = {
+    "maximum_artifacts": 10_000,
+    "maximum_bytes": 4_194_304,
+    "maximum_depth": 16,
+}
 
 
 class GradeError(ValueError):
@@ -218,8 +262,12 @@ def load_policy(payload):
         "adoption", "human_review", "marketplace_publication",
     }:
         raise GradeError("policy external states are invalid")
-    if not isinstance(policy["limits"], dict) or not policy["limits"]:
+    limits = policy["limits"]
+    if not isinstance(limits, dict) or set(limits) != set(TRUSTED_LIMIT_CEILINGS):
         raise GradeError("policy limits are invalid")
+    for name, ceiling in TRUSTED_LIMIT_CEILINGS.items():
+        if type(limits[name]) is not int or not 0 < limits[name] <= ceiling:
+            raise GradeError(f"policy limit {name} is invalid")
     return _freeze(policy)
 
 
@@ -246,29 +294,56 @@ def _count(value, name):
     return value
 
 
+def _validated_counts(value, label, minimum_positive, minimum_negative):
+    _exact_object(value, COUNT_FIELDS, label)
+    numbers = {name: _count(value[name], name) for name in COUNT_FIELDS}
+    if numbers["attempted"] != numbers["expected_rows"]:
+        raise GradeError(f"{label} has dropped rows")
+    if not 0 <= numbers["decided"] <= numbers["provider_completed"] <= numbers["attempted"]:
+        raise GradeError(f"{label} coverage counts are inconsistent")
+    if sum(numbers[name] for name in ("tp", "fp", "fn", "tn")) != numbers["decided"]:
+        raise GradeError(f"{label} confusion counts are inconsistent")
+    if numbers["tp"] + numbers["fn"] < minimum_positive:
+        raise GradeError(f"{label} has too few positive rows")
+    if numbers["fp"] + numbers["tn"] < minimum_negative:
+        raise GradeError(f"{label} has too few negative rows")
+    return numbers
+
+
 def _validate_detector(value, policy, subject):
     if not isinstance(value, dict) or tuple(sorted(value)) != LANGUAGES:
         raise GradeError("evidence detector languages are invalid")
-    fields = {
-        "subject_commit", "expected_rows", "attempted", "provider_completed", "decided",
-        "tp", "fp", "fn", "tn",
-    }
     for language in LANGUAGES:
         counts = value[language]
-        _exact_object(counts, fields, f"detector {language}")
+        _exact_object(
+            counts, {"subject_commit", "oracle_kinds", *COUNT_FIELDS},
+            f"detector {language}",
+        )
         if counts["subject_commit"] != subject["commit"]:
             raise GradeError(f"detector {language} has stale subject commit")
-        numbers = {name: _count(counts[name], name) for name in fields - {"subject_commit"}}
-        if numbers["attempted"] != numbers["expected_rows"]:
-            raise GradeError(f"detector {language} has dropped rows")
-        if not 0 <= numbers["decided"] <= numbers["provider_completed"] <= numbers["attempted"]:
-            raise GradeError(f"detector {language} coverage counts are inconsistent")
-        if sum(numbers[name] for name in ("tp", "fp", "fn", "tn")) != numbers["decided"]:
-            raise GradeError(f"detector {language} confusion counts are inconsistent")
-        if numbers["tp"] + numbers["fn"] < policy["detector"]["minimum_positive"]:
-            raise GradeError(f"detector {language} has too few positive rows")
-        if numbers["fp"] + numbers["tn"] < policy["detector"]["minimum_negative"]:
-            raise GradeError(f"detector {language} has too few negative rows")
+        numbers = _validated_counts(
+            {name: counts[name] for name in COUNT_FIELDS},
+            f"detector {language}",
+            policy["detector"]["minimum_positive"],
+            policy["detector"]["minimum_negative"],
+        )
+        oracle_kinds = counts["oracle_kinds"]
+        if not isinstance(oracle_kinds, dict) or set(oracle_kinds) != set(ORACLE_KINDS):
+            raise GradeError(f"detector {language} oracle kinds are invalid")
+        cells = {
+            kind: _validated_counts(
+                oracle_kinds[kind],
+                f"detector {language} oracle kind {kind}",
+                ORACLE_KIND_MINIMUM_POSITIVE,
+                ORACLE_KIND_MINIMUM_NEGATIVE,
+            )
+            for kind in ORACLE_KINDS
+        }
+        if any(
+            numbers[name] != sum(cell[name] for cell in cells.values())
+            for name in COUNT_FIELDS
+        ):
+            raise GradeError(f"detector {language} oracle kind counts do not match aggregate")
 
 
 def _validate_peers(peers, subject):
@@ -452,6 +527,15 @@ def evaluate(policy, evidence, evidence_head, trusted_predicates, trusted_reposi
         language: recompute_metrics(evidence["detector"][language], prevalence)
         for language in LANGUAGES
     }
+    oracle_kind_metrics = {
+        language: {
+            kind: recompute_metrics(
+                evidence["detector"][language]["oracle_kinds"][kind], prevalence
+            )
+            for kind in ORACLE_KINDS
+        }
+        for language in LANGUAGES
+    }
     detector_reasons = ["detector:repository-clustered-bounds-missing"]
     adjusted_names = {
         "precision": "prevalence_precision",
@@ -464,6 +548,11 @@ def evaluate(policy, evidence, evidence_head, trusted_predicates, trusted_reposi
             observed = metrics[adjusted_names.get(name, name)]
             if observed < threshold:
                 detector_reasons.append(f"detector:{language}:{name}")
+        for kind, kind_metrics in oracle_kind_metrics[language].items():
+            for name, threshold in thresholds.items():
+                observed = kind_metrics[adjusted_names.get(name, name)]
+                if observed < threshold:
+                    detector_reasons.append(f"detector:{language}:{kind}:{name}")
 
     categories = []
     for category in CATEGORIES:
@@ -499,6 +588,7 @@ def evaluate(policy, evidence, evidence_head, trusted_predicates, trusted_reposi
         },
         "categories": categories,
         "detector_metrics": all_metrics,
+        "detector_oracle_kind_metrics": oracle_kind_metrics,
         "external_states": _plain(evidence["external_states"]),
     }
 
@@ -621,10 +711,70 @@ def _trusted_predicates(policy):
         for category in CATEGORIES
     }
     predicates["detector_quality"]["detector_metrics"] = True
-    predicates["same_corpus_comparison"]["peer_applicability"] = True
-    predicates["reproducibility_ci"]["macos_linux"] = True
-    predicates["cleanup"]["clean_tree"] = True
     return predicates
+
+
+def _is_subject_executable_path(path):
+    return (
+        path in SUBJECT_EXECUTABLE_PATHS
+        or path.startswith(SUBJECT_EXECUTABLE_PREFIXES)
+        or (
+            path.startswith("eval/bench/")
+            and (path.endswith((".py", ".sh")) or path in SUBJECT_EXECUTABLE_PATHS)
+        )
+        or (
+            path.startswith(".github/workflows/")
+            and path.endswith((".yml", ".yaml"))
+        )
+    )
+
+
+def _subject_executable_inventory(root, subject_commit, policy):
+    listing = receipt._git(
+        root, "ls-tree", "-r", "-z", subject_commit, "--",
+        *SUBJECT_EXECUTABLE_PATHSPECS,
+    )
+    records = [record for record in listing.split("\0") if record]
+    limits = policy["limits"]
+    inventory = {}
+    total_bytes = 0
+    for record in records:
+        try:
+            metadata, path = record.split("\t", 1)
+            mode, kind, _object_id = metadata.split(" ")
+        except ValueError:
+            raise receipt.ReceiptOperationalError(
+                "subject executable inventory is invalid"
+            ) from None
+        if not _is_subject_executable_path(path):
+            continue
+        if len(inventory) >= limits["maximum_artifacts"]:
+            raise VerificationFailure(
+                "executable-inventory-limit", "subject executable inventory is too large"
+            )
+        if (
+            mode not in {"100644", "100755"}
+            or kind != "blob"
+            or len(PurePosixPath(path).parts) > limits["maximum_depth"]
+        ):
+            raise VerificationFailure(
+                "executable-inventory-limit",
+                "subject executable inventory contains an unsafe entry",
+            )
+        try:
+            receipt._normalized_path(path)
+            content = receipt._head_regular_blob(root, subject_commit, path)
+        except receipt.ReceiptOperationalError:
+            raise
+        except receipt.ReceiptError as error:
+            raise VerificationFailure("executable-file-unsafe", str(error)) from None
+        total_bytes += len(content)
+        if total_bytes > limits["maximum_bytes"]:
+            raise VerificationFailure(
+                "executable-inventory-limit", "subject executable inventory is too large"
+            )
+        inventory[path] = content
+    return inventory
 
 
 def _verify_snapshot(snapshot, manifest, verifier):
@@ -674,6 +824,23 @@ def _verify_snapshot(snapshot, manifest, verifier):
         raise VerificationFailure("subject-missing", "subject commit is unavailable")
     if _tree(root, subject_commit) != subject["tree"]:
         raise VerificationFailure("subject-tree-mismatch", "subject tree is invalid")
+    try:
+        subject_policy_bytes = receipt._head_regular_blob(
+            root, subject_commit, "eval/grade-policy-v1.json"
+        )
+    except receipt.ReceiptOperationalError:
+        raise
+    except receipt.ReceiptError as error:
+        raise VerificationFailure("policy-subject-unsafe", str(error)) from None
+    if policy_bytes != subject_policy_bytes:
+        raise VerificationFailure(
+            "policy-subject-mismatch",
+            "public policy does not match the frozen subject policy",
+        )
+    if evidence["policy"]["sha256"] != hashlib.sha256(subject_policy_bytes).hexdigest():
+        raise VerificationFailure(
+            "policy-digest-mismatch", "policy SHA-256 does not match frozen subject policy"
+        )
     if not _commit_exists(root, verifier["commit"]):
         raise VerificationFailure(
             "verifier-history-missing", "trusted verifier commit is absent from candidate"
@@ -705,16 +872,22 @@ def _verify_snapshot(snapshot, manifest, verifier):
             "subject-to-evidence changes do not match the manifest allowlist",
         )
 
+    inventory = _subject_executable_inventory(root, subject_commit, policy)
+    declared_paths = tuple(item["path"] for item in evidence["subject_executables"])
+    if declared_paths != tuple(sorted(inventory)):
+        raise VerificationFailure(
+            "executable-inventory-mismatch",
+            "subject executable inventory is incomplete or contains extra paths",
+        )
     for executable in evidence["subject_executables"]:
         path = executable["path"]
         try:
-            subject_bytes = receipt._head_regular_blob(root, subject_commit, path)
             evidence_head_bytes = receipt._head_regular_blob(root, head, path)
         except receipt.ReceiptOperationalError:
             raise
         except receipt.ReceiptError as error:
             raise VerificationFailure("executable-file-unsafe", str(error)) from None
-        subject_hash = hashlib.sha256(subject_bytes).hexdigest()
+        subject_hash = hashlib.sha256(inventory[path]).hexdigest()
         evidence_hash = hashlib.sha256(evidence_head_bytes).hexdigest()
         if (
             subject_hash != executable["subject_sha256"]
@@ -742,9 +915,15 @@ def verify_repository(repo, manifest, verifier_root):
     """Verify committed evidence without trusting candidate verdicts or commands."""
     verifier = _trusted_verifier_identity(verifier_root)
     try:
-        before = receipt.build_receipt(Path(repo))
+        try:
+            candidate = Path(repo).expanduser()
+        except (OSError, RuntimeError):
+            raise receipt.ReceiptOperationalError(
+                "candidate repository path could not be resolved"
+            ) from None
+        before = receipt.build_receipt(candidate)
         result = _verify_snapshot(before, manifest, verifier)
-        after = receipt.build_receipt(Path(repo))
+        after = receipt.build_receipt(candidate)
         if before != after:
             return _failure(
                 "inconclusive", "repository-changed",

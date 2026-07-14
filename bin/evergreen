@@ -178,8 +178,7 @@ def run_grade_verify(args):
     from evergreen.receipt import ReceiptOperationalError
 
     try:
-        repo = Path(args.repo).expanduser()
-        payload = verify_repository(repo, args.manifest, PLUGIN_ROOT)
+        payload = verify_repository(args.repo, args.manifest, PLUGIN_ROOT)
     except ReceiptOperationalError as error:
         print(f"evergreen: {error_display(error)}", file=sys.stderr)
         return 1

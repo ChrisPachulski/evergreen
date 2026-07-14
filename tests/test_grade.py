@@ -31,6 +31,9 @@ CATEGORIES = (
     "cleanup",
 )
 LANGUAGES = ("go", "java", "python", "rust", "typescript")
+ORACLE_KINDS = (
+    "return-value", "raises", "default-value", "cardinality", "state-change",
+)
 SUBJECT = {"commit": "1" * 40, "tree": "2" * 40}
 EVIDENCE_HEAD = {"commit": "3" * 40, "tree": "4" * 40}
 TRUSTED_REPOSITORY = {
@@ -44,16 +47,30 @@ def policy_bytes():
 
 
 def valid_evidence():
+    oracle_kinds = {
+        kind: {
+            "expected_rows": 70,
+            "attempted": 70,
+            "provider_completed": 70,
+            "decided": 70,
+            "tp": 18,
+            "fp": 1 if index == 0 else 0,
+            "fn": 2,
+            "tn": 49 if index == 0 else 50,
+        }
+        for index, kind in enumerate(ORACLE_KINDS)
+    }
     counts = {
         "subject_commit": SUBJECT["commit"],
-        "expected_rows": 200,
-        "attempted": 200,
-        "provider_completed": 200,
-        "decided": 200,
+        "expected_rows": 350,
+        "attempted": 350,
+        "provider_completed": 350,
+        "decided": 350,
         "tp": 90,
         "fp": 1,
         "fn": 10,
-        "tn": 99,
+        "tn": 249,
+        "oracle_kinds": oracle_kinds,
     }
     results = [
         {
@@ -112,6 +129,13 @@ def valid_predicates(policy):
 
 def encode(value):
     return json.dumps(value, sort_keys=True, allow_nan=False).encode()
+
+
+def refresh_language_aggregate(counts):
+    for name in (
+        "expected_rows", "attempted", "provider_completed", "decided", "tp", "fp", "fn", "tn",
+    ):
+        counts[name] = sum(cell[name] for cell in counts["oracle_kinds"].values())
 
 
 class PolicyTests(unittest.TestCase):
@@ -246,7 +270,7 @@ class EvidenceValidationTests(unittest.TestCase):
             load_evidence(duplicate.encode(), self.policy)
 
         non_finite = encode(valid_evidence()).decode().replace(
-            '"attempted": 200', '"attempted": NaN', 1
+            '"attempted": 350', '"attempted": NaN', 1
         )
         with self.assertRaisesRegex(GradeError, "finite"):
             load_evidence(non_finite.encode(), self.policy)
@@ -316,6 +340,30 @@ class EvidenceValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(GradeError, message):
                     self.load(evidence)
 
+    def test_oracle_kind_cells_are_closed_complete_bounded_and_match_aggregate(self):
+        complete = valid_evidence()
+        self.load(complete)
+
+        missing = valid_evidence()
+        del missing["detector"]["python"]["oracle_kinds"]["raises"]
+        too_small = valid_evidence()
+        cell = too_small["detector"]["rust"]["oracle_kinds"]["return-value"]
+        cell.update({"fp": 0, "tn": 39, "expected_rows": 59, "attempted": 59,
+                     "provider_completed": 59, "decided": 59})
+        refresh_language_aggregate(too_small["detector"]["rust"])
+        contradictory = valid_evidence()
+        contradictory["detector"]["go"]["fp"] += 1
+        contradictory["detector"]["go"]["tn"] -= 1
+
+        for evidence, message in (
+            (missing, "oracle kinds"),
+            (too_small, "oracle kind.*too few negative"),
+            (contradictory, "oracle kind counts do not match aggregate"),
+        ):
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(GradeError, message):
+                    self.load(evidence)
+
     def test_subject_and_evidence_head_are_distinct_and_only_evidence_paths_may_change(self):
         loaded = self.load(valid_evidence())
         predicates = valid_predicates(self.policy)
@@ -373,19 +421,19 @@ class GradeTests(unittest.TestCase):
         self.assertEqual(metrics["semantic_coverage"], 1.0)
         self.assertEqual(metrics["precision"], 90 / 91)
         self.assertEqual(metrics["recall"], 0.9)
-        self.assertEqual(metrics["specificity"], 0.99)
+        self.assertEqual(metrics["specificity"], 249 / 250)
         self.assertAlmostEqual(metrics["f1"], 180 / 191)
-        expected_matrix = {"tp": 0.09, "fp": 0.009, "fn": 0.01, "tn": 0.891}
+        expected_matrix = {"tp": 0.09, "fp": 0.0036, "fn": 0.01, "tn": 0.8964}
         for name, expected in expected_matrix.items():
             self.assertAlmostEqual(metrics["prevalence_matrix"][name], expected)
-        self.assertAlmostEqual(metrics["prevalence_precision"], 10 / 11)
+        self.assertAlmostEqual(metrics["prevalence_precision"], 25 / 26)
         self.assertEqual(metrics, recompute_metrics(
             valid_evidence()["detector"]["python"], 0.10
         ))
 
     def test_zero_predicted_positives_return_zero_adjusted_precision_and_not_earned(self):
         counts = valid_evidence()["detector"]["python"]
-        counts.update({"tp": 0, "fp": 0, "fn": 100, "tn": 100})
+        counts.update({"tp": 0, "fp": 0, "fn": 100, "tn": 250})
         try:
             metrics = recompute_metrics(counts, 0.10)
         except ZeroDivisionError:
@@ -395,7 +443,9 @@ class GradeTests(unittest.TestCase):
 
         evidence = valid_evidence()
         for language_counts in evidence["detector"].values():
-            language_counts.update({"tp": 0, "fp": 0, "fn": 100, "tn": 100})
+            for cell in language_counts["oracle_kinds"].values():
+                cell.update({"tp": 0, "fp": 0, "fn": 20, "tn": 50})
+            refresh_language_aggregate(language_counts)
         receipt = evaluate(
             self.policy,
             load_evidence(encode(evidence), self.policy),
@@ -494,7 +544,9 @@ class GradeTests(unittest.TestCase):
     def test_failed_derived_gate_cannot_be_overridden_by_true_predicate(self):
         evidence = valid_evidence()
         for counts in evidence["detector"].values():
-            counts.update({"tp": 50, "fn": 50})
+            for cell in counts["oracle_kinds"].values():
+                cell.update({"tp": 10, "fn": 10})
+            refresh_language_aggregate(counts)
         loaded = load_evidence(encode(evidence), self.policy)
 
         receipt = evaluate(
@@ -507,6 +559,29 @@ class GradeTests(unittest.TestCase):
         )
         self.assertEqual(detector["status"], "not-earned")
         self.assertIn("detector:go:recall", detector["reasons"])
+
+    def test_oracle_kind_thresholds_are_recomputed_independently(self):
+        evidence = valid_evidence()
+        counts = evidence["detector"]["go"]
+        counts["oracle_kinds"]["return-value"].update({"tp": 10, "fn": 10})
+        counts["oracle_kinds"]["raises"].update({"tp": 20, "fn": 0})
+        refresh_language_aggregate(counts)
+        loaded = load_evidence(encode(evidence), self.policy)
+
+        receipt = evaluate(
+            self.policy, loaded, EVIDENCE_HEAD, valid_predicates(self.policy),
+            TRUSTED_REPOSITORY,
+        )
+
+        detector = next(
+            item for item in receipt["categories"] if item["id"] == "detector_quality"
+        )
+        self.assertIn("detector:go:return-value:recall", detector["reasons"])
+        self.assertNotIn("detector:go:recall", detector["reasons"])
+        self.assertEqual(
+            receipt["detector_oracle_kind_metrics"]["go"]["return-value"]["recall"],
+            0.5,
+        )
 
     def test_external_states_are_ungraded(self):
         predicates = valid_predicates(self.policy)
