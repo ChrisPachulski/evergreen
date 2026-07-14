@@ -107,6 +107,53 @@ metadata integrity lives in `host_metadata.py`; `host_lock.py`, `host_snapshot.p
 `host_transaction.py` coordinates publication, crash recovery, rollback, and commit. Every
 mutation uses the same prepared-to-published protocol rather than a per-action state machine.
 
+## Evidence-backed completion receipts
+
+<!-- evergreen-receipt-policy:start -->
+Before an external mutation, lock the target repository root, origin, branch, pre-mutation HEAD, and intended operation.
+A continuation such as “ship” remains bound to that target.
+
+Before reporting pushed, merged, clean, complete, released, lost, erased, or not run, obtain fresh evidence.
+Never reverse an earlier project, mutation, benchmark, or release-status claim without new evidence.
+State the prior claim and the evidence that changes it.
+Treat pushed to a source branch, tagged, GitHub Release published, marketplace published, and deployed as separate states.
+Evergreen receipt is a local snapshot only.
+An ahead count of zero does not prove the remote branch contains HEAD.
+Reporting pushed or merged requires authoritative remote evidence bound to the exact commit SHA.
+Absence of a receipt, artifact, or log does not prove that work was not run, lost, or erased; without an authoritative ledger, report the state as unverified.
+A benchmark claim names the evaluated release, resolver/judge, provider, languages, provenance commit, and every applicable evidence state.
+Benchmark executed, reverified, published, and planned are independent states; report each applicable state and never infer one from another.
+Empty cleanup output means nothing was removed.
+Stage and commit in separate tool calls.
+When a user challenges remembered status, inspect the fresh receipt or authoritative artifact before agreeing or defending.
+A combined staging-and-commit call cannot prove the finalized index passed the guard.
+Receipt collection is supported on macOS and Linux; unsupported hosts fail before POSIX operations.
+Repositories with external clean/process filters, tracked submodules, split indexes, or assume-unchanged/skip-worktree index flags are refused rather than certified.
+A benchmark manifest is accepted only when its exact bytes match the captured HEAD.
+<!-- evergreen-receipt-policy:end -->
+
+Use `evergreen receipt --repo PATH` for the local snapshot. Local Git state cannot verify external
+publication; without direct authority, external release state remains unverified.
+
+The receipt command is a bounded, deterministic, read-only architecture seam. It reads local Git
+metadata and, optionally, one validated in-repository benchmark-publication manifest; it writes no
+source-repository, index, ref, configuration, or receipt file. Status collection uses disposable
+synthetic Git metadata in the operating system's temporary directory and removes it afterward. It performs no network request and never
+queries GitHub, a registry, a marketplace, a store, a deployment provider, or a benchmark provider.
+No timestamp is emitted, so unchanged input has stable JSON. The human renderer presents the same
+repository, release, and benchmark fields without adding interpretation. Local tags remain local
+evidence, `release.external_state` remains `unverified`, and benchmark state is only
+`declared_publication`; neither rendering claims fresh provider execution or external publication.
+The Git reader forces rename, mode, and symlink visibility; it pins one non-split index for every
+index-dependent read and collects status through temporary synthetic Git metadata outside the
+repository, so repository configuration is not loaded. It refuses tracked
+submodules, split indexes, hidden-index flags, and effective external clean/process filters, and
+brackets both Git and captured-HEAD manifest identity to reject concurrent change. Git reads have one streaming output
+cap/deadline with process-group cleanup; manifest bytes come through one no-follow descriptor.
+Lazy object fetching is disabled for every Git call. Captured-HEAD identity uses a non-fetching tree
+lookup followed by a bounded local blob read, so an unavailable promised blob is operationally
+unverified rather than fetched or misreported as a missing manifest.
+
 ## Release identity boundary
 
 Release identity spans package manifests, registry versions, and version-reporting CLI output.

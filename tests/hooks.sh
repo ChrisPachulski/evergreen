@@ -54,8 +54,8 @@ digest = re.findall(r"\b[\w'-]+\b", (root / "skills/evergreen/DIGEST.md").read_t
 skill = re.findall(r"\b[\w'-]+\b", (root / "skills/evergreen/SKILL.md").read_text())
 ratio = len(digest) / len(skill)
 readme = (root / "README.md").read_text()
-assert 0.30 <= ratio <= 0.40, ratio
-assert "compact digest—currently about one-third of the full skill by words" in readme
+assert 0.35 <= ratio <= 0.45, ratio
+assert "compact digest—currently about two-fifths of the full skill by words" in readme
 assert "~40-line" not in readme
 PY
 then
@@ -168,6 +168,69 @@ for tok in \
   fi
 done
 
+# Completion and status claims must use one evidence contract on every host surface.
+if python3 - "$ROOT" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+paths = (
+    root / "README.md",
+    root / "docs/DESIGN.md",
+    root / "skills/evergreen/SKILL.md",
+    root / "skills/evergreen/DIGEST.md",
+    root / "AGENTS.md",
+)
+start = "<!-- evergreen-receipt-policy:start -->"
+end = "<!-- evergreen-receipt-policy:end -->"
+blocks = []
+for path in paths:
+    text = path.read_text()
+    assert text.count(start) == 1, path
+    assert text.count(end) == 1, path
+    block = text.split(start, 1)[1].split(end, 1)[0].strip()
+    blocks.append(block)
+    for line in (line for line in block.splitlines() if line):
+        assert text.count(line) == 1, (path, line)
+assert all(block == blocks[0] for block in blocks[1:])
+PY
+then
+  ok "completion receipt policy block is exact, ordered, and singular"
+else
+  no "completion receipt policy block is exact, ordered, and singular"
+fi
+
+for tok in \
+  "Before an external mutation, lock the target repository root, origin, branch, pre-mutation HEAD, and intended operation." \
+  "A continuation such as “ship” remains bound to that target." \
+  "Before reporting pushed, merged, clean, complete, released, lost, erased, or not run, obtain fresh evidence." \
+  "Never reverse an earlier project, mutation, benchmark, or release-status claim without new evidence." \
+  "State the prior claim and the evidence that changes it." \
+  "Treat pushed to a source branch, tagged, GitHub Release published, marketplace published, and deployed as separate states." \
+  "Evergreen receipt is a local snapshot only." \
+  "An ahead count of zero does not prove the remote branch contains HEAD." \
+  "Reporting pushed or merged requires authoritative remote evidence bound to the exact commit SHA." \
+  "Absence of a receipt, artifact, or log does not prove that work was not run, lost, or erased; without an authoritative ledger, report the state as unverified." \
+  "A benchmark claim names the evaluated release, resolver/judge, provider, languages, provenance commit, and every applicable evidence state." \
+  "Benchmark executed, reverified, published, and planned are independent states; report each applicable state and never infer one from another." \
+  "Empty cleanup output means nothing was removed." \
+  "Stage and commit in separate tool calls." \
+  "When a user challenges remembered status, inspect the fresh receipt or authoritative artifact before agreeing or defending." \
+  "A combined staging-and-commit call cannot prove the finalized index passed the guard." \
+  "Receipt collection is supported on macOS and Linux; unsupported hosts fail before POSIX operations." \
+  "Repositories with external clean/process filters, tracked submodules, split indexes, or assume-unchanged/skip-worktree index flags are refused rather than certified." \
+  "A benchmark manifest is accepted only when its exact bytes match the captured HEAD."; do
+  if grep -Fq "$tok" "$ROOT/README.md" \
+     && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
+     && grep -Fq "$tok" "$ROOT/AGENTS.md"; then
+    ok "completion receipt policy agrees across product/Claude/Codex: $tok"
+  else
+    no "completion receipt policy agrees across product/Claude/Codex: $tok"
+  fi
+done
+
 if ROOT="$ROOT" python3 - <<'PY'
 import os
 import json
@@ -230,6 +293,7 @@ done
 
 for tok in \
   "./bin/evergreen impact --repo ." \
+  "./bin/evergreen receipt --repo ." \
   "./bin/evergreen install --host claude" \
   "./bin/evergreen install --host codex" \
   "./bin/evergreen doctor --host all --repo ." \
@@ -238,6 +302,28 @@ for tok in \
     && ok "README documents shipped local/host command: $tok" \
     || no "README documents shipped local/host command: $tok"
 done
+
+if ROOT="$ROOT" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+root = Path(os.environ["ROOT"])
+completed = subprocess.run(
+    [sys.executable, str(root / "bin/evergreen"), "receipt", "--json", "--repo", str(root)],
+    check=True, capture_output=True, text=True,
+)
+payload = json.loads(completed.stdout)
+assert {"repository", "release", "benchmark"} <= payload.keys()
+assert payload["release"]["external_state"] == "unverified"
+PY
+then
+  ok "receipt JSON reports repository, release, benchmark, and unverified external state"
+else
+  no "receipt JSON reports repository, release, benchmark, and unverified external state"
+fi
 
 if ROOT="$ROOT" python3 - <<'PY'
 import json

@@ -14,10 +14,12 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.10"
-      - name: Candidate-query compatibility
+      - name: Candidate-query and receipt compatibility
         run: |
-          python3 -m unittest tests.test_evidence tests.test_impact
+          python3 -m unittest tests.test_evidence tests.test_impact tests.test_receipt
           python3 bin/evergreen impact --json --repo . README.md
+          python3 bin/evergreen receipt --json --repo . > "$RUNNER_TEMP/evergreen-receipt.json"
+          python3 -c 'import json, os; value = json.load(open(os.environ["RUNNER_TEMP"] + "/evergreen-receipt.json")); assert value["schema_version"] == 1 and value["release"]["external_state"] == "unverified"'
   test:
     name: ${{ matrix.os }} / Python 3.11
     runs-on: ${{ matrix.os }}

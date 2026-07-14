@@ -11,7 +11,15 @@
 ## Global Constraints
 
 - No dependency additions, network calls, provider calls, repository writes, Git mutations, pushes, tags, releases, or deployments.
-- Every Git subprocess uses an argv list, no shell, a five-second timeout, `GIT_OPTIONAL_LOCKS=0`, and a one-MiB output ceiling.
+- Every Git subprocess uses an argv list, no shell, a hardened environment/configuration, one
+  five-second deadline, streaming reads capped at one MiB, and process-group termination/reaping.
+- Every Git call sets `GIT_NO_LAZY_FETCH=1`; captured-HEAD manifest verification separates the tree
+  lookup from a bounded local `cat-file` blob read so unavailable promised objects fail operationally.
+- Receipt collection is macOS/Linux-only and fails before POSIX operations elsewhere. Status uses
+  one pinned non-split index, temporary synthetic Git metadata outside the repository, and literal
+  Git paths, so it never loads repository configuration.
+  Effective external clean/process filters, tracked submodules, split indexes, and hidden-index
+  flags fail closed; file mode, symlink, and rename visibility are explicitly enabled.
 - Missing origin/upstream are data, not errors; missing HEAD is an error.
 - Local Git state never proves an external release.
 - A benchmark manifest produces `evidence_state: declared_publication`, never a fresh-execution, reverified, or quality-PASS claim.
@@ -68,7 +76,9 @@ def test_counts_staged_unstaged_and_untracked_without_counting_ignored(self):
 Also add explicit tests for detached HEAD, no origin, no upstream, ahead/behind, sorted tags pointing
 at HEAD, a path inside the worktree, non-repository input, missing HEAD, credential redaction for
 HTTP and SCP-like remotes, timeout/output-limit errors through a stub Git executable seam, and
-byte-for-byte snapshots of HEAD, index, refs, and worktree before/after receipt creation.
+byte-for-byte snapshots of HEAD, index, refs, and worktree before/after receipt creation. Cover
+canonical project names derived from HTTP and SCP-like origins in linked-worktree-style directories,
+plus the repository-root directory fallback when origin is missing or unusable.
 
 - [ ] **Step 2: Run the focused tests and verify RED**
 
@@ -89,42 +99,38 @@ GIT_TIMEOUT_SECONDS = 5
 MAX_GIT_OUTPUT_BYTES = 1_048_576
 MAX_MANIFEST_BYTES = 1_048_576
 PUBLICATION_KIND = "evergreen-benchmark-decision-publication"
+RECEIPT_ATTEMPTS = 2
 
 class ReceiptError(ValueError):
     pass
 
+class ReceiptOperationalError(ReceiptError):
+    pass
+
 def build_receipt(repo: Path, benchmark_manifest: Path | None = None) -> dict:
-    root = _repository_root(repo)
-    status = _status(root)
-    receipt = {
-        "schema_version": 1,
-        "repository": {
-            "root": str(root),
-            "name": root.name,
-            "origin": _origin(root),
-            **status,
-        },
-        "release": {
-            "local_tags": sorted(filter(None, _git(root, "tag", "--points-at", "HEAD").splitlines())),
-            "external_state": "unverified",
-        },
-        "benchmark": None,
-    }
-    if benchmark_manifest is not None:
-        receipt["benchmark"] = _benchmark_identity(root, benchmark_manifest)
-    return receipt
+    ...
 ```
 
-Implement `_git` with `subprocess.run`, an argv list beginning with the resolved Git executable,
-`--no-optional-locks`, `--no-replace-objects`, and `-C`; set `GIT_OPTIONAL_LOCKS=0`; use
-`stdout=PIPE`, `stderr=DEVNULL`, `timeout=5`, and reject output above one MiB before UTF-8 decoding.
-Allow only the origin lookup to return “missing” without raising. Redact URL userinfo and the user
-part of SCP-like remotes before returning it.
+Implement `_git` with `subprocess.Popen`, an argv list beginning with the resolved Git executable,
+`--no-optional-locks`, `--no-replace-objects`, hardened `-c` overrides, and `-C`. Use a minimal
+environment, read incrementally to at most one MiB plus one byte under one total deadline, and
+terminate/reap the process group on timeout or overflow before UTF-8 decoding. Allow only the
+origin and symbolic-branch lookups to return “missing” without raising. Redact URL userinfo and the
+user part of SCP-like remotes; fail closed for helpers and unsupported schemes.
 
-Parse `git status --porcelain=v2 --branch -z --untracked-files=all`. Count one staged entry when
+Pin the current non-split index through an inherited read-only descriptor, then parse `git status
+--porcelain=v2 -z --untracked-files=all` with that index and temporary synthetic Git metadata
+outside the repository, literal pathspec handling, and an explicit rename policy. Read symbolic
+branch, upstream, and ahead/behind identity separately through bounded Git commands.
+Count one staged entry when
 the X status is not `.`, one unstaged entry when Y is not `.`, and one untracked entry for each `?`
-record. Correctly consume the second NUL path for `2` rename/copy records. Use branch headers for
-HEAD, branch/detached state, upstream, and `+ahead -behind`.
+record. Correctly consume the second NUL path for `2` rename/copy records. Query HEAD, upstream,
+and ahead/behind separately; use `symbolic-ref` to distinguish detached HEAD from a legal
+branch named `(detached)`. Refuse tracked submodules, split indexes, assume-unchanged/skip-worktree entries, and
+effective clean/process filters (including config includes), and force deterministic rename limits
+plus file-mode and symlink visibility. Query tags against the captured commit and return only after two complete
+snapshots match. When a benchmark manifest is supplied, bracket those snapshots with two identity
+reads and require them to match too, retrying once before a bounded operational failure.
 
 - [ ] **Step 4: Add benchmark-manifest tests and verify RED**
 
@@ -136,11 +142,14 @@ self.assertEqual(receipt["benchmark"], {
     "artifact_count": 5,
     "evaluated_release": "0.4.0",
     "evidence_state": "declared_publication",
+    "judge_sha256": "e" * 64,
     "languages": ["Java", "Python", "go", "rust", "typescript"],
     "manifest": "bench/manifest.json",
+    "protocol": "unverified",
     "provenance_commit": "a" * 40,
     "provider": "codex",
     "report": "bench/report.md",
+    "resolver": "unverified",
 })
 ```
 
@@ -155,15 +164,20 @@ missing or incomplete.
 
 - [ ] **Step 5: Implement strict declaration-only benchmark identity**
 
-Implement `_safe_repo_file(root, supplied, *, max_bytes=None)` to reject symlinks in every
-repository-relative component, require a regular file, keep the resolved path below `root`, and
-enforce an optional byte ceiling. Implement `_normalized_path` with `PurePosixPath`, rejecting
+Implement descriptor-relative no-follow traversal to reject symlinks in every repository-relative
+component, require a regular file, and enforce the byte ceiling from the same opened descriptor
+used for the manifest read. Implement `_normalized_path` with `PurePosixPath`, rejecting
 absolute, empty, `.`, `..`, backslash, repeated-slash, and non-canonical paths.
+
+Require the normalized manifest path and exact bytes to match the captured HEAD blob. An untracked,
+staged-only, or dirty working-tree manifest is not a declared publication.
 
 Parse only schema version `1` and `PUBLICATION_KIND`. Validate the artifact languages exactly match
 `publication.required_languages`, every language is a non-empty string and unique, provenance
-commit is 40 or 64 lowercase hex characters, and every referenced artifact, dataset, and report is
-a safe regular file. Return only the approved identity fields and `declared_publication` state.
+commit is 40 or 64 lowercase hex characters, judge identity is a lowercase SHA-256, optional
+resolver/protocol values are non-empty text, and every referenced artifact, dataset, and report is
+a safe regular file. Return only the approved identity fields and `declared_publication` state;
+missing resolver/protocol values are explicitly `unverified`.
 
 - [ ] **Step 6: Run focused and neighboring tests**
 
@@ -229,9 +243,10 @@ receipt.add_argument("--json", action="store_true", help="emit one JSON object")
 receipt.set_defaults(run=run_receipt)
 ```
 
-`run_receipt` lazily imports the receipt module, constructs expanded `Path` values, returns `2` on
-`ReceiptError` with terminal-safe bounded output, prints compact sorted JSON under `--json`, and
-otherwise calls `print_receipt`.
+`run_receipt` lazily imports the receipt module and constructs expanded `Path` values. Invalid or
+unsafe repository/evidence input returns `2`; `ReceiptOperationalError` from a bounded Git or
+concurrent-state failure returns `1`. Both paths emit one terminal-safe bounded error line. Success
+prints compact sorted JSON under `--json` and otherwise calls `print_receipt`.
 
 Human output must use these headings and fields in schema order:
 

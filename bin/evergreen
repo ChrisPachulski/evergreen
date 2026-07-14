@@ -50,6 +50,11 @@ def parser():
     query.add_argument("--json", action="store_true", help="emit one JSON object")
     query.add_argument("paths", metavar="PATH", nargs="*", help="changed repository-relative path")
     query.set_defaults(run=run_impact)
+    receipt = commands.add_parser("receipt", help="emit evidence-backed repository state")
+    receipt.add_argument("--repo", default=".", help="path inside a Git repository")
+    receipt.add_argument("--benchmark-manifest", help="Evergreen public benchmark manifest")
+    receipt.add_argument("--json", action="store_true", help="emit one JSON object")
+    receipt.set_defaults(run=run_receipt)
     for name, help_text, runner in (
         ("install", "install reversible Claude or Codex integration", run_install),
         ("uninstall", "remove only Evergreen-owned host integration", run_uninstall),
@@ -119,6 +124,87 @@ def run_impact(args):
     else:
         print_human(payload)
     return 0
+
+
+def run_receipt(args):
+    from evergreen.receipt import ReceiptError, ReceiptOperationalError, build_receipt
+
+    try:
+        repo = Path(args.repo).expanduser()
+        benchmark_manifest = (
+            None
+            if args.benchmark_manifest is None
+            else Path(args.benchmark_manifest).expanduser()
+        )
+    except (OSError, RuntimeError) as error:
+        print(f"evergreen: {error_display(error)}", file=sys.stderr)
+        return 2
+    try:
+        payload = build_receipt(repo, benchmark_manifest)
+    except ReceiptOperationalError as error:
+        print(f"evergreen: {error_display(error)}", file=sys.stderr)
+        return 1
+    except ReceiptError as error:
+        print(f"evergreen: {error_display(error)}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+    else:
+        print_receipt(payload)
+    return 0
+
+
+def print_receipt(payload):
+    repository = payload["repository"]
+    print("Repository receipt:")
+    print(f"- root: {terminal_display(repository['root'])}")
+    print(f"- name: {terminal_display(repository['name'])}")
+    print("- origin: " + (
+        "none" if repository["origin"] is None else terminal_display(repository["origin"])
+    ))
+    print("- branch: " + (
+        "detached" if repository["branch"] is None else terminal_display(repository["branch"])
+    ))
+    print(f"- HEAD: {terminal_display(repository['head'])}")
+    print("- upstream: " + (
+        "none" if repository["upstream"] is None else terminal_display(repository["upstream"])
+    ))
+    ahead_behind = (
+        "unknown"
+        if repository["ahead"] is None or repository["behind"] is None
+        else f"{repository['ahead']}/{repository['behind']}"
+    )
+    print(f"- ahead/behind: {ahead_behind}")
+    print(
+        f"- changes: staged={repository['staged']} "
+        f"unstaged={repository['unstaged']} untracked={repository['untracked']}"
+    )
+    print(f"- clean: {str(repository['clean']).lower()}")
+
+    release = payload["release"]
+    tags = "none" if not release["local_tags"] else terminal_display(
+        ",".join(release["local_tags"])
+    )
+    print("Release evidence:")
+    print(f"- local tags at HEAD: {tags}")
+    print(f"- external state: {terminal_display(release['external_state'])}")
+
+    benchmark = payload["benchmark"]
+    print("Benchmark evidence:")
+    if benchmark is None:
+        print("- none")
+        return
+    print(f"- artifact count: {benchmark['artifact_count']}")
+    print(f"- evaluated release: {terminal_display(benchmark['evaluated_release'])}")
+    print(f"- evidence state: {terminal_display(benchmark['evidence_state'])}")
+    print(f"- judge SHA-256: {terminal_display(benchmark['judge_sha256'])}")
+    print(f"- languages: {terminal_display(','.join(benchmark['languages']))}")
+    print(f"- manifest: {terminal_display(benchmark['manifest'])}")
+    print(f"- protocol: {terminal_display(benchmark['protocol'])}")
+    print(f"- provenance commit: {terminal_display(benchmark['provenance_commit'])}")
+    print(f"- provider: {terminal_display(benchmark['provider'])}")
+    print(f"- report: {terminal_display(benchmark['report'])}")
+    print(f"- resolver: {terminal_display(benchmark['resolver'])}")
 
 
 def print_human(payload):

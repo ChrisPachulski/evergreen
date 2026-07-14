@@ -36,6 +36,27 @@ class EvergreenCLITests(unittest.TestCase):
             env=env,
         )
 
+    @staticmethod
+    def run_git(directory, *args):
+        return subprocess.run(
+            ["git", "-C", str(directory), *args],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ).stdout.strip()
+
+    def make_git_repo(self):
+        repo = Path(self.temporary.name) / "git-repo"
+        repo.mkdir()
+        self.run_git(repo, "init", "-q", "-b", "main")
+        self.run_git(repo, "config", "user.email", "test@example.com")
+        self.run_git(repo, "config", "user.name", "Test")
+        (repo / "tracked").write_text("tracked\n")
+        self.run_git(repo, "add", "tracked")
+        self.run_git(repo, "commit", "-qm", "initial")
+        return repo
+
     def write_map(self):
         (self.repo / ".evergreen-map.json").write_text(json.dumps({
             "version": 1,
@@ -61,14 +82,19 @@ class EvergreenCLITests(unittest.TestCase):
     def test_help_and_usage_exit_codes(self):
         root_help = self.run_cli("--help")
         impact_help = self.run_cli("impact", "--help")
+        receipt_help = self.run_cli("receipt", "--help")
         bad_usage = self.run_cli("unknown")
         missing_repo = self.run_cli("impact", "--repo", str(self.repo / "missing"), "a.py")
 
         self.assertEqual(root_help.returncode, 0)
-        self.assertIn("impact", root_help.stdout)
+        for command in ("impact", "receipt"):
+            self.assertIn(command, root_help.stdout)
         self.assertEqual(impact_help.returncode, 0)
         for flag in ("--repo", "--evidence", "--json"):
             self.assertIn(flag, impact_help.stdout)
+        self.assertEqual(receipt_help.returncode, 0)
+        for flag in ("--repo", "--benchmark-manifest", "--json"):
+            self.assertIn(flag, receipt_help.stdout)
         self.assertEqual(bad_usage.returncode, 2)
         self.assertEqual(missing_repo.returncode, 2)
         self.assertIn("repository must be a directory", missing_repo.stderr)
@@ -81,6 +107,279 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertIn("\\x1b", hostile.stderr)
         self.assertIn("\\n", hostile.stderr)
         self.assertIn("\\x7f", hostile.stderr)
+
+    def test_receipt_json_and_human_output_are_exact(self):
+        git_repo = self.make_git_repo()
+
+        result = self.run_cli("receipt", "--repo", str(git_repo), "--json")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["repository"]["root"], str(git_repo.resolve()))
+        self.assertEqual(
+            result.stdout,
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ) + "\n",
+        )
+
+        human = self.run_cli("receipt", "--repo", str(git_repo))
+        head = self.run_git(git_repo, "rev-parse", "HEAD")
+        self.assertEqual(human.returncode, 0, human.stderr)
+        self.assertEqual(human.stderr, "")
+        self.assertEqual(human.stdout, (
+            "Repository receipt:\n"
+            f"- root: {git_repo.resolve()}\n"
+            "- name: git-repo\n"
+            "- origin: none\n"
+            "- branch: main\n"
+            f"- HEAD: {head}\n"
+            "- upstream: none\n"
+            "- ahead/behind: unknown\n"
+            "- changes: staged=0 unstaged=0 untracked=0\n"
+            "- clean: true\n"
+            "Release evidence:\n"
+            "- local tags at HEAD: none\n"
+            "- external state: unverified\n"
+            "Benchmark evidence:\n"
+            "- none\n"
+        ))
+
+    def test_receipt_human_output_renders_every_benchmark_identity_field(self):
+        namespace = runpy.run_path(str(SCRIPT), run_name="evergreen_cli_test")
+        self.assertIn("print_receipt", namespace)
+        output = io.StringIO()
+        payload = {
+            "schema_version": 1,
+            "repository": {
+                "root": "/repo",
+                "name": "repo",
+                "origin": None,
+                "branch": None,
+                "detached": True,
+                "head": "a" * 40,
+                "upstream": None,
+                "ahead": None,
+                "behind": None,
+                "staged": 1,
+                "unstaged": 2,
+                "untracked": 3,
+                "clean": False,
+            },
+            "release": {
+                "local_tags": ["v1", "v2"],
+                "external_state": "unverified",
+            },
+            "benchmark": {
+                "artifact_count": 2,
+                "evaluated_release": "0.4.0",
+                "evidence_state": "declared_publication",
+                "judge_sha256": "c" * 64,
+                "languages": ["Python", "rust"],
+                "manifest": "bench/manifest.json",
+                "protocol": "java-git-window-v1",
+                "provenance_commit": "b" * 40,
+                "provider": "codex",
+                "report": "bench/report.md",
+                "resolver": "v2",
+            },
+        }
+
+        with contextlib.redirect_stdout(output):
+            namespace["print_receipt"](payload)
+
+        self.assertEqual(output.getvalue(), (
+            "Repository receipt:\n"
+            "- root: /repo\n"
+            "- name: repo\n"
+            "- origin: none\n"
+            "- branch: detached\n"
+            f"- HEAD: {'a' * 40}\n"
+            "- upstream: none\n"
+            "- ahead/behind: unknown\n"
+            "- changes: staged=1 unstaged=2 untracked=3\n"
+            "- clean: false\n"
+            "Release evidence:\n"
+            "- local tags at HEAD: v1,v2\n"
+            "- external state: unverified\n"
+            "Benchmark evidence:\n"
+            "- artifact count: 2\n"
+            "- evaluated release: 0.4.0\n"
+            "- evidence state: declared_publication\n"
+            f"- judge SHA-256: {'c' * 64}\n"
+            "- languages: Python,rust\n"
+            "- manifest: bench/manifest.json\n"
+            "- protocol: java-git-window-v1\n"
+            f"- provenance commit: {'b' * 40}\n"
+            "- provider: codex\n"
+            "- report: bench/report.md\n"
+            "- resolver: v2\n"
+        ))
+
+    def test_receipt_operational_git_failure_exits_one_with_safe_error(self):
+        git_repo = self.make_git_repo()
+        stub_dir = Path(self.temporary.name) / "stub-bin"
+        stub_dir.mkdir()
+        stub = stub_dir / "git"
+        stub.write_text(
+            f"#!{sys.executable}\n"
+            "import sys, time\n"
+            "sys.stdout.buffer.write(b'x' * 1048577)\n"
+            "sys.stdout.buffer.flush()\n"
+            "time.sleep(1)\n"
+        )
+        stub.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = str(stub_dir)
+
+        result = self.run_cli(
+            "receipt", "--repo", str(git_repo), "--json", env=env
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr.count("\n"), 1)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertLessEqual(len(result.stderr), 530)
+        self.assertIn("too much output", result.stderr)
+
+    def test_receipt_unborn_repository_is_invalid_input_exit_two(self):
+        self.run_git(self.repo, "init", "-q", "-b", "main")
+
+        without_index = self.run_cli("receipt", "--repo", str(self.repo), "--json")
+        (self.repo / "staged").write_text("staged\n")
+        self.run_git(self.repo, "add", "staged")
+        with_index = self.run_cli("receipt", "--repo", str(self.repo), "--json")
+
+        for result in (without_index, with_index):
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, "")
+            self.assertNotIn("Traceback", result.stderr)
+
+    def test_receipt_errors_are_single_terminal_safe_lines(self):
+        git_repo = self.make_git_repo()
+        invalid_repo = self.repo / "\x1b[31mbad\nrepo\x7f"
+        invalid_manifest = "bad\x1b[2J\nmanifest.json"
+
+        results = (
+            self.run_cli("receipt", "--repo", str(invalid_repo)),
+            self.run_cli(
+                "receipt",
+                "--repo",
+                str(git_repo),
+                "--benchmark-manifest",
+                invalid_manifest,
+            ),
+        )
+
+        for result in results:
+            with self.subTest(stderr=result.stderr):
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(result.stderr.count("\n"), 1)
+                self.assertNotIn("\x1b", result.stderr)
+                self.assertNotIn("\x7f", result.stderr)
+                self.assertLessEqual(len(result.stderr), 530)
+                self.assertTrue(result.stderr.startswith("evergreen: "))
+
+    def test_receipt_unresolved_repo_user_is_a_bounded_input_error(self):
+        result = self.run_cli(
+            "receipt", "--repo", "~evergreen_missing_user_7f8f1"
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr.count("\n"), 1)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertLessEqual(len(result.stderr), 530)
+        self.assertTrue(result.stderr.startswith("evergreen: "))
+
+    def test_receipt_unresolved_manifest_user_is_a_bounded_input_error(self):
+        git_repo = self.make_git_repo()
+
+        result = self.run_cli(
+            "receipt",
+            "--repo",
+            str(git_repo),
+            "--benchmark-manifest",
+            "~evergreen_missing_user_7f8f1/manifest.json",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr.count("\n"), 1)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertLessEqual(len(result.stderr), 530)
+        self.assertTrue(result.stderr.startswith("evergreen: "))
+
+    def test_receipt_does_not_import_posix_host_stack(self):
+        git_repo = self.make_git_repo()
+        script = f"""
+import importlib.abc, runpy, sys
+class Block(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'fcntl' or fullname.startswith('evergreen.host'):
+            raise ImportError('blocked host stack: ' + fullname)
+sys.meta_path.insert(0, Block())
+sys.argv = [{str(SCRIPT)!r}, 'receipt', '--json', '--repo', {str(git_repo)!r}]
+runpy.run_path({str(SCRIPT)!r}, run_name='__main__')
+"""
+
+        result = subprocess.run(
+            [sys.executable, "-c", script], cwd=self.repo,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout)["repository"]["root"],
+            str(git_repo.resolve()),
+        )
+
+    def test_fresh_plugin_receipt_creates_no_bytecode_or_other_files(self):
+        fresh = Path(self.temporary.name) / "fresh-receipt-plugin"
+        shutil.copytree(
+            ROOT,
+            fresh,
+            ignore=shutil.ignore_patterns(".git", ".superpowers", "__pycache__", "*.pyc"),
+        )
+        self.run_git(fresh, "init", "-q", "-b", "main")
+        self.run_git(fresh, "config", "user.email", "test@example.com")
+        self.run_git(fresh, "config", "user.name", "Test")
+        self.run_git(fresh, "add", ".")
+        self.run_git(fresh, "commit", "-qm", "initial")
+
+        def tree_snapshot():
+            return {
+                path.relative_to(fresh).as_posix(): (
+                    "directory" if path.is_dir()
+                    else hashlib.sha256(path.read_bytes()).hexdigest()
+                )
+                for path in fresh.rglob("*")
+            }
+
+        before = tree_snapshot()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(fresh / "bin" / "evergreen"),
+                "receipt",
+                "--json",
+                "--repo",
+                str(fresh),
+            ],
+            cwd=fresh,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(tree_snapshot(), before)
+        self.assertFalse(any(path.name == "__pycache__" for path in fresh.rglob("*")))
 
     def test_candidate_cli_does_not_import_posix_host_stack(self):
         script = f"""
