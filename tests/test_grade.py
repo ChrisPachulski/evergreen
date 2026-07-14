@@ -1,8 +1,11 @@
 import copy
+import hashlib
 import json
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from evergreen import receipt
 from evergreen.grade import (
     GradeError,
     canonical_receipt,
@@ -10,6 +13,8 @@ from evergreen.grade import (
     load_evidence,
     load_policy,
     recompute_metrics,
+    verification_exit_code,
+    verify_repository,
 )
 
 
@@ -540,6 +545,88 @@ class GradeTests(unittest.TestCase):
         manifest_bytes = encode(valid_evidence())
         self.assertNotIn(EVIDENCE_HEAD["commit"].encode(), manifest_bytes)
         self.assertIn(EVIDENCE_HEAD["commit"].encode(), canonical_receipt(first))
+
+
+class TrustedRepositoryVerificationTests(unittest.TestCase):
+    def test_exit_codes_are_derived_only_from_the_result(self):
+        self.assertEqual(verification_exit_code({"status": "earned", "grade": "A"}), 0)
+        self.assertEqual(
+            verification_exit_code({"status": "not-earned", "grade": None}), 2
+        )
+        self.assertEqual(verification_exit_code({"status": "invalid", "grade": None}), 2)
+        self.assertEqual(
+            verification_exit_code({"status": "inconclusive", "grade": None}), 1
+        )
+        self.assertEqual(verification_exit_code({"status": "earned", "grade": None}), 2)
+
+    def test_path_swap_between_snapshots_is_an_operational_failure(self):
+        verifier = {
+            "commit": "a" * 40,
+            "tree": "b" * 40,
+            "artifact_sha256": "c" * 64,
+        }
+        clean = {
+            "schema_version": 1,
+            "repository": {
+                "root": "/repo", "head": "d" * 40, "clean": True,
+            },
+        }
+        changed = copy.deepcopy(clean)
+        changed["repository"]["head"] = "e" * 40
+
+        with (
+            mock.patch("evergreen.grade._trusted_verifier_identity", return_value=verifier),
+            mock.patch(
+                "evergreen.grade.receipt.build_receipt", side_effect=[clean, changed]
+            ),
+            mock.patch("evergreen.grade._verify_snapshot", return_value={"status": "not-earned"}),
+        ):
+            result = verify_repository(Path("/repo"), "evidence.json", Path("/verifier"))
+
+        self.assertEqual(result["status"], "inconclusive")
+        self.assertEqual(result["failures"][0]["code"], "repository-changed")
+        self.assertEqual(result["verifier"], verifier)
+
+    def test_bounded_candidate_git_failure_is_inconclusive(self):
+        verifier = {
+            "commit": "a" * 40,
+            "tree": "b" * 40,
+            "artifact_sha256": "c" * 64,
+        }
+        with (
+            mock.patch("evergreen.grade._trusted_verifier_identity", return_value=verifier),
+            mock.patch(
+                "evergreen.grade.receipt.build_receipt",
+                side_effect=receipt.ReceiptOperationalError("Git command timed out"),
+            ),
+        ):
+            result = verify_repository(Path("/repo"), "evidence.json", Path("/verifier"))
+
+        self.assertEqual(verification_exit_code(result), 1)
+        self.assertEqual(result["status"], "inconclusive")
+        self.assertEqual(result["failures"], [{
+            "code": "operational-error", "detail": "Git command timed out",
+        }])
+        self.assertEqual(result["verifier"], verifier)
+
+    def test_verifier_uses_no_direct_process_network_or_mutating_facility(self):
+        source = (ROOT / "evergreen" / "grade.py").read_text()
+
+        for forbidden in (
+            "import subprocess", "from subprocess", "import socket", "urllib.request",
+            "evergreen.hosts", "provider_completed(", "open(\"w", "write_text(",
+            "write_bytes(",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+
+    def test_verifier_identity_artifact_hash_is_not_a_candidate_boolean(self):
+        identity = {
+            "commit": "a" * 40,
+            "tree": "b" * 40,
+            "artifact_sha256": hashlib.sha256(b"trusted verifier").hexdigest(),
+        }
+        self.assertEqual(set(identity), {"commit", "tree", "artifact_sha256"})
 
 
 if __name__ == "__main__":

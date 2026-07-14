@@ -1,10 +1,14 @@
 """Pure, fail-closed policy and grade evaluation."""
 
+import hashlib
 import json
 import math
 import re
 from collections.abc import Mapping
+from pathlib import Path
 from types import MappingProxyType
+
+from evergreen import receipt
 
 
 CATEGORIES = (
@@ -50,10 +54,24 @@ LOWER_BOUND_FLOORS = {"precision": 0.70, "recall": 0.70, "f1": 0.70}
 EXTERNAL_STATES = {"verified", "unverified", "not-applicable"}
 HEX = re.compile(r"[0-9a-f]+")
 SEMVER = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+VERIFIER_ARTIFACTS = (
+    "bin/evergreen",
+    "evergreen/grade.py",
+    "evergreen/receipt.py",
+    "eval/grade-policy-v1.json",
+)
 
 
 class GradeError(ValueError):
     """The policy or evidence cannot safely produce a grade."""
+
+
+class VerificationFailure(GradeError):
+    """A stable, user-addressable verification refusal."""
+
+    def __init__(self, code, detail):
+        super().__init__(detail)
+        self.code = code
 
 
 class _Object(dict):
@@ -493,3 +511,250 @@ def canonical_receipt(receipt):
         ) + "\n").encode("utf-8")
     except (TypeError, ValueError, RecursionError) as error:
         raise GradeError("receipt is not finite JSON") from error
+
+
+def verification_exit_code(result):
+    """Map only a derived A result to success."""
+    if result.get("status") == "earned" and result.get("grade") == "A":
+        return 0
+    if result.get("status") == "inconclusive":
+        return 1
+    return 2
+
+
+def _tree(root, commit):
+    output = receipt._git(root, "rev-parse", f"{commit}^{{tree}}")
+    value = output.strip()
+    if not HEX.fullmatch(value) or len(value) not in (40, 64):
+        raise receipt.ReceiptOperationalError("Git tree identity is invalid")
+    return value
+
+
+def _trusted_verifier_identity(verifier_root):
+    try:
+        snapshot = receipt.build_receipt(Path(verifier_root))
+        repository = snapshot["repository"]
+        if not repository["clean"]:
+            raise receipt.ReceiptOperationalError("trusted verifier checkout is not clean")
+        root = Path(repository["root"])
+        head = repository["head"]
+        artifacts = []
+        for path in VERIFIER_ARTIFACTS:
+            worktree = receipt._read_repo_file(
+                root, path, max_bytes=receipt.MAX_MANIFEST_BYTES
+            )
+            committed = receipt._head_regular_blob(root, head, path)
+            if worktree != committed:
+                raise receipt.ReceiptOperationalError(
+                    "trusted verifier artifact does not match HEAD"
+                )
+            artifacts.append({
+                "path": path,
+                "sha256": hashlib.sha256(committed).hexdigest(),
+            })
+        if receipt.build_receipt(root) != snapshot:
+            raise receipt.ReceiptOperationalError(
+                "trusted verifier changed while its identity was collected"
+            )
+    except receipt.ReceiptOperationalError:
+        raise
+    except receipt.ReceiptError as error:
+        raise receipt.ReceiptOperationalError(
+            "trusted verifier identity could not be collected"
+        ) from error
+    encoded = json.dumps(
+        artifacts, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("ascii")
+    return {
+        "commit": head,
+        "tree": _tree(root, head),
+        "artifact_sha256": hashlib.sha256(encoded).hexdigest(),
+    }
+
+
+def _failure(status, code, detail, verifier):
+    return {
+        "schema_version": 1,
+        "kind": "evergreen-a-grade-verification",
+        "status": status,
+        "grade": None,
+        "verifier": verifier,
+        "failures": [{"code": code, "detail": str(detail)[:512]}],
+    }
+
+
+def _unsafe_file(root, head, path, label):
+    try:
+        worktree = receipt._read_repo_file(
+            root, path, max_bytes=receipt.MAX_MANIFEST_BYTES
+        )
+        committed = receipt._head_regular_blob(root, head, path)
+    except receipt.ReceiptOperationalError:
+        raise
+    except receipt.ReceiptError as error:
+        raise VerificationFailure(f"{label}-file-unsafe", str(error)) from None
+    if worktree != committed:
+        raise VerificationFailure(
+            f"{label}-not-head", f"{label} must exactly match captured HEAD"
+        )
+    return committed
+
+
+def _commit_exists(root, commit):
+    output = receipt._git(
+        root, "rev-parse", "--verify", f"{commit}^{{commit}}",
+        missing_codes=(1, 128),
+    )
+    return output is not None and output.strip() == commit
+
+
+def _is_ancestor(root, older, newer):
+    return receipt._git(
+        root, "merge-base", "--is-ancestor", older, newer,
+        missing_codes=(1,),
+    ) is not None
+
+
+def _trusted_predicates(policy):
+    predicates = {
+        category: {gate: False for gate in policy["category_gates"][category]}
+        for category in CATEGORIES
+    }
+    predicates["detector_quality"]["detector_metrics"] = True
+    predicates["same_corpus_comparison"]["peer_applicability"] = True
+    predicates["reproducibility_ci"]["macos_linux"] = True
+    predicates["cleanup"]["clean_tree"] = True
+    return predicates
+
+
+def _verify_snapshot(snapshot, manifest, verifier):
+    repository = snapshot["repository"]
+    if not repository["clean"]:
+        raise VerificationFailure(
+            "repository-dirty", "candidate repository must be clean"
+        )
+    root = Path(repository["root"])
+    head = repository["head"]
+    try:
+        manifest_path = receipt._normalized_path(manifest)
+    except receipt.ReceiptError as error:
+        raise VerificationFailure("manifest-path-invalid", str(error)) from None
+    match = re.fullmatch(
+        r"eval/grade/public/([0-9]+\.[0-9]+\.[0-9]+)/evidence\.json",
+        manifest_path,
+    )
+    if match is None:
+        raise VerificationFailure(
+            "manifest-path-invalid", "manifest is not a canonical release evidence path"
+        )
+    release = match.group(1)
+    release_root = f"eval/grade/public/{release}"
+    policy_path = f"{release_root}/policy.json"
+    report_path = f"{release_root}/report.md"
+    evidence_bytes = _unsafe_file(root, head, manifest_path, "evidence")
+    policy_bytes = _unsafe_file(root, head, policy_path, "policy")
+    _unsafe_file(root, head, report_path, "report")
+
+    policy = load_policy(policy_bytes)
+    evidence = load_evidence(evidence_bytes, policy)
+    if evidence["evaluated_release"] != release:
+        raise VerificationFailure(
+            "release-mismatch", "manifest release does not match its canonical path"
+        )
+    actual_policy_hash = hashlib.sha256(policy_bytes).hexdigest()
+    if evidence["policy"]["sha256"] != actual_policy_hash:
+        raise VerificationFailure(
+            "policy-digest-mismatch", "policy SHA-256 does not match committed policy"
+        )
+
+    head_tree = _tree(root, head)
+    subject = evidence["subject"]
+    subject_commit = subject["commit"]
+    if not _commit_exists(root, subject_commit):
+        raise VerificationFailure("subject-missing", "subject commit is unavailable")
+    if _tree(root, subject_commit) != subject["tree"]:
+        raise VerificationFailure("subject-tree-mismatch", "subject tree is invalid")
+    if not _commit_exists(root, verifier["commit"]):
+        raise VerificationFailure(
+            "verifier-history-missing", "trusted verifier commit is absent from candidate"
+        )
+    if _tree(root, verifier["commit"]) != verifier["tree"]:
+        raise VerificationFailure(
+            "verifier-tree-mismatch", "trusted verifier tree does not match candidate history"
+        )
+    if verifier["commit"] in (subject_commit, head):
+        raise VerificationFailure(
+            "verifier-bootstrap", "trusted verifier cannot grade itself"
+        )
+    if not _is_ancestor(root, verifier["commit"], subject_commit):
+        raise VerificationFailure(
+            "verifier-not-prior", "trusted verifier must precede the subject"
+        )
+    if not _is_ancestor(root, subject_commit, head):
+        raise VerificationFailure(
+            "subject-not-ancestor", "subject must be an ancestor of evidence HEAD"
+        )
+
+    changed_output = receipt._git(
+        root, "diff", "--name-only", "-z", subject_commit, head, "--"
+    )
+    changed_paths = tuple(sorted(path for path in changed_output.split("\0") if path))
+    if changed_paths != tuple(evidence["changed_paths"]):
+        raise VerificationFailure(
+            "evidence-paths-mismatch",
+            "subject-to-evidence changes do not match the manifest allowlist",
+        )
+
+    for executable in evidence["subject_executables"]:
+        path = executable["path"]
+        try:
+            subject_bytes = receipt._head_regular_blob(root, subject_commit, path)
+            evidence_head_bytes = receipt._head_regular_blob(root, head, path)
+        except receipt.ReceiptOperationalError:
+            raise
+        except receipt.ReceiptError as error:
+            raise VerificationFailure("executable-file-unsafe", str(error)) from None
+        subject_hash = hashlib.sha256(subject_bytes).hexdigest()
+        evidence_hash = hashlib.sha256(evidence_head_bytes).hexdigest()
+        if (
+            subject_hash != executable["subject_sha256"]
+            or evidence_hash != executable["evidence_sha256"]
+        ):
+            raise VerificationFailure(
+                "executable-digest-mismatch",
+                f"subject executable digest is invalid: {path}",
+            )
+
+    result = evaluate(
+        policy,
+        evidence,
+        {"commit": head, "tree": head_tree},
+        _trusted_predicates(policy),
+        {
+            "subject_ancestor_of_evidence_head": True,
+            "evidence_head_is_exact": True,
+        },
+    )
+    return result
+
+
+def verify_repository(repo, manifest, verifier_root):
+    """Verify committed evidence without trusting candidate verdicts or commands."""
+    verifier = _trusted_verifier_identity(verifier_root)
+    try:
+        before = receipt.build_receipt(Path(repo))
+        result = _verify_snapshot(before, manifest, verifier)
+        after = receipt.build_receipt(Path(repo))
+        if before != after:
+            return _failure(
+                "inconclusive", "repository-changed",
+                "candidate repository changed during verification", verifier,
+            )
+    except receipt.ReceiptOperationalError as error:
+        return _failure("inconclusive", "operational-error", error, verifier)
+    except VerificationFailure as error:
+        return _failure("invalid", error.code, error, verifier)
+    except (receipt.ReceiptError, GradeError) as error:
+        return _failure("invalid", "invalid-evidence", error, verifier)
+    result["verifier"] = verifier
+    return result
