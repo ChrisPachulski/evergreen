@@ -26,11 +26,75 @@ CONTROL_PATH = "/control/oracle-v1.json"
 CONTROL_PROTOCOL = "evergreen-oracle-control-v1"
 ADAPTER_PROTOCOL = "evergreen-oracle-adapter-result-v1"
 MUTATION_OPERATORS = {
-    "integer-literal-1-to-2-v1": {
-        "before": b"1",
-        "after": b"2",
-        "expected_stdout": "1\n",
-        "mutated_stdout": "2\n",
+    "return-value-1-to-2-v1": {
+        "kind": "return-value", "expected_observable": (0, "1\n"),
+        "mutated_observable": (0, "2\n"), "variants": {
+            "python": {"before": b"return 1", "after": b"return 2",
+                       "source_pattern": rb"def\s+value\s*\(\s*\)\s*:\s*return 1\b"},
+            "java": {"before": b"return 1", "after": b"return 2",
+                     "source_pattern": rb"static\s+int\s+value\s*\(\s*\)\s*\{\s*return 1\b"},
+            "typescript": {"before": b"return 1", "after": b"return 2",
+                           "source_pattern": rb"function\s+value\s*\(\s*\)\s*\{\s*return 1\b"},
+            "rust": {"before": b"return 1", "after": b"return 2",
+                     "source_pattern": rb"fn\s+value\s*\(\s*\)\s*->\s*i32\s*\{\s*return 1\b"},
+            "go": {"before": b"return 1", "after": b"return 2",
+                   "source_pattern": rb"func\s+value\s*\(\s*\)\s*int\s*\{\s*return 1\b"},
+        },
+    },
+    "raises-none-to-value-error-v1": {
+        "kind": "raises", "expected_observable": (0, "no-error\n"),
+        "mutated_observable": (0, "ValueError\n"), "variants": {
+            "python": {"before": b"if False", "after": b"if True",
+                       "source_pattern": rb"if False\s*:\s*raise ValueError"},
+            "java": {"before": b"if (false)", "after": b"if (true)",
+                     "source_pattern": rb"if \(false\)\s*throw new IllegalStateException"},
+            "typescript": {"before": b"if (false)", "after": b"if (true)",
+                           "source_pattern": rb"if \(false\)\s*\{\s*throw new Error"},
+            "rust": {"before": b"if false", "after": b"if true",
+                     "source_pattern": rb"if false\s*\{\s*panic!"},
+            "go": {"before": b"if false", "after": b"if true",
+                   "source_pattern": rb"if false\s*\{\s*panic\("},
+        },
+    },
+    "default-value-one-to-two-v1": {
+        "kind": "default-value", "expected_observable": (0, "default:1\n"),
+        "mutated_observable": (0, "default:2\n"), "variants": {
+            "python": {"before": b"item=1", "after": b"item=2",
+                       "source_pattern": rb"def\s+value\s*\(\s*item=1\s*\)"},
+            "java": {"before": b"orElse(1)", "after": b"orElse(2)",
+                     "source_pattern": rb"Optional\.ofNullable\(null\)\.orElse\(1\)"},
+            "typescript": {"before": b"item = 1", "after": b"item = 2",
+                           "source_pattern": rb"function\s+value\s*\(\s*item = 1\s*\)"},
+            "rust": {"before": b"unwrap_or(1)", "after": b"unwrap_or(2)",
+                     "source_pattern": rb"None::<i32>\.unwrap_or\(1\)"},
+            "go": {"before": b"defaultValue(1)", "after": b"defaultValue(2)",
+                   "source_pattern": rb"defaultValue\(1\)"},
+        },
+    },
+    "cardinality-one-to-two-v1": {
+        "kind": "cardinality", "expected_observable": (0, "cardinality:1\n"),
+        "mutated_observable": (0, "cardinality:2\n"), "variants": {
+            "python": {"before": b"[1]", "after": b"[1, 2]",
+                       "source_pattern": rb"items\s*=\s*\[1\]"},
+            "java": {"before": b"{1}", "after": b"{1, 2}",
+                     "source_pattern": rb"int\[\]\s+items\s*=\s*\{1\}"},
+            "typescript": {"before": b"[1]", "after": b"[1, 2]",
+                           "source_pattern": rb"const\s+items\s*=\s*\[1\]"},
+            "rust": {"before": b"[1]", "after": b"[1, 2]",
+                     "source_pattern": rb"let\s+items\s*=\s*\[1\]"},
+            "go": {"before": b"[]int{1}", "after": b"[]int{1, 2}",
+                   "source_pattern": rb"items\s*:=\s*\[\]int\{1\}"},
+        },
+    },
+    "state-change-before-to-after-v1": {
+        "kind": "state-change", "expected_observable": (0, "state:changed\n"),
+        "mutated_observable": (0, "state:unchanged\n"), "variants": {
+            "python": {"before": b"not state", "after": b"state",
+                       "source_pattern": rb"state\s*=\s*not state"},
+            **{language: {"before": b"!state", "after": b"state",
+                          "source_pattern": rb"state\s*=\s*!state"}
+               for language in ("java", "typescript", "rust", "go")},
+        },
     },
 }
 MAX_SOURCE_BYTES = 1024 * 1024
@@ -79,6 +143,15 @@ def _canonical(value):
         ).encode()
     except (TypeError, ValueError, RecursionError):
         raise OracleError("oracle seed is not canonical JSON") from None
+
+
+def _unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
 
 
 def seed_sha256(seed):
@@ -140,15 +213,19 @@ def _mutated_source(seed):
     operator = MUTATION_OPERATORS.get(mutation["operator"])
     if operator is None:
         raise OracleError("mutation operator is not allowlisted")
-    before = operator["before"]
-    after = operator["after"]
+    variant = operator["variants"].get(seed["language"])
+    if variant is None:
+        raise OracleError("mutation operator contract does not support language")
+    before = variant["before"]
+    after = variant["after"]
     offset = mutation["offset"]
+    if operator["kind"] != seed["oracle"]["kind"]:
+        raise OracleError("mutation operator contract does not match oracle kind")
     if offset > len(source) or source[offset:offset + len(before)] != before:
         raise OracleError("mutation does not identify the declared source bytes")
-    boundary = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_."
-    if ((offset and source[offset - 1:offset] in boundary) or
-            source[offset + len(before):offset + len(before) + 1] in boundary):
-        raise OracleError("mutation operator requires a standalone integer literal")
+    if not any(match.start() <= offset and offset + len(before) <= match.end()
+               for match in re.finditer(variant["source_pattern"], source)):
+        raise OracleError("mutation operator contract does not bind offset to source pattern")
     return source[:offset] + after + source[offset + len(before):]
 
 
@@ -241,7 +318,8 @@ def validate_seed(seed):
         raise OracleError("mutation operator is not allowlisted")
     if type(mutation["offset"]) is not int or mutation["offset"] < 0:
         raise OracleError("mutation offset is invalid")
-    if stdout != operator["expected_stdout"]:
+    expected_exit, expected_stdout = operator["expected_observable"]
+    if observable["exit_code"] != expected_exit or stdout != expected_stdout:
         raise OracleError("mutation operator does not match the expected observable")
     derived = _mutated_source(seed)
     if (_hash(mutation["derivative_sha256"], "mutation derivative") !=
@@ -464,7 +542,11 @@ def _adapter_observation(spec, runtime_result):
     if runtime_result["exit_code"] != 0 or runtime_result["stderr"]:
         raise OracleError("trusted adapter did not return a valid observation")
     try:
-        payload = json.loads(runtime_result["stdout"])
+        payload = json.loads(
+            runtime_result["stdout"],
+            parse_constant=lambda item: (_ for _ in ()).throw(ValueError(item)),
+            object_pairs_hook=_unique_object,
+        )
         if runtime_result["stdout"] != _canonical(payload).decode() + "\n":
             raise ValueError
     except (json.JSONDecodeError, UnicodeError, ValueError, OracleError):
@@ -490,7 +572,8 @@ def _adapter_observation(spec, runtime_result):
         valid = payload["verdict"] == "match" and observed == expected
     else:
         operator = MUTATION_OPERATORS[spec["operator_id"]]
-        mutated = {"exit_code": 0, "stdout": operator["mutated_stdout"], "stderr": ""}
+        exit_code, stdout = operator["mutated_observable"]
+        mutated = {"exit_code": exit_code, "stdout": stdout, "stderr": ""}
         valid = payload["verdict"] == "mismatch" and observed == mutated
     if not valid:
         raise OracleError("trusted adapter returned an invalid oracle verdict")

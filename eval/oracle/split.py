@@ -5,12 +5,19 @@ import hmac
 import json
 from pathlib import Path
 import re
+import time
 
 
 POLICY_PATH = Path(__file__).with_name("similarity-policy-v1.json")
 POLICY_SHA256 = "afe5010343623c9f413c3304350b751219f25137113422c241460a70260dfeb5"
 LANGUAGES = ("python", "java", "typescript", "rust", "go")
 REFERENCE_CATEGORIES = ("prompt", "example", "test", "fixture", "prior-corpus")
+MAX_SIMILARITY_ROWS = 10_000
+MAX_REFERENCE_ITEMS = 10_000
+MAX_TEXT_BYTES = 1024 * 1024
+MAX_TOKENS_PER_FIELD = 200_000
+MAX_COMPARISONS = 5_000_000
+MAX_SIMILARITY_SECONDS = 30.0
 _EXPECTED_POLICY = {
     "schema_version": 1,
     "lineage": {"field": "lineage_id", "inference": False, "required": True},
@@ -48,7 +55,7 @@ _OPERATORS = {
     "rust": ("<<=", ">>=", "..=", "::", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", ".."),
     "go": ("<<=", ">>=", "&^=", "...", ":=", "<-", "++", "--", "==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "&^", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^="),
 }
-_PUNCTUATION = frozenset("(){}[];,:.@?~+-*/%&|^!=<>")
+_PUNCTUATION = frozenset("(){}[];,:.@?~+-*/%&|^!=<>\\")
 _DOC_WORD = re.compile(r"[A-Za-z]+|[0-9]+", re.ASCII)
 
 
@@ -56,13 +63,25 @@ class SimilarityError(ValueError):
     """Similarity input is ambiguous or crosses a frozen boundary."""
 
 
+def _unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+
 def load_similarity_policy(path=POLICY_PATH):
     """Load the exact frozen policy and return it with its raw-byte identity."""
     path = Path(path)
     try:
         raw = path.read_bytes()
-        value = json.loads(raw)
-    except (OSError, UnicodeError, json.JSONDecodeError):
+        value = json.loads(
+            raw, parse_constant=lambda item: (_ for _ in ()).throw(ValueError(item)),
+            object_pairs_hook=_unique_object,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         raise SimilarityError("similarity policy is unavailable or invalid") from None
     if value != _EXPECTED_POLICY:
         raise SimilarityError("similarity policy drifted from version 1")
@@ -156,6 +175,8 @@ def code_tokens(language, source, structural=False):
     """Tokenize supported code without executing or guessing ambiguous syntax."""
     if language not in LANGUAGES or type(source) is not str:
         raise SimilarityError("unknown language or invalid source")
+    if len(source.encode()) > MAX_TEXT_BYTES:
+        raise SimilarityError("similarity text byte limit exceeded")
     tokens = []
     position = 0
     while position < len(source):
@@ -214,14 +235,21 @@ def code_tokens(language, source, structural=False):
             position += 1
             continue
         raise SimilarityError("code tokenization is ambiguous")
+    if len(tokens) > MAX_TOKENS_PER_FIELD:
+        raise SimilarityError("similarity token limit exceeded")
     return tuple(tokens)
 
 
 def documentation_tokens(value):
     if type(value) is not str:
         raise SimilarityError("documentation must be text")
-    return tuple("<num>" if token[0].isdigit() else token.lower()
-                 for token in _DOC_WORD.findall(value))
+    if len(value.encode()) > MAX_TEXT_BYTES:
+        raise SimilarityError("similarity text byte limit exceeded")
+    tokens = tuple("<num>" if token[0].isdigit() else token.lower()
+                   for token in _DOC_WORD.findall(value))
+    if len(tokens) > MAX_TOKENS_PER_FIELD:
+        raise SimilarityError("similarity token limit exceeded")
+    return tokens
 
 
 def _shingles(tokens, policy):
@@ -247,6 +275,8 @@ def fuzzy_token_overlap(tokens_a, tokens_b):
     """Apply the frozen shingle metric directly to two token sequences."""
     if not isinstance(tokens_a, (tuple, list)) or not isinstance(tokens_b, (tuple, list)):
         raise SimilarityError("fuzzy token inputs are invalid")
+    if len(tokens_a) > MAX_TOKENS_PER_FIELD or len(tokens_b) > MAX_TOKENS_PER_FIELD:
+        raise SimilarityError("similarity token limit exceeded")
     policy, _digest = load_similarity_policy()
     return _fuzzy(tuple(tokens_a), tuple(tokens_b), policy["fuzzy"])
 
@@ -322,12 +352,22 @@ def validate_split_isolation(rows, references):
     """Reject lineage, project, row, or reference leakage before package admission."""
     if not isinstance(rows, list) or not isinstance(references, list):
         raise SimilarityError("split isolation inputs are invalid")
+    if len(rows) > MAX_SIMILARITY_ROWS:
+        raise SimilarityError("similarity row limit exceeded")
+    if len(references) > MAX_REFERENCE_ITEMS:
+        raise SimilarityError("similarity reference limit exceeded")
+    comparisons = len(rows) * (len(rows) - 1) // 2 + len(rows) * len(references)
+    if comparisons > MAX_COMPARISONS:
+        raise SimilarityError("similarity comparison limit exceeded")
+    deadline = time.monotonic() + MAX_SIMILARITY_SECONDS
     policy, _digest = load_similarity_policy()
     seen_ids = set()
     project_splits = {}
     lineage_splits = {}
     profiles = []
     for row in rows:
+        if time.monotonic() > deadline:
+            raise SimilarityError("similarity deadline exceeded")
         if not isinstance(row, dict):
             raise SimilarityError("split row is invalid")
         row_id = row.get("id")
@@ -348,14 +388,24 @@ def validate_split_isolation(rows, references):
         project_splits[project] = split
         lineage_splits[lineage] = split
         profiles.append(_profile(row, policy))
-    reference_profiles = [_reference_profile(reference, policy) for reference in references]
+    reference_profiles = []
+    for reference in references:
+        if time.monotonic() > deadline:
+            raise SimilarityError("similarity deadline exceeded")
+        reference_profiles.append(_reference_profile(reference, policy))
     for index, first in enumerate(rows):
+        if time.monotonic() > deadline:
+            raise SimilarityError("similarity deadline exceeded")
         for second_index, second in enumerate(rows[index + 1:], start=index + 1):
+            if time.monotonic() > deadline:
+                raise SimilarityError("similarity deadline exceeded")
             if (first["split"] != second["split"] and any(
                     _profile_field_overlap(profiles[index], profiles[second_index], field, policy)
                     for field in ("code", "documentation"))):
                 raise SimilarityError("row overlap crosses development and holdout")
         for field, reference_profile in reference_profiles:
+            if time.monotonic() > deadline:
+                raise SimilarityError("similarity deadline exceeded")
             if _profile_field_overlap(profiles[index], reference_profile, field, policy):
                 raise SimilarityError("row overlaps a reference corpus")
     return True

@@ -47,7 +47,15 @@
       "additionalProperties": false,
       "properties": {
         "derivative_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
-        "operator": {"const": "integer-literal-1-to-2-v1"},
+        "operator": {
+          "enum": [
+            "return-value-1-to-2-v1",
+            "raises-none-to-value-error-v1",
+            "default-value-one-to-two-v1",
+            "cardinality-one-to-two-v1",
+            "state-change-before-to-after-v1"
+          ]
+        },
         "offset": {"minimum": 0, "type": "integer"}
       },
       "required": ["operator", "offset", "derivative_sha256"],
@@ -191,7 +199,62 @@
           }
         }
       }
-    }
+    },
+    {
+      "if": {"properties": {"mutation": {"properties": {"operator": {"const": "return-value-1-to-2-v1"}}, "required": ["operator"]}}, "required": ["mutation"]},
+      "then": {"properties": {
+        "oracle": {"properties": {"kind": {"const": "return-value"}, "expected_observable": {"const": {"exit_code": 0, "stdout": "1\n"}}}}
+      }}
+    },
+    {
+      "if": {"properties": {"mutation": {"properties": {"operator": {"const": "raises-none-to-value-error-v1"}}, "required": ["operator"]}}, "required": ["mutation"]},
+      "then": {"properties": {
+        "oracle": {"properties": {"kind": {"const": "raises"}, "expected_observable": {"const": {"exit_code": 0, "stdout": "no-error\n"}}}}
+      }}
+    },
+    {
+      "if": {"properties": {"mutation": {"properties": {"operator": {"const": "default-value-one-to-two-v1"}}, "required": ["operator"]}}, "required": ["mutation"]},
+      "then": {"properties": {
+        "oracle": {"properties": {"kind": {"const": "default-value"}, "expected_observable": {"const": {"exit_code": 0, "stdout": "default:1\n"}}}}
+      }}
+    },
+    {
+      "if": {"properties": {"mutation": {"properties": {"operator": {"const": "cardinality-one-to-two-v1"}}, "required": ["operator"]}}, "required": ["mutation"]},
+      "then": {"properties": {
+        "oracle": {"properties": {"kind": {"const": "cardinality"}, "expected_observable": {"const": {"exit_code": 0, "stdout": "cardinality:1\n"}}}}
+      }}
+    },
+    {
+      "if": {"properties": {"mutation": {"properties": {"operator": {"const": "state-change-before-to-after-v1"}}, "required": ["operator"]}}, "required": ["mutation"]},
+      "then": {"properties": {
+        "oracle": {"properties": {"kind": {"const": "state-change"}, "expected_observable": {"const": {"exit_code": 0, "stdout": "state:changed\n"}}}}
+      }}
+    },
+    {"if":{"properties":{"language":{"const":"python"},"mutation":{"properties":{"operator":{"const":"return-value-1-to-2-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"def\\s+value\\s*\\(\\s*\\)\\s*:\\s*return 1"}}}}}},
+    {"if":{"properties":{"language":{"const":"java"},"mutation":{"properties":{"operator":{"const":"return-value-1-to-2-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"static\\s+int\\s+value\\s*\\(\\s*\\)\\s*\\{\\s*return 1"}}}}}},
+    {"if":{"properties":{"language":{"const":"typescript"},"mutation":{"properties":{"operator":{"const":"return-value-1-to-2-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"function\\s+value\\s*\\(\\s*\\)\\s*\\{\\s*return 1"}}}}}},
+    {"if":{"properties":{"language":{"const":"rust"},"mutation":{"properties":{"operator":{"const":"return-value-1-to-2-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"fn\\s+value\\s*\\(\\s*\\)\\s*->\\s*i32\\s*\\{\\s*return 1"}}}}}},
+    {"if":{"properties":{"language":{"const":"go"},"mutation":{"properties":{"operator":{"const":"return-value-1-to-2-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"func\\s+value\\s*\\(\\s*\\)\\s*int\\s*\\{\\s*return 1"}}}}}},
+    {"if":{"properties":{"language":{"const":"python"},"mutation":{"properties":{"operator":{"const":"raises-none-to-value-error-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"if False"}}}}}},
+    {"if":{"properties":{"language":{"const":"java"},"mutation":{"properties":{"operator":{"const":"raises-none-to-value-error-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"if \\(false\\)"}}}}}},
+    {"if":{"properties":{"language":{"const":"typescript"},"mutation":{"properties":{"operator":{"const":"raises-none-to-value-error-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"if \\(false\\)"}}}}}},
+    {"if":{"properties":{"language":{"const":"rust"},"mutation":{"properties":{"operator":{"const":"raises-none-to-value-error-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"if false"}}}}}},
+    {"if":{"properties":{"language":{"const":"go"},"mutation":{"properties":{"operator":{"const":"raises-none-to-value-error-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"if false"}}}}}},
+    {"if":{"properties":{"language":{"const":"python"},"mutation":{"properties":{"operator":{"const":"default-value-one-to-two-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"item=1"}}}}}},
+    {"if":{"properties":{"language":{"const":"java"},"mutation":{"properties":{"operator":{"const":"default-value-one-to-two-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"orElse\\(1\\)"}}}}}},
+    {"if":{"properties":{"language":{"const":"typescript"},"mutation":{"properties":{"operator":{"const":"default-value-one-to-two-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"item = 1"}}}}}},
+    {"if":{"properties":{"language":{"const":"rust"},"mutation":{"properties":{"operator":{"const":"default-value-one-to-two-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"unwrap_or\\(1\\)"}}}}}},
+    {"if":{"properties":{"language":{"const":"go"},"mutation":{"properties":{"operator":{"const":"default-value-one-to-two-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"defaultValue\\(1\\)"}}}}}},
+    {"if":{"properties":{"language":{"const":"python"},"mutation":{"properties":{"operator":{"const":"cardinality-one-to-two-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"items\\s*=\\s*\\[1\\]"}}}}}},
+    {"if":{"properties":{"language":{"const":"java"},"mutation":{"properties":{"operator":{"const":"cardinality-one-to-two-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"items\\s*=\\s*\\{1\\}"}}}}}},
+    {"if":{"properties":{"language":{"const":"typescript"},"mutation":{"properties":{"operator":{"const":"cardinality-one-to-two-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"items\\s*=\\s*\\[1\\]"}}}}}},
+    {"if":{"properties":{"language":{"const":"rust"},"mutation":{"properties":{"operator":{"const":"cardinality-one-to-two-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"items\\s*=\\s*\\[1\\]"}}}}}},
+    {"if":{"properties":{"language":{"const":"go"},"mutation":{"properties":{"operator":{"const":"cardinality-one-to-two-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"items\\s*:=\\s*\\[\\]int\\{1\\}"}}}}}},
+    {"if":{"properties":{"language":{"const":"python"},"mutation":{"properties":{"operator":{"const":"state-change-before-to-after-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"state\\s*=\\s*not state"}}}}}},
+    {"if":{"properties":{"language":{"const":"java"},"mutation":{"properties":{"operator":{"const":"state-change-before-to-after-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"state\\s*=\\s*!state"}}}}}},
+    {"if":{"properties":{"language":{"const":"typescript"},"mutation":{"properties":{"operator":{"const":"state-change-before-to-after-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"state\\s*=\\s*!state"}}}}}},
+    {"if":{"properties":{"language":{"const":"rust"},"mutation":{"properties":{"operator":{"const":"state-change-before-to-after-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"state\\s*=\\s*!state"}}}}}},
+    {"if":{"properties":{"language":{"const":"go"},"mutation":{"properties":{"operator":{"const":"state-change-before-to-after-v1"}},"required":["operator"]}},"required":["language","mutation"]},"then":{"properties":{"source":{"properties":{"code":{"pattern":"state\\s*=\\s*!state"}}}}}}
   ],
   "type": "object"
 }

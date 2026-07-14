@@ -25,21 +25,86 @@ class OracleTests(unittest.TestCase):
             "rust": ".rs",
             "go": ".go",
         }[language]
-        code = {
-            "python": "print(1)\n",
+        return_code = {
+            "python": "def value(): return 1\nprint(value())\n",
             "java": (
-                "class Source { public static void main(String[] args) { "
-                "System.out.println(1); } }\n"
+                "class Source { static int value() { return 1; } "
+                "public static void main(String[] args) { System.out.println(value()); } }\n"
             ),
-            "typescript": "console.log(1)\n",
-            "rust": 'fn main() { println!("{}", 1); }\n',
-            "go": 'package main\nimport "fmt"\nfunc main() { fmt.Println(1) }\n',
+            "typescript": "function value() { return 1; }\nconsole.log(value())\n",
+            "rust": 'fn value() -> i32 { return 1; }\nfn main() { println!("{}", value()); }\n',
+            "go": ('package main\nimport "fmt"\nfunc value() int { return 1 }\n'
+                   'func main() { fmt.Println(value()) }\n'),
         }[language]
-        before = "1"
-        after = "2"
-        offset = code.index(before)
+        kind_code = {
+            "raises": {
+                "python": ('try:\n    if False: raise ValueError()\n    print("no-error")\n'
+                           'except ValueError:\n    print("ValueError")\n'),
+                "java": ('class Source { public static void main(String[] a) { try { '
+                         'if (false) throw new IllegalStateException(); '
+                         'System.out.println("no-error"); } catch (Exception e) { '
+                         'System.out.println("ValueError"); } } }\n'),
+                "typescript": ('try { if (false) { throw new Error(); } '
+                               'console.log("no-error"); } catch { console.log("ValueError"); }\n'),
+                "rust": ('fn main() { let result = std::panic::catch_unwind(|| { '
+                         'if false { panic!("x"); } }); println!("{}", '
+                         'if result.is_ok() { "no-error" } else { "ValueError" }); }\n'),
+                "go": ('package main\nimport "fmt"\nfunc main() { defer func() { if recover() '
+                       '!= nil { fmt.Println("ValueError") } }(); if false { panic("x") }; '
+                       'fmt.Println("no-error") }\n'),
+            },
+            "default-value": {
+                "python": 'def value(item=1): return item\nprint(f"default:{value()}")\n',
+                "java": ('import java.util.Optional; class Source { public static void main('
+                         'String[] a) { System.out.println("default:" + '
+                         'Optional.ofNullable(null).orElse(1)); } }\n'),
+                "typescript": ('function value(item = 1) { return item; } '
+                               'console.log(`default:${value()}`);\n'),
+                "rust": ('fn main() { let value = None::<i32>.unwrap_or(1); '
+                         'println!("default:{}", value); }\n'),
+                "go": ('package main\nimport "fmt"\nfunc defaultValue(v int) int { return v }\n'
+                       'func main() { fmt.Printf("default:%d\\n", defaultValue(1)) }\n'),
+            },
+            "cardinality": {
+                "python": 'items = [1]\nprint(f"cardinality:{len(items)}")\n',
+                "java": ('class Source { public static void main(String[] a) { int[] items = {1}; '
+                         'System.out.println("cardinality:" + items.length); } }\n'),
+                "typescript": ('const items = [1]; console.log(`cardinality:${items.length}`);\n'),
+                "rust": ('fn main() { let items = [1]; println!("cardinality:{}", items.len()); }\n'),
+                "go": ('package main\nimport "fmt"\nfunc main() { items := []int{1}; '
+                       'fmt.Printf("cardinality:%d\\n", len(items)) }\n'),
+            },
+            "state-change": {
+                "python": ('state = False\nstate = not state\n'
+                           'print(f"state:{\'changed\' if state else \'unchanged\'}")\n'),
+                "java": ('class Source { public static void main(String[] a) { boolean state = '
+                         'false; state = !state; System.out.println("state:" + '
+                         '(state ? "changed" : "unchanged")); } }\n'),
+                "typescript": ('let state = false; state = !state; '
+                               'console.log(`state:${state ? "changed" : "unchanged"}`);\n'),
+                "rust": ('fn main() { let mut state = false; state = !state; println!("state:{}", '
+                         'if state { "changed" } else { "unchanged" }); }\n'),
+                "go": ('package main\nimport "fmt"\nfunc main() { state := false; state = !state; '
+                       'if state { fmt.Println("state:changed") } else { '
+                       'fmt.Println("state:unchanged") } }\n'),
+            },
+        }
+        if oracle_kind == "return-value":
+            code = return_code
+        elif oracle_kind in kind_code:
+            code = kind_code[oracle_kind][language]
+        else:
+            raise ValueError("test fixture does not define that language/kind combination")
+        operator_id = {
+            contract["kind"]: identity for identity, contract in oracle.MUTATION_OPERATORS.items()
+        }[oracle_kind]
+        contract = oracle.MUTATION_OPERATORS[operator_id]
+        variant = contract["variants"][language]
+        before = variant["before"]
+        after = variant["after"]
+        offset = code.encode().index(before)
         source_bytes = code.encode()
-        mutation_bytes = source_bytes[:offset] + after.encode() + source_bytes[offset + 1:]
+        mutation_bytes = source_bytes[:offset] + after + source_bytes[offset + len(before):]
         noop_bytes = source_bytes + oracle.semantic_noop_suffix(language)
         documentation = "Returns the value 1."
         image = f"registry.invalid/evergreen-{language}@sha256:" + "a" * 64
@@ -66,10 +131,13 @@ class OracleTests(unittest.TestCase):
             },
             "oracle": {
                 "kind": oracle_kind,
-                "expected_observable": {"exit_code": 0, "stdout": "1\n"},
+                "expected_observable": {
+                    "exit_code": contract["expected_observable"][0],
+                    "stdout": contract["expected_observable"][1],
+                },
             },
             "mutation": {
-                "operator": "integer-literal-1-to-2-v1",
+                "operator": operator_id,
                 "offset": offset,
                 "derivative_sha256": hashlib.sha256(mutation_bytes).hexdigest(),
             },
@@ -90,13 +158,22 @@ class OracleTests(unittest.TestCase):
         from eval.oracle import oracle
 
         source = seed["source"]["code"].encode()
-        offset = seed["mutation"]["offset"]
-        mutation = source[:offset] + b"2" + source[offset + 1:]
+        mutation = oracle._mutated_source(seed)
         noop = source + oracle.semantic_noop_suffix(seed["language"])
+        contract = oracle.MUTATION_OPERATORS[seed["mutation"]["operator"]]
         return [
-            self.adapter_result(seed, source, "match", {"exit_code": 0, "stdout": "1\n", "stderr": ""}),
-            self.adapter_result(seed, mutation, "mismatch", {"exit_code": 0, "stdout": "2\n", "stderr": ""}),
-            self.adapter_result(seed, noop, "match", {"exit_code": 0, "stdout": "1\n", "stderr": ""}),
+            self.adapter_result(seed, source, "match", {
+                "exit_code": contract["expected_observable"][0],
+                "stdout": contract["expected_observable"][1], "stderr": "",
+            }),
+            self.adapter_result(seed, mutation, "mismatch", {
+                "exit_code": contract["mutated_observable"][0],
+                "stdout": contract["mutated_observable"][1], "stderr": "",
+            }),
+            self.adapter_result(seed, noop, "match", {
+                "exit_code": contract["expected_observable"][0],
+                "stdout": contract["expected_observable"][1], "stderr": "",
+            }),
         ]
 
     def adapter_result(self, seed, source_bytes, verdict, observed):
@@ -122,6 +199,8 @@ class OracleTests(unittest.TestCase):
         }
 
     def container_observation(self, command, _environment, timeout=0):
+        from eval.oracle import oracle
+
         del timeout
         control_mount = next(token for token in command if "dst=/control" in token)
         fields = dict(
@@ -130,10 +209,12 @@ class OracleTests(unittest.TestCase):
             if "=" in field
         )
         spec = json.loads((Path(fields["src"]) / "oracle-v1.json").read_text())
-        mutation = spec["operator_id"] == "integer-literal-1-to-2-v1"
+        mutation = spec["operator_id"] in oracle.MUTATION_OPERATORS
+        contract = oracle.MUTATION_OPERATORS.get(spec["operator_id"])
         observed = {
             "exit_code": 0,
-            "stdout": "2\n" if mutation else spec["expected_observable"]["stdout"],
+            "stdout": (contract["mutated_observable"][1] if mutation else
+                       spec["expected_observable"]["stdout"]),
             "stderr": "",
         }
         payload = {
@@ -197,6 +278,73 @@ class OracleTests(unittest.TestCase):
         seed["seed_sha256"] = oracle.seed_sha256(seed)
         with self.assertRaisesRegex(oracle.OracleError, "oracle kind"):
             oracle.validate_seed(seed)
+
+    def test_each_oracle_kind_has_one_distinct_bound_operator_contract(self):
+        from eval.oracle import oracle
+
+        expected = {
+            "return-value": "return-value-1-to-2-v1",
+            "raises": "raises-none-to-value-error-v1",
+            "default-value": "default-value-one-to-two-v1",
+            "cardinality": "cardinality-one-to-two-v1",
+            "state-change": "state-change-before-to-after-v1",
+        }
+        self.assertEqual(
+            {contract["kind"]: operator for operator, contract in oracle.MUTATION_OPERATORS.items()},
+            expected,
+        )
+        self.assertEqual(len({
+            (contract["expected_observable"], contract["mutated_observable"], tuple(
+                (language, variant["before"], variant["after"], variant["source_pattern"])
+                for language, variant in sorted(contract["variants"].items())
+            )) for contract in oracle.MUTATION_OPERATORS.values()
+        }), 5)
+
+        generic = self.seed(oracle_kind="return-value")
+        for relabeled in tuple(expected)[1:]:
+            changed = copy.deepcopy(generic)
+            changed["oracle"]["kind"] = relabeled
+            changed["seed_sha256"] = oracle.seed_sha256(changed)
+            with self.subTest(relabeled=relabeled), self.assertRaisesRegex(
+                oracle.OracleError, "operator contract"
+            ):
+                oracle.validate_seed(changed)
+
+    def test_all_twenty_five_language_kind_contracts_validate_and_derive(self):
+        from eval.oracle import oracle
+
+        for language in oracle.LANGUAGES:
+            for kind in oracle.ORACLE_KINDS:
+                with self.subTest(language=language, kind=kind):
+                    seed = self.seed(language, kind)
+                    oracle.validate_seed(seed)
+                    with mock.patch.object(
+                        oracle, "_bounded_container", side_effect=self.container_observation,
+                    ), mock.patch.object(oracle, "_remove_container"), mock.patch.object(
+                        oracle, "_docker_engine", return_value=Path("/usr/local/bin/docker"),
+                    ):
+                        rows = oracle.run_seed(
+                            seed, approved_images={language: seed["sandbox"]["image"]},
+                        )
+                    self.assertEqual(rows[1]["oracle_kind"], kind)
+                    self.assertEqual(rows[1]["mutation_id"], seed["mutation"]["operator"])
+
+        for kind in oracle.ORACLE_KINDS:
+            cross_language = self.seed("python", kind)
+            cross_language["language"] = "java"
+            cross_language["source"]["path"] = "fixture/source.java"
+            cross_language["harness"]["argv"] = [
+                oracle.LANGUAGE_ADAPTERS["java"], "/input/fixture/source.java",
+                oracle.CONTROL_PATH,
+            ]
+            source = cross_language["source"]["code"].encode()
+            noop = source + oracle.semantic_noop_suffix("java")
+            cross_language["semantic_noop"]["derivative_sha256"] = hashlib.sha256(noop).hexdigest()
+            cross_language["seed_sha256"] = oracle.seed_sha256(cross_language)
+            with self.subTest(cross_language_kind=kind), self.assertRaisesRegex(
+                oracle.OracleError, "source pattern|mutation"
+            ):
+                oracle.validate_seed(cross_language)
 
     def test_input_cannot_supply_label_or_verdict_at_any_depth(self):
         from eval.oracle import oracle
@@ -372,7 +520,7 @@ class OracleTests(unittest.TestCase):
         noop = code.encode() + oracle.semantic_noop_suffix("python")
         embedded["semantic_noop"]["derivative_sha256"] = hashlib.sha256(noop).hexdigest()
         embedded["seed_sha256"] = oracle.seed_sha256(embedded)
-        with self.assertRaisesRegex(oracle.OracleError, "standalone integer"):
+        with self.assertRaisesRegex(oracle.OracleError, "source pattern|mutation"):
             oracle.validate_seed(embedded)
 
     def test_hash_binding_rejects_changed_source_docs_mutation_and_noop(self):
@@ -431,15 +579,16 @@ class OracleTests(unittest.TestCase):
         seed = self.seed()
         approved = {"python": seed["sandbox"]["image"]}
         source = seed["source"]["code"].encode()
-        offset = seed["mutation"]["offset"]
-        mutation = source[:offset] + b"2" + source[offset + 1:]
+        mutation = oracle._mutated_source(seed)
+        contract = oracle.MUTATION_OPERATORS[seed["mutation"]["operator"]]
         invalid = (
             {"exit_code": 125, "stdout": "compile failed\n", "stderr": ""},
             self.adapter_result(seed, mutation, "mismatch", {
-                "exit_code": 0, "stdout": "2\nextra\n", "stderr": "",
+                "exit_code": 0, "stdout": contract["mutated_observable"][1] + "extra\n",
+                "stderr": "",
             }),
             self.adapter_result(seed, mutation, "match", {
-                "exit_code": 0, "stdout": "2\n", "stderr": "",
+                "exit_code": 0, "stdout": contract["mutated_observable"][1], "stderr": "",
             }),
             {"exit_code": 0, "stdout": "{}\n", "stderr": "warning\n"},
         )
@@ -522,11 +671,24 @@ class OracleTests(unittest.TestCase):
             with self.subTest(forbidden_schema_path=forbidden):
                 self.assertIsNone(path_pattern.fullmatch(forbidden))
         self.assertIsNotNone(path_pattern.fullmatch("/input/fixture/source.py"))
-        self.assertEqual(
-            schema["properties"]["mutation"]["properties"].get("operator"),
-            {"const": "integer-literal-1-to-2-v1"},
-        )
-        self.assertEqual(len(schema.get("allOf", [])), 5)
+        self.assertEqual(set(
+            schema["properties"]["mutation"]["properties"]["operator"]["enum"]
+        ), {
+            "return-value-1-to-2-v1", "raises-none-to-value-error-v1",
+            "default-value-one-to-two-v1", "cardinality-one-to-two-v1",
+            "state-change-before-to-after-v1",
+        })
+        self.assertEqual(len(schema.get("allOf", [])), 35)
+        bound_pairs = set()
+        for branch in schema["allOf"][10:]:
+            conditions = branch["if"]["properties"]
+            bound_pairs.add((
+                conditions["language"]["const"],
+                conditions["mutation"]["properties"]["operator"]["const"],
+            ))
+            self.assertIn("pattern", branch["then"]["properties"]["source"]
+                          ["properties"]["code"])
+        self.assertEqual(len(bound_pairs), 25)
 
     def test_schema_source_path_is_normalized_repository_relative(self):
         schema = json.loads((ROOT / "eval" / "oracle" / "schema-v1.json").read_text())

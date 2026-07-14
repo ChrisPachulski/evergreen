@@ -126,6 +126,20 @@ class SplitManifestTests(unittest.TestCase):
         )
         self.assertNotIn("returns one", completed.stdout)
 
+    def test_duplicate_keys_and_nonfinite_numbers_are_rejected(self):
+        valid = self.write_manifest().read_text()
+        for name, raw in (
+            ("duplicate", valid.replace('"schema_version": 1',
+                                        '"schema_version": 1, "schema_version": 1', 1)),
+            ("nonfinite", valid.replace('"schema_version": 1',
+                                        '"schema_version": NaN', 1)),
+        ):
+            with self.subTest(name=name):
+                path = self.root / f"strict-{name}.json"
+                path.write_text(raw)
+                with self.assertRaisesRegex(ValueError, "valid JSON"):
+                    load_split_manifest(path, [self.dataset])
+
     def test_accepts_hash_bound_oracle_v2_without_opening_packages_for_assignments(self):
         packages = []
         declarations = []
@@ -141,10 +155,16 @@ class SplitManifestTests(unittest.TestCase):
             digest = hashlib.sha256(raw).hexdigest()
             packages.append(path)
             declarations.append({"sha256": digest, "split": split, "rows": 1})
+            declarations[-1]["path_sha256"] = hashlib.sha256(
+                str(path.absolute()).encode()
+            ).hexdigest()
             public_rows.append({"id": row_id, "dataset_sha256": digest, "split": split})
         document = {
             "schema_version": 2,
             "similarity_policy_sha256": POLICY_SHA256,
+            "reference_corpus_sha256": "f" * 64,
+            "subject_commit": "1" * 40,
+            "subject_tree": "2" * 40,
             "datasets": declarations,
             "rows": public_rows,
         }
@@ -164,9 +184,15 @@ class SplitManifestTests(unittest.TestCase):
         base = {
             "schema_version": 2,
             "similarity_policy_sha256": POLICY_SHA256,
+            "reference_corpus_sha256": "f" * 64,
+            "subject_commit": "1" * 40,
+            "subject_tree": "2" * 40,
             "datasets": [
-                {"sha256": digest, "split": "dev", "rows": 1},
-                {"sha256": "d" * 64, "split": "holdout", "rows": 0},
+                {"sha256": digest, "path_sha256": hashlib.sha256(
+                    str(package.absolute()).encode()
+                ).hexdigest(), "split": "dev", "rows": 1},
+                {"sha256": "d" * 64, "path_sha256": "e" * 64,
+                 "split": "holdout", "rows": 0},
             ],
             "rows": [{"id": row_id, "dataset_sha256": digest, "split": "dev"}],
         }
