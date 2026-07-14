@@ -172,6 +172,62 @@ class OracleBuildTests(unittest.TestCase):
                         })
         return rows
 
+    @staticmethod
+    def required_scale_rows():
+        from eval.oracle.oracle import MUTATION_OPERATORS, ORACLE_KINDS
+
+        operator_by_kind = {
+            contract["kind"]: identity for identity, contract in MUTATION_OPERATORS.items()
+        }
+        code = {
+            "python": {
+                "dev": "def evergreen_development():\n    pass\n",
+                "holdout": "while False:\n    break\n",
+            },
+            "java": {
+                "dev": "class EvergreenDevelopment {}",
+                "holdout": "interface EvergreenHoldout {}",
+            },
+            "typescript": {
+                "dev": "const evergreenDevelopment = true;",
+                "holdout": "let evergreenHoldout = false;",
+            },
+            "rust": {
+                "dev": "fn evergreen_development() {}",
+                "holdout": "const EVERGREEN_HOLDOUT: bool = false;",
+            },
+            "go": {
+                "dev": "package main\nfunc evergreenDevelopment() {}",
+                "holdout": "package main\nconst evergreenHoldout = false",
+            },
+        }
+        rows = []
+        for language in LANGUAGES:
+            for kind in ORACLE_KINDS:
+                for split_name in ("dev", "holdout"):
+                    for index in range(75):
+                        control = index % 3
+                        variant = ("mutation" if control == 0 else
+                                   "source" if control == 1 else "semantic-noop")
+                        identity = f"required-{language}-{kind}-{split_name}-{index}"
+                        rows.append({
+                            "id": identity,
+                            "project": f"org/{identity}",
+                            "lineage_id": identity,
+                            "split": split_name,
+                            "language": language,
+                            "oracle_kind": kind,
+                            "variant": variant,
+                            "mutation_id": (
+                                operator_by_kind[kind] if variant == "mutation" else
+                                None if variant == "source" else "comment-v1"
+                            ),
+                            "label": "inconsistent" if variant == "mutation" else "consistent",
+                            "code": code[language][split_name],
+                            "documentation": f"{language} {split_name} behavior",
+                        })
+        return rows
+
     def test_package_constraints_reject_minimums_imbalance_duplicates_and_share(self):
         from eval.oracle.build import PackageError, PackageLimits, validate_package_rows
 
@@ -330,7 +386,7 @@ class OracleBuildTests(unittest.TestCase):
 
     def test_required_3750_row_corpus_fits_frozen_reference_comparison_cap(self):
         from eval.oracle import split
-        from eval.oracle.build import _load_reference_inventory
+        from eval.oracle.build import _load_reference_inventory, validate_package_rows
 
         commit = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
@@ -344,35 +400,21 @@ class OracleBuildTests(unittest.TestCase):
         self.assertEqual(required_comparisons, 3_811_875)
         self.assertEqual(split.MAX_COMPARISONS, 5_000_000)
         self.assertLessEqual(required_comparisons, split.MAX_COMPARISONS)
-        rows = [{
-            "id": f"required-{index}",
-            "project": f"org/required-{index}",
-            "lineage_id": f"required-{index}",
-            "split": "dev" if index < 1875 else "holdout",
-            "language": "python",
-            "code": f"def required_{index}(): return {index}",
-            "documentation": f"Required production row {index}",
-        } for index in range(3750)]
-
-        profile = object()
-        overlap_calls = 0
-
-        def no_overlap(*_arguments):
-            nonlocal overlap_calls
-            overlap_calls += 1
-            return False
+        rows = self.required_scale_rows()
+        self.assertEqual(len(rows), 3750)
+        self.assertEqual({row["language"] for row in rows}, set(LANGUAGES))
+        self.assertEqual(len({row["oracle_kind"] for row in rows}), 5)
+        for split_name in ("dev", "holdout"):
+            package = [row for row in rows if row["split"] == split_name]
+            self.assertEqual(len(package), 1875)
+            self.assertTrue(validate_package_rows(package))
 
         started = time.monotonic()
-        with mock.patch.object(split, "_profile", new=lambda *_arguments: profile), \
-                mock.patch.object(
-                    split, "_reference_profile", new=lambda *_arguments: ("code", profile),
-                ), mock.patch.object(split, "_profile_field_overlap", new=no_overlap):
-            self.assertTrue(split.validate_split_isolation(rows, references))
+        self.assertTrue(split.validate_split_isolation(rows, references))
         self.assertLess(
-            time.monotonic() - started, split.MAX_SIMILARITY_SECONDS / 2,
-            "bounded traversal must leave at least half the deadline for real profile work",
+            time.monotonic() - started, split.MAX_SIMILARITY_SECONDS,
+            "real production-scale similarity work must fit the declared deadline",
         )
-        self.assertEqual(overlap_calls, 7_327_500)
 
     def test_private_jsonl_rejects_duplicate_keys_and_nonfinite_numbers(self):
         from eval.oracle.build import PackageError, _read_private_rows
