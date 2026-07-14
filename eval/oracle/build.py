@@ -272,6 +272,7 @@ def _validate_public_sources(manifest_path, sources, toolchains):
     seen_projects = set()
     seen_source_identities = set()
     seen_source_content = set()
+    seen_extracted_content = set()
     origin_lineages = {}
     project_lineages = {}
     for source in sources:
@@ -353,14 +354,17 @@ def _validate_public_sources(manifest_path, sources, toolchains):
         if source["source_identity_sha256"] in seen_source_identities:
             raise PackageError("oracle source provenance source/content alias is invalid")
         content_identity = (
-            source["origin"], source["commit"], source["tree"],
-            source["extracted_tree_sha256"], _canonical(source["extraction"]),
+            source["commit"], source["tree"], source["extracted_tree_sha256"],
+            _canonical(source["extraction"]),
             _canonical(source["harness"]), source["sandbox_image"],
         )
         if content_identity in seen_source_content:
             raise PackageError("oracle source provenance source/content alias is invalid")
+        if source["extracted_tree_sha256"] in seen_extracted_content:
+            raise PackageError("oracle source provenance extracted content is duplicated")
         seen_source_identities.add(source["source_identity_sha256"])
         seen_source_content.add(content_identity)
+        seen_extracted_content.add(source["extracted_tree_sha256"])
         for identities, identity in (
             (origin_lineages, source["origin"]), (project_lineages, source["project"]),
         ):
@@ -618,6 +622,11 @@ def _validate_custody_artifact_semantics(provenance, artifact_paths, artifact_ra
     rows = []
     for split_name, role in (("dev", "development-package"),
                              ("holdout", "holdout-package")):
+        expected_package_rows = [
+            row for row in expected_rows.values() if row["split"] == split_name
+        ]
+        if artifact_raw[role] != _package_bytes(expected_package_rows):
+            raise PackageError("private custody canonical package rows do not match seed manifest")
         package_rows = _custody_rows(artifact_raw[role], role)
         validate_package_rows(package_rows)
         if any(row.get("split") != split_name for row in package_rows):
@@ -629,8 +638,7 @@ def _validate_custody_artifact_semantics(provenance, artifact_paths, artifact_ra
     for actual in rows:
         identity = actual.get("id")
         expected = expected_rows.get(identity)
-        if identity in seen_rows or expected is None or any(
-                actual.get(key) != value for key, value in expected.items()):
+        if identity in seen_rows or expected is None or actual != expected:
             raise PackageError("private custody package row semantics do not match seed manifest")
         seen_rows.add(identity)
     if seen_rows != set(expected_rows):

@@ -26,9 +26,10 @@ exist, but never their paths or contents.
 
 Custody validation opens those owner-only artifacts through bounded, no-symlink reads without
 printing their rows. It requires four distinct files and an exact 32-byte split key, validates each
-seed with the frozen oracle schema, derives the expected source/mutation/no-op rows, recomputes the
-keyed split and per-language/kind inventories, and compares those results to both private packages
-and the public claims. Self-consistent hashes or receipt totals alone are insufficient.
+seed with the frozen oracle schema, derives the expected source/mutation/no-op rows, requires each
+sealed package to be their exact closed-key, canonical JSONL serialization, recomputes the keyed
+split and per-language/kind inventories, and compares those results to the public claims.
+Self-consistent hashes or receipt totals alone are insufficient.
 
 Validate the checked-in, non-ready contract without network access:
 

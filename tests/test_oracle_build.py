@@ -1330,6 +1330,46 @@ class OracleBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(PackageError, "lineage"):
             validate_provenance(path)
 
+    def test_provenance_rejects_mirrors_reusing_extracted_content_as_new_lineages(self):
+        from eval.oracle.build import PackageError, validate_provenance
+
+        path, document = self.ready_provenance()
+        python_sources = [
+            source for source in document["sources"] if source["language"] == "python"
+        ]
+        extracted_hash = python_sources[0]["extracted_tree_sha256"]
+        for source in python_sources[1:]:
+            source["extracted_tree_sha256"] = extracted_hash
+            unsigned = {key: value for key, value in source.items()
+                        if key != "source_identity_sha256"}
+            source["source_identity_sha256"] = hashlib.sha256(json.dumps(
+                unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                separators=(",", ":"),
+            ).encode()).hexdigest()
+        path.write_text(json.dumps(document))
+        with self.assertRaisesRegex(PackageError, "extracted content"):
+            validate_provenance(path)
+
+    def test_provenance_content_identity_does_not_treat_origin_as_independence(self):
+        from eval.oracle.build import PackageError, validate_provenance
+
+        path, document = self.ready_provenance()
+        source, mirror = document["sources"][:2]
+        for key in (
+            "commit", "tree", "extraction", "harness", "sandbox_image",
+            "extracted_tree_sha256",
+        ):
+            mirror[key] = json.loads(json.dumps(source[key]))
+        unsigned = {key: value for key, value in mirror.items()
+                    if key != "source_identity_sha256"}
+        mirror["source_identity_sha256"] = hashlib.sha256(json.dumps(
+            unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        path.write_text(json.dumps(document))
+        with self.assertRaisesRegex(PackageError, "source/content alias"):
+            validate_provenance(path)
+
     def test_provenance_requires_all_five_oracle_kinds_with_post_split_capacity(self):
         from eval.oracle.build import PackageError, validate_provenance
 
@@ -1463,6 +1503,31 @@ class OracleBuildTests(unittest.TestCase):
         ).hexdigest()
         provenance_path.write_text(json.dumps(provenance))
         with self.assertRaisesRegex(PackageError, "distinct artifact paths"):
+            validate_private_custody(custody_path, provenance_path)
+
+    def test_external_custody_rejects_extra_package_fields_even_when_resealed(self):
+        from eval.oracle.build import PackageError, _package_bytes, validate_private_custody
+
+        provenance_path, custody_path, provenance, custody = self.ready_custody()
+        package = next(
+            item for item in custody["artifacts"] if item["role"] == "development-package"
+        )
+        asset = self.root / package["relative_path"]
+        rows = [json.loads(line) for line in asset.read_bytes().splitlines()]
+        rows[0]["private_extra"] = "self-consistent but undeclared"
+        raw = _package_bytes(rows)
+        asset.write_bytes(raw)
+        asset.chmod(0o600)
+        package["bytes"] = len(raw)
+        package["sha256"] = hashlib.sha256(raw).hexdigest()
+        provenance["custody_commitments"]["development_package_sha256"] = package["sha256"]
+        custody_path.write_text(json.dumps(custody))
+        custody_path.chmod(0o600)
+        provenance["custody_commitments"]["manifest_sha256"] = hashlib.sha256(
+            custody_path.read_bytes()
+        ).hexdigest()
+        provenance_path.write_text(json.dumps(provenance))
+        with self.assertRaisesRegex(PackageError, "canonical package rows"):
             validate_private_custody(custody_path, provenance_path)
 
     def test_provenance_cli_is_deterministic_offline_and_fails_closed_until_curated(self):
