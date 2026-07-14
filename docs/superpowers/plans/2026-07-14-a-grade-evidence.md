@@ -172,6 +172,7 @@ python3 -m unittest tests.test_oracle tests.test_execution_policy
 
 - Create: `eval/oracle/build.py`
 - Create: `eval/oracle/split.py`
+- Create: `eval/oracle/similarity-policy-v1.json`
 - Create: `tests/test_oracle_build.py`
 - Modify: `eval/bench/split_manifest.py`
 - Modify: `tests/test_bench_split_manifest.py`
@@ -195,6 +196,15 @@ python3 -m unittest tests.test_oracle tests.test_execution_policy
 **GREEN:** Extend the existing split validator rather than create a competing manifest contract.
 Generate external private packages with exclusive creation and owner-only modes; write public
 manifests atomically.
+
+The frozen similarity policy requires explicit `lineage_id` values and never infers lineage. Its
+five-language lexer drops comments, preserves keywords/operators/punctuation/identifiers, maps
+numbers to `<num>` and string/character contents to `<str>`, and maps non-keyword identifiers to
+`<id>` for structural fingerprints. Documentation uses lowercase ASCII word tokens with numeric
+normalization. Scan code and documentation independently. Fuzzy comparison uses Jaccard similarity
+over 5-token shingles at `>= 0.85`, minimum 20 tokens per field; shorter fields still receive exact,
+normalized-token, and structural equality checks. Bind the policy hash into package and split
+manifests and fail closed on tokenizer ambiguity or policy drift.
 
 ```sh
 python3 -m unittest tests.test_oracle_build tests.test_bench_split_manifest

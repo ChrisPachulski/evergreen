@@ -108,6 +108,15 @@ oracle grade does not claim coverage of them.
 - Before admission, reject exact, normalized-token, structural-fingerprint, and fuzzy overlap with
   development rows, prompts, examples, tests, fixtures, and prior benchmark corpora. Group forks,
   mirrors, vendored copies, and near-duplicate code together.
+- Bind a frozen similarity policy. Every source declares an explicit `lineage_id`; forks, mirrors,
+  and vendors share it, missing lineage fails admission, and lineage is never guessed. Tokenizer v1
+  drops comments, preserves exact keywords/operators/punctuation and identifiers, normalizes
+  numeric literals to `<num>` and string/character contents to `<str>`, and additionally maps
+  non-keyword identifiers to `<id>` for structural comparison. Documentation uses lowercase ASCII
+  word tokens with numbers mapped to `<num>`. Code and documentation are compared independently.
+  Fuzzy overlap is Jaccard similarity over 5-token shingles with threshold `>= 0.85` and minimum 20
+  tokens per compared field; shorter inputs still receive exact, normalized-token, and structural
+  equality checks.
 - Freeze source commit, skill/prompt digest, resolver, provider, model, runtime versions, oracle
   adapters, mutators, sandbox policy, package, split manifest, peer set, and all thresholds before
   holdout access.
