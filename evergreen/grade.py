@@ -31,6 +31,8 @@ COUNT_FIELDS = {
 }
 ORACLE_KIND_MINIMUM_POSITIVE = 20
 ORACLE_KIND_MINIMUM_NEGATIVE = 40
+MAX_JSON_DEPTH = 64
+MAX_JSON_NODES = 100_000
 POLICY_FIELDS = {
     "schema_version", "kind", "policy_id", "required_categories", "category_gates",
     "required_languages", "artifact_roles", "detector", "required_command_ids",
@@ -69,36 +71,13 @@ VERIFIER_ARTIFACTS = (
     "evergreen/receipt.py",
     "eval/grade-policy-v1.json",
 )
-SUBJECT_EXECUTABLE_PREFIXES = (
-    "bin/",
-    "commands/",
-    "evergreen/",
-    "eval/oracle/",
-    "skills/evergreen/",
-)
+SUBJECT_EXECUTABLE_EXTENSIONS = (".py", ".sh", ".yml", ".yaml", ".toml", ".json")
+SUBJECT_EXECUTABLE_PREFIXES = ("ci/", "commands/", "hooks/", "skills/")
 SUBJECT_EXECUTABLE_PATHS = frozenset({
     "AGENTS.md",
-    "eval/grade-policy-v1.json",
     "eval/prompt.md",
-    "eval/peers.py",
-    "eval/peers-v1.json",
-    "eval/bench/frozen_run.py",
-    "eval/bench/report.py",
-    "eval/bench/resolver.py",
-    "eval/bench/human-label.schema.json",
-    "eval/bench/model-output.schema.json",
-    "eval/bench/human-audit/source-pools.json",
 })
-SUBJECT_EXECUTABLE_PATHSPECS = (
-    ".github/workflows",
-    "bin",
-    "commands",
-    "evergreen",
-    "eval/bench",
-    "eval/oracle",
-    "skills/evergreen",
-    *sorted(SUBJECT_EXECUTABLE_PATHS),
-)
+NON_SEMANTIC_JSON_PREFIXES = ("eval/bench/out/", "eval/bench/public/")
 TRUSTED_LIMIT_CEILINGS = {
     "maximum_artifacts": 10_000,
     "maximum_bytes": 4_194_304,
@@ -145,17 +124,23 @@ def _load(payload):
         value = json.loads(payload, object_pairs_hook=_object, parse_constant=_constant)
     except GradeError:
         raise
-    except (UnicodeError, json.JSONDecodeError, RecursionError, TypeError):
+    except RecursionError:
+        raise GradeError("JSON structure exceeds trusted limits") from None
+    except (UnicodeError, json.JSONDecodeError, TypeError):
         raise GradeError("invalid JSON") from None
-    stack = [value]
+    stack = [(value, 0)]
+    nodes = 0
     while stack:
-        item = stack.pop()
+        item, depth = stack.pop()
+        nodes += 1
+        if depth > MAX_JSON_DEPTH or nodes > MAX_JSON_NODES:
+            raise GradeError("JSON structure exceeds trusted limits")
         if isinstance(item, _Object) and item.duplicates:
             raise GradeError(f"duplicate JSON key: {item.duplicates[0]}")
         if isinstance(item, dict):
-            stack.extend(item.values())
+            stack.extend((child, depth + 1) for child in item.values())
         elif isinstance(item, list):
-            stack.extend(item)
+            stack.extend((child, depth + 1) for child in item)
         elif isinstance(item, float) and not math.isfinite(item):
             raise GradeError("JSON numbers must be finite")
     return value
@@ -272,13 +257,15 @@ def load_policy(payload):
 
 
 def _walk_keys(value):
-    if isinstance(value, dict):
-        for key, item in value.items():
-            yield key
-            yield from _walk_keys(item)
-    elif isinstance(value, list):
-        for item in value:
-            yield from _walk_keys(item)
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            for key, child in item.items():
+                yield key
+                stack.append(child)
+        elif isinstance(item, list):
+            stack.extend(item)
 
 
 def _path(value, label):
@@ -714,25 +701,22 @@ def _trusted_predicates(policy):
     return predicates
 
 
-def _is_subject_executable_path(path):
+def _is_subject_executable_path(path, mode):
+    json_is_semantic = not (
+        path.startswith(NON_SEMANTIC_JSON_PREFIXES) or path.endswith(".votes.json")
+    )
     return (
         path in SUBJECT_EXECUTABLE_PATHS
         or path.startswith(SUBJECT_EXECUTABLE_PREFIXES)
-        or (
-            path.startswith("eval/bench/")
-            and (path.endswith((".py", ".sh")) or path in SUBJECT_EXECUTABLE_PATHS)
-        )
-        or (
-            path.startswith(".github/workflows/")
-            and path.endswith((".yml", ".yaml"))
-        )
+        or path.endswith(SUBJECT_EXECUTABLE_EXTENSIONS[:-1])
+        or (path.endswith(".json") and json_is_semantic)
+        or mode == "100755"
     )
 
 
 def _subject_executable_inventory(root, subject_commit, policy):
     listing = receipt._git(
-        root, "ls-tree", "-r", "-z", subject_commit, "--",
-        *SUBJECT_EXECUTABLE_PATHSPECS,
+        root, "ls-tree", "-r", "-z", subject_commit,
     )
     records = [record for record in listing.split("\0") if record]
     limits = policy["limits"]
@@ -746,7 +730,7 @@ def _subject_executable_inventory(root, subject_commit, policy):
             raise receipt.ReceiptOperationalError(
                 "subject executable inventory is invalid"
             ) from None
-        if not _is_subject_executable_path(path):
+        if not _is_subject_executable_path(path, mode):
             continue
         if len(inventory) >= limits["maximum_artifacts"]:
             raise VerificationFailure(

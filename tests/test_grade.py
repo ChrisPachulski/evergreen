@@ -275,6 +275,12 @@ class EvidenceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(GradeError, "finite"):
             load_evidence(non_finite.encode(), self.policy)
 
+    def test_deep_json_is_rejected_by_explicit_structure_limit(self):
+        nested = b'{"x":' * 80 + b"null" + b"}" * 80
+
+        with self.assertRaisesRegex(GradeError, "JSON structure exceeds trusted limits"):
+            load_evidence(nested, self.policy)
+
     def test_boolean_evidence_schema_version_is_rejected(self):
         evidence = valid_evidence()
         evidence["schema_version"] = True
