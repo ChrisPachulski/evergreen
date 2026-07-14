@@ -96,6 +96,18 @@ class ReceiptTests(unittest.TestCase):
         )
         self.assertFalse(receipt["repository"]["clean"])
 
+    def test_machine_local_excludes_remain_visible_as_untracked_evidence(self):
+        git_directory = Path(self.git("rev-parse", "--absolute-git-dir"))
+        info = git_directory / "info"
+        info.mkdir(exist_ok=True)
+        (info / "exclude").write_text("local-only\n")
+        (self.repo / "local-only").write_text("visible\n")
+
+        repository = build_receipt(self.repo)["repository"]
+
+        self.assertEqual(repository["untracked"], 1)
+        self.assertFalse(repository["clean"])
+
     def test_index_visibility_flags_fail_closed_instead_of_hiding_changes(self):
         for enable, disable in (
             ("--assume-unchanged", "--no-assume-unchanged"),
@@ -491,7 +503,14 @@ class ReceiptTests(unittest.TestCase):
             environments.append(dict(kwargs["env"]))
             return original(*args, **kwargs)
 
-        with mock.patch.object(module.subprocess, "Popen", side_effect=recording_popen):
+        with mock.patch.object(
+            module.subprocess,
+            "Popen",
+            side_effect=recording_popen,
+        ), mock.patch.dict(
+            os.environ,
+            {"TMPDIR": str(self.repo), "TEMP": str(self.repo), "TMP": str(self.repo)},
+        ):
             build_receipt(self.repo)
 
         self.assertTrue(environments)
@@ -521,6 +540,7 @@ class ReceiptTests(unittest.TestCase):
                 Path(environment["GIT_DIR"]).resolve(),
                 Path(self.git("rev-parse", "--absolute-git-dir")).resolve(),
             )
+            self.assertNotIn(self.repo.resolve(), Path(environment["GIT_DIR"]).parents)
             self.assertEqual(
                 Path(environment["GIT_WORK_TREE"]).resolve(),
                 self.repo.resolve(),
@@ -559,6 +579,19 @@ class ReceiptTests(unittest.TestCase):
         self.assertFalse(repository["clean"])
         self.assertEqual(repository["unstaged"], 1)
         self.assertFalse(marker.exists())
+
+    def test_synthetic_metadata_setup_failure_is_operational(self):
+        from evergreen import receipt as module
+
+        with mock.patch.object(
+            module.tempfile,
+            "TemporaryDirectory",
+            side_effect=OSError("unavailable"),
+        ), self.assertRaisesRegex(
+            ReceiptOperationalError,
+            "temporary Git metadata",
+        ):
+            build_receipt(self.repo)
 
     def test_pinned_index_ignores_a_later_visibility_flag(self):
         from evergreen import receipt as module

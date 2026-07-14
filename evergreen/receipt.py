@@ -425,10 +425,16 @@ def _status(root, pinned_index):
         "HEAD",
         missing_codes=(1,),
     )
-    head = _one_git_line(
-        _git(root, "rev-parse", "--verify", "HEAD"),
-        "Git HEAD",
+    head_output = _git(
+        root,
+        "rev-parse",
+        "--verify",
+        "HEAD",
+        missing_codes=(128,),
     )
+    if head_output is None:
+        raise ReceiptError("Git repository has no HEAD commit")
+    head = _one_git_line(head_output, "Git HEAD")
     branch = None if symbolic_branch is None else _one_git_line(
         symbolic_branch,
         "Git symbolic branch",
@@ -518,8 +524,13 @@ def _synthetic_git_metadata(root, head):
     )
     if object_format not in {"sha1", "sha256"}:
         raise ReceiptOperationalError("Git object format is unsupported")
-    with tempfile.TemporaryDirectory(prefix="evergreen-receipt-") as temporary:
-        git_directory = Path(temporary)
+    temporary = None
+    try:
+        temporary = tempfile.TemporaryDirectory(
+            prefix="evergreen-receipt-",
+            dir=_safe_temporary_parent(root),
+        )
+        git_directory = Path(temporary.name)
         (git_directory / "objects").mkdir()
         (git_directory / "refs").mkdir()
         (git_directory / "HEAD").write_text(f"{head}\n", encoding="ascii")
@@ -530,6 +541,16 @@ def _synthetic_git_metadata(root, head):
                 "[extensions]\n\tobjectformat = sha256\n"
             )
         (git_directory / "config").write_text(config, encoding="ascii")
+    except OSError:
+        if temporary is not None:
+            try:
+                temporary.cleanup()
+            except OSError:
+                pass
+        raise ReceiptOperationalError(
+            "temporary Git metadata could not be created"
+        ) from None
+    try:
         yield {
             "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_CONFIG_SYSTEM": os.devnull,
@@ -537,6 +558,29 @@ def _synthetic_git_metadata(root, head):
             "GIT_OBJECT_DIRECTORY": object_directory,
             "GIT_WORK_TREE": str(root),
         }
+    finally:
+        try:
+            temporary.cleanup()
+        except OSError:
+            raise ReceiptOperationalError(
+                "temporary Git metadata could not be removed"
+            ) from None
+
+
+def _safe_temporary_parent(root):
+    for name in ("/tmp", "/var/tmp"):
+        try:
+            candidate = Path(name).resolve(strict=True)
+        except OSError:
+            continue
+        if not candidate.is_dir():
+            continue
+        if candidate == root or root in candidate.parents:
+            continue
+        return candidate
+    raise ReceiptOperationalError(
+        "no temporary directory exists outside the repository"
+    )
 
 
 def _benchmark_identity(root, benchmark_manifest, head):

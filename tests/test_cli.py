@@ -249,12 +249,15 @@ class EvergreenCLITests(unittest.TestCase):
     def test_receipt_unborn_repository_is_invalid_input_exit_two(self):
         self.run_git(self.repo, "init", "-q", "-b", "main")
 
-        result = self.run_cli("receipt", "--repo", str(self.repo), "--json")
+        without_index = self.run_cli("receipt", "--repo", str(self.repo), "--json")
+        (self.repo / "staged").write_text("staged\n")
+        self.run_git(self.repo, "add", "staged")
+        with_index = self.run_cli("receipt", "--repo", str(self.repo), "--json")
 
-        self.assertEqual(result.returncode, 2)
-        self.assertEqual(result.stdout, "")
-        self.assertIn("no index", result.stderr)
-        self.assertNotIn("Traceback", result.stderr)
+        for result in (without_index, with_index):
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, "")
+            self.assertNotIn("Traceback", result.stderr)
 
     def test_receipt_errors_are_single_terminal_safe_lines(self):
         git_repo = self.make_git_repo()

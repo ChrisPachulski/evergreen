@@ -104,7 +104,8 @@ Rules:
 - Detached HEAD uses `branch: null`, `detached: true`, and `upstream: null`.
 - `ahead` and `behind` are `null` when no upstream exists.
 - `clean` is true only when staged, unstaged, and untracked counts are all zero.
-- Ignored files do not make the repository dirty.
+- Files ignored by tracked `.gitignore` rules do not make the repository dirty. Machine-local
+  excludes are deliberately not loaded and therefore remain visible as untracked evidence.
 - Rename detection is explicitly configured so repository or user Git configuration cannot change
   staged/unstaged counts.
 - File-mode and symlink visibility are explicitly enabled. Tracked submodules, assume-unchanged,
@@ -200,7 +201,9 @@ tests fail if any exact shared sentence drifts.
 - Do not print environment variables, Git configuration, credential helpers, or remote credentials.
   HTTP(S) remote userinfo must be redacted; unsupported credential-bearing remote forms are shown
   only in a bounded redacted representation.
-- The command never writes Git state or repository files.
+- The command never writes source-repository Git state or repository files. Disposable synthetic
+  metadata is created in a verified operating-system temporary directory outside the source root
+  and removed afterward.
 - Receipt collection is supported on macOS and Linux. Other platforms return a bounded operational
   error before starting a subprocess or using POSIX descriptor operations.
 
@@ -210,7 +213,7 @@ Unit tests must cover:
 
 - clean synchronized branch with origin and upstream;
 - staged, unstaged, untracked, and combined dirty counts;
-- ignored files excluded from dirty state;
+- files covered by tracked `.gitignore` rules excluded from dirty state, with local excludes left visible;
 - detached HEAD, missing upstream, and missing origin;
 - ahead and behind counts;
 - tags pointing at HEAD only;

@@ -124,8 +124,8 @@ outside the repository, literal pathspec handling, and an explicit rename policy
 branch, upstream, and ahead/behind identity separately through bounded Git commands.
 Count one staged entry when
 the X status is not `.`, one unstaged entry when Y is not `.`, and one untracked entry for each `?`
-record. Correctly consume the second NUL path for `2` rename/copy records. Use branch headers for
-HEAD, upstream, and `+ahead -behind`; use `symbolic-ref` to distinguish detached HEAD from a legal
+record. Correctly consume the second NUL path for `2` rename/copy records. Query HEAD, upstream,
+and ahead/behind separately; use `symbolic-ref` to distinguish detached HEAD from a legal
 branch named `(detached)`. Refuse tracked submodules, split indexes, assume-unchanged/skip-worktree entries, and
 effective clean/process filters (including config includes), and force deterministic rename limits
 plus file-mode and symlink visibility. Query tags against the captured commit and return only after two complete
