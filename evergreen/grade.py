@@ -46,7 +46,7 @@ THRESHOLD_FLOORS = {
     "f1": 0.80,
     "specificity": 0.98,
 }
-ALLOWED_CHANGE_PREFIXES = ("eval/grade-evidence/", "eval/grade-reports/")
+LOWER_BOUND_FLOORS = {"precision": 0.70, "recall": 0.70, "f1": 0.70}
 EXTERNAL_STATES = {"verified", "unverified", "not-applicable"}
 HEX = re.compile(r"[0-9a-f]+")
 SEMVER = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
@@ -146,7 +146,8 @@ def load_policy(payload):
     """Load and recursively freeze the closed v1 grade policy."""
     policy = _load(payload)
     _exact_object(policy, POLICY_FIELDS, "policy")
-    if (policy["schema_version"] != 1 or policy["kind"] != "evergreen-a-grade-policy" or
+    if (type(policy["schema_version"]) is not int or policy["schema_version"] != 1 or
+            policy["kind"] != "evergreen-a-grade-policy" or
             policy["policy_id"] != "a-grade-v1"):
         raise GradeError("policy identity is invalid")
     if tuple(policy["required_categories"]) != CATEGORIES:
@@ -161,7 +162,10 @@ def load_policy(payload):
 
     detector = policy["detector"]
     _exact_object(
-        detector, {"minimum_negative", "minimum_positive", "prevalence", "thresholds"},
+        detector, {
+            "minimum_negative", "minimum_positive", "prevalence", "thresholds",
+            "confidence_level", "confidence_cluster", "lower_bound_thresholds",
+        },
         "policy detector",
     )
     for name in ("minimum_negative", "minimum_positive"):
@@ -170,12 +174,22 @@ def load_policy(payload):
     prevalence = detector["prevalence"]
     if type(prevalence) not in (int, float) or prevalence != 0.10:
         raise GradeError("policy prevalence must be trusted v1 value 0.1")
+    if (type(detector["confidence_level"]) not in (int, float) or
+            detector["confidence_level"] != 0.95 or
+            detector["confidence_cluster"] != "repository"):
+        raise GradeError("policy confidence contract is invalid")
     thresholds = detector["thresholds"]
     _exact_object(thresholds, THRESHOLD_FLOORS, "policy thresholds")
     for name, floor in THRESHOLD_FLOORS.items():
         value = thresholds[name]
         if type(value) not in (int, float) or not math.isfinite(value) or value < floor:
             raise GradeError(f"policy threshold {name} is below trusted v1 floor")
+    lower_bounds = detector["lower_bound_thresholds"]
+    _exact_object(lower_bounds, LOWER_BOUND_FLOORS, "policy lower bound thresholds")
+    for name, floor in LOWER_BOUND_FLOORS.items():
+        value = lower_bounds[name]
+        if type(value) not in (int, float) or not math.isfinite(value) or value < floor:
+            raise GradeError(f"policy lower bound {name} is below trusted v1 floor")
 
     for field in (
         "artifact_roles", "required_command_ids", "forbidden_path_rules",
@@ -288,7 +302,8 @@ def load_evidence(payload, policy):
     if asserted:
         raise GradeError(f"evidence contains self-asserted field: {sorted(asserted)[0]}")
     _exact_object(evidence, EVIDENCE_FIELDS, "evidence")
-    if evidence["schema_version"] != 1 or evidence["kind"] != "evergreen-a-grade-evidence":
+    if (type(evidence["schema_version"]) is not int or evidence["schema_version"] != 1 or
+            evidence["kind"] != "evergreen-a-grade-evidence"):
         raise GradeError("evidence identity is invalid")
     if not isinstance(evidence["evaluated_release"], str) or not SEMVER.fullmatch(evidence["evaluated_release"]):
         raise GradeError("evaluated release is invalid")
@@ -308,10 +323,16 @@ def load_evidence(payload, policy):
     changed_paths = _string_list(evidence["changed_paths"], "changed paths")
     if changed_paths != tuple(sorted(changed_paths)):
         raise GradeError("changed paths must be sorted")
+    release_root = f"eval/grade/public/{evidence['evaluated_release']}"
+    allowed_changed_paths = {
+        f"{release_root}/evidence.json",
+        f"{release_root}/policy.json",
+        f"{release_root}/report.md",
+    }
     for path in changed_paths:
         _path(path, "changed path")
-        if not path.startswith(ALLOWED_CHANGE_PREFIXES):
-            raise GradeError(f"non-evidence path changed: {path}")
+        if path not in allowed_changed_paths:
+            raise GradeError(f"changed path is not a canonical release evidence path: {path}")
 
     executables = evidence["subject_executables"]
     if not isinstance(executables, list) or not executables:
@@ -392,12 +413,19 @@ def _predicate_results(policy, supplied):
     return result
 
 
-def evaluate(policy, evidence, evidence_head, trusted_predicates):
+def evaluate(policy, evidence, evidence_head, trusted_predicates, trusted_repository=None):
     """Derive a receipt from validated evidence and trusted runtime observations."""
     head = _identity(evidence_head, "evidence head")
     subject = _plain(evidence["subject"])
     if head["commit"] == subject["commit"]:
         raise GradeError("evidence head must be later than subject")
+    repository_fields = {
+        "subject_ancestor_of_evidence_head", "evidence_head_is_exact",
+    }
+    if (not isinstance(trusted_repository, dict) or
+            set(trusted_repository) != repository_fields or
+            any(type(value) is not bool for value in trusted_repository.values())):
+        raise GradeError("trusted repository observation is invalid")
     predicates = _predicate_results(policy, trusted_predicates)
     prevalence = policy["detector"]["prevalence"]
     thresholds = policy["detector"]["thresholds"]
@@ -405,7 +433,7 @@ def evaluate(policy, evidence, evidence_head, trusted_predicates):
         language: recompute_metrics(evidence["detector"][language], prevalence)
         for language in LANGUAGES
     }
-    detector_reasons = []
+    detector_reasons = ["detector:repository-clustered-bounds-missing"]
     adjusted_names = {
         "precision": "prevalence_precision",
         "recall": "prevalence_recall",
@@ -425,6 +453,11 @@ def evaluate(policy, evidence, evidence_head, trusted_predicates):
         ]
         if category == "detector_quality":
             reasons.extend(detector_reasons)
+        if category == "reproducibility_ci":
+            if not trusted_repository["subject_ancestor_of_evidence_head"]:
+                reasons.append("repository:subject-not-ancestor")
+            if not trusted_repository["evidence_head_is_exact"]:
+                reasons.append("repository:evidence-head-not-exact")
         reasons = sorted(set(reasons))
         categories.append({
             "id": category,
@@ -439,6 +472,7 @@ def evaluate(policy, evidence, evidence_head, trusted_predicates):
         "grade": "A" if earned else None,
         "subject": subject,
         "evidence_head": head,
+        "repository_observation": dict(trusted_repository),
         "policy": {
             "id": policy["policy_id"],
             "sha256": evidence["policy"]["sha256"],

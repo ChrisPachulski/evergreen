@@ -28,6 +28,10 @@ CATEGORIES = (
 LANGUAGES = ("go", "java", "python", "rust", "typescript")
 SUBJECT = {"commit": "1" * 40, "tree": "2" * 40}
 EVIDENCE_HEAD = {"commit": "3" * 40, "tree": "4" * 40}
+TRUSTED_REPOSITORY = {
+    "subject_ancestor_of_evidence_head": True,
+    "evidence_head_is_exact": True,
+}
 
 
 def policy_bytes():
@@ -75,8 +79,9 @@ def valid_evidence():
             }
         ],
         "changed_paths": [
-            "eval/grade-evidence/results.json",
-            "eval/grade-reports/a-grade.json",
+            "eval/grade/public/0.5.0/evidence.json",
+            "eval/grade/public/0.5.0/policy.json",
+            "eval/grade/public/0.5.0/report.md",
         ],
         "subject_executables": [
             {
@@ -128,11 +133,44 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(GradeError, "below trusted v1 floor"):
             load_policy(encode(source))
 
+    def test_policy_declares_repository_clustered_confidence_bound_floors(self):
+        detector = load_policy(policy_bytes())["detector"]
+
+        self.assertEqual(set(detector), {
+            "minimum_negative", "minimum_positive", "prevalence", "thresholds",
+            "confidence_level", "confidence_cluster", "lower_bound_thresholds",
+        })
+        self.assertEqual(detector["confidence_level"], 0.95)
+        self.assertEqual(detector["confidence_cluster"], "repository")
+        self.assertEqual(detector["lower_bound_thresholds"], {
+            "precision": 0.70,
+            "recall": 0.70,
+            "f1": 0.70,
+        })
+
+    def test_verifier_enforces_clustered_lower_bound_floors(self):
+        source = json.loads(policy_bytes())
+        source["detector"]["lower_bound_thresholds"] = {
+            "precision": 0.70,
+            "recall": 0.50,
+            "f1": 0.70,
+        }
+
+        with self.assertRaisesRegex(GradeError, "lower bound recall.*trusted v1 floor"):
+            load_policy(encode(source))
+
     def test_duplicate_keys_and_non_finite_numbers_are_rejected(self):
         with self.assertRaisesRegex(GradeError, "duplicate JSON key: kind"):
             load_policy(b'{"kind":"one","kind":"two"}')
         with self.assertRaisesRegex(GradeError, "finite"):
             load_policy(b'{"value": NaN}')
+
+    def test_boolean_policy_schema_version_is_rejected(self):
+        source = json.loads(policy_bytes())
+        source["schema_version"] = True
+
+        with self.assertRaisesRegex(GradeError, "policy identity"):
+            load_policy(encode(source))
 
 
 class EvidenceValidationTests(unittest.TestCase):
@@ -155,7 +193,8 @@ class EvidenceValidationTests(unittest.TestCase):
 
         loaded = self.load(valid_evidence())
         receipt = evaluate(
-            self.policy, loaded, EVIDENCE_HEAD, valid_predicates(self.policy)
+            self.policy, loaded, EVIDENCE_HEAD, valid_predicates(self.policy),
+            TRUSTED_REPOSITORY,
         )
         self.assertEqual(
             receipt["policy"]["thresholds"], self.policy["detector"]["thresholds"]
@@ -188,6 +227,13 @@ class EvidenceValidationTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(GradeError, "finite"):
             load_evidence(non_finite.encode(), self.policy)
+
+    def test_boolean_evidence_schema_version_is_rejected(self):
+        evidence = valid_evidence()
+        evidence["schema_version"] = True
+
+        with self.assertRaisesRegex(GradeError, "evidence identity"):
+            self.load(evidence)
 
     def test_categories_and_languages_must_be_exact(self):
         cases = []
@@ -233,7 +279,9 @@ class EvidenceValidationTests(unittest.TestCase):
         loaded = self.load(valid_evidence())
         predicates = valid_predicates(self.policy)
 
-        receipt = evaluate(self.policy, loaded, EVIDENCE_HEAD, predicates)
+        receipt = evaluate(
+            self.policy, loaded, EVIDENCE_HEAD, predicates, TRUSTED_REPOSITORY
+        )
 
         self.assertEqual(receipt["subject"], SUBJECT)
         self.assertEqual(receipt["evidence_head"], EVIDENCE_HEAD)
@@ -246,13 +294,30 @@ class EvidenceValidationTests(unittest.TestCase):
 
         changed_code = valid_evidence()
         changed_code["changed_paths"].append("evergreen/grade.py")
-        with self.assertRaisesRegex(GradeError, "non-evidence path"):
+        with self.assertRaisesRegex(GradeError, "canonical release evidence path"):
             self.load(changed_code)
 
         changed_executable = valid_evidence()
         changed_executable["subject_executables"][0]["evidence_sha256"] = "8" * 64
         with self.assertRaisesRegex(GradeError, "executable changed"):
             self.load(changed_executable)
+
+    def test_only_canonical_release_evidence_paths_may_change(self):
+        noncanonical = valid_evidence()
+        noncanonical["changed_paths"] = [
+            "eval/grade-evidence/results.json",
+            "eval/grade-reports/a-grade.json",
+        ]
+        with self.assertRaisesRegex(GradeError, "canonical release evidence path"):
+            self.load(noncanonical)
+
+        canonical = valid_evidence()
+        canonical["changed_paths"] = [
+            "eval/grade/public/0.5.0/evidence.json",
+            "eval/grade/public/0.5.0/policy.json",
+            "eval/grade/public/0.5.0/report.md",
+        ]
+        self.load(canonical)
 
 
 class GradeTests(unittest.TestCase):
@@ -277,18 +342,85 @@ class GradeTests(unittest.TestCase):
             valid_evidence()["detector"]["python"], 0.10
         ))
 
+    def test_counts_only_evidence_cannot_earn_without_clustered_confidence_bounds(self):
+        receipt = evaluate(
+            self.policy,
+            self.evidence,
+            EVIDENCE_HEAD,
+            valid_predicates(self.policy),
+            TRUSTED_REPOSITORY,
+        )
+
+        detector = next(
+            item for item in receipt["categories"] if item["id"] == "detector_quality"
+        )
+        self.assertEqual(detector["status"], "not-earned")
+        self.assertIn("detector:repository-clustered-bounds-missing", detector["reasons"])
+        self.assertIsNone(receipt["grade"])
+
+    def test_trusted_ancestry_and_exact_head_observations_are_required_to_earn(self):
+        predicates = valid_predicates(self.policy)
+        with self.assertRaisesRegex(GradeError, "trusted repository observation"):
+            evaluate(self.policy, self.evidence, EVIDENCE_HEAD, predicates)
+
+        receipt = evaluate(
+            self.policy,
+            self.evidence,
+            EVIDENCE_HEAD,
+            predicates,
+            {
+                "subject_ancestor_of_evidence_head": False,
+                "evidence_head_is_exact": True,
+            },
+        )
+
+        reproducibility = next(
+            item for item in receipt["categories"] if item["id"] == "reproducibility_ci"
+        )
+        self.assertEqual(reproducibility["status"], "not-earned")
+        self.assertIn("repository:subject-not-ancestor", reproducibility["reasons"])
+        self.assertIsNone(receipt["grade"])
+
+        receipt = evaluate(
+            self.policy,
+            self.evidence,
+            EVIDENCE_HEAD,
+            predicates,
+            {
+                "subject_ancestor_of_evidence_head": True,
+                "evidence_head_is_exact": False,
+            },
+        )
+        reproducibility = next(
+            item for item in receipt["categories"] if item["id"] == "reproducibility_ci"
+        )
+        self.assertEqual(reproducibility["status"], "not-earned")
+        self.assertIn("repository:evidence-head-not-exact", reproducibility["reasons"])
+
     def test_one_failed_predicate_fails_only_its_category_and_overall_grade(self):
         predicates = valid_predicates(self.policy)
+        baseline = evaluate(
+            self.policy, self.evidence, EVIDENCE_HEAD, predicates, TRUSTED_REPOSITORY
+        )
         predicates["cleanup"]["clean_tree"] = False
 
-        receipt = evaluate(self.policy, self.evidence, EVIDENCE_HEAD, predicates)
+        receipt = evaluate(
+            self.policy, self.evidence, EVIDENCE_HEAD, predicates, TRUSTED_REPOSITORY
+        )
 
         statuses = {item["id"]: item["status"] for item in receipt["categories"]}
+        baseline_statuses = {
+            item["id"]: item["status"] for item in baseline["categories"]
+        }
         self.assertEqual(statuses["cleanup"], "not-earned")
-        self.assertTrue(all(
-            status == "earned" for category, status in statuses.items()
-            if category != "cleanup"
-        ))
+        self.assertEqual(baseline_statuses["cleanup"], "earned")
+        self.assertEqual(
+            {category: status for category, status in statuses.items() if category != "cleanup"},
+            {
+                category: status for category, status in baseline_statuses.items()
+                if category != "cleanup"
+            },
+        )
         self.assertEqual(receipt["status"], "not-earned")
         self.assertIsNone(receipt["grade"])
 
@@ -299,7 +431,8 @@ class GradeTests(unittest.TestCase):
         loaded = load_evidence(encode(evidence), self.policy)
 
         receipt = evaluate(
-            self.policy, loaded, EVIDENCE_HEAD, valid_predicates(self.policy)
+            self.policy, loaded, EVIDENCE_HEAD, valid_predicates(self.policy),
+            TRUSTED_REPOSITORY,
         )
 
         detector = next(
@@ -310,7 +443,9 @@ class GradeTests(unittest.TestCase):
 
     def test_external_states_are_ungraded(self):
         predicates = valid_predicates(self.policy)
-        first = evaluate(self.policy, self.evidence, EVIDENCE_HEAD, predicates)
+        first = evaluate(
+            self.policy, self.evidence, EVIDENCE_HEAD, predicates, TRUSTED_REPOSITORY
+        )
         changed = valid_evidence()
         changed["external_states"] = {
             "adoption": "verified",
@@ -322,16 +457,22 @@ class GradeTests(unittest.TestCase):
             load_evidence(encode(changed), self.policy),
             EVIDENCE_HEAD,
             predicates,
+            TRUSTED_REPOSITORY,
         )
 
-        self.assertEqual(first["grade"], "A")
-        self.assertEqual(second["grade"], "A")
+        self.assertEqual(first["grade"], second["grade"])
+        self.assertEqual(first["status"], second["status"])
+        self.assertEqual(first["categories"], second["categories"])
         self.assertNotEqual(first["external_states"], second["external_states"])
 
     def test_receipt_serialization_is_byte_deterministic_and_runtime_only(self):
         predicates = valid_predicates(self.policy)
-        first = evaluate(self.policy, self.evidence, EVIDENCE_HEAD, predicates)
-        second = evaluate(self.policy, self.evidence, EVIDENCE_HEAD, predicates)
+        first = evaluate(
+            self.policy, self.evidence, EVIDENCE_HEAD, predicates, TRUSTED_REPOSITORY
+        )
+        second = evaluate(
+            self.policy, self.evidence, EVIDENCE_HEAD, predicates, TRUSTED_REPOSITORY
+        )
 
         self.assertEqual(canonical_receipt(first), canonical_receipt(second))
         manifest_bytes = encode(valid_evidence())
