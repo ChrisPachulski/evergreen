@@ -106,6 +106,11 @@ oracle grade does not claim coverage of them.
 - Commit only the ID-only, hash-bound split manifest. Keep holdout code, documentation, labels,
   oracle specifications, mutation identities, and project mappings unavailable to detector
   development. Give the detector opaque per-run IDs only.
+- A checked-in provenance manifest may contain public origins, extraction recipes, aggregate
+  counts, and content commitments, but never the complete pre-run seed rows. A trusted custodian
+  builds both packages outside the detector-development workspace and discloses only the
+  development package. The exact holdout inputs and oracle receipts may be published for audit only
+  after candidate and peer outputs close; that revealed split is retired from future holdout use.
 - Require at least 100 positive and 100 negative holdout decisions per language, drawn from at
   least 10 source repositories per language, with no repository contributing more than 20% of one
   language's holdout.

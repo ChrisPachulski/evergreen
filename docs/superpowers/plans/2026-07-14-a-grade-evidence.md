@@ -220,16 +220,22 @@ python3 -m unittest tests.test_oracle_build tests.test_bench_split_manifest
 
 **Files:**
 
-- Create: `eval/oracle/sources/manifest.json`
-- Create: `eval/oracle/sources/{python,java,typescript,rust,go}/...`
+- Create: `eval/oracle/sources/provenance.json`
+- Create: `eval/oracle/sources/{python,java,typescript,rust,go}/...` only for public extraction
+  recipes and source identities, never the complete pre-run holdout code/documentation rows
 - Create: `eval/oracle/README.md`
 - Modify: `.github/workflows/test.yml`
 - Modify: `tests/test_oracle_build.py`
 
 Use hash-pinned, license-compatible public sources. Each retained seed must be independently
 runnable without network access after checkout and must record the exact origin, commit, license,
-extraction, and harness. Prefer small pure functions and existing examples; do not vendor package
-managers, build caches, repositories, or unrelated source trees.
+extraction, and harness. The checked-in provenance manifest contains only public source identities,
+recipes, aggregate counts, and hashes. The complete seed manifest containing code, documentation,
+mutation identities, oracle specifications, project mappings, and split key remains in a trusted
+external custody location. Package construction discloses only `dev.jsonl`; it must not disclose the
+holdout path or bytes to the detector-development workspace. Prefer small pure functions and
+existing examples; do not vendor package managers, build caches, repositories, or unrelated source
+trees.
 
 Build at least 20 distinct source-project groups and 250 mechanically decidable seed claims per
 language. Twenty is the mathematical floor for the required 10 repository groups in each of the
@@ -248,7 +254,7 @@ development; committed commands use the CI-provided JDK. Separate trusted Linux 
 regeneration from macOS/Linux offline content verification.
 
 ```sh
-python3 -m eval.oracle.build validate --manifest eval/oracle/sources/manifest.json
+python3 -m eval.oracle.build validate-provenance --manifest eval/oracle/sources/provenance.json
 python3 -m unittest tests.test_oracle tests.test_oracle_build
 ```
 
@@ -396,6 +402,11 @@ then run every applicable peer on the identical IDs. Generate raw result hashes,
 decision evidence, metrics, intervals, peer comparison, and the grade receipt without editing the
 candidate.
 
+Only after every detector and peer output is closed may the custodian reveal and publish the exact
+hash-bound holdout inputs, oracle observations, and extraction receipts needed for offline audit.
+That post-run evidence is immutable and may never be reused as an untouched holdout for a later
+candidate.
+
 If any detector or comparison predicate fails, preserve only aggregate failure evidence, keep
 `0.4.0` current, do not inspect row reasoning for tuning, and create a new split version before the
 next attempt.
@@ -458,7 +469,7 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 bash tests/hooks.sh
 bash tests/action.sh
 python3 eval/bench/run_bench.py --selftest
-python3 -m eval.oracle.build validate --manifest eval/oracle/sources/manifest.json
+python3 -m eval.oracle.build validate-provenance --manifest eval/oracle/sources/provenance.json
 ./bin/evergreen grade verify --repo . --manifest eval/grade/public/0.5.0/evidence.json --json
 ./bin/evergreen doctor --host claude --repo .
 ./bin/evergreen doctor --host codex --repo .
