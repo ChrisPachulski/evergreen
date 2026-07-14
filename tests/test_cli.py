@@ -239,6 +239,36 @@ class EvergreenCLITests(unittest.TestCase):
                 self.assertLessEqual(len(result.stderr), 530)
                 self.assertTrue(result.stderr.startswith("evergreen: "))
 
+    def test_receipt_unresolved_repo_user_is_a_bounded_input_error(self):
+        result = self.run_cli(
+            "receipt", "--repo", "~evergreen_missing_user_7f8f1"
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr.count("\n"), 1)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertLessEqual(len(result.stderr), 530)
+        self.assertTrue(result.stderr.startswith("evergreen: "))
+
+    def test_receipt_unresolved_manifest_user_is_a_bounded_input_error(self):
+        git_repo = self.make_git_repo()
+
+        result = self.run_cli(
+            "receipt",
+            "--repo",
+            str(git_repo),
+            "--benchmark-manifest",
+            "~evergreen_missing_user_7f8f1/manifest.json",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr.count("\n"), 1)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertLessEqual(len(result.stderr), 530)
+        self.assertTrue(result.stderr.startswith("evergreen: "))
+
     def test_receipt_does_not_import_posix_host_stack(self):
         git_repo = self.make_git_repo()
         script = f"""

@@ -129,12 +129,16 @@ def run_impact(args):
 def run_receipt(args):
     from evergreen.receipt import ReceiptError, build_receipt
 
-    repo = Path(args.repo).expanduser()
-    benchmark_manifest = (
-        None
-        if args.benchmark_manifest is None
-        else Path(args.benchmark_manifest).expanduser()
-    )
+    try:
+        repo = Path(args.repo).expanduser()
+        benchmark_manifest = (
+            None
+            if args.benchmark_manifest is None
+            else Path(args.benchmark_manifest).expanduser()
+        )
+    except (OSError, RuntimeError) as error:
+        print(f"evergreen: {error_display(error)}", file=sys.stderr)
+        return 2
     try:
         payload = build_receipt(repo, benchmark_manifest)
     except ReceiptError as error:
