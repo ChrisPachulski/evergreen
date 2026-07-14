@@ -42,6 +42,21 @@ class HostEvidenceTests(unittest.TestCase):
             evidence["canonical"]["hashes"]["bin/evergreen"],
             hashlib.sha256((ROOT / "bin" / "evergreen").read_bytes()).hexdigest(),
         )
+        self.assertEqual(
+            {
+                path for path in evidence["canonical"]["hashes"]
+                if path.startswith("evergreen/")
+            },
+            {
+                "evergreen/__init__.py", "evergreen/evidence.py",
+                "evergreen/execution_policy.py", "evergreen/grade.py",
+                "evergreen/host_commit.py", "evergreen/host_evidence.py",
+                "evergreen/host_journal.py", "evergreen/host_lock.py",
+                "evergreen/host_metadata.py", "evergreen/host_snapshot.py",
+                "evergreen/host_transaction.py", "evergreen/host_types.py",
+                "evergreen/hosts.py", "evergreen/impact.py", "evergreen/receipt.py",
+            },
+        )
 
         def booleans(value):
             if type(value) is bool:
@@ -129,6 +144,34 @@ class HostEvidenceTests(unittest.TestCase):
         plugin = Path(self.temporary.name) / "canonical"
         shutil.copytree(ROOT, plugin, symlinks=True)
         (plugin / "commands" / "impact.md").chmod(0o666)
+
+        evidence = collect_host_evidence(self.home, plugin, "all")
+
+        self.assertEqual(evidence["canonical"]["hashes"], {})
+        for host in evidence["hosts"].values():
+            self.assertIn("canonical-invalid", host["doctor_issues"])
+
+    def test_host_evidence_rejects_omitted_package_source(self):
+        self.assert_package_source_inventory_fails_closed("missing")
+
+    def test_host_evidence_rejects_unexpected_importable_package_source(self):
+        self.assert_package_source_inventory_fails_closed("unexpected")
+
+    def test_host_evidence_rejects_writable_package_source(self):
+        self.assert_package_source_inventory_fails_closed("writable")
+
+    def assert_package_source_inventory_fails_closed(self, change):
+        from evergreen.hosts import collect_host_evidence
+
+        plugin = Path(self.temporary.name) / "canonical"
+        shutil.copytree(ROOT, plugin, symlinks=True)
+        source = plugin / "evergreen" / "impact.py"
+        if change == "missing":
+            source.unlink()
+        elif change == "unexpected":
+            (source.parent / "unexpected.py").write_text("raise RuntimeError('imported')\n")
+        else:
+            source.chmod(0o666)
 
         evidence = collect_host_evidence(self.home, plugin, "all")
 

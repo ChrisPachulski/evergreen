@@ -11,6 +11,12 @@ OWNERSHIP_FILE = _hosts.OWNERSHIP_FILE
 MAX_COMMAND_BYTES = _hosts.MAX_COMMAND_BYTES
 MAX_EVIDENCE_FILES = 256
 MAX_EVIDENCE_BYTES = 4 * 1024 * 1024
+PACKAGE_SOURCES = (
+    "__init__.py", "evidence.py", "execution_policy.py", "grade.py",
+    "host_commit.py", "host_evidence.py", "host_journal.py", "host_lock.py",
+    "host_metadata.py", "host_snapshot.py", "host_transaction.py", "host_types.py",
+    "hosts.py", "impact.py", "receipt.py",
+)
 HOST_EVIDENCE_FIELDS = {
     "lexical_root", "resolved_root", "resolution_chain", "ownership",
     "installed", "doctor_issues", "discovery", "uninstall_owned_paths",
@@ -309,7 +315,7 @@ def _sorted_unique_strings(value):
 
 def _active_hashes(root):
     _secure_active_path(root)
-    files = []
+    files = _package_sources(root)
     for relative in (
         Path("AGENTS.md"), Path("bin/evergreen"), Path("commands"),
         Path("skills/evergreen"), Path(".claude-plugin/plugin.json"),
@@ -348,6 +354,31 @@ def _active_hashes(root):
             raise ValueError("active evidence bytes exceed limit")
         output[path.relative_to(root).as_posix()] = hashlib.sha256(payload).hexdigest()
     return output
+
+
+def _package_sources(root):
+    package = root / "evergreen"
+    _secure_active_path(package)
+    if _kind(package) != "directory":
+        raise OSError(f"missing canonical package directory: {package}")
+    expected = set(PACKAGE_SOURCES)
+    for child in package.iterdir():
+        if child.name in expected:
+            continue
+        if child.name.endswith(".py") or (
+            _kind(child) == "directory" and child.name != "__pycache__"
+        ):
+            raise OSError(f"unexpected canonical package source: {child}")
+    sources = []
+    for name in PACKAGE_SOURCES:
+        source = package / name
+        if _kind(source) != "regular":
+            raise OSError(f"missing canonical package source: {source}")
+        _secure_active_path(source)
+        if source.lstat().st_nlink != 1:
+            raise OSError(f"hard-linked canonical package source: {source}")
+        sources.append(source)
+    return sources
 
 
 def _secure_active_path(path):
