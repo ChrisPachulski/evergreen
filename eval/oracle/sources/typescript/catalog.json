@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "kind": "evergreen-oracle-language-source-catalog",
+  "language": "typescript",
+  "sources": [
+    {
+      "source_id": "typescript-angular-angular",
+      "project": "angular/angular",
+      "lineage_id": "github.com-angular-angular",
+      "origin": "https://github.com/angular/angular.git",
+      "commit": "d5e0b131eda884f5eb1db4bb74c36b590513baa4",
+      "tree": "343c1942e105fb5aeb927a85a2da9a15d1f9f903",
+      "license": {
+        "spdx": "MIT",
+        "path": "LICENSE",
+        "sha256": "15e77c4692114f87c2020353626c868472c23954a4ed37ecc4c1522d14be1eb7"
+      },
+      "source": {
+        "path": "packages/common/test/directives/ng_for_spec.ts",
+        "blob_oid": "16499406e9b045355cb548094cbea677e15d6755",
+        "sha256": "9b41cb2db48e5e1132c58e149285ecfd7055faa4cf02bd7311e237d2cbc44454"
+      },
+      "witnesses": [
+        {
+          "kind": "cardinality",
+          "operator": "cardinality-one-to-two-v1",
+          "offset": 5840
+        }
+      ]
+    },
+    {
+      "source_id": "typescript-thi-ng-umbrella",
+      "project": "thi-ng/umbrella",
+      "lineage_id": "github.com-thi-ng-umbrella",
+      "origin": "https://github.com/thi-ng/umbrella.git",
+      "commit": "434b28ec2a302ed5edf269a6135d362e7783053c",
+      "tree": "8d823886110960939b5f269ad5e72bc6f0894ce3",
+      "license": {
+        "spdx": "Apache-2.0",
+        "path": "LICENSE",
+        "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+      },
+      "source": {
+        "path": "packages/transducers/src/toggle.ts",
+        "blob_oid": "a7a94766776d49b5c7092b638ee5a75eebe1130b",
+        "sha256": "a7cccc40372e4ee33d91e0ab7453f93ade0300faf545c24df403184d7d46988d"
+      },
+      "witnesses": [
+        {
+          "kind": "state-change",
+          "operator": "state-change-before-to-after-v1",
+          "offset": 1365
+        }
+      ]
+    },
+    {
+      "source_id": "typescript-microsoft-typescript",
+      "project": "microsoft/TypeScript",
+      "lineage_id": "github.com-microsoft-typescript",
+      "origin": "https://github.com/microsoft/TypeScript.git",
+      "commit": "637d5746b70257028fb95aad32ddec6b26ab0a14",
+      "tree": "0338c23b07e80046e7f06cd7bc51da166ce86061",
+      "license": {
+        "spdx": "Apache-2.0",
+        "path": "LICENSE.txt",
+        "sha256": "a7d00bfd54525bc694b6e32f64c7ebcf5e6b7ae3657be5cc12767bce74654a47"
+      },
+      "source": {
+        "path": "src/compiler/path.ts",
+        "blob_oid": "a06359d51e549043afbd6b810d924c13f13552d7",
+        "sha256": "4b777f1a03b9f39b4864106e60a43828b5b749a5fae00f68d6faf8f02e0c91bc"
+      },
+      "witnesses": [
+        {
+          "kind": "return-value",
+          "operator": "return-value-1-to-2-v1",
+          "offset": 4934
+        }
+      ]
+    },
+    {
+      "source_id": "typescript-unpkg-unpkg",
+      "project": "unpkg/unpkg",
+      "lineage_id": "github.com-unpkg-unpkg",
+      "origin": "https://github.com/unpkg/unpkg.git",
+      "commit": "f782586b3872fe45dbc5417f3f6b50f9ac53232f",
+      "tree": "83dca9c0d9dfd6f17a866afe59c92c8d16f603ee",
+      "license": {
+        "spdx": "MIT",
+        "path": "LICENSE",
+        "sha256": "cb8bbfb30c0c8ec09c00b47aa7d93c7cc8997577a0fc0ee0d23a63fac00df116"
+      },
+      "source": {
+        "path": "packages/unpkg-files/src/lib/esm-build-service.test.ts",
+        "blob_oid": "4a3bc6dff6210aa2a6154fb18db842b0fb8187af",
+        "sha256": "29913d63a8fa18e9d95960e9f4d38b60fa404b2687274f52919677aa1fdc29ee"
+      },
+      "witnesses": [
+        {
+          "kind": "raises",
+          "operator": "raises-none-to-value-error-v1",
+          "offset": 3773
+        }
+      ]
+    },
+    {
+      "source_id": "typescript-cheminfo-tga-spectrum",
+      "project": "cheminfo/tga-spectrum",
+      "lineage_id": "github.com-cheminfo-tga-spectrum",
+      "origin": "https://github.com/cheminfo/tga-spectrum.git",
+      "commit": "1baff49b233133ee9eb230f69aa586bbec87bf86",
+      "tree": "f298b862c643f660e890158ed7c84a52ff9a9f58",
+      "license": {
+        "spdx": "MIT",
+        "path": "LICENSE",
+        "sha256": "04ef1361ea29f66a612c54e27dec0dde8c6aa1a047d9c012da936d54be99f9e2"
+      },
+      "source": {
+        "path": "src/from/parser/parseTAInstruments.ts",
+        "blob_oid": "9fdd7e032dfde43a33d33fa9dd45cf60044c7ca0",
+        "sha256": "e4ea6ed84866d6ecf52a9b08c49dd27c85580cb187a514eb2a574d672631f0d0"
+      },
+      "witnesses": [
+        {
+          "kind": "default-value",
+          "operator": "default-value-one-to-two-v1",
+          "offset": 1256
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"kind":"evergreen-public-extraction-recipe","language":"typescript","schema_version":1,"steps":[{"argv":["git","show","--no-ext-diff","COMMIT:PATH"]}]}
