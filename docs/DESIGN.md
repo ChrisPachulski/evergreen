@@ -128,7 +128,7 @@ Stage and commit in separate tool calls.
 When a user challenges remembered status, inspect the fresh receipt or authoritative artifact before agreeing or defending.
 A combined staging-and-commit call cannot prove the finalized index passed the guard.
 Receipt collection is supported on macOS and Linux; unsupported hosts fail before POSIX operations.
-Repositories with external clean/process filters, tracked submodules, or assume-unchanged/skip-worktree index flags are refused rather than certified.
+Repositories with external clean/process filters, tracked submodules, split indexes, or assume-unchanged/skip-worktree index flags are refused rather than certified.
 A benchmark manifest is accepted only when its exact bytes match the captured HEAD.
 <!-- evergreen-receipt-policy:end -->
 
@@ -143,9 +143,10 @@ No timestamp is emitted, so unchanged input has stable JSON. The human renderer 
 repository, release, and benchmark fields without adding interpretation. Local tags remain local
 evidence, `release.external_state` remains `unverified`, and benchmark state is only
 `declared_publication`; neither rendering claims fresh provider execution or external publication.
-The Git reader forces rename, mode, and symlink visibility; it refuses tracked submodules,
-hidden-index flags, and effective external clean/process filters before status collection, and brackets both Git and
-captured-HEAD manifest identity to reject concurrent change. Git reads have one streaming output
+The Git reader forces rename, mode, and symlink visibility; it pins one non-split index for every
+index-dependent read, isolates repository configuration while collecting status, refuses tracked
+submodules, split indexes, hidden-index flags, and effective external clean/process filters, and
+brackets both Git and captured-HEAD manifest identity to reject concurrent change. Git reads have one streaming output
 cap/deadline with process-group cleanup; manifest bytes come through one no-follow descriptor.
 Lazy object fetching is disabled for every Git call. Captured-HEAD identity uses a non-fetching tree
 lookup followed by a bounded local blob read, so an unavailable promised blob is operationally

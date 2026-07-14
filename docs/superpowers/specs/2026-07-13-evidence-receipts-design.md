@@ -189,10 +189,13 @@ tests fail if any exact shared sentence drifts.
   streaming output, one total timeout, and no shell. Repository-controlled fsmonitor, tracing,
   maintenance, or user/system configuration must not execute or write through a receipt. Effective
   external clean/process filters, including filters supplied by config includes, fail closed before
-  status collection and are checked on both sides of each snapshot.
+  status collection and are checked on both sides of each snapshot. Pin the exact non-split index
+  used by all index-dependent reads and isolate repository configuration from status collection, so
+  a concurrent index replacement or transient filter cannot change what status observes.
 - Disable lazy object fetching on every Git call. Resolve the manifest's captured-HEAD tree entry
   separately from its local blob read so an absent path is invalid evidence but an unavailable
   promised object is a bounded operational failure, never a network request.
+- Treat every Git path supplied by the receipt as literal rather than pathspec syntax.
 - Do not print environment variables, Git configuration, credential helpers, or remote credentials.
   HTTP(S) remote userinfo must be redacted; unsupported credential-bearing remote forms are shown
   only in a bounded redacted representation.

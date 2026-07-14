@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit, urlunsplit
 
@@ -75,13 +76,27 @@ def build_receipt(repo: Path, benchmark_manifest: Path | None = None) -> dict:
     raise ReceiptOperationalError("repository changed while receipt was collected")
 
 
-def _git(root, *args, missing_codes=(), input_error=False):
+def _git(
+    root,
+    *args,
+    missing_codes=(),
+    input_error=False,
+    pinned_index=None,
+    isolated_config=False,
+):
     environment = {
         "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_LITERAL_PATHSPECS": "1",
         "GIT_NO_LAZY_FETCH": "1",
         "GIT_OPTIONAL_LOCKS": "0",
         "LC_ALL": "C",
     }
+    inherited_descriptors = ()
+    if pinned_index is not None:
+        environment["GIT_INDEX_FILE"] = f"/dev/fd/{pinned_index}"
+        inherited_descriptors = (pinned_index,)
+    if isolated_config:
+        environment["GIT_CONFIG"] = os.devnull
     try:
         process = subprocess.Popen(
             [
@@ -118,6 +133,7 @@ def _git(root, *args, missing_codes=(), input_error=False):
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+            pass_fds=inherited_descriptors,
         )
     except OSError:
         raise ReceiptOperationalError("Git command could not be executed") from None
@@ -279,19 +295,20 @@ def _redact_remote(remote):
 
 
 def _repository_snapshot(root):
-    gitlinks = _gitlinks(root)
-    if gitlinks:
-        raise ReceiptError("tracked submodules prevent a complete safe receipt")
-    _assert_index_visibility(root)
-    filters_before = _external_filter_configuration(root)
-    if filters_before:
-        raise ReceiptError("external Git filters prevent a safe receipt")
-    status = _status(root)
-    filters_after = _external_filter_configuration(root)
-    if filters_after:
-        raise ReceiptOperationalError(
-            "Git filter configuration changed while receipt was collected"
-        )
+    with _pinned_index(root) as pinned_index:
+        gitlinks = _gitlinks(root, pinned_index)
+        if gitlinks:
+            raise ReceiptError("tracked submodules prevent a complete safe receipt")
+        _assert_index_visibility(root, pinned_index)
+        filters_before = _external_filter_configuration(root)
+        if filters_before:
+            raise ReceiptError("external Git filters prevent a safe receipt")
+        status = _status(root, pinned_index)
+        filters_after = _external_filter_configuration(root)
+        if filters_after:
+            raise ReceiptOperationalError(
+                "Git filter configuration changed while receipt was collected"
+            )
     head = status["head"]
     return {
         "status": status,
@@ -304,8 +321,51 @@ def _repository_snapshot(root):
     }
 
 
-def _gitlinks(root):
-    output = _git(root, "ls-files", "--stage", "-z")
+@contextmanager
+def _pinned_index(root):
+    index_name = _one_git_line(
+        _git(root, "rev-parse", "--git-path", "index"),
+        "Git index path",
+    )
+    index_path = Path(index_name)
+    if not index_path.is_absolute():
+        index_path = root / index_path
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        descriptor = os.open(index_path, flags)
+    except OSError:
+        raise ReceiptOperationalError("Git index could not be pinned") from None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ReceiptOperationalError("Git index is not a regular file")
+        shared_index = _one_git_line(
+            _git(
+                root,
+                "rev-parse",
+                "--shared-index-path",
+                pinned_index=descriptor,
+            ),
+            "Git shared index path",
+        )
+        if shared_index:
+            raise ReceiptError("split Git indexes prevent a complete safe receipt")
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _gitlinks(root, pinned_index):
+    output = _git(
+        root,
+        "ls-files",
+        "--stage",
+        "-z",
+        pinned_index=pinned_index,
+    )
     paths = []
     for record in output.split("\0"):
         if not record:
@@ -320,8 +380,14 @@ def _gitlinks(root):
     return tuple(sorted(paths))
 
 
-def _assert_index_visibility(root):
-    records = _git(root, "ls-files", "-v", "-z").split("\0")
+def _assert_index_visibility(root, pinned_index):
+    records = _git(
+        root,
+        "ls-files",
+        "-v",
+        "-z",
+        pinned_index=pinned_index,
+    ).split("\0")
     for record in records:
         if not record:
             continue
@@ -347,7 +413,7 @@ def _external_filter_configuration(root):
     )
 
 
-def _status(root):
+def _status(root, pinned_index):
     symbolic_branch = _git(
         root,
         "symbolic-ref",
@@ -364,6 +430,8 @@ def _status(root):
         "-z",
         "--untracked-files=all",
         "--ignore-submodules=all",
+        pinned_index=pinned_index,
+        isolated_config=True,
     )
     records = output.split("\0")
     head = upstream = None

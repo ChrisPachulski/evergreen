@@ -15,9 +15,10 @@
   five-second deadline, streaming reads capped at one MiB, and process-group termination/reaping.
 - Every Git call sets `GIT_NO_LAZY_FETCH=1`; captured-HEAD manifest verification separates the tree
   lookup from a bounded local `cat-file` blob read so unavailable promised objects fail operationally.
-- Receipt collection is macOS/Linux-only and fails before POSIX operations elsewhere. Effective
-  external clean/process filters, tracked submodules, and hidden-index flags fail closed; file
-  mode, symlink, and rename visibility are explicitly enabled.
+- Receipt collection is macOS/Linux-only and fails before POSIX operations elsewhere. Status uses
+  one pinned non-split index with repository configuration isolated and literal Git paths.
+  Effective external clean/process filters, tracked submodules, split indexes, and hidden-index
+  flags fail closed; file mode, symlink, and rename visibility are explicitly enabled.
 - Missing origin/upstream are data, not errors; missing HEAD is an error.
 - Local Git state never proves an external release.
 - A benchmark manifest produces `evidence_state: declared_publication`, never a fresh-execution, reverified, or quality-PASS claim.
@@ -116,12 +117,14 @@ terminate/reap the process group on timeout or overflow before UTF-8 decoding. A
 origin and symbolic-branch lookups to return “missing” without raising. Redact URL userinfo and the
 user part of SCP-like remotes; fail closed for helpers and unsupported schemes.
 
-Parse `git status --porcelain=v2 --branch -z --untracked-files=all` under an explicit rename policy.
+Pin the current non-split index through an inherited read-only descriptor, then parse `git status
+--porcelain=v2 --branch -z --untracked-files=all` with that index, isolated repository
+configuration, literal pathspec handling, and an explicit rename policy.
 Count one staged entry when
 the X status is not `.`, one unstaged entry when Y is not `.`, and one untracked entry for each `?`
 record. Correctly consume the second NUL path for `2` rename/copy records. Use branch headers for
 HEAD, upstream, and `+ahead -behind`; use `symbolic-ref` to distinguish detached HEAD from a legal
-branch named `(detached)`. Refuse tracked submodules, assume-unchanged/skip-worktree entries, and
+branch named `(detached)`. Refuse tracked submodules, split indexes, assume-unchanged/skip-worktree entries, and
 effective clean/process filters (including config includes), and force deterministic rename limits
 plus file-mode and symlink visibility. Query tags against the captured commit and return only after two complete
 snapshots match. When a benchmark manifest is supplied, bracket those snapshots with two identity

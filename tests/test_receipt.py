@@ -109,6 +109,12 @@ class ReceiptTests(unittest.TestCase):
                 self.git("update-index", disable, "tracked")
                 (self.repo / "tracked").write_text("original\n")
 
+    def test_split_index_fails_closed(self):
+        self.git("update-index", "--split-index")
+
+        with self.assertRaisesRegex(ReceiptError, "split Git indexes"):
+            build_receipt(self.repo)
+
     def test_submodule_ignore_configuration_cannot_hide_changes(self):
         source = self.repo.parent / "submodule-source"
         source.mkdir()
@@ -490,6 +496,39 @@ class ReceiptTests(unittest.TestCase):
             for environment in environments
         ))
 
+    def test_status_uses_isolated_config_and_a_pinned_index(self):
+        from evergreen import receipt as module
+
+        status_environments = []
+        original = module.subprocess.Popen
+
+        def recording_popen(*args, **kwargs):
+            command = args[0]
+            if "status" in command:
+                status_environments.append(dict(kwargs["env"]))
+            return original(*args, **kwargs)
+
+        with mock.patch.object(module.subprocess, "Popen", side_effect=recording_popen):
+            build_receipt(self.repo)
+
+        self.assertTrue(status_environments)
+        for environment in status_environments:
+            self.assertEqual(environment.get("GIT_CONFIG"), os.devnull)
+            self.assertRegex(
+                environment.get("GIT_INDEX_FILE", ""),
+                r"^/dev/fd/\d+$",
+            )
+
+    def test_pinned_index_ignores_a_later_visibility_flag(self):
+        from evergreen import receipt as module
+
+        with module._pinned_index(self.repo) as descriptor:
+            self.git("update-index", "--assume-unchanged", "tracked")
+            (self.repo / "tracked").write_text("changed\n")
+            status = module._status(self.repo, descriptor)
+
+        self.assertEqual(status["unstaged"], 1)
+
     def test_repository_clean_filter_cannot_execute(self):
         marker = self.repo / "filter-executed"
         hook = self.repo.parent / "hostile-clean-filter"
@@ -629,7 +668,8 @@ class ReceiptTests(unittest.TestCase):
     def test_torn_repository_state_is_retried_then_refused(self):
         from evergreen import receipt as module
 
-        stable = module._status(self.repo)
+        with module._pinned_index(self.repo) as descriptor:
+            stable = module._status(self.repo, descriptor)
         moving = {**stable, "staged": stable["staged"] + 1, "clean": False}
         with mock.patch.object(
             module,
@@ -721,6 +761,17 @@ class ReceiptTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ReceiptError, "captured HEAD"):
             build_receipt(self.repo, Path("bench/manifest.json"))
+
+    def test_manifest_name_with_leading_pathspec_magic_is_literal(self):
+        manifest = self.benchmark_manifest()
+        path = self.repo / ":(glob)manifest.json"
+        path.write_text(json.dumps(manifest))
+        self.git("--literal-pathspecs", "add", "--", path.name)
+        self.git("commit", "-qm", "record literal pathspec manifest")
+
+        benchmark = build_receipt(self.repo, Path(path.name))["benchmark"]
+
+        self.assertEqual(benchmark["manifest"], path.name)
 
     def test_missing_head_path_and_unavailable_promised_blob_have_distinct_errors(self):
         from evergreen import receipt as module
