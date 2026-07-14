@@ -1,0 +1,94 @@
+{
+  "artifact_roles": [
+    "ci_attestation",
+    "cleanup_inventory",
+    "detector_result",
+    "documentation_claims",
+    "host_observation",
+    "oracle_package",
+    "peer_manifest",
+    "peer_result",
+    "report",
+    "split_manifest",
+    "subject_executable"
+  ],
+  "category_gates": {
+    "claude_self_application": [
+      "claude_active_installation"
+    ],
+    "cleanup": [
+      "clean_tree"
+    ],
+    "codex_self_application": [
+      "codex_active_installation"
+    ],
+    "detector_quality": [
+      "detector_metrics"
+    ],
+    "documentation_release_honesty": [
+      "documentation_claims"
+    ],
+    "reproducibility_ci": [
+      "macos_linux"
+    ],
+    "same_corpus_comparison": [
+      "peer_applicability"
+    ],
+    "trust_security": [
+      "trust_matrix"
+    ]
+  },
+  "detector": {
+    "minimum_negative": 100,
+    "minimum_positive": 100,
+    "prevalence": 0.1,
+    "thresholds": {
+      "f1": 0.8,
+      "precision": 0.8,
+      "provider_completion": 0.99,
+      "recall": 0.8,
+      "semantic_coverage": 0.99,
+      "specificity": 0.98
+    }
+  },
+  "external_state_names": [
+    "adoption",
+    "human_review",
+    "marketplace_publication"
+  ],
+  "forbidden_path_rules": [
+    "credentials",
+    "generated",
+    "machine-local",
+    "private-labels",
+    "stale-version"
+  ],
+  "kind": "evergreen-a-grade-policy",
+  "limits": {
+    "maximum_artifacts": 10000,
+    "maximum_bytes": 4194304,
+    "maximum_depth": 16
+  },
+  "policy_id": "a-grade-v1",
+  "required_categories": [
+    "detector_quality",
+    "same_corpus_comparison",
+    "trust_security",
+    "claude_self_application",
+    "codex_self_application",
+    "documentation_release_honesty",
+    "reproducibility_ci",
+    "cleanup"
+  ],
+  "required_command_ids": [
+    "python-tests"
+  ],
+  "required_languages": [
+    "go",
+    "java",
+    "python",
+    "rust",
+    "typescript"
+  ],
+  "schema_version": 1
+}
