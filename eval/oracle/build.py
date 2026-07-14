@@ -107,6 +107,7 @@ PUBLIC_SOURCE_LICENSES = {
 }
 MAX_REFERENCE_INVENTORY_BYTES = 16 * 1024 * 1024
 MAX_REFERENCE_CONTENT_BYTES = 1024 * 1024
+MAX_PUBLIC_SOURCE_BLOB_BYTES = 1024 * 1024
 MAX_PACKAGE_ROWS = 100_000
 MAX_SOURCE_SEEDS = 100_000
 REFERENCE_POLICY_PATH = Path(__file__).with_name("reference-inventory-policy-v1.json")
@@ -185,7 +186,7 @@ def _public_source_path(value):
 
 def _public_recipe(manifest_path, language, extraction):
     if not isinstance(extraction, dict) or set(extraction) != {
-            "recipe_path", "recipe_sha256", "argv"}:
+            "recipe_path", "recipe_sha256"}:
         raise PackageError("oracle source provenance extraction recipe is invalid")
     relative = extraction["recipe_path"]
     if type(relative) is not str:
@@ -264,17 +265,19 @@ def _validate_public_sources(manifest_path, sources, toolchains):
     source_keys = {
         "source_id", "language", "project", "lineage_id", "origin", "commit", "tree",
         "license", "extraction", "harness", "toolchain_id", "sandbox_image",
-        "extracted_tree_sha256", "seed_claims", "oracle_kind_counts",
+        "source_blobs", "extracted_tree_sha256", "seed_claims", "oracle_kind_counts",
         "source_identity_sha256",
     }
     toolchain_by_language = {item["language"]: item for item in toolchains}
     seen_ids = set()
-    seen_projects = set()
     seen_source_identities = set()
     seen_source_content = set()
     seen_extracted_content = set()
+    seen_blob_content = set()
+    seen_blob_identities = set()
     origin_lineages = {}
     project_lineages = {}
+    project_identities = {}
     for source in sources:
         if not isinstance(source, dict) or set(source) != source_keys:
             raise PackageError("oracle source provenance source fields are invalid")
@@ -284,7 +287,6 @@ def _validate_public_sources(manifest_path, sources, toolchains):
                 not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", source["source_id"]) or
                 source["source_id"] in seen_ids or type(source["project"]) is not str or
                 not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", source["project"]) or
-                (language, source["project"]) in seen_projects or
                 type(source["lineage_id"]) is not str or
                 not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", source["lineage_id"]) or
                 parsed is None or parsed.scheme != "https" or not parsed.hostname or
@@ -296,7 +298,6 @@ def _validate_public_sources(manifest_path, sources, toolchains):
                 not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", source["tree"])):
             raise PackageError("oracle source provenance source identity is invalid")
         seen_ids.add(source["source_id"])
-        seen_projects.add((language, source["project"]))
 
         license_record = source["license"]
         if (not isinstance(license_record, dict) or set(license_record) != {
@@ -307,32 +308,48 @@ def _validate_public_sources(manifest_path, sources, toolchains):
                 not re.fullmatch(r"[0-9a-f]{64}", license_record["sha256"])):
             raise PackageError("oracle source provenance license identity is invalid")
         _public_recipe(manifest_path, language, source["extraction"])
-        extraction_argv = source["extraction"]["argv"]
-        if (not isinstance(extraction_argv, list) or len(extraction_argv) != 4 or
-                extraction_argv[:3] != ["git", "show", "--no-ext-diff"] or
-                type(extraction_argv[3]) is not str or
-                not extraction_argv[3].startswith(source["commit"] + ":") or
-                not _public_source_path(extraction_argv[3].partition(":")[2]) or
-                any(any(token in argument for token in ("\0", "\n", "\r"))
-                    for argument in extraction_argv)):
-            raise PackageError("oracle source provenance extraction argv is invalid")
 
         harness = source["harness"]
-        if not isinstance(harness, dict) or set(harness) != {"adapter_id", "argv", "sha256"}:
+        if not isinstance(harness, dict) or set(harness) != {
+                "adapter_id", "adapter_sha256"}:
             raise PackageError("oracle source provenance harness is invalid")
-        unsigned_harness = {key: value for key, value in harness.items() if key != "sha256"}
-        argv = harness["argv"]
         if (harness["adapter_id"] != f"{language}-oracle-v1" or
-                not isinstance(argv, list) or len(argv) != 3 or
-                argv[0] != LANGUAGE_ADAPTERS[language] or argv[2] != "/control/oracle-v1.json" or
-                type(argv[1]) is not str or not argv[1].startswith("/input/") or
-                harness["sha256"] != hashlib.sha256(_canonical(unsigned_harness)).hexdigest()):
+                type(harness["adapter_sha256"]) is not str or
+                not re.fullmatch(r"[0-9a-f]{64}", harness["adapter_sha256"])):
             raise PackageError("oracle source provenance harness identity is invalid")
-        relative_input = argv[1].removeprefix("/input/")
-        input_path = PurePosixPath(relative_input)
-        if (input_path.is_absolute() or input_path.as_posix() != relative_input or
-                any(part in ("", ".", "..") or part.startswith(".") for part in input_path.parts)):
-            raise PackageError("oracle source provenance harness path is invalid")
+
+        blobs = source["source_blobs"]
+        blob_keys = {"repository_path", "input_path", "blob_oid", "sha256", "oracle_kind"}
+        if not isinstance(blobs, list) or not blobs or len(blobs) > MAX_SOURCE_SEEDS:
+            raise PackageError("oracle source provenance blob inventory is invalid")
+        if blobs != sorted(blobs, key=lambda item: item.get("input_path", "")
+                           if isinstance(item, dict) else ""):
+            raise PackageError("oracle source provenance blob inventory is not canonical")
+        local_paths = set()
+        local_repository_paths = set()
+        derived_counts = {kind: 0 for kind in ORACLE_KINDS}
+        for blob in blobs:
+            if (not isinstance(blob, dict) or set(blob) != blob_keys or
+                    not _public_source_path(blob["repository_path"]) or
+                    not _public_source_path(blob["input_path"]) or
+                    type(blob["blob_oid"]) is not str or
+                    not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", blob["blob_oid"]) or
+                    type(blob["sha256"]) is not str or
+                    not re.fullmatch(r"[0-9a-f]{64}", blob["sha256"]) or
+                    blob["oracle_kind"] not in ORACLE_KINDS or
+                    blob["input_path"] in local_paths or
+                    blob["repository_path"] in local_repository_paths):
+                raise PackageError("oracle source provenance blob inventory is invalid")
+            blob_identity = (
+                source["origin"], source["commit"], blob["repository_path"], blob["blob_oid"],
+            )
+            if blob_identity in seen_blob_identities or blob["sha256"] in seen_blob_content:
+                raise PackageError("oracle source provenance source/blob alias is invalid")
+            seen_blob_identities.add(blob_identity)
+            seen_blob_content.add(blob["sha256"])
+            local_paths.add(blob["input_path"])
+            local_repository_paths.add(blob["repository_path"])
+            derived_counts[blob["oracle_kind"]] += 1
 
         toolchain = toolchain_by_language[language]
         counts = source["oracle_kind_counts"]
@@ -341,12 +358,15 @@ def _validate_public_sources(manifest_path, sources, toolchains):
                 any(type(value) is not int or value < 0 for value in counts.values()) or
                 type(source["seed_claims"]) is not int or source["seed_claims"] < 1 or
                 sum(counts.values()) != source["seed_claims"] or
+                counts != derived_counts or source["seed_claims"] != len(blobs) or
                 type(source["sandbox_image"]) is not str or
                 not re.fullmatch(r"[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}",
                                  source["sandbox_image"]) or
                 type(source["extracted_tree_sha256"]) is not str or
                 not re.fullmatch(r"[0-9a-f]{64}", source["extracted_tree_sha256"])):
             raise PackageError("oracle source provenance toolchain or seed counts are invalid")
+        if source["extracted_tree_sha256"] != hashlib.sha256(_canonical(blobs)).hexdigest():
+            raise PackageError("oracle source provenance extracted tree hash is invalid")
         unsigned = {key: value for key, value in source.items()
                     if key != "source_identity_sha256"}
         if source["source_identity_sha256"] != hashlib.sha256(_canonical(unsigned)).hexdigest():
@@ -365,6 +385,17 @@ def _validate_public_sources(manifest_path, sources, toolchains):
         seen_source_identities.add(source["source_identity_sha256"])
         seen_source_content.add(content_identity)
         seen_extracted_content.add(source["extracted_tree_sha256"])
+        project_key = (language, source["project"])
+        project_identity = (
+            source["lineage_id"], source["origin"], source["commit"], source["tree"],
+            _canonical(source["license"]), source["toolchain_id"], source["sandbox_image"],
+            _canonical(source["harness"]),
+        )
+        previous_project_identity = project_identities.setdefault(
+            project_key, project_identity,
+        )
+        if previous_project_identity != project_identity:
+            raise PackageError("oracle source provenance project identity is inconsistent")
         for identities, identity in (
             (origin_lineages, source["origin"]), (project_lineages, source["project"]),
         ):
@@ -525,6 +556,100 @@ def validate_provenance(path, *, require_ready=True):
     return report
 
 
+def _git_object(repository, *arguments, maximum=MAX_PUBLIC_SOURCE_BLOB_BYTES):
+    command = [
+        "git", "--no-replace-objects", "-c", "core.pager=cat", "-c", "color.ui=false",
+        *arguments,
+    ]
+    environment = os.environ.copy()
+    environment.update({
+        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C",
+    })
+    try:
+        completed = subprocess.run(
+            command, cwd=repository, env=environment, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise PackageError("public source Git object verification failed") from None
+    if completed.returncode or len(completed.stdout) > maximum:
+        raise PackageError("public source Git object verification failed")
+    return completed.stdout
+
+
+def verify_public_source_checkout(manifest_path, source_id, repository):
+    """Recompute one public source witness from an exact local Git object database."""
+    validate_provenance(manifest_path, require_ready=False)
+    document = _load_json(manifest_path, "oracle source provenance")
+    selected = [source for source in document["sources"] if source["source_id"] == source_id]
+    if len(selected) != 1:
+        raise PackageError("public source identity is unavailable or ambiguous")
+    source = selected[0]
+    repository = Path(repository).resolve(strict=True)
+    if not repository.is_dir():
+        raise PackageError("public source Git object database is unavailable")
+    origin = _git_object(repository, "remote", "get-url", "origin", maximum=4096).decode().strip()
+    if origin != source["origin"]:
+        raise PackageError("public source Git origin does not match provenance")
+    object_type = _git_object(
+        repository, "cat-file", "-t", source["commit"], maximum=64,
+    ).decode().strip()
+    if object_type != "commit":
+        raise PackageError("public source commit object does not match provenance")
+    tree = _git_object(
+        repository, "rev-parse", "--verify", f"{source['commit']}^{{tree}}", maximum=128,
+    ).decode().strip()
+    if tree != source["tree"]:
+        raise PackageError("public source tree does not match provenance")
+    license_raw = _git_object(
+        repository, "show", "--no-ext-diff",
+        f"{source['commit']}:{source['license']['path']}", maximum=MAX_PUBLIC_SOURCE_BLOB_BYTES,
+    )
+    if hashlib.sha256(license_raw).hexdigest() != source["license"]["sha256"]:
+        raise PackageError("public source license bytes do not match provenance")
+    for blob in source["source_blobs"]:
+        listing = _git_object(
+            repository, "ls-tree", "-z", source["commit"], "--", blob["repository_path"],
+            maximum=4096,
+        )
+        records = [record for record in listing.split(b"\0") if record]
+        if len(records) != 1 or b"\t" not in records[0]:
+            raise PackageError("public source blob path does not match provenance")
+        metadata, path = records[0].split(b"\t", 1)
+        fields = metadata.split()
+        if (path.decode() != blob["repository_path"] or len(fields) != 3 or
+                fields[0] not in (b"100644", b"100755") or fields[1] != b"blob" or
+                fields[2].decode() != blob["blob_oid"]):
+            raise PackageError("public source blob identity does not match provenance")
+        size_raw = _git_object(
+            repository, "cat-file", "-s", blob["blob_oid"], maximum=64,
+        )
+        try:
+            size = int(size_raw)
+        except ValueError:
+            raise PackageError("public source blob size is invalid") from None
+        if size < 1 or size > MAX_PUBLIC_SOURCE_BLOB_BYTES:
+            raise PackageError("public source blob size is invalid")
+        blob_raw = _git_object(
+            repository, "cat-file", "blob", blob["blob_oid"], maximum=size,
+        )
+        if len(blob_raw) != size or hashlib.sha256(blob_raw).hexdigest() != blob["sha256"]:
+            raise PackageError("public source blob bytes do not match provenance")
+    receipt = {
+        "schema_version": 1,
+        "kind": "evergreen-public-source-checkout-verification",
+        "source_id": source["source_id"],
+        "source_identity_sha256": source["source_identity_sha256"],
+        "origin": source["origin"],
+        "commit": source["commit"],
+        "tree": source["tree"],
+        "extracted_tree_sha256": source["extracted_tree_sha256"],
+    }
+    receipt["verification_sha256"] = hashlib.sha256(_canonical(receipt)).hexdigest()
+    return receipt
+
+
 def _custody_rows(raw, label):
     try:
         rows = [_loads_strict(line) for line in raw.splitlines() if line]
@@ -576,26 +701,40 @@ def _validate_custody_artifact_semantics(provenance, artifact_paths, artifact_ra
         raise PackageError("private custody seed manifest semantics are invalid") from error
     _validate_source_group_splits(entries, split_key)
 
-    source_index = {
-        (source["language"], source["project"], source["lineage_id"]): source
-        for source in provenance["sources"]
-    }
     source_counts = {
-        key: {kind: 0 for kind in ORACLE_KINDS} for key in source_index
+        source["source_id"]: {kind: 0 for kind in ORACLE_KINDS}
+        for source in provenance["sources"]
     }
     expected_rows = {}
     for seed_hash, lineage, seed in entries:
-        key = (seed["language"], seed["project"], lineage)
-        source = source_index.get(key)
-        if source is None:
+        candidates = []
+        for candidate in provenance["sources"]:
+            if (seed["language"] != candidate["language"] or
+                    seed["project"] != candidate["project"] or
+                    lineage != candidate["lineage_id"] or
+                    seed["source"]["origin"] != candidate["origin"] or
+                    seed["source"]["commit"] != candidate["commit"] or
+                    seed["source"]["license"] != candidate["license"]["spdx"] or
+                    seed["sandbox"]["image"] != candidate["sandbox_image"]):
+                continue
+            matching_blobs = [
+                blob for blob in candidate["source_blobs"]
+                if (seed["source"]["path"] == blob["input_path"] and
+                    seed["source"]["sha256"] == blob["sha256"] and
+                    seed["oracle"]["kind"] == blob["oracle_kind"])
+            ]
+            if len(matching_blobs) == 1:
+                candidates.append((candidate, matching_blobs[0]))
+        if len(candidates) != 1:
             raise PackageError("private custody seed manifest does not match public inventory")
-        if (seed["source"]["origin"] != source["origin"] or
-                seed["source"]["commit"] != source["commit"] or
-                seed["source"]["license"] != source["license"]["spdx"] or
-                seed["harness"]["argv"] != source["harness"]["argv"] or
-                seed["sandbox"]["image"] != source["sandbox_image"]):
+        source, blob = candidates[0]
+        expected_argv = [
+            LANGUAGE_ADAPTERS[source["language"]], f"/input/{blob['input_path']}",
+            "/control/oracle-v1.json",
+        ]
+        if seed["harness"]["argv"] != expected_argv:
             raise PackageError("private custody seed manifest does not match public inventory")
-        source_counts[key][seed["oracle"]["kind"]] += 1
+        source_counts[source["source_id"]][seed["oracle"]["kind"]] += 1
         source_bytes = seed["source"]["code"].encode()
         variants = (
             ("source", source_bytes, "consistent", None),
@@ -614,8 +753,8 @@ def _validate_custody_artifact_semantics(provenance, artifact_paths, artifact_ra
             if row["id"] in expected_rows:
                 raise PackageError("private custody seed manifest produces duplicate rows")
             expected_rows[row["id"]] = row
-    for key, source in source_index.items():
-        counts = source_counts[key]
+    for source in provenance["sources"]:
+        counts = source_counts[source["source_id"]]
         if counts != source["oracle_kind_counts"] or sum(counts.values()) != source["seed_claims"]:
             raise PackageError("private custody seed manifest does not match public inventory")
 
@@ -748,6 +887,11 @@ def validate_private_custody(path, provenance_path):
                    if item["language"] == language}
         for language in LANGUAGES
     }
+    source_adapters = {
+        language: {item["harness"]["adapter_sha256"] for item in provenance["sources"]
+                   if item["language"] == language}
+        for language in LANGUAGES
+    }
     receipts = custody["toolchain_receipts"]
     if not isinstance(receipts, list) or len(receipts) != len(LANGUAGES):
         raise PackageError("private custody toolchain receipts are invalid")
@@ -767,6 +911,7 @@ def validate_private_custody(path, provenance_path):
                 any(type(receipt[key]) is not str or
                     not re.fullmatch(r"[0-9a-f]{64}", receipt[key])
                     for key in ("executable_sha256", "adapter_sha256")) or
+                source_adapters[language] != {receipt["adapter_sha256"]} or
                 source_images[language] != {receipt["sandbox_image"]}):
             raise PackageError("private custody toolchain receipt is invalid")
         seen_languages.add(language)
@@ -1536,6 +1681,12 @@ def main(argv=None):
     )
     custody.add_argument("--manifest", required=True)
     custody.add_argument("--provenance", required=True)
+    source_checkout = commands.add_parser(
+        "verify-source-checkout", help="recompute a public source witness from local Git objects"
+    )
+    source_checkout.add_argument("--manifest", required=True)
+    source_checkout.add_argument("--source-id", required=True)
+    source_checkout.add_argument("--repository", required=True)
     arguments = parser.parse_args(sys.argv[1:] if argv is None else argv)
     if arguments.command == "development":
         rows = load_development_rows(Path(arguments.manifest), Path(arguments.package))
@@ -1558,6 +1709,15 @@ def main(argv=None):
             )
         except PackageError as error:
             parser.exit(2, f"oracle custody invalid: {error}\n")
+        sys.stdout.buffer.write(_canonical(report) + b"\n")
+        return 0
+    if arguments.command == "verify-source-checkout":
+        try:
+            report = verify_public_source_checkout(
+                Path(arguments.manifest), arguments.source_id, Path(arguments.repository),
+            )
+        except (OSError, UnicodeError, PackageError) as error:
+            parser.exit(2, f"oracle source checkout invalid: {error}\n")
         sys.stdout.buffer.write(_canonical(report) + b"\n")
         return 0
     raise PackageError("unknown oracle package command")

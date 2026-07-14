@@ -74,21 +74,35 @@
             "additionalProperties": false,
             "properties": {
               "recipe_path": {"pattern": "^(?:python|java|typescript|rust|go)/[A-Za-z0-9_.-]+\\.json$", "type": "string"},
-              "recipe_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
-              "argv": {"items": {"minLength": 1, "type": "string"}, "maxItems": 16, "minItems": 1, "type": "array"}
+              "recipe_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
             },
-            "required": ["recipe_path", "recipe_sha256", "argv"],
+            "required": ["recipe_path", "recipe_sha256"],
             "type": "object"
           },
           "harness": {
             "additionalProperties": false,
             "properties": {
               "adapter_id": {"pattern": "^[a-z]+-oracle-v1$", "type": "string"},
-              "argv": {"items": {"minLength": 1, "type": "string"}, "maxItems": 3, "minItems": 3, "type": "array"},
-              "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+              "adapter_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
             },
-            "required": ["adapter_id", "argv", "sha256"],
+            "required": ["adapter_id", "adapter_sha256"],
             "type": "object"
+          },
+          "source_blobs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "repository_path": {"minLength": 1, "type": "string"},
+                "input_path": {"minLength": 1, "type": "string"},
+                "blob_oid": {"pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$", "type": "string"},
+                "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+                "oracle_kind": {"enum": ["return-value", "raises", "default-value", "cardinality", "state-change"]}
+              },
+              "required": ["repository_path", "input_path", "blob_oid", "sha256", "oracle_kind"],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
           },
           "toolchain_id": {"minLength": 1, "type": "string"},
           "sandbox_image": {"pattern": "^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$", "type": "string"},
@@ -97,7 +111,7 @@
           "oracle_kind_counts": {"$ref": "#/$defs/oracle_kind_counts"},
           "source_identity_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
         },
-        "required": ["source_id", "language", "project", "lineage_id", "origin", "commit", "tree", "license", "extraction", "harness", "toolchain_id", "sandbox_image", "extracted_tree_sha256", "seed_claims", "oracle_kind_counts", "source_identity_sha256"],
+        "required": ["source_id", "language", "project", "lineage_id", "origin", "commit", "tree", "license", "extraction", "harness", "toolchain_id", "sandbox_image", "source_blobs", "extracted_tree_sha256", "seed_claims", "oracle_kind_counts", "source_identity_sha256"],
         "type": "object"
       },
       "type": "array"

@@ -535,12 +535,14 @@ class OracleBuildTests(unittest.TestCase):
         } for category in ("prompt", "example", "test", "fixture", "prior-corpus")]
 
     def ready_provenance(self):
-        from eval.oracle.oracle import CONTROL_PATH, LANGUAGE_ADAPTERS, ORACLE_KINDS
+        from eval.oracle.oracle import ORACLE_KINDS
+        from tests.test_oracle import OracleTests
 
         document = json.loads(
             (ROOT / "eval/oracle/sources/provenance.json").read_text()
         )
         sources = []
+        fixture = OracleTests()
         suffixes = {
             "python": "py", "java": "java", "typescript": "ts", "rust": "rs", "go": "go",
         }
@@ -566,15 +568,37 @@ class OracleBuildTests(unittest.TestCase):
                 counts = {kind: 2 for kind in ORACLE_KINDS}
                 for offset in range(seed_claims - 10):
                     counts[ORACLE_KINDS[(index + offset) % len(ORACLE_KINDS)]] += 1
-                source_path = f"extracted/source.{suffixes[language]}"
+                source_blobs = []
+                for kind, count in counts.items():
+                    for seed_index in range(count):
+                        seed = fixture.seed(language, kind)
+                        marker = "#" if language == "python" else "//"
+                        raw = (
+                            seed["source"]["code"] +
+                            f"\n{marker} fixture source {language}-{index}-{kind}-{seed_index}\n"
+                        ).encode()
+                        repository_path = (
+                            f"oracle/{kind}-{index}-{seed_index}.{suffixes[language]}"
+                        )
+                        input_path = (
+                            f"extracted/{kind}-{index}-{seed_index}.{suffixes[language]}"
+                        )
+                        source_blobs.append({
+                            "repository_path": repository_path,
+                            "input_path": input_path,
+                            "blob_oid": hashlib.sha1(
+                                f"blob {len(raw)}\0".encode() + raw
+                            ).hexdigest(),
+                            "sha256": hashlib.sha256(raw).hexdigest(),
+                            "oracle_kind": kind,
+                        })
+                source_blobs.sort(key=lambda item: item["input_path"])
                 harness = {
                     "adapter_id": f"{language}-oracle-v1",
-                    "argv": [LANGUAGE_ADAPTERS[language], f"/input/{source_path}", CONTROL_PATH],
+                    "adapter_sha256": hashlib.sha256(
+                        f"adapter-{language}".encode()
+                    ).hexdigest(),
                 }
-                harness["sha256"] = hashlib.sha256(json.dumps(
-                    harness, ensure_ascii=False, allow_nan=False, sort_keys=True,
-                    separators=(",", ":"),
-                ).encode()).hexdigest()
                 commit = hashlib.sha256(f"{language}-{index}-commit".encode()).hexdigest()
                 source = {
                     "source_id": f"{language}-source-{index}",
@@ -592,7 +616,6 @@ class OracleBuildTests(unittest.TestCase):
                     "extraction": {
                         "recipe_path": f"{language}/extract-v1.json",
                         "recipe_sha256": hashlib.sha256(recipe_raw).hexdigest(),
-                        "argv": ["git", "show", "--no-ext-diff", f"{commit}:source.{suffixes[language]}"],
                     },
                     "harness": harness,
                     "toolchain_id": toolchain["toolchain_id"],
@@ -600,9 +623,11 @@ class OracleBuildTests(unittest.TestCase):
                         f"registry.invalid/evergreen-{language}@sha256:" +
                         hashlib.sha256(f"image-{language}".encode()).hexdigest()
                     ),
-                    "extracted_tree_sha256": hashlib.sha256(
-                        f"extracted-{language}-{index}".encode()
-                    ).hexdigest(),
+                    "source_blobs": source_blobs,
+                    "extracted_tree_sha256": hashlib.sha256(json.dumps(
+                        source_blobs, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()).hexdigest(),
                     "seed_claims": seed_claims,
                     "oracle_kind_counts": counts,
                 }
@@ -643,6 +668,7 @@ class OracleBuildTests(unittest.TestCase):
     def ready_custody(self):
         from eval.oracle import oracle
         from eval.oracle.build import _custody_split_aggregates, _package_bytes, _public_id
+        from eval.oracle.oracle import CONTROL_PATH, LANGUAGE_ADAPTERS
         from eval.oracle.split import assign_split, load_similarity_policy
         from tests.test_oracle import OracleTests
 
@@ -665,19 +691,47 @@ class OracleBuildTests(unittest.TestCase):
             "python": "py", "java": "java", "typescript": "ts", "rust": "rs", "go": "go",
         }
         for source_index, source in enumerate(provenance["sources"]):
+            project_index = int(source["source_id"].rsplit("-", 1)[1])
             for kind, count in source["oracle_kind_counts"].items():
                 for seed_index in range(count):
                     seed = fixture.seed(source["language"], kind)
+                    marker = "#" if source["language"] == "python" else "//"
+                    seed["source"]["code"] += (
+                        f"\n{marker} fixture source {source['language']}-{project_index}-"
+                        f"{kind}-{seed_index}\n"
+                    )
+                    seed["source"]["sha256"] = hashlib.sha256(
+                        seed["source"]["code"].encode()
+                    ).hexdigest()
+                    seed["mutation"]["derivative_sha256"] = hashlib.sha256(
+                        oracle._mutated_source(seed)
+                    ).hexdigest()
+                    seed["semantic_noop"]["derivative_sha256"] = hashlib.sha256(
+                        seed["source"]["code"].encode() +
+                        oracle.semantic_noop_suffix(source["language"])
+                    ).hexdigest()
                     seed["group_id"] = (
                         f"custody-{source['language']}-{source_index}-{kind}-{seed_index}"
                     )
                     seed["project"] = source["project"]
+                    blob = next(
+                        blob for blob in source["source_blobs"]
+                        if blob["oracle_kind"] == kind and
+                        blob["input_path"].endswith(
+                            f"-{seed_index}.{suffixes[source['language']]}"
+                        )
+                    )
                     seed["source"].update({
                         "origin": source["origin"], "commit": source["commit"],
                         "license": source["license"]["spdx"],
-                        "path": f"extracted/source.{suffixes[source['language']]}",
+                        "path": blob["input_path"],
                     })
-                    seed["harness"]["argv"] = source["harness"]["argv"]
+                    self.assertEqual(seed["source"]["sha256"], blob["sha256"])
+                    seed["harness"]["argv"] = [
+                        LANGUAGE_ADAPTERS[source["language"]],
+                        f"/input/{blob['input_path']}",
+                        CONTROL_PATH,
+                    ]
                     seed["sandbox"]["image"] = source["sandbox_image"]
                     seed["seed_sha256"] = oracle.seed_sha256(seed)
                     entries.append({"lineage_id": source["lineage_id"], "seed": seed})
@@ -1214,10 +1268,12 @@ class OracleBuildTests(unittest.TestCase):
              "license"),
             (lambda value: value["sources"][0]["license"].__setitem__("path", "../LICENSE"),
              "license"),
-            (lambda value: value["sources"][0]["extraction"]["argv"].__setitem__(
-                3, value["sources"][0]["commit"] + ":../private"
-            ), "extraction argv"),
-            (lambda value: value["sources"][0]["harness"].__setitem__("sha256", "a" * 64),
+            (lambda value: value["sources"][0]["source_blobs"][0].__setitem__(
+                "repository_path", "../private"
+            ), "blob inventory"),
+            (lambda value: value["sources"][0]["harness"].__setitem__(
+                "adapter_sha256", "a" * 63
+            ),
              "harness"),
             (lambda value: value["sources"][0].__setitem__("toolchain_id", "unbound"),
              "toolchain"),
@@ -1301,7 +1357,7 @@ class OracleBuildTests(unittest.TestCase):
         first, alias = document["sources"][:2]
         for key in (
             "origin", "commit", "tree", "extraction", "harness", "sandbox_image",
-            "extracted_tree_sha256",
+            "source_blobs", "extracted_tree_sha256",
         ):
             alias[key] = json.loads(json.dumps(first[key]))
         unsigned = {key: value for key, value in alias.items()
@@ -1311,7 +1367,7 @@ class OracleBuildTests(unittest.TestCase):
             separators=(",", ":"),
         ).encode()).hexdigest()
         path.write_text(json.dumps(document))
-        with self.assertRaisesRegex(PackageError, "source/content alias"):
+        with self.assertRaisesRegex(PackageError, "source/(?:blob|content) alias"):
             validate_provenance(path)
 
     def test_provenance_requires_consistent_origin_and_project_lineage(self):
@@ -1330,6 +1386,107 @@ class OracleBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(PackageError, "lineage"):
             validate_provenance(path)
 
+    def test_provenance_allows_multiple_blob_inventories_for_one_pinned_project(self):
+        from eval.oracle.build import PackageError, _source_aggregates, validate_provenance
+
+        path, document = self.ready_provenance()
+        first, additional = document["sources"][:2]
+        for key in ("project", "lineage_id", "origin", "commit", "tree", "license"):
+            additional[key] = json.loads(json.dumps(first[key]))
+        unsigned = {key: value for key, value in additional.items()
+                    if key != "source_identity_sha256"}
+        additional["source_identity_sha256"] = hashlib.sha256(json.dumps(
+            unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        document["aggregates"] = _source_aggregates(document["sources"])
+        path.write_text(json.dumps(document))
+        report = validate_provenance(path, require_ready=False)
+        self.assertFalse(report["ready"])
+        self.assertIn("python:projects-below-20", report["reasons"])
+
+        additional["commit"] = "f" * len(additional["commit"])
+        unsigned = {key: value for key, value in additional.items()
+                    if key != "source_identity_sha256"}
+        additional["source_identity_sha256"] = hashlib.sha256(json.dumps(
+            unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        path.write_text(json.dumps(document))
+        with self.assertRaisesRegex(PackageError, "project identity"):
+            validate_provenance(path, require_ready=False)
+
+    def test_public_source_checkout_verifier_recomputes_git_objects_and_blob_bytes(self):
+        from eval.oracle.build import PackageError, verify_public_source_checkout
+        from tests.test_oracle import OracleTests
+
+        path, document = self.ready_provenance()
+        source = document["sources"][0]
+        repository = self.root / "source-repository"
+        repository.mkdir()
+
+        def git(*arguments):
+            return subprocess.check_output(
+                ["git", *arguments], cwd=repository, stderr=subprocess.DEVNULL,
+            ).decode().strip()
+
+        git("init", "-q")
+        git("config", "user.email", "oracle@example.invalid")
+        git("config", "user.name", "Oracle Fixture")
+        git("remote", "add", "origin", source["origin"])
+        fixture = OracleTests()
+        for blob in source["source_blobs"]:
+            seed_index = int(Path(blob["repository_path"]).stem.rsplit("-", 1)[1])
+            seed = fixture.seed(source["language"], blob["oracle_kind"])
+            raw = (
+                seed["source"]["code"] +
+                f"\n# fixture source python-0-{blob['oracle_kind']}-{seed_index}\n"
+            ).encode()
+            target = repository / blob["repository_path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+        license_raw = b"MIT fixture license\n"
+        (repository / "LICENSE").write_bytes(license_raw)
+        git("add", ".")
+        git("commit", "-qm", "fixture")
+        source["commit"] = git("rev-parse", "HEAD")
+        source["tree"] = git("rev-parse", "HEAD^{tree}")
+        source["license"]["sha256"] = hashlib.sha256(license_raw).hexdigest()
+        for blob in source["source_blobs"]:
+            blob["blob_oid"] = git(
+                "rev-parse", f"{source['commit']}:{blob['repository_path']}"
+            )
+        source["extracted_tree_sha256"] = hashlib.sha256(json.dumps(
+            source["source_blobs"], ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        unsigned = {key: value for key, value in source.items()
+                    if key != "source_identity_sha256"}
+        source["source_identity_sha256"] = hashlib.sha256(json.dumps(
+            unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        path.write_text(json.dumps(document))
+
+        receipt = verify_public_source_checkout(path, source["source_id"], repository)
+        self.assertEqual(receipt["commit"], source["commit"])
+        self.assertRegex(receipt["verification_sha256"], r"^[0-9a-f]{64}$")
+
+        source["source_blobs"][0]["sha256"] = "0" * 64
+        source["extracted_tree_sha256"] = hashlib.sha256(json.dumps(
+            source["source_blobs"], ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        unsigned = {key: value for key, value in source.items()
+                    if key != "source_identity_sha256"}
+        source["source_identity_sha256"] = hashlib.sha256(json.dumps(
+            unsigned, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        path.write_text(json.dumps(document))
+        with self.assertRaisesRegex(PackageError, "blob bytes"):
+            verify_public_source_checkout(path, source["source_id"], repository)
+
     def test_provenance_rejects_mirrors_reusing_extracted_content_as_new_lineages(self):
         from eval.oracle.build import PackageError, validate_provenance
 
@@ -1339,6 +1496,7 @@ class OracleBuildTests(unittest.TestCase):
         ]
         extracted_hash = python_sources[0]["extracted_tree_sha256"]
         for source in python_sources[1:]:
+            source["source_blobs"] = json.loads(json.dumps(python_sources[0]["source_blobs"]))
             source["extracted_tree_sha256"] = extracted_hash
             unsigned = {key: value for key, value in source.items()
                         if key != "source_identity_sha256"}
@@ -1347,7 +1505,7 @@ class OracleBuildTests(unittest.TestCase):
                 separators=(",", ":"),
             ).encode()).hexdigest()
         path.write_text(json.dumps(document))
-        with self.assertRaisesRegex(PackageError, "extracted content"):
+        with self.assertRaisesRegex(PackageError, "source/blob alias"):
             validate_provenance(path)
 
     def test_provenance_content_identity_does_not_treat_origin_as_independence(self):
@@ -1357,7 +1515,7 @@ class OracleBuildTests(unittest.TestCase):
         source, mirror = document["sources"][:2]
         for key in (
             "commit", "tree", "extraction", "harness", "sandbox_image",
-            "extracted_tree_sha256",
+            "source_blobs", "extracted_tree_sha256",
         ):
             mirror[key] = json.loads(json.dumps(source[key]))
         unsigned = {key: value for key, value in mirror.items()
@@ -1367,7 +1525,7 @@ class OracleBuildTests(unittest.TestCase):
             separators=(",", ":"),
         ).encode()).hexdigest()
         path.write_text(json.dumps(document))
-        with self.assertRaisesRegex(PackageError, "source/content alias"):
+        with self.assertRaisesRegex(PackageError, "source/(?:blob|content) alias"):
             validate_provenance(path)
 
     def test_provenance_requires_all_five_oracle_kinds_with_post_split_capacity(self):
@@ -1378,6 +1536,13 @@ class OracleBuildTests(unittest.TestCase):
         moved = first["oracle_kind_counts"]["return-value"]
         first["oracle_kind_counts"]["return-value"] = 0
         first["oracle_kind_counts"]["raises"] += moved
+        for blob in first["source_blobs"]:
+            if blob["oracle_kind"] == "return-value":
+                blob["oracle_kind"] = "raises"
+        first["extracted_tree_sha256"] = hashlib.sha256(json.dumps(
+            first["source_blobs"], ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
         unsigned = {key: value for key, value in first.items()
                     if key != "source_identity_sha256"}
         first["source_identity_sha256"] = hashlib.sha256(json.dumps(
@@ -1470,6 +1635,28 @@ class OracleBuildTests(unittest.TestCase):
         provenance_path.write_text(json.dumps(provenance))
         with self.assertRaisesRegex(PackageError, "seed manifest"):
             validate_private_custody(custody_path, provenance_path)
+
+    def test_external_custody_rejects_valid_seed_bytes_without_public_blob_witness(self):
+        from eval.oracle import oracle
+        from eval.oracle.build import PackageError, _validate_custody_artifact_semantics
+
+        _provenance_path, _custody_path, provenance, custody = self.ready_custody()
+        artifacts = {item["role"]: self.root / item["relative_path"]
+                     for item in custody["artifacts"]}
+        raw = {role: path.read_bytes() for role, path in artifacts.items()}
+        manifest = json.loads(raw["seed-manifest"])
+        seed = manifest["seeds"][0]["seed"]
+        seed["source"]["path"] = "extracted/unwitnessed.py"
+        seed["harness"]["argv"][1] = "/input/extracted/unwitnessed.py"
+        seed["seed_sha256"] = oracle.seed_sha256(seed)
+        changed = json.dumps(
+            manifest, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        artifacts["seed-manifest"].write_bytes(changed)
+        raw["seed-manifest"] = changed
+        with self.assertRaisesRegex(PackageError, "public inventory"):
+            _validate_custody_artifact_semantics(provenance, artifacts, raw)
 
     def test_external_custody_requires_exact_split_key_and_distinct_artifact_paths(self):
         from eval.oracle.build import PackageError, validate_private_custody
