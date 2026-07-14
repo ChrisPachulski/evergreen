@@ -301,10 +301,9 @@ class EvergreenCLITests(unittest.TestCase):
         )
 
         extra = json.loads(json.dumps(complete))
-        readme_hash = hashlib.sha256((candidate / "README.md").read_bytes()).hexdigest()
         extra["subject_executables"].append({
-            "path": "README.md", "subject_sha256": readme_hash,
-            "evidence_sha256": readme_hash,
+            "path": "not-in-subject.bin", "subject_sha256": "a" * 64,
+            "evidence_sha256": "a" * 64,
         })
         extra["subject_executables"].sort(key=lambda item: item["path"])
         evidence_path.write_text(json.dumps(extra, sort_keys=True, separators=(",", ":")))
