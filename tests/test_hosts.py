@@ -550,6 +550,54 @@ class HostTests(unittest.TestCase):
         self.assertEqual((displaced / ".evergreen-owned.json").read_bytes(), before["ownership"])
         self.assertNotIn("rollback incomplete", " ".join(result.messages).lower())
 
+    def test_managed_destination_swap_at_commit_rolls_back_before_cleanup(self):
+        from evergreen import host_transaction
+        from evergreen.hosts import install
+
+        root = self.home / ".claude"
+        root.mkdir()
+        self.assertTrue(install(self.home, ROOT, "claude").ok)
+        managed = self.home / "managed-claude"
+        root.rename(managed)
+        root.symlink_to(managed, target_is_directory=True)
+        plugin = Path(self.temporary.name) / "commit swap plugin"
+        shutil.copytree(ROOT, plugin, symlinks=True)
+        before = {
+            "instructions": (managed / "CLAUDE.md").read_bytes(),
+            "skill": os.readlink(managed / "skills" / "evergreen"),
+            "ownership": (managed / ".evergreen-owned.json").read_bytes(),
+        }
+        displaced = self.home / "commit-displaced-managed-claude"
+        original = host_transaction._commit_entry
+        swapped = False
+
+        def swap_destination_at_first_commit(*args, **kwargs):
+            nonlocal swapped
+            if not swapped:
+                swapped = True
+                managed.rename(displaced)
+                managed.mkdir()
+                (managed / "CLAUDE.md").write_text("commit replacement content\n")
+            return original(*args, **kwargs)
+
+        with mock.patch.object(
+            host_transaction,
+            "_commit_entry",
+            side_effect=swap_destination_at_first_commit,
+        ):
+            result = install(self.home, plugin, "claude")
+
+        self.assertFalse(result.ok)
+        self.assertNotIn("success", " ".join(result.messages).lower())
+        self.assertEqual((managed / "CLAUDE.md").read_text(), "commit replacement content\n")
+        self.assertEqual((displaced / "CLAUDE.md").read_bytes(), before["instructions"])
+        self.assertEqual(os.readlink(displaced / "skills" / "evergreen"), before["skill"])
+        self.assertEqual((displaced / ".evergreen-owned.json").read_bytes(), before["ownership"])
+        self.assertFalse(any(
+            "evergreen-backup" in path.name or "evergreen-journal" in path.name
+            for path in displaced.rglob("*")
+        ))
+
     def test_owned_symlinked_host_migrates_stale_source_without_touching_user_content(self):
         from evergreen.hosts import BEGIN_MARKER, doctor, install
 

@@ -23,6 +23,9 @@ from .host_snapshot import (
     verify_preflight as _verify_preflight, verify_snapshot_at as _verify_snapshot_at,
 )
 
+class _CommitBindingError(OSError):
+    pass
+
 class TransactionEngine:
     def __init__(self, selected, locks, roots=None, authorization=None):
         self.selected, self._locks = tuple(selected), locks
@@ -152,37 +155,59 @@ def _apply(plans, dry_run, captured, open_parent=None, verify_roots=lambda: None
             _verify_managed_root_binding(status)
         verify_roots()
     except Exception as error:
-        rollback_errors = []
-        for entry in reversed(rollback_entries):
-            try:
-                _restore_entry(entry, open_parent)
-            except Exception as rollback_error:
-                rollback_errors.append(f"{entry.before.path}: {rollback_error}")
-        recovery = conflicts + rollback_errors
-        if recovery:
-            return OperationResult(False, tuple(messages + [
-                f"error: apply failed: {error}; verified rollback incomplete; "
-                "manual recovery required: "
-                + "; ".join(recovery)
-            ]))
-        return OperationResult(False, tuple(messages + [
-            f"error: apply failed: {error}; ordinary recovery completed under the "
-            "exclusive-access requirement"
-        ]))
+        return _rollback_result(
+            messages, error, rollback_entries, conflicts, open_parent
+        )
     cleanup_errors = []
-    for entry in reversed(rollback_entries):
-        if entry.backup is None and entry.journal is None:
-            continue
-        try:
-            _commit_entry(entry, open_parent)
-        except Exception as cleanup_error:
-            cleanup_errors.append(f"{entry.before.path}: {cleanup_error}")
+    try:
+        for entry in reversed(rollback_entries):
+            if entry.backup is None and entry.journal is None:
+                continue
+            _verify_commit_binding(verify_roots)
+            try:
+                _commit_entry(
+                    entry, open_parent,
+                    lambda: _verify_commit_binding(verify_roots),
+                )
+            except _CommitBindingError:
+                raise
+            except Exception as cleanup_error:
+                cleanup_errors.append(f"{entry.before.path}: {cleanup_error}")
+        _verify_commit_binding(verify_roots)
+    except _CommitBindingError as error:
+        return _rollback_result(
+            messages, error, rollback_entries, conflicts, open_parent
+        )
     if cleanup_errors:
         return OperationResult(False, tuple(messages + [
             "error: changes applied but transaction backup cleanup failed; "
             "manual recovery required: " + "; ".join(cleanup_errors)
         ]))
     return OperationResult(True, tuple(messages))
+
+def _verify_commit_binding(verify_roots):
+    try:
+        verify_roots()
+    except Exception as error:
+        raise _CommitBindingError(f"commit-time host binding changed: {error}") from error
+
+def _rollback_result(messages, error, rollback_entries, conflicts, open_parent):
+    rollback_errors = []
+    for entry in reversed(rollback_entries):
+        try:
+            _restore_entry(entry, open_parent)
+        except Exception as rollback_error:
+            rollback_errors.append(f"{entry.before.path}: {rollback_error}")
+    recovery = conflicts + rollback_errors
+    if recovery:
+        return OperationResult(False, tuple(messages + [
+            f"error: apply failed: {error}; verified rollback incomplete; "
+            "manual recovery required: " + "; ".join(recovery)
+        ]))
+    return OperationResult(False, tuple(messages + [
+        f"error: apply failed: {error}; ordinary recovery completed under the "
+        "exclusive-access requirement"
+    ]))
 
 def _entry_for_path(entries, path):
     return next((entry for entry in reversed(entries) if entry.before.path == path), None)
@@ -554,7 +579,8 @@ def _restore_entry(entry, open_parent=None):
     finally:
         os.close(parent_fd)
 
-def _commit_entry(entry, open_parent=None):
+def _commit_entry(entry, open_parent=None, verify_binding=lambda: None):
+    verify_binding()
     parent_fd = (
         open_parent(entry.parent.path, entry.parent)
         if open_parent else _open_directory(entry.parent)
@@ -575,6 +601,7 @@ def _commit_entry(entry, open_parent=None):
                     )
             else:
                 _verify_snapshot_at(entry.after, parent_fd)
+            verify_binding()
             _remove_journal(parent_fd, entry)
             return
         _verify_backup(parent_fd, entry)
@@ -596,11 +623,13 @@ def _commit_entry(entry, open_parent=None):
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
+        verify_binding()
+        _remove_journal(parent_fd, entry)
+        verify_binding()
         _remove_durable(
             parent_fd, entry.backup, _backup_path(entry), "backup",
             kind=entry.before.kind,
         )
-        _remove_journal(parent_fd, entry)
     finally:
         os.close(parent_fd)
 
