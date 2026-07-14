@@ -528,6 +528,21 @@ class OracleTests(unittest.TestCase):
         )
         self.assertEqual(len(schema.get("allOf", [])), 5)
 
+    def test_schema_source_path_is_normalized_repository_relative(self):
+        schema = json.loads((ROOT / "eval" / "oracle" / "schema-v1.json").read_text())
+        expected = (
+            "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*"
+            "(?:/[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*)*$"
+        )
+        source_path = schema["properties"]["source"]["properties"]["path"]
+        self.assertEqual(source_path.get("pattern"), expected)
+
+        pattern = re.compile(source_path["pattern"])
+        for forbidden in ("../escape.py", "/absolute.py", ".hidden.py", "fixture\\source.py"):
+            with self.subTest(forbidden_schema_source_path=forbidden):
+                self.assertIsNone(pattern.fullmatch(forbidden))
+        self.assertIsNotNone(pattern.fullmatch("fixture/source.py"))
+
 
 if __name__ == "__main__":
     unittest.main()
