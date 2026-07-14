@@ -9,9 +9,18 @@ from .host_types import (JournalPhase, JournalRecord, Mutation, MutationKind, Op
 )
 from .host_metadata import clone as _clone_regular_metadata
 from .host_lock import acquire as _lock_hosts, release as _unlock_hosts
+from .host_commit import (
+    backup_path as _backup_path,
+    cleanup_entry as _cleanup_committed_entry,
+    remove_durable as _remove_durable,
+    remove_journal as _remove_journal,
+    validate_entry as _commit_entry,
+    verify_backup as _verify_backup,
+)
 from .host_journal import (
     recover_transactions as _recover_transactions,
-    remove_kind as _remove_kind,
+    remove_transaction_commit as _remove_transaction_commit,
+    write_transaction_commit as _write_transaction_commit,
     write_journal_at as _write_journal_at,
 )
 from .host_snapshot import (
@@ -22,9 +31,6 @@ from .host_snapshot import (
     verify_pinned_roots as _verify_pinned_roots,
     verify_preflight as _verify_preflight, verify_snapshot_at as _verify_snapshot_at,
 )
-
-class _CommitBindingError(OSError):
-    pass
 
 class TransactionEngine:
     def __init__(self, selected, locks, roots=None, authorization=None):
@@ -110,6 +116,8 @@ def _apply(plans, dry_run, captured, open_parent=None, verify_roots=lambda: None
     )
     rollback_entries = []
     conflicts = []
+    transaction_id = uuid.uuid4().hex
+    statuses = tuple(dict.fromkeys(status for status, _plan in plans))
     mutation_paths = {path for _action, _detail, path, _value in mutations}
     guard_snapshots = {
         path: snapshot for path, snapshot in captured.items()
@@ -120,7 +128,8 @@ def _apply(plans, dry_run, captured, open_parent=None, verify_roots=lambda: None
         verify_roots()
         for action, _detail, path, value in mutations:
             parent_fd = _prepare_parent(
-                path.parent, captured, rollback_entries, conflicts, open_parent
+                path.parent, captured, rollback_entries, conflicts, open_parent,
+                transaction_id,
             )
             try:
                 _verify_snapshot_at(captured[path], parent_fd)
@@ -129,6 +138,7 @@ def _apply(plans, dry_run, captured, open_parent=None, verify_roots=lambda: None
                         action, path, value, parent_fd=parent_fd,
                         expected=captured[path], parent_snapshot=captured[path.parent],
                         rollback_entries=rollback_entries, conflicts=conflicts,
+                        transaction_id=transaction_id,
                     )
                 except Exception:
                     if not _entry_for_path(rollback_entries, path):
@@ -151,45 +161,54 @@ def _apply(plans, dry_run, captured, open_parent=None, verify_roots=lambda: None
             finally:
                 os.close(parent_fd)
         _verify_preflight(guard_snapshots)
-        for status in dict.fromkeys(status for status, _plan in plans):
+        for status in statuses:
             _verify_managed_root_binding(status)
         verify_roots()
     except Exception as error:
         return _rollback_result(
             messages, error, rollback_entries, conflicts, open_parent
         )
-    cleanup_errors = []
+    if not rollback_entries:
+        return OperationResult(True, tuple(messages))
     try:
         for entry in reversed(rollback_entries):
             if entry.backup is None and entry.journal is None:
                 continue
-            _verify_commit_binding(verify_roots)
-            try:
-                _commit_entry(
-                    entry, open_parent,
-                    lambda: _verify_commit_binding(verify_roots),
-                )
-            except _CommitBindingError:
-                raise
-            except Exception as cleanup_error:
-                cleanup_errors.append(f"{entry.before.path}: {cleanup_error}")
-        _verify_commit_binding(verify_roots)
-    except _CommitBindingError as error:
+            verify_roots()
+            _commit_entry(entry, open_parent, verify_roots)
+        verify_roots()
+        coordinator = min((status.resolved_root for status in statuses), key=str)
+        commit_parent = open_parent(coordinator)
+        try:
+            _write_transaction_commit(commit_parent, transaction_id)
+        finally:
+            os.close(commit_parent)
+    except Exception as error:
         return _rollback_result(
             messages, error, rollback_entries, conflicts, open_parent
         )
+    cleanup_errors = []
+    for entry in reversed(rollback_entries):
+        if entry.backup is None and entry.journal is None:
+            continue
+        try:
+            _cleanup_committed_entry(entry, open_parent)
+        except Exception as cleanup_error:
+            cleanup_errors.append(f"{entry.before.path}: {cleanup_error}")
+    if not cleanup_errors:
+        commit_parent = open_parent(coordinator)
+        try:
+            _remove_transaction_commit(commit_parent, transaction_id)
+        except Exception as cleanup_error:
+            cleanup_errors.append(f"transaction commit: {cleanup_error}")
+        finally:
+            os.close(commit_parent)
     if cleanup_errors:
         return OperationResult(False, tuple(messages + [
-            "error: changes applied but transaction backup cleanup failed; "
+            "error: transaction committed but backup cleanup failed; "
             "manual recovery required: " + "; ".join(cleanup_errors)
         ]))
     return OperationResult(True, tuple(messages))
-
-def _verify_commit_binding(verify_roots):
-    try:
-        verify_roots()
-    except Exception as error:
-        raise _CommitBindingError(f"commit-time host binding changed: {error}") from error
 
 def _rollback_result(messages, error, rollback_entries, conflicts, open_parent):
     rollback_errors = []
@@ -212,7 +231,9 @@ def _rollback_result(messages, error, rollback_entries, conflicts, open_parent):
 def _entry_for_path(entries, path):
     return next((entry for entry in reversed(entries) if entry.before.path == path), None)
 
-def _prepare_parent(path, captured, rollback_entries, conflicts, open_parent):
+def _prepare_parent(
+    path, captured, rollback_entries, conflicts, open_parent, transaction_id=None,
+):
     snapshot = captured[path]
     if snapshot.kind == "directory":
         return open_parent(path, snapshot)
@@ -227,7 +248,7 @@ def _prepare_parent(path, captured, rollback_entries, conflicts, open_parent):
         created = _publish_path(
             descriptor, Mutation(
                 MutationKind.CREATE_DIRECTORY, path, snapshot, grandparent, mode=0o755,
-            ), rollback_entries, conflicts,
+            ), rollback_entries, conflicts, transaction_id,
         )
         child = os.open(
             path.name,
@@ -275,7 +296,7 @@ def _matches_postimage(action, value, snapshot, expected):
 
 def _perform_action(
     action, path, value, *, parent_fd, expected, parent_snapshot,
-    rollback_entries, conflicts,
+    rollback_entries, conflicts, transaction_id=None,
 ):
     _verify_snapshot_at(expected, parent_fd)
     if action == "write":
@@ -287,7 +308,7 @@ def _perform_action(
         return _publish_path(
             parent_fd, Mutation(
                 kind, path, expected, parent_snapshot, data=value, mode=mode,
-            ), rollback_entries, conflicts,
+            ), rollback_entries, conflicts, transaction_id,
         )
     elif action == "link":
         kind = (
@@ -297,14 +318,14 @@ def _perform_action(
         return _publish_path(
             parent_fd, Mutation(
                 kind, path, expected, parent_snapshot, target=value,
-            ), rollback_entries, conflicts,
+            ), rollback_entries, conflicts, transaction_id,
         )
     elif action == "delete":
         if expected.kind == "absent":
             return expected
         return _publish_delete(
             parent_fd, path, expected, parent_snapshot,
-            rollback_entries, conflicts,
+            rollback_entries, conflicts, transaction_id,
         )
     postimage = _snapshot_at(path, parent_fd)
     if not _matches_postimage(action, value, postimage, expected):
@@ -312,10 +333,10 @@ def _perform_action(
     return postimage
 
 def _publish_path(
-    parent_fd, mutation, rollback_entries, conflicts,
+    parent_fd, mutation, rollback_entries, conflicts, transaction_id=None,
 ):
     path, kind, before = mutation.path, mutation.kind, mutation.before
-    transaction_id = uuid.uuid4().hex
+    transaction_id = transaction_id or uuid.uuid4().hex
     temporary = f".{path.name}.evergreen-{transaction_id}"
     journal_name = f".{path.name}.evergreen-journal-{transaction_id}"
     backup = (
@@ -418,8 +439,9 @@ def _publish_path(
 
 def _publish_delete(
     parent_fd, path, expected, parent_snapshot, rollback_entries, conflicts,
+    transaction_id=None,
 ):
-    transaction_id = uuid.uuid4().hex
+    transaction_id = transaction_id or uuid.uuid4().hex
     backup = f".{path.name}.evergreen-backup-{transaction_id}"
     journal_name = f".{path.name}.evergreen-journal-{transaction_id}"
     kind = MutationKind(f"delete_{expected.kind}")
@@ -578,115 +600,3 @@ def _restore_entry(entry, open_parent=None):
             raise OSError(f"unsupported rollback preimage: {before.path}")
     finally:
         os.close(parent_fd)
-
-def _commit_entry(entry, open_parent=None, verify_binding=lambda: None):
-    verify_binding()
-    parent_fd = (
-        open_parent(entry.parent.path, entry.parent)
-        if open_parent else _open_directory(entry.parent)
-    )
-    try:
-        if entry.backup is None:
-            if entry.after.kind == "directory":
-                actual = _snapshot_at(entry.after.path, parent_fd)
-                if (
-                    actual.kind, actual.dev, actual.ino, actual.mode,
-                    actual.uid, actual.gid,
-                ) != (
-                    entry.after.kind, entry.after.dev, entry.after.ino,
-                    entry.after.mode, entry.after.uid, entry.after.gid,
-                ):
-                    raise OSError(
-                        f"transaction directory changed: {entry.after.path}"
-                    )
-            else:
-                _verify_snapshot_at(entry.after, parent_fd)
-            verify_binding()
-            _remove_journal(parent_fd, entry)
-            return
-        _verify_backup(parent_fd, entry)
-        if entry.after.kind == "regular":
-            _verify_snapshot_at(entry.after, parent_fd)
-            descriptor = os.open(
-                entry.after.path.name,
-                os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) |
-                getattr(os, "O_NOFOLLOW", 0),
-                dir_fd=parent_fd,
-            )
-            try:
-                if not entry.after.matches_stat(os.fstat(descriptor)):
-                    raise OSError(f"transaction postimage changed: {entry.after.path}")
-                os.utime(
-                    descriptor,
-                    ns=(entry.before.atime_ns, entry.before.mtime_ns),
-                )
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
-        verify_binding()
-        _remove_journal(parent_fd, entry)
-        verify_binding()
-        _remove_durable(
-            parent_fd, entry.backup, _backup_path(entry), "backup",
-            kind=entry.before.kind,
-        )
-    finally:
-        os.close(parent_fd)
-
-def _verify_backup(parent_fd, entry):
-    if entry.backup is None:
-        raise OSError("transaction backup is missing")
-    try:
-        actual = _snapshot_at(entry.before.path.with_name(entry.backup), parent_fd)
-    except (OSError, ValueError) as error:
-        raise OSError(f"transaction backup unavailable at {_backup_path(entry)}: {error}") from error
-    if not entry.before.matches(actual):
-        raise OSError(f"transaction backup changed at {_backup_path(entry)}")
-    if entry.before.kind != "regular":
-        return
-    descriptor = os.open(
-        entry.backup,
-        os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0),
-        dir_fd=parent_fd,
-    )
-    try:
-        if not entry.before.matches_stat(os.fstat(descriptor)):
-            raise OSError(f"transaction backup changed at {_backup_path(entry)}")
-        os.utime(
-            descriptor, ns=(entry.before.atime_ns, entry.before.mtime_ns),
-        )
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-def _backup_path(entry):
-    return entry.before.path.parent / entry.backup
-
-def _remove_journal(parent_fd, entry):
-    if entry.journal is None:
-        return
-    path = entry.before.path.parent / entry.journal
-    _remove_durable(parent_fd, entry.journal, path, "journal")
-
-def _remove_durable(parent_fd, name, path, label, *, kind="regular"):
-    removed = False
-    try:
-        _remove_kind(parent_fd, name, kind)
-        removed = True
-    except FileNotFoundError:
-        removed = True
-    except OSError as error:
-        try:
-            removed = _snapshot_at(Path(path), parent_fd).kind == "absent"
-        except Exception:
-            removed = False
-        if not removed:
-            raise OSError(f"{label} cleanup failed at {path}: {error}") from error
-    try:
-        os.fsync(parent_fd)
-    except OSError as error:
-        state = "removal succeeded" if removed else "state is ambiguous"
-        raise OSError(
-            f"{label} {state} but directory durability failed; inspect former "
-            f"path {path}: {error}"
-        ) from error

@@ -13,6 +13,123 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class HostTests(HostTestCase):
 
+    def _recover_only(self, host="codex"):
+        from evergreen import hosts
+
+        selected, selection_error = hosts._select(self.home, host)
+        self.assertIsNone(selection_error)
+        authorization, authorization_error = hosts._authorize_selection(selected)
+        self.assertIsNone(authorization_error)
+        engine, acquisition_error = host_transaction.TransactionEngine.acquire(
+            selected, authorization,
+        )
+        self.assertIsNone(acquisition_error)
+        try:
+            errors = engine.recover()
+        finally:
+            close_error = engine.close()
+        self.assertIsNone(close_error)
+        return errors
+
+    def _transaction_artifacts(self):
+        return sorted(
+            path.relative_to(self.home).as_posix()
+            for path in self.home.rglob("*")
+            if (
+                "evergreen-journal" in path.name or
+                "evergreen-backup" in path.name or
+                path.name.startswith(".evergreen-transaction-")
+            )
+        )
+
+    def test_crash_before_durable_transaction_commit_rolls_back_every_path(self):
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        script = f"""
+import os
+from pathlib import Path
+from evergreen import host_transaction, hosts
+def crash_before_commit(*args, **kwargs):
+    os._exit(95)
+host_transaction._write_transaction_commit = crash_before_commit
+hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
+"""
+
+        crashed = subprocess.run(
+            [sys.executable, "-c", script], cwd=ROOT,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+
+        self.assertEqual(crashed.returncode, 95, crashed.stderr)
+        self.assertTrue(self._transaction_artifacts())
+        self.assertFalse(any(
+            item.name.startswith(".evergreen-transaction-")
+            for item in codex.iterdir()
+        ))
+        self.assertEqual(self._recover_only(), [])
+        self.assertEqual(instructions.read_bytes(), b"original")
+        self.assertFalse((codex / ".evergreen-owned.json").exists())
+        self.assertFalse((codex / "skills" / "evergreen").exists())
+        self.assertEqual(self._transaction_artifacts(), [])
+
+    def test_crash_after_durable_commit_finishes_cleanup_without_rollback(self):
+        from evergreen import hosts
+
+        codex = self.home / ".codex"
+        codex.mkdir()
+        instructions = codex / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        script = f"""
+import os
+from pathlib import Path
+from evergreen import host_transaction, hosts
+def crash_before_cleanup(*args, **kwargs):
+    os._exit(96)
+host_transaction._cleanup_committed_entry = crash_before_cleanup
+hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
+"""
+
+        crashed = subprocess.run(
+            [sys.executable, "-c", script], cwd=ROOT,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+
+        self.assertEqual(crashed.returncode, 96, crashed.stderr)
+        self.assertTrue(any(
+            item.name.startswith(".evergreen-transaction-")
+            for item in codex.iterdir()
+        ))
+        self.assertEqual(self._recover_only(), [])
+        self.assertIn(hosts.BEGIN_MARKER.encode(), instructions.read_bytes())
+        self.assertTrue((codex / ".evergreen-owned.json").is_file())
+        self.assertTrue((codex / "skills" / "evergreen").is_symlink())
+        self.assertEqual(self._transaction_artifacts(), [])
+
+    def test_committed_transaction_recovery_is_idempotent(self):
+        codex = self.home / ".codex"
+        codex.mkdir()
+        (codex / "AGENTS.md").write_bytes(b"original")
+        script = f"""
+import os
+from pathlib import Path
+from evergreen import host_transaction, hosts
+host_transaction._cleanup_committed_entry = lambda *args, **kwargs: os._exit(97)
+hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
+"""
+        crashed = subprocess.run(
+            [sys.executable, "-c", script], cwd=ROOT,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+
+        self.assertEqual(crashed.returncode, 97, crashed.stderr)
+        self.assertEqual(self._recover_only(), [])
+        recovered = self.snapshot(include_directories=True)
+        self.assertEqual(self._recover_only(), [])
+        self.assertEqual(self.snapshot(include_directories=True), recovered)
+        self.assertEqual(self._transaction_artifacts(), [])
+
     def test_prepublication_crash_artifacts_are_safely_recovered_on_next_install(self):
         from evergreen import hosts
 

@@ -102,6 +102,32 @@ class JournalPhase(str, Enum):
 
 
 @dataclass(frozen=True)
+class TransactionCommit:
+    schema_version: int
+    transaction_id: str
+    phase: str = "committed"
+
+    @classmethod
+    def parse(cls, payload: bytes) -> "TransactionCommit":
+        value = json.loads(payload)
+        fields = {"schema_version", "transaction_id", "phase"}
+        if (
+            not isinstance(value, dict) or set(value) != fields or
+            value["schema_version"] != 1 or value["phase"] != "committed" or
+            not isinstance(value["transaction_id"], str) or
+            len(value["transaction_id"]) != 32 or
+            any(char not in "0123456789abcdef" for char in value["transaction_id"])
+        ):
+            raise ValueError("invalid transaction commit")
+        return cls(1, value["transaction_id"])
+
+    def encode(self) -> bytes:
+        return json.dumps(
+            asdict(self), sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")
+
+
+@dataclass(frozen=True)
 class Mutation:
     kind: MutationKind
     path: Path

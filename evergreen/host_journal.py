@@ -6,7 +6,9 @@ from pathlib import Path
 import time
 
 from .host_snapshot import open_directory, snapshot, snapshot_at
-from .host_types import JournalPhase, JournalRecord, MutationKind, PathSnapshot
+from .host_types import (
+    JournalPhase, JournalRecord, MutationKind, PathSnapshot, TransactionCommit,
+)
 
 READ_ELAPSED_LIMIT_SECONDS = 3
 MAX_MATCHING_ARTIFACTS = 128
@@ -15,27 +17,48 @@ MAX_SCANNED_ENTRIES = 4096
 
 def recover_transactions(selected, open_parent=None):
     errors = []
-    for status in selected:
-        for target in (status.instructions, status.ownership, status.skill, status.skill.parent):
-            try:
-                parent = (
-                    open_parent(target.parent)
-                    if open_parent else open_directory(
-                        snapshot(target.parent, allow_directory=True)
+    coordinator = min((status.resolved_root for status in selected), key=str)
+    commit_parent = (
+        open_parent(coordinator) if open_parent else
+        open_directory(snapshot(coordinator, allow_directory=True))
+    )
+    try:
+        try:
+            committed = read_transaction_commits(commit_parent)
+        except (OSError, ValueError) as error:
+            return [f"transaction commit scan failed: {error}"]
+        for status in selected:
+            for target in (
+                status.instructions, status.ownership, status.skill,
+                status.skill.parent,
+            ):
+                try:
+                    parent = (
+                        open_parent(target.parent)
+                        if open_parent else open_directory(
+                            snapshot(target.parent, allow_directory=True)
+                        )
                     )
-                )
-            except (FileNotFoundError, NotADirectoryError):
-                continue
-            try:
-                error = recover_target_artifacts(parent, target)
-                if error:
-                    errors.append(f"{status.name}: {error}")
-            finally:
-                os.close(parent)
-    return errors
+                except (FileNotFoundError, NotADirectoryError):
+                    continue
+                try:
+                    error = recover_target_artifacts(parent, target, committed)
+                    if error:
+                        errors.append(f"{status.name}: {error}")
+                finally:
+                    os.close(parent)
+        if not errors:
+            for transaction_id in committed:
+                if not transaction_artifacts_exist(
+                    selected, transaction_id, open_parent,
+                ):
+                    remove_transaction_commit(commit_parent, transaction_id)
+        return errors
+    finally:
+        os.close(commit_parent)
 
 
-def recover_target_artifacts(parent_fd, target):
+def recover_target_artifacts(parent_fd, target, committed=frozenset()):
     deadline = time.monotonic() + READ_ELAPSED_LIMIT_SECONDS
     groups = {}
     try:
@@ -72,7 +95,10 @@ def recover_target_artifacts(parent_fd, target):
                 update_name, journal_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
             )
             os.fsync(parent_fd)
-        recover_record(parent_fd, target, record, artifacts)
+        recover_record(
+            parent_fd, target, record, artifacts,
+            committed=transaction_id in committed,
+        )
         return None
     except (OSError, TypeError, ValueError, KeyError):
         return manual_artifact_error(paths)
@@ -82,7 +108,7 @@ def _scan_error(target):
     return f"artifact scan limit exceeded in {target.parent}; inspect manually"
 
 
-def recover_record(parent_fd, target, record, artifacts):
+def recover_record(parent_fd, target, record, artifacts, *, committed=False):
     live = snapshot_at(target, parent_fd)
     staged = _artifact_snapshot(parent_fd, target, artifacts.get("temporary"))
     backup = _artifact_snapshot(parent_fd, target, artifacts.get("backup"))
@@ -91,6 +117,9 @@ def recover_record(parent_fd, target, record, artifacts):
         MutationKind.CREATE_DIRECTORY,
     }
     replaces = {MutationKind.REPLACE_REGULAR, MutationKind.REPLACE_SYMLINK}
+    if committed:
+        _finish_committed(parent_fd, target, record, live, staged, backup)
+        return
     if record.phase == JournalPhase.RECOVERING and _recovery_finished(
         live, backup, record, creates, replaces,
     ):
@@ -145,6 +174,100 @@ def recover_record(parent_fd, target, record, artifacts):
         os.replace(record.backup, target.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
     os.unlink(record.journal, dir_fd=parent_fd)
     os.fsync(parent_fd)
+
+
+def _finish_committed(parent_fd, target, record, live, staged, backup):
+    if staged.kind != "absent":
+        raise ValueError("committed transaction retained a staged path")
+    after_matches = journal_snapshot_matches(live, record.after)
+    if live.kind == "directory":
+        after_matches = all(
+            live.journal_identity().get(field) == record.after.get(field)
+            for field in ("kind", "dev", "ino", "mode", "uid", "gid")
+        )
+    if not after_matches:
+        raise ValueError("committed postimage changed")
+    if backup.kind != "absent":
+        if not journal_snapshot_matches(backup, record.before):
+            raise ValueError("committed backup changed")
+        remove_kind(parent_fd, record.backup, backup.kind)
+        os.fsync(parent_fd)
+    try:
+        os.unlink(record.journal, dir_fd=parent_fd)
+    except FileNotFoundError:
+        pass
+    os.fsync(parent_fd)
+
+
+def transaction_commit_name(transaction_id):
+    return f".evergreen-transaction-{transaction_id}.json"
+
+
+def write_transaction_commit(parent_fd, transaction_id):
+    record = TransactionCommit(1, transaction_id)
+    name = transaction_commit_name(transaction_id)
+    descriptor = os.open(
+        name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+        0o600, dir_fd=parent_fd,
+    )
+    try:
+        payload = record.encode()
+        if os.write(descriptor, payload) != len(payload):
+            raise OSError("short transaction commit write")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.fsync(parent_fd)
+
+
+def read_transaction_commits(parent_fd):
+    committed = set()
+    with os.scandir(parent_fd) as entries:
+        for examined, entry in enumerate(entries, start=1):
+            if examined > MAX_SCANNED_ENTRIES:
+                raise OSError("transaction commit scan limit exceeded")
+            prefix, suffix = ".evergreen-transaction-", ".json"
+            if not entry.name.startswith(prefix) or not entry.name.endswith(suffix):
+                continue
+            item = snapshot_at(Path(entry.name), parent_fd)
+            if item.kind != "regular" or item.nlink != 1 or item.mode != 0o600:
+                raise ValueError("unsafe transaction commit")
+            record = TransactionCommit.parse(item.data)
+            if entry.name != transaction_commit_name(record.transaction_id):
+                raise ValueError("transaction commit identity mismatch")
+            committed.add(record.transaction_id)
+    return frozenset(committed)
+
+
+def remove_transaction_commit(parent_fd, transaction_id):
+    try:
+        os.unlink(transaction_commit_name(transaction_id), dir_fd=parent_fd)
+    except FileNotFoundError:
+        return
+    os.fsync(parent_fd)
+
+
+def transaction_artifacts_exist(selected, transaction_id, open_parent=None):
+    for status in selected:
+        for target in (
+            status.instructions, status.ownership, status.skill, status.skill.parent,
+        ):
+            try:
+                parent = (
+                    open_parent(target.parent) if open_parent else
+                    open_directory(snapshot(target.parent, allow_directory=True))
+                )
+            except (FileNotFoundError, NotADirectoryError):
+                continue
+            try:
+                with os.scandir(parent) as entries:
+                    for entry in entries:
+                        parsed = JournalRecord.artifact_name(target.name, entry.name)
+                        if parsed is not None and parsed[1] == transaction_id:
+                            return True
+            finally:
+                os.close(parent)
+    return False
 
 
 def _recovery_finished(live, backup, record, creates, replaces):

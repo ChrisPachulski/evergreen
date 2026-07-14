@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import shutil
 from unittest import mock
 
 from evergreen import host_lock, host_snapshot, host_transaction
@@ -9,6 +10,90 @@ from tests.host_test_support import HostTestCase
 ROOT = Path(__file__).resolve().parents[1]
 
 class HostTests(HostTestCase):
+
+    def test_postcommit_retarget_does_not_attempt_impossible_rollback(self):
+        from evergreen.hosts import install
+
+        root = self.home / ".claude"
+        root.mkdir()
+        self.assertTrue(install(self.home, ROOT, "claude").ok)
+        managed = self.home / "managed-claude"
+        root.rename(managed)
+        root.symlink_to(managed, target_is_directory=True)
+        plugin = Path(self.temporary.name) / "postcommit plugin"
+        shutil.copytree(ROOT, plugin, symlinks=True)
+        displaced = self.home / "postcommit-displaced"
+        original = host_transaction._cleanup_committed_entry
+        retargeted = False
+
+        def retarget_after_commit(*args, **kwargs):
+            nonlocal retargeted
+            if not retargeted:
+                retargeted = True
+                managed.rename(displaced)
+                managed.mkdir()
+                (managed / "CLAUDE.md").write_text("external replacement\n")
+            return original(*args, **kwargs)
+
+        with mock.patch.object(
+            host_transaction, "_cleanup_committed_entry",
+            side_effect=retarget_after_commit,
+        ):
+            result = install(self.home, plugin, "claude")
+
+        self.assertTrue(result.ok, result.messages)
+        self.assertEqual((managed / "CLAUDE.md").read_text(), "external replacement\n")
+        self.assertIn(
+            str(plugin).encode(),
+            (displaced / ".evergreen-owned.json").read_bytes(),
+        )
+        self.assertEqual(
+            os.readlink(displaced / "skills" / "evergreen"),
+            str((plugin / "skills" / "evergreen").resolve()),
+        )
+        self.assertNotIn("rollback", " ".join(result.messages).lower())
+
+    def test_later_commit_validation_retarget_rolls_back_every_published_path(self):
+        from evergreen.hosts import install
+
+        root = self.home / ".claude"
+        root.mkdir()
+        self.assertTrue(install(self.home, ROOT, "claude").ok)
+        managed = self.home / "managed-claude"
+        root.rename(managed)
+        root.symlink_to(managed, target_is_directory=True)
+        plugin = Path(self.temporary.name) / "later commit plugin"
+        shutil.copytree(ROOT, plugin, symlinks=True)
+        before = {
+            "instructions": (managed / "CLAUDE.md").read_bytes(),
+            "skill": os.readlink(managed / "skills" / "evergreen"),
+            "ownership": (managed / ".evergreen-owned.json").read_bytes(),
+        }
+        displaced = self.home / "later-commit-displaced"
+        original = host_transaction._commit_entry
+        calls = 0
+
+        def retarget_before_second_validation(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                managed.rename(displaced)
+                managed.mkdir()
+                (managed / "CLAUDE.md").write_text("later replacement\n")
+            return original(*args, **kwargs)
+
+        with mock.patch.object(
+            host_transaction, "_commit_entry",
+            side_effect=retarget_before_second_validation,
+        ):
+            result = install(self.home, plugin, "claude")
+
+        self.assertFalse(result.ok)
+        self.assertEqual((managed / "CLAUDE.md").read_text(), "later replacement\n")
+        self.assertEqual((displaced / "CLAUDE.md").read_bytes(), before["instructions"])
+        self.assertEqual(os.readlink(displaced / "skills" / "evergreen"), before["skill"])
+        self.assertEqual((displaced / ".evergreen-owned.json").read_bytes(), before["ownership"])
+        self.assertNotIn("rollback incomplete", " ".join(result.messages).lower())
 
     def test_all_host_preflight_rejects_unsafe_second_host_before_mutation(self):
         from evergreen.hosts import install
@@ -564,13 +649,17 @@ class HostTests(HostTestCase):
         self.assertEqual(after.kind, "absent")
         self.assertEqual(len(rollback), 1)
         host_transaction._commit_entry(rollback[0])
+        host_transaction._cleanup_committed_entry(rollback[0])
         self.assertFalse(directory.exists())
         self.assertFalse(any("evergreen-" in item.name for item in self.home.iterdir()))
 
     def test_host_modules_stay_within_maintainability_budgets(self):
         hosts_lines = (ROOT / "evergreen" / "hosts.py").read_text().splitlines()
         self.assertLess(len(hosts_lines), 700)
-        for name in ("host_lock.py", "host_snapshot.py", "host_journal.py", "host_transaction.py"):
+        for name in (
+            "host_lock.py", "host_snapshot.py", "host_journal.py",
+            "host_commit.py", "host_transaction.py",
+        ):
             module = ROOT / "evergreen" / name
             self.assertTrue(module.exists())
             self.assertLess(len(module.read_text().splitlines()), 700, name)
@@ -581,7 +670,10 @@ class HostTests(HostTestCase):
         import ast
 
         dependencies = {}
-        for name in ("host_lock", "host_snapshot", "host_journal", "host_transaction"):
+        for name in (
+            "host_lock", "host_snapshot", "host_journal", "host_commit",
+            "host_transaction",
+        ):
             tree = ast.parse((ROOT / "evergreen" / f"{name}.py").read_text())
             dependencies[name] = {
                 node.module.rsplit(".", 1)[-1]
@@ -591,6 +683,7 @@ class HostTests(HostTestCase):
         self.assertNotIn("host_transaction", dependencies["host_lock"])
         self.assertNotIn("host_transaction", dependencies["host_snapshot"])
         self.assertNotIn("host_transaction", dependencies["host_journal"])
+        self.assertNotIn("host_transaction", dependencies["host_commit"])
         self.assertIn("host_journal", dependencies["host_transaction"])
 
     def test_replace_success_then_exception_keeps_backup_registered_for_rollback(self):
