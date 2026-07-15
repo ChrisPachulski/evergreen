@@ -8,7 +8,12 @@ evergreen's numbers sit next to published baselines.
 
 **CASCADE** ([github.com/TobiasKiecker/CASCADE](https://github.com/TobiasKiecker/CASCADE), MIT)
 is released and is the real test: 885 wild Java method/Javadoc pairs (70 inconsistent /
-815 consistent), labels validated by developers' own Javadoc-fix commits. Convert and run:
+815 consistent). Label provenance is mixed: the 70 inconsistent pairs and their 72
+developer-corrected counterparts come from developers' own Javadoc-fix commits, but the other
+743 consistent controls were selected by what the CASCADE paper itself calls a weaker heuristic
+(§4.2, arXiv:2604.19400) — nominal labels, not developer-validated ground truth. Scoring
+against them measures agreement with CASCADE's labeling, not semantic correctness; evergreen
+treats those as two separate claims and reports them separately. Convert and run:
 
 ```sh
 git clone https://github.com/TobiasKiecker/CASCADE
