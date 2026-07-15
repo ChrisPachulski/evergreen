@@ -71,6 +71,22 @@ Add `--ids <file>` (one pair id per line) to restrict the rescore to an explicit
 locked holdout split once the label audit produces one. Every listed id must exist in the artifact;
 unknown ids fail the command rather than shrinking the subset silently.
 
+Resolver v2 lanes run on `cascade-java-v2-dev.jsonl` / `cascade-java-v2-holdout.jsonl`: the same
+885 checked-in CASCADE rows, each augmented with `java-git-window-v1` context derived from local
+bare mirrors (`cascade_to_jsonl.py --context-protocol java-git-window-v1 --mirror-root …`; rows
+whose method can't be located exactly carry a declared unavailability reason instead). The
+augmented files are multi-megabyte, and the grade inventory bounds every tracked blob at 1 MiB,
+so they live outside the repository; only
+[`cascade-java-v2-split-manifest.json`](cascade-java-v2-split-manifest.json) is committed, and it
+binds both files' exact SHA-256s, as does every run artifact. The files are regenerable from the
+upstream zip (hash above) plus mirrors at the pair ids' fixed commits. `make_split.py` generates
+the repository-grouped 60/40 dev/holdout split and its schema-v1 manifest, ordered by HMAC-SHA256
+keyed on the checked-in `cascade-java.jsonl` SHA-256 — a digest committed before any v2 run
+existed, so the grouping was never tunable against v2 outcomes. This run split is not the human
+label audit's split: audit splits additionally balance human-label cells and stay private. A v2
+run declares `--resolver v2 --split-manifest eval/bench/cascade-java-v2-split-manifest.json
+--split dev|holdout --context-protocol java-git-window-v1`.
+
 Replay stored trial stages through their versioned decision policy, require exact full-decision
 parity, and compare the strong snap diagnostically without model calls:
 
