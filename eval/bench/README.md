@@ -38,6 +38,12 @@ python3 eval/bench/frozen_run.py --dataset validated.jsonl \
 artifact returns `{"error":"not_connected"}` — so its published precision can't be re-measured
 on the same data.
 
+**DocChecker** (arXiv:2306.06347) can't be executed on this corpus either, checked 2026-07-14:
+its only pretrained checkpoint was a hardcoded Google Drive file that now returns 404, no
+HuggingFace or Zenodo mirror exists (`Fsoft-AIC` hosts 37 models, none of them DocChecker), and
+running the untrained heads would be noise, not a result. Its same-corpus Java numbers survive
+only as quoted by the CASCADE paper (arXiv:2604.19400): precision 0.10, F1 0.17 at 10/90.
+
 `dataset.jsonl` here is **evergreen's own hand-labeled sanity fixture in their exact schema** —
 14 pairs, honestly small, author-written, every label double-checked (the CCISolver paper found
 45.67% of a popular benchmark's positive labels were wrong; a noisy label is worse than no
