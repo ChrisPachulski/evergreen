@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "kind": "evergreen-oracle-language-source-catalog",
+  "language": "java",
+  "sources": [
+    {
+      "source_id": "java-apache-netbeans",
+      "project": "apache/netbeans",
+      "lineage_id": "github.com-apache-netbeans",
+      "origin": "https://github.com/apache/netbeans.git",
+      "commit": "5e92c2d04985cbeca18dd2158135d4ee748cea55",
+      "tree": "fa7cce07b1e8e412382f301cad1075aef085a45c",
+      "license": {
+        "spdx": "Apache-2.0",
+        "path": "LICENSE",
+        "sha256": "68cc3fd4b636818c8eda3bbf690b3a6bfb20d96ec16ef8bd1647ba4e4300bb17"
+      },
+      "source": {
+        "path": "platform/core.windows/src/org/netbeans/core/windows/actions/ActionUtils.java",
+        "blob_oid": "827c7cdb3c00a1d37dbbdb51a5847b286a5c22dc",
+        "sha256": "5f451650c089477ce04e3f963281396dcf7c7c4c5faf6e6dbae14c5ec4922863"
+      },
+      "witnesses": [
+        {
+          "kind": "state-change",
+          "operator": "state-change-before-to-after-v1",
+          "offset": 16539
+        }
+      ]
+    },
+    {
+      "source_id": "java-ns3154-grow-up",
+      "project": "ns3154/grow-up",
+      "lineage_id": "github.com-ns3154-grow-up",
+      "origin": "https://github.com/ns3154/grow-up.git",
+      "commit": "9d5dce457c06df5b0f69f46adafed0d0526876e4",
+      "tree": "c086d63e87a671e95c25d424b4eef8b5e34ac16b",
+      "license": {
+        "spdx": "MIT",
+        "path": "LICENSE",
+        "sha256": "2f8ecdeddb48f4d50162b8f42b7b01f54829c4ef49a285978e25c77fdf1043b4"
+      },
+      "source": {
+        "path": "basics/src/main/java/com/example/demo/optional/OptionalTest.java",
+        "blob_oid": "fc73f760673004edf23e84cf97372fbb338f5774",
+        "sha256": "294cfcd4ea5cbeac78d349700c0cdd354291bc6d137a8f89e97b46dae9e3483b"
+      },
+      "witnesses": [
+        {
+          "kind": "default-value",
+          "operator": "default-value-one-to-two-v1",
+          "offset": 1368
+        }
+      ]
+    }
+  ]
+}

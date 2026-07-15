@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "kind": "evergreen-peer-manifest",
+  "languages": ["go", "java", "python", "rust", "typescript"],
+  "exclusions": [
+    {
+      "id": "documentation-drift-detector",
+      "source_url": "https://github.com/Damienb123/Documentation-Drift-Detector.git",
+      "source_commit": "9237c9c28dd6d884dd3f8d29998933c4dadde403",
+      "reason_code": "runtime-receipt-unfrozen",
+      "detail": "The pinned source requires a built Node runtime, but no reproducible runtime receipt is frozen as a release input. Declaring it runnable would make the comparison irreproducible."
+    }
+  ],
+  "peers": [
+    {
+      "id": "direct-baseline",
+      "source": {
+        "kind": "protocol",
+        "url": "evergreen://direct-classification-v1",
+        "commit": "direct-classification-v1",
+        "tree": "2cf97be3532042e22a9061d985d1dfeab4f58592525980f7c0c6b80f69eaa60c",
+        "license": "not-applicable",
+        "license_path": "",
+        "license_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "lock_path": "",
+        "lock_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "config": {
+        "adapter": "direct-classification-v1",
+        "input": "code-documentation-v1",
+        "label_access": false,
+        "mode": "single-pass"
+      },
+      "config_sha256": "2cf97be3532042e22a9061d985d1dfeab4f58592525980f7c0c6b80f69eaa60c",
+      "applicability": {
+        "go": {"state": "applicable", "reason": ""},
+        "java": {"state": "applicable", "reason": ""},
+        "python": {"state": "applicable", "reason": ""},
+        "rust": {"state": "applicable", "reason": ""},
+        "typescript": {"state": "applicable", "reason": ""}
+      }
+    },
+    {
+      "id": "drift-guardian",
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/killytoronto/drift-guardian.git",
+        "commit": "444021d47ce1c0319c6532488ec4cb886c9ac472",
+        "tree": "f5ab260b14849c9471248eebabebf5c9f1cd320a",
+        "license": "MIT",
+        "license_path": "LICENSE",
+        "license_sha256": "d0f5675b36b9ec3bacdcec27e4cbe5b55356ae3f23a29b79778d92560242679e",
+        "lock_path": "package-lock.json",
+        "lock_sha256": "60fa3e966019f56048dba30e4c0e460cd9da743b5f5147dfce671fc0687f088d"
+      },
+      "config": {
+        "adapter": "drift-guardian-pinned-api-v1",
+        "entrypoint": ["python3", "-m", "eval.peer_adapters.drift_guardian"],
+        "install": "none",
+        "network": "none"
+      },
+      "config_sha256": "d9479704c46c069d4d548a71bd9d06e8d949be193e2db48d07546613a4a7c06a",
+      "applicability": {
+        "go": {"state": "applicable", "reason": ""},
+        "java": {"state": "applicable", "reason": ""},
+        "python": {"state": "applicable", "reason": ""},
+        "rust": {"state": "not-applicable", "reason": "upstream commit does not declare Rust support"},
+        "typescript": {"state": "applicable", "reason": ""}
+      }
+    }
+  ]
+}

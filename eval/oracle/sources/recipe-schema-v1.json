@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "evergreen-public-extraction-recipe"},
+    "language": {"enum": ["python", "java", "typescript", "rust", "go"]},
+    "steps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "argv": {
+            "items": false,
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {"const": "git"},
+              {"const": "show"},
+              {"const": "--no-ext-diff"},
+              {"const": "COMMIT:PATH"}
+            ],
+            "type": "array"
+          }
+        },
+        "required": ["argv"],
+        "type": "object"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": ["schema_version", "kind", "language", "steps"],
+  "type": "object"
+}

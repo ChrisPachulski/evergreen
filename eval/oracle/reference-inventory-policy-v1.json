@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "categories": {
+    "prompt": ["eval/prompt.md", "skills/evergreen/SKILL.md", "commands/*.md"],
+    "example": ["examples/**"],
+    "test": ["tests/*.py", "tests/*.sh"],
+    "fixture": ["eval/fixture/**"],
+    "prior-corpus": [
+      "eval/bench/*.jsonl",
+      "eval/bench/**/*.jsonl",
+      "eval/bench/*.votes.json",
+      "eval/bench/**/*.votes.json",
+      "eval/bench/human-audit/**",
+      "eval/bench/public/**"
+    ]
+  },
+  "exclude_names": ["__pycache__", ".DS_Store"]
+}

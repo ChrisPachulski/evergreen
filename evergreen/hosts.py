@@ -2,6 +2,7 @@
 
 import ast
 from dataclasses import asdict
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,8 +10,10 @@ from pathlib import Path
 from .host_lock import runtime_error as _runtime_error
 from .host_metadata import native_copy_available as _native_copy_available
 from .host_snapshot import (
+    capture_authorization as _capture_authorization,
     capture_preflight as _capture_preflight, kind as _kind,
     read_regular_bounded as _read_regular_bounded,
+    resolve_managed_root as _resolve_managed_root,
     snapshot as _snapshot,
 )
 from .host_transaction import TransactionEngine
@@ -48,7 +51,10 @@ def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> 
     selected, error = _select(home, host)
     if error:
         return OperationResult(False, (error,))
-    engine, lock_error = TransactionEngine.acquire(selected)
+    authorization, authorization_error = _authorize_selection(selected)
+    if authorization_error:
+        return OperationResult(False, tuple(authorization_error))
+    engine, lock_error = TransactionEngine.acquire(selected, authorization)
     if lock_error:
         return OperationResult(False, (lock_error,))
     return _with_engine_close(engine, lambda: _install_acquired(
@@ -84,6 +90,8 @@ def _install_locked(selected, root, target, dry_run, engine):
         states[status.name] = state
         if state_error:
             errors.append(f"{status.name}: {state_error}")
+        elif status.root != status.resolved_root and state is None:
+            errors.append(f"{status.name}: managed host root lacks ownership proof")
     if errors:
         return OperationResult(False, tuple(errors))
 
@@ -108,7 +116,10 @@ def uninstall(home: Path, host: str, dry_run: bool = False) -> OperationResult:
     selected, error = _select(home, host)
     if error:
         return OperationResult(False, (error,))
-    engine, lock_error = TransactionEngine.acquire(selected)
+    authorization, authorization_error = _authorize_selection(selected)
+    if authorization_error:
+        return OperationResult(False, tuple(authorization_error))
+    engine, lock_error = TransactionEngine.acquire(selected, authorization)
     if lock_error:
         return OperationResult(False, (lock_error,))
     return _with_engine_close(engine, lambda: _uninstall_acquired(
@@ -155,6 +166,8 @@ def _uninstall_locked(selected, dry_run, engine):
         states[status.name] = state
         if state_error:
             errors.append(f"{status.name}: {state_error}")
+        elif status.root != status.resolved_root and state is None:
+            errors.append(f"{status.name}: managed host root lacks ownership proof")
     if errors:
         return OperationResult(False, tuple(errors))
 
@@ -176,10 +189,6 @@ def doctor(home: Path, plugin_root: Path, host: str = "all") -> OperationResult:
     selected, error = _select(home, host)
     if error:
         return OperationResult(False, tuple(messages + [error]))
-    host_errors = _host_errors(selected)
-    if host_errors:
-        return OperationResult(False, tuple(messages + host_errors))
-
     root = canonical[0] if canonical else _absolute(plugin_root)
     expected_skill = canonical[1] if canonical else root / "skills" / "evergreen"
     expected_block = _block(root)
@@ -191,6 +200,11 @@ def doctor(home: Path, plugin_root: Path, host: str = "all") -> OperationResult:
         else:
             messages.append("ok command static validation")
     for status in selected:
+        host_errors = _host_errors([status])
+        if host_errors:
+            healthy = False
+            messages.extend(host_errors)
+            continue
         state, state_error = _load_ownership(status)
         if state_error:
             healthy = False
@@ -230,6 +244,21 @@ def doctor(home: Path, plugin_root: Path, host: str = "all") -> OperationResult:
     return OperationResult(healthy, tuple(messages))
 
 
+def collect_host_evidence(home: Path, plugin_root: Path, host: str = "all") -> dict:
+    from .host_evidence import collect_host_evidence as collect
+    return collect(home, plugin_root, host)
+
+
+def validate_host_evidence(value, *, require_all=True):
+    from .host_evidence import validate_host_evidence as validate
+    return validate(value, require_all=require_all)
+
+
+def host_evidence_aligned(value, host):
+    from .host_evidence import host_evidence_aligned as aligned
+    return aligned(value, host)
+
+
 def _canonical(plugin_root):
     lexical_root = _normalized_lexical_path(Path(plugin_root))
     errors = []
@@ -238,16 +267,17 @@ def _canonical(plugin_root):
     root = lexical_root.resolve()
     required_directories = (
         root / ".claude-plugin", root / ".codex-plugin", root / "skills",
-        root / "skills" / "evergreen", root / "bin",
+        root / "skills" / "evergreen", root / "bin", root / "commands",
     )
     for path in required_directories:
         if _kind(path) != "directory":
             errors.append(f"error canonical directory missing or unsafe: {path}")
     required_files = (
-        root / "AGENTS.md", root / "skills" / "evergreen" / "SKILL.md",
-        root / "bin" / "evergreen",
+        (root / "AGENTS.md", MAX_INSTRUCTION_BYTES),
+        (root / "skills" / "evergreen" / "SKILL.md", MAX_INSTRUCTION_BYTES),
+        (root / "bin" / "evergreen", MAX_COMMAND_BYTES),
     )
-    for path in required_files:
+    for path, _limit in required_files:
         if _kind(path) != "regular":
             errors.append(f"error canonical file missing or unsafe: {path}")
     command = root / "bin" / "evergreen"
@@ -272,11 +302,23 @@ def _canonical(plugin_root):
             errors.append(f"error canonical manifests {path}: {error}")
     if len(versions) == 2 and versions[0] != versions[1]:
         errors.append("error canonical manifest versions differ")
+    hashes = {}
+    if not errors:
+        for path, limit in required_files:
+            try:
+                hashes[path.relative_to(root).as_posix()] = hashlib.sha256(
+                    _read_regular_bounded(path, limit, "canonical file")
+                ).hexdigest()
+            except (OSError, ValueError) as error:
+                errors.append(f"error canonical file {path}: {error}")
     if errors:
         return None, errors
     version = versions[0]
     return (root, root / "skills" / "evergreen", version), [
         f"ok canonical version {version}; manifests agree",
+        "ok canonical hashes " + " ".join(
+            f"{name}={digest}" for name, digest in hashes.items()
+        ),
         "ok canonical rules",
         "ok command available",
     ]
@@ -284,24 +326,47 @@ def _canonical(plugin_root):
 
 def _status(home, name, directory, instruction_name):
     root = home / directory
-    kind = _kind(root)
-    problem = None if kind in ("absent", "directory") else f"host root is {kind}, not a directory"
+    root_kind = _kind(root)
+    resolved_root = root
+    problem = None
+    managed_chain = ()
+    if root_kind == "symlink":
+        resolved_root, managed_chain, problem = _resolve_managed_root(home, root)
+    elif root_kind not in ("absent", "directory"):
+        problem = f"host root is {root_kind}, not a directory"
     return HostStatus(
         name=name,
-        present=kind != "absent",
+        present=root_kind != "absent",
         root=root,
-        instructions=root / instruction_name,
-        skill=root / "skills" / "evergreen",
-        ownership=root / OWNERSHIP_FILE,
+        resolved_root=resolved_root,
+        instructions=resolved_root / instruction_name,
+        skill=resolved_root / "skills" / "evergreen",
+        ownership=resolved_root / OWNERSHIP_FILE,
         problem=problem,
+        managed_chain=managed_chain,
     )
+
+def _authorize_selection(selected):
+    try:
+        captured = _capture_authorization(selected)
+    except Exception as error:
+        return None, [f"error: host authorization failed: {error}"]
+    errors = []
+    for status in selected:
+        if status.root == status.resolved_root:
+            continue
+        state, state_error = _ownership_from_snapshot(status, captured[status.ownership])
+        if state_error:
+            errors.append(f"{status.name}: {state_error}")
+        elif state is None:
+            errors.append(f"{status.name}: managed host root lacks ownership proof")
+    return (captured, None) if not errors else (None, errors)
 
 
 def _select(home, requested):
-    home = Path(home).expanduser()
+    home = _normalized_lexical_path(Path(home).expanduser())
     if _kind(home) != "directory":
         return [], f"home must be a real directory: {home}"
-    home = home.resolve()
     statuses = detect_hosts(home)
     if requested == "all":
         selected = [status for status in statuses if status.present]

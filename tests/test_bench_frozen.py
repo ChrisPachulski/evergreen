@@ -211,6 +211,38 @@ class FrozenRunArchiveTests(unittest.TestCase):
                 wrong_live, archive, self.artifact("b" * 40, 1)["metadata"]
             ))
 
+    def test_peer_checkpoint_archives_and_restores_under_raw_peer_schema(self):
+        from eval import peers
+
+        commit = "a" * 40
+        metadata = {"git": {"commit": commit}, "settings": {"peer_id": "direct-baseline"}}
+        private = [{
+            "id": "private-1", "language": "python", "code": "return 1",
+            "documentation": "returns one", "label": "consistent",
+        }]
+        request = peers.freeze_request(private, b"s" * 32)
+        decision = {"opaque_id": request["rows"][0]["opaque_id"],
+                    "decision": "consistent"}
+        document = peers.run_document(
+            metadata, request, [decision], started_at="2026-07-14T12:00:00Z",
+            elapsed_seconds=1.0,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            live = root / "peer.json"
+            archive = root / "archive"
+            live.write_text(json.dumps(document))
+            frozen_run.archive_checkpoint(
+                live, archive, metadata, peer_request=request,
+            )
+            live.unlink()
+            restored = frozen_run.restore_latest(
+                live, archive, metadata, peer_request=request,
+            )
+            restored_document = json.loads(live.read_text())
+        self.assertIsNotNone(restored)
+        self.assertEqual(restored_document, document)
+
     def test_restore_skips_higher_same_commit_with_incompatible_settings(self):
         commit = "a" * 40
         with tempfile.TemporaryDirectory() as directory:
@@ -397,6 +429,125 @@ class FrozenRunMainTests(unittest.TestCase):
         self.assertEqual(len(popen.call_args.kwargs["pass_fds"]), 1)
         self.assertEqual(monitor.call_args.kwargs["expected_metadata"], metadata)
         lock.close.assert_called_once_with()
+
+    def test_peer_main_spawns_single_pass_runner_with_matching_settings_and_two_secrets(self):
+        commit = "a" * 40
+        identity = {"commit": commit, "tree": "t", "dirty": False}
+        metadata = {"git": identity, "settings": {"peer_id": "direct-baseline"}}
+        process = SimpleNamespace(returncode=0)
+        lock = mock.Mock()
+        row = {
+            "id": "private-1", "language": "python", "func": "f",
+            "code": "def f(): return 1", "doc": "returns one",
+            "label": "consistent", "category": None,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            here = repo / "eval" / "bench"
+            here.mkdir(parents=True)
+            (repo / ".git").mkdir()
+            dataset = here / "one.jsonl"
+            dataset.write_text(json.dumps(row) + "\n")
+            manifest = root / "peers.json"
+            manifest.write_text("fixture")
+            key = root / "peer.key"
+            key.write_bytes(b"k" * 32)
+            key.chmod(0o600)
+            archive = root / "archive"
+            peer = {
+                "peer_id": "direct-baseline",
+                "peer_manifest_sha256": "1" * 64,
+                "peer_config_sha256": "2" * 64,
+                "peer_source_sha256": "3" * 64,
+                "peer_source": {"kind": "protocol"},
+            }
+            with mock.patch.object(frozen_run, "REPO", repo), \
+                 mock.patch.object(frozen_run, "HERE", here), \
+                 mock.patch.object(frozen_run, "git_identity", return_value=identity), \
+                 mock.patch.object(frozen_run, "artifact_metadata", return_value=metadata), \
+                 mock.patch.object(frozen_run, "load_dataset", return_value=(b"fixture", [row])), \
+                 mock.patch.object(frozen_run, "peer_policy", return_value=peer), \
+                 mock.patch.object(frozen_run, "_remote_refs", return_value=(
+                     f"{commit}\trefs/heads/main\n"
+                 )), \
+                 mock.patch.object(frozen_run, "acquire_lock", return_value=lock), \
+                 mock.patch.object(frozen_run, "prepare_output") as prepare, \
+                 mock.patch.object(frozen_run.subprocess, "Popen", return_value=process) as popen, \
+                 mock.patch.object(frozen_run, "monitor_process", return_value=0) as monitor, \
+                 mock.patch.object(frozen_run.shutil, "disk_usage", return_value=(
+                     SimpleNamespace(free=20 * 1024 ** 3)
+                 )):
+                status = frozen_run.main([
+                    "--dataset", str(dataset), "--archive-dir", str(archive),
+                    "--peer-manifest", str(manifest), "--peer-id", "direct-baseline",
+                    "--peer-key-file", str(key),
+                ])
+
+        self.assertEqual(status, 0)
+        self.assertEqual(Path(popen.call_args.args[0][1]).name, "run_peer.py")
+        self.assertEqual(len(popen.call_args.kwargs["pass_fds"]), 2)
+        environment = popen.call_args.kwargs["env"]
+        child_settings = json.loads(environment["EVAL_PEER_SETTINGS_JSON"])
+        self.assertEqual(child_settings["peer_id"], "direct-baseline")
+        self.assertEqual(child_settings["model"], "gpt-5.6-sol")
+        self.assertNotIn("models", child_settings)
+        self.assertIn("EVAL_PEER_KEY_FD", environment)
+        prepared = prepare.call_args
+        self.assertEqual(prepared.args[0].name,
+                         "peer-one-codex-gpt-5.6-sol-direct-baseline.json")
+        self.assertIn("peer_request", prepared.kwargs)
+        self.assertIs(monitor.call_args.kwargs["expected_metadata"], metadata)
+        self.assertIn("archive_fn", monitor.call_args.kwargs)
+        lock.close.assert_called_once_with()
+
+    def test_peer_key_must_be_external_private_regular_and_exactly_32_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            key = root / "peer.key"
+            key.write_bytes(b"k" * 32)
+            key.chmod(0o600)
+            self.assertEqual(frozen_run.load_peer_key(key, repo), b"k" * 32)
+            key.chmod(0o644)
+            with self.assertRaisesRegex(ValueError, "private"):
+                frozen_run.load_peer_key(key, repo)
+            key.chmod(0o600)
+            link = root / "key-link"
+            link.symlink_to(key)
+            with self.assertRaisesRegex(ValueError, "regular"):
+                frozen_run.load_peer_key(link, repo)
+            inside = repo / "peer.key"
+            inside.write_bytes(b"k" * 32)
+            inside.chmod(0o600)
+            with self.assertRaisesRegex(ValueError, "outside"):
+                frozen_run.load_peer_key(inside, repo)
+
+    def test_peer_key_path_swap_during_descriptor_read_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            key = root / "peer.key"
+            key.write_bytes(b"a" * 32)
+            key.chmod(0o600)
+            replacement = root / "replacement"
+            replacement.write_bytes(b"b" * 32)
+            replacement.chmod(0o600)
+            real_read = os.read
+            swapped = False
+
+            def swap_then_read(descriptor, size):
+                nonlocal swapped
+                if not swapped:
+                    os.replace(replacement, key)
+                    swapped = True
+                return real_read(descriptor, size)
+
+            with mock.patch.object(frozen_run.os, "read", side_effect=swap_then_read):
+                with self.assertRaisesRegex(ValueError, "changed"):
+                    frozen_run.load_peer_key(key, repo)
 
 
 if __name__ == "__main__":

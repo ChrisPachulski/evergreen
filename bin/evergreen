@@ -55,6 +55,21 @@ def parser():
     receipt.add_argument("--benchmark-manifest", help="Evergreen public benchmark manifest")
     receipt.add_argument("--json", action="store_true", help="emit one JSON object")
     receipt.set_defaults(run=run_receipt)
+    grade = commands.add_parser("grade", help="verify a trusted evidence package")
+    grade_commands = grade.add_subparsers(dest="grade_command", required=True)
+    verify = grade_commands.add_parser(
+        "verify", help="verify evidence earned an A grade"
+    )
+    verify.add_argument(
+        "--repo", metavar="PATH", required=True,
+        help="repository containing committed evidence",
+    )
+    verify.add_argument(
+        "--manifest", metavar="PATH", required=True,
+        help="repository-relative evidence manifest",
+    )
+    verify.add_argument("--json", action="store_true", help="emit one JSON object")
+    verify.set_defaults(run=run_grade_verify)
     for name, help_text, runner in (
         ("install", "install reversible Claude or Codex integration", run_install),
         ("uninstall", "remove only Evergreen-owned host integration", run_uninstall),
@@ -66,6 +81,7 @@ def parser():
     check = commands.add_parser("doctor", help="check canonical files and host ownership")
     check.add_argument("--host", choices=("claude", "codex", "all"), default="all")
     check.add_argument("--repo", default=str(PLUGIN_ROOT), help="canonical Evergreen root")
+    check.add_argument("--json", action="store_true", help="emit raw host evidence")
     check.set_defaults(run=run_doctor)
     return root
 
@@ -81,7 +97,15 @@ def run_uninstall(args):
 
 
 def run_doctor(args):
-    from evergreen.hosts import doctor
+    from evergreen.hosts import collect_host_evidence, doctor
+    if args.json:
+        payload = collect_host_evidence(
+            Path.home(), Path(args.repo).expanduser(), args.host
+        )
+        print(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        return 1 if any(
+            host["doctor_issues"] for host in payload["hosts"].values()
+        ) else 0
     result = doctor(Path.home(), Path(args.repo).expanduser(), args.host)
     code = _print_operation(result, 1)
     if result.ok:
@@ -152,6 +176,61 @@ def run_receipt(args):
     else:
         print_receipt(payload)
     return 0
+
+
+def run_grade_verify(args):
+    from evergreen.grade import (
+        canonical_receipt,
+        verification_exit_code,
+        verify_repository,
+    )
+    from evergreen.receipt import ReceiptOperationalError
+
+    try:
+        payload = verify_repository(args.repo, args.manifest, PLUGIN_ROOT)
+    except ReceiptOperationalError as error:
+        print(f"evergreen: {error_display(error)}", file=sys.stderr)
+        return 1
+    if args.json:
+        sys.stdout.buffer.write(canonical_receipt(payload))
+    else:
+        print_grade_verification(payload)
+    return verification_exit_code(payload)
+
+
+def print_grade_verification(payload):
+    print("Evergreen grade verification:")
+    print(f"- status: {terminal_display(payload['status'])}")
+    grade = "none" if payload.get("grade") is None else payload["grade"]
+    print(f"- grade: {terminal_display(grade)}")
+    subject = payload.get("subject")
+    if subject is not None:
+        print(f"- subject: {terminal_display(subject['commit'])}")
+    evidence_head = payload.get("evidence_head")
+    if evidence_head is not None:
+        print(f"- evidence HEAD: {terminal_display(evidence_head['commit'])}")
+    verifier = payload["verifier"]
+    print(f"- verifier commit: {terminal_display(verifier['commit'])}")
+    print(f"- verifier tree: {terminal_display(verifier['tree'])}")
+    print(f"- verifier artifact SHA-256: {terminal_display(verifier['artifact_sha256'])}")
+    categories = payload.get("categories", [])
+    if categories:
+        print("Categories:")
+        for category in categories:
+            print(
+                f"- {terminal_display(category['id'])}: "
+                f"{terminal_display(category['status'])}"
+            )
+            for reason in category["reasons"]:
+                print(f"  reason: {terminal_display(reason)}")
+    failures = payload.get("failures", [])
+    if failures:
+        print("Failures:")
+        for failure in failures:
+            print(
+                f"- {terminal_display(failure['code'])}: "
+                f"{terminal_display(failure['detail'])}"
+            )
 
 
 def print_receipt(payload):

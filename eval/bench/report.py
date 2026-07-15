@@ -25,7 +25,7 @@ MAX_LANGUAGE_CHARS = 128
 REQUIRED_METADATA = (
     "dataset", "provider", "skill", "judge", "git", "cli_version", "settings",
 )
-MINIMUM_HUMAN_CLASS_DECISIONS = 20
+MINIMUM_REFERENCE_CLASS_DECISIONS = 20
 
 
 def _safe_text(value):
@@ -288,8 +288,8 @@ def render_markdown_v1(paths, required_languages, coverage_threshold=1.0):
 def _build_report(
     paths, required_languages, coverage_threshold, decision_threshold=0.0,
     precision_threshold=0.0, recall_threshold=0.0, f1_threshold=0.0,
-    minimum_human_positive_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
-    minimum_human_negative_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+    minimum_reference_positive_decisions=MINIMUM_REFERENCE_CLASS_DECISIONS,
+    minimum_reference_negative_decisions=MINIMUM_REFERENCE_CLASS_DECISIONS,
 ):
     thresholds = {
         "coverage": coverage_threshold,
@@ -302,12 +302,12 @@ def _build_report(
         if not 0 <= value <= 1:
             raise ValueError(f"{name} threshold must be between 0 and 1")
     for name, value in (
-        ("human positive decisions", minimum_human_positive_decisions),
-        ("human negative decisions", minimum_human_negative_decisions),
+        ("reference positive decisions", minimum_reference_positive_decisions),
+        ("reference negative decisions", minimum_reference_negative_decisions),
     ):
-        if type(value) is not int or value < MINIMUM_HUMAN_CLASS_DECISIONS:
+        if type(value) is not int or value < MINIMUM_REFERENCE_CLASS_DECISIONS:
             raise ValueError(
-                f"minimum {name} must be at least {MINIMUM_HUMAN_CLASS_DECISIONS}"
+                f"minimum {name} must be at least {MINIMUM_REFERENCE_CLASS_DECISIONS}"
             )
     required = _required_languages(required_languages)
     artifacts = _load_artifacts(paths)
@@ -338,8 +338,8 @@ def _build_report(
         f"Required semantic decision coverage: **{_percent(decision_threshold)}**.",
         f"Required precision / recall / F1: **{_percent(precision_threshold)} / "
         f"{_percent(recall_threshold)} / {_percent(f1_threshold)}**.",
-        f"Required human positive / negative decisions per language: "
-        f"**{minimum_human_positive_decisions} / {minimum_human_negative_decisions}**.",
+        f"Required reference positive / negative decisions per language: "
+        f"**{minimum_reference_positive_decisions} / {minimum_reference_negative_decisions}**.",
         f"Required languages: **{', '.join(_safe_text(value) for value in sorted(required))}**.",
         "",
         "### Provenance",
@@ -390,15 +390,15 @@ def _build_report(
                                      gate_values[name] >= threshold)
             for name, threshold in gate_thresholds.items()
         }
-        human_gate_passes = {
-            "Human positive decisions": (
-                language_metrics["decided_positive"] >= minimum_human_positive_decisions
+        reference_gate_passes = {
+            "Reference positive decisions": (
+                language_metrics["decided_positive"] >= minimum_reference_positive_decisions
             ),
-            "Human negative decisions": (
-                language_metrics["decided_negative"] >= minimum_human_negative_decisions
+            "Reference negative decisions": (
+                language_metrics["decided_negative"] >= minimum_reference_negative_decisions
             ),
         }
-        passed = all(gate_passes.values()) and all(human_gate_passes.values())
+        passed = all(gate_passes.values()) and all(reference_gate_passes.values())
         passed_all = passed_all and passed
         lines.extend([
             "",
@@ -443,11 +443,11 @@ def _build_report(
             *[
                 f"| {name} | {required_count} | "
                 f"{language_metrics[metric_name]} / {required_count} | "
-                f"{'PASS' if human_gate_passes[name] else 'FAIL'} |"
+                f"{'PASS' if reference_gate_passes[name] else 'FAIL'} |"
                 for name, required_count, metric_name in (
-                    ("Human positive decisions", minimum_human_positive_decisions,
+                    ("Reference positive decisions", minimum_reference_positive_decisions,
                      "decided_positive"),
-                    ("Human negative decisions", minimum_human_negative_decisions,
+                    ("Reference negative decisions", minimum_reference_negative_decisions,
                      "decided_negative"),
                 )
             ],
@@ -467,26 +467,88 @@ def _build_report(
 def render_markdown(
     paths, required_languages, coverage_threshold=1.0, decision_threshold=0.0,
     precision_threshold=0.0, recall_threshold=0.0, f1_threshold=0.0,
-    minimum_human_positive_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
-    minimum_human_negative_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+    minimum_reference_positive_decisions=MINIMUM_REFERENCE_CLASS_DECISIONS,
+    minimum_reference_negative_decisions=MINIMUM_REFERENCE_CLASS_DECISIONS,
 ):
     return _build_report(
         paths, required_languages, coverage_threshold, decision_threshold,
         precision_threshold, recall_threshold, f1_threshold,
-        minimum_human_positive_decisions, minimum_human_negative_decisions,
+        minimum_reference_positive_decisions, minimum_reference_negative_decisions,
     )[0]
+
+
+def render_peer_markdown(
+    manifest, bundles, subject_commit, canonical_private_rows,
+):
+    """Render comparison coverage and raw metrics without declaring a winner."""
+    try:
+        from eval import peers as peer_protocol
+    except ImportError:  # Direct script execution from eval/bench.
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from eval import peers as peer_protocol
+
+    complete = peer_protocol.comparison_complete(
+        manifest, bundles, subject_commit, canonical_private_rows,
+    )
+    lines = [
+        "# Evergreen same-corpus peer report",
+        "",
+        f"Comparison completeness: **{'COMPLETE' if complete else 'INCOMPLETE'}**.",
+        "",
+        f"Subject commit: `{_safe_text(subject_commit)}`.",
+        "Holdout ID-set SHA-256 values are bound separately for each applicable peer subset.",
+    ]
+    results = [
+        bundle.get("result") for bundle in bundles if isinstance(bundle, dict)
+        and isinstance(bundle.get("result"), dict)
+    ]
+    for result in sorted(
+            (item for item in results if isinstance(item, dict)),
+            key=lambda item: str(item.get("peer_id", ""))):
+        lines.extend([
+            "", f"## {_safe_text(result.get('peer_id', 'unknown'))}", "",
+            "| Language | Attempted | Completed | TP | FP | FN | TN | Precision | Recall | F1 | Specificity |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ])
+        languages = result.get("languages")
+        if not isinstance(languages, dict):
+            lines.append("| unavailable | 0 | 0 | 0 | 0 | 0 | 0 | unavailable | unavailable | unavailable | unavailable |")
+            continue
+        for language in sorted(languages):
+            values = languages[language] if isinstance(languages[language], dict) else {}
+            counts = [
+                values.get(name) if type(values.get(name)) is int and values.get(name) >= 0 else 0
+                for name in ("attempted", "completed", "tp", "fp", "fn", "tn")
+            ]
+            measured = []
+            for name in ("precision", "recall", "f1", "specificity"):
+                value = values.get(name)
+                measured.append(
+                    _metric(value) if type(value) in (int, float) and math.isfinite(value)
+                    and 0 <= value <= 1 else "unavailable"
+                )
+            lines.append(
+                f"| {_safe_text(language)} | " + " | ".join(map(str, counts + measured)) + " |"
+            )
+    lines.extend([
+        "",
+        "Completeness means every required applicable peer returned one bound decision per row. "
+        "It is independent of comparative rank or metric superiority.",
+    ])
+    return "\n".join(lines) + "\n", complete
 
 
 def coverage_passes(
     paths, required_languages, coverage_threshold, decision_threshold=0.0,
     precision_threshold=0.0, recall_threshold=0.0, f1_threshold=0.0,
-    minimum_human_positive_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
-    minimum_human_negative_decisions=MINIMUM_HUMAN_CLASS_DECISIONS,
+    minimum_reference_positive_decisions=MINIMUM_REFERENCE_CLASS_DECISIONS,
+    minimum_reference_negative_decisions=MINIMUM_REFERENCE_CLASS_DECISIONS,
 ):
     return _build_report(
         paths, required_languages, coverage_threshold, decision_threshold,
         precision_threshold, recall_threshold, f1_threshold,
-        minimum_human_positive_decisions, minimum_human_negative_decisions,
+        minimum_reference_positive_decisions, minimum_reference_negative_decisions,
     )[1]
 
 
@@ -502,12 +564,12 @@ def main(argv=None):
     parser.add_argument("--recall-threshold", type=float, default=0.0)
     parser.add_argument("--f1-threshold", type=float, default=0.0)
     parser.add_argument(
-        "--minimum-human-positive-decisions", type=int,
-        default=MINIMUM_HUMAN_CLASS_DECISIONS,
+        "--minimum-reference-positive-decisions", type=int,
+        default=MINIMUM_REFERENCE_CLASS_DECISIONS,
     )
     parser.add_argument(
-        "--minimum-human-negative-decisions", type=int,
-        default=MINIMUM_HUMAN_CLASS_DECISIONS,
+        "--minimum-reference-negative-decisions", type=int,
+        default=MINIMUM_REFERENCE_CLASS_DECISIONS,
     )
     args = parser.parse_args(argv)
     try:
@@ -520,8 +582,8 @@ def main(argv=None):
                 args.artifacts, args.require_language, args.coverage_threshold,
                 args.decision_threshold, args.precision_threshold,
                 args.recall_threshold, args.f1_threshold,
-                args.minimum_human_positive_decisions,
-                args.minimum_human_negative_decisions,
+                args.minimum_reference_positive_decisions,
+                args.minimum_reference_negative_decisions,
             )
     except RecursionError:
         markdown = (

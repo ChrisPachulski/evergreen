@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "evergreen-oracle-source-pack-provenance"},
+    "source_pack_id": {"const": "evergreen-executable-oracle-v1"},
+    "policy": {
+      "additionalProperties": false,
+      "properties": {
+        "provenance_schema_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "recipe_schema_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "private_custody_schema_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "oracle_schema_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "similarity_policy_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "toolchain_policy_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+      },
+      "required": ["provenance_schema_sha256", "recipe_schema_sha256", "private_custody_schema_sha256", "oracle_schema_sha256", "similarity_policy_sha256", "toolchain_policy_sha256"],
+      "type": "object"
+    },
+    "requirements": {
+      "const": {
+        "languages": ["python", "java", "typescript", "rust", "go"],
+        "minimum_projects_per_language": 20,
+        "minimum_seed_claims_per_language": 250,
+        "minimum_projects_per_language_kind": 20,
+        "minimum_seed_claims_per_language_kind": 40,
+        "oracle_kinds": ["return-value", "raises", "default-value", "cardinality", "state-change"]
+      }
+    },
+    "toolchains": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "language": {"enum": ["python", "java", "typescript", "rust", "go"]},
+          "toolchain_id": {"minLength": 1, "type": "string"},
+          "runtime": {"minLength": 1, "type": "string"},
+          "version": {"minLength": 1, "type": "string"},
+          "compiler": {"minLength": 1, "type": "string"},
+          "setup_action": {"pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "type": "string"},
+          "setup_commit": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
+          "adapter_id": {"pattern": "^[a-z]+-oracle-v1$", "type": "string"},
+          "identity_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+        },
+        "required": ["language", "toolchain_id", "runtime", "version", "compiler", "setup_action", "setup_commit", "adapter_id", "identity_sha256"],
+        "type": "object"
+      },
+      "maxItems": 5,
+      "minItems": 5,
+      "type": "array"
+    },
+    "sources": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", "type": "string"},
+          "language": {"enum": ["python", "java", "typescript", "rust", "go"]},
+          "project": {"pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "type": "string"},
+          "lineage_id": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", "type": "string"},
+          "origin": {"pattern": "^https://", "type": "string"},
+          "commit": {"pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$", "type": "string"},
+          "tree": {"pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$", "type": "string"},
+          "license": {
+            "additionalProperties": false,
+            "properties": {
+              "spdx": {"minLength": 1, "type": "string"},
+              "path": {"minLength": 1, "type": "string"},
+              "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+            },
+            "required": ["spdx", "path", "sha256"],
+            "type": "object"
+          },
+          "extraction": {
+            "additionalProperties": false,
+            "properties": {
+              "recipe_path": {"pattern": "^(?:python|java|typescript|rust|go)/[A-Za-z0-9_.-]+\\.json$", "type": "string"},
+              "recipe_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+            },
+            "required": ["recipe_path", "recipe_sha256"],
+            "type": "object"
+          },
+          "harness": {
+            "additionalProperties": false,
+            "properties": {
+              "adapter_id": {"pattern": "^[a-z]+-oracle-v1$", "type": "string"},
+              "adapter_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+            },
+            "required": ["adapter_id", "adapter_sha256"],
+            "type": "object"
+          },
+          "source_blobs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "repository_path": {"minLength": 1, "type": "string"},
+                "input_path": {"minLength": 1, "type": "string"},
+                "blob_oid": {"pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$", "type": "string"},
+                "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+                "oracle_kind": {"enum": ["return-value", "raises", "default-value", "cardinality", "state-change"]}
+              },
+              "required": ["repository_path", "input_path", "blob_oid", "sha256", "oracle_kind"],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "toolchain_id": {"minLength": 1, "type": "string"},
+          "sandbox_image": {"pattern": "^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$", "type": "string"},
+          "extracted_tree_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+          "seed_claims": {"minimum": 1, "type": "integer"},
+          "oracle_kind_counts": {"$ref": "#/$defs/oracle_kind_counts"},
+          "source_identity_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+        },
+        "required": ["source_id", "language", "project", "lineage_id", "origin", "commit", "tree", "license", "extraction", "harness", "toolchain_id", "sandbox_image", "source_blobs", "extracted_tree_sha256", "seed_claims", "oracle_kind_counts", "source_identity_sha256"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "aggregates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "language": {"enum": ["python", "java", "typescript", "rust", "go"]},
+          "projects": {"minimum": 0, "type": "integer"},
+          "seed_claims": {"minimum": 0, "type": "integer"},
+          "oracle_kind_counts": {"$ref": "#/$defs/oracle_kind_counts"},
+          "oracle_kind_projects": {"$ref": "#/$defs/oracle_kind_counts"}
+        },
+        "required": ["language", "projects", "seed_claims", "oracle_kind_counts", "oracle_kind_projects"],
+        "type": "object"
+      },
+      "maxItems": 5,
+      "minItems": 5,
+      "type": "array"
+    },
+    "custody_commitments": {
+      "additionalProperties": false,
+      "properties": {
+        "manifest_sha256": {"$ref": "#/$defs/optional_sha256"},
+        "seed_manifest_sha256": {"$ref": "#/$defs/optional_sha256"},
+        "split_key_sha256": {"$ref": "#/$defs/optional_sha256"},
+        "development_package_sha256": {"$ref": "#/$defs/optional_sha256"},
+        "holdout_package_sha256": {"$ref": "#/$defs/optional_sha256"}
+      },
+      "required": ["manifest_sha256", "seed_manifest_sha256", "split_key_sha256", "development_package_sha256", "holdout_package_sha256"],
+      "type": "object"
+    }
+  },
+  "required": ["schema_version", "kind", "source_pack_id", "policy", "requirements", "toolchains", "sources", "aggregates", "custody_commitments"],
+  "$defs": {
+    "optional_sha256": {"anyOf": [{"pattern": "^[0-9a-f]{64}$", "type": "string"}, {"type": "null"}]},
+    "oracle_kind_counts": {
+      "additionalProperties": false,
+      "properties": {
+        "return-value": {"minimum": 0, "type": "integer"},
+        "raises": {"minimum": 0, "type": "integer"},
+        "default-value": {"minimum": 0, "type": "integer"},
+        "cardinality": {"minimum": 0, "type": "integer"},
+        "state-change": {"minimum": 0, "type": "integer"}
+      },
+      "required": ["return-value", "raises", "default-value", "cardinality", "state-change"],
+      "type": "object"
+    }
+  },
+  "type": "object"
+}

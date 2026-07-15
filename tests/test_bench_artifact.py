@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from eval.bench import metrics, run_bench, runner, trial
+from eval.bench import metrics, runner, trial
 
 
 def completed(identifier, language, label, category, verdict):
@@ -55,12 +55,20 @@ class ArtifactMetadataTests(unittest.TestCase):
                 "report.py": b"report body\n",
                 "resolver.py": b"resolver body\n",
                 "run_bench.py": b"judge body\n",
+                "run_peer.py": b"peer judge body\n",
                 "runner.py": b"runner body\n",
                 "split_manifest.py": b"split manifest body\n",
                 "trial.py": b"trial body\n",
+                "../peers.py": b"peer protocol body\n",
+                "../peers-v1.json": b"peer manifest body\n",
+                "../peer_adapters/common.py": b"peer adapter common body\n",
+                "../peer_adapters/drift_guardian.py": b"peer adapter body\n",
+                "../peer_adapters/drift_guardian_runner.js": b"peer adapter runner body\n",
             }
             for name, payload in modules.items():
-                (bench / name).write_bytes(payload)
+                path = bench / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(payload)
 
             settings = {"models": {"strong": "opus", "cheap": "sonnet"}, "concurrency": 2}
             git = {
@@ -78,7 +86,8 @@ class ArtifactMetadataTests(unittest.TestCase):
         self.assertEqual(metadata["skill"]["sha256"], hashlib.sha256(b"skill body\n").hexdigest())
         self.assertEqual(
             [item["path"] for item in metadata["judge"]["files"]],
-            [f"eval/bench/{name}" for name in sorted(modules)],
+            [(bench / name).resolve().relative_to(repo.resolve()).as_posix()
+             for name in artifact.JUDGE_MODULES],
         )
         self.assertNotEqual(
             metadata["judge"]["sha256"], hashlib.sha256(b"judge body\n").hexdigest()
@@ -101,12 +110,10 @@ class ArtifactMetadataTests(unittest.TestCase):
             judge.parent.mkdir(parents=True)
             dataset.write_text("data")
             skill.write_text("skill")
-            for name in (
-                "artifact.py", "frozen_run.py", "java_context.py", "metrics.py",
-                "model-output.schema.json", "report.py", "resolver.py", "run_bench.py",
-                "runner.py", "split_manifest.py", "trial.py",
-            ):
-                (bench / name).write_text(name)
+            for name in artifact.JUDGE_MODULES:
+                path = bench / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(name)
             git = {"commit": "c", "tree": "t", "dirty": False,
                    "status_sha256": hashlib.sha256(b"").hexdigest(),
                    "diff_sha256": hashlib.sha256(b"").hexdigest(),
@@ -145,7 +152,9 @@ class ArtifactMetadataTests(unittest.TestCase):
             dataset.write_text("data")
             skill.write_text("skill")
             for name in artifact.JUDGE_MODULES:
-                (bench / name).write_text(name)
+                path = bench / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(name)
             commands = []
 
             def version(command):
@@ -170,7 +179,10 @@ class ArtifactMetadataTests(unittest.TestCase):
         expected = {
             "artifact.py", "frozen_run.py", "java_context.py", "metrics.py",
             "model-output.schema.json", "report.py", "resolver.py", "run_bench.py",
-            "runner.py", "split_manifest.py", "trial.py",
+            "run_peer.py", "runner.py", "split_manifest.py", "trial.py", "../peers.py",
+            "../peers-v1.json", "../peer_adapters/common.py",
+            "../peer_adapters/drift_guardian.py",
+            "../peer_adapters/drift_guardian_runner.js",
         }
         self.assertEqual(set(artifact.JUDGE_MODULES), expected)
         with tempfile.TemporaryDirectory() as directory:
@@ -178,7 +190,9 @@ class ArtifactMetadataTests(unittest.TestCase):
             bench = repo / "eval" / "bench"
             bench.mkdir(parents=True)
             for name in expected:
-                (bench / name).write_text(name)
+                path = bench / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(name)
             first = artifact.judge_identity(repo)
             for name in expected:
                 with self.subTest(name=name):
@@ -572,7 +586,7 @@ class ArtifactReportTests(unittest.TestCase):
         self.assertIn("Decision coverage: **20.0%**", text)
         self.assertIn("| Unverified | 8 |", text)
 
-    def test_tiny_perfect_sample_fails_minimum_human_class_counts(self):
+    def test_tiny_perfect_sample_fails_minimum_reference_class_counts(self):
         from eval.bench import report
 
         rows = [
@@ -586,13 +600,14 @@ class ArtifactReportTests(unittest.TestCase):
                 str(artifact_path), "--markdown", str(markdown),
                 "--require-language", "python", "--precision-threshold", "1.0",
                 "--recall-threshold", "1.0", "--f1-threshold", "1.0",
-                "--minimum-human-positive-decisions", "20",
-                "--minimum-human-negative-decisions", "20",
+                "--minimum-reference-positive-decisions", "20",
+                "--minimum-reference-negative-decisions", "20",
             ])
             text = markdown.read_text()
 
         self.assertEqual(status, 2)
-        self.assertIn("Human positive decisions", text)
+        self.assertIn("Reference positive decisions", text)
+        self.assertNotIn("Human", text)
         self.assertIn("1 / 20", text)
 
     def test_result_validation_enforces_semantic_status_combinations(self):

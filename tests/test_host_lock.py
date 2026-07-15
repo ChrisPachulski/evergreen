@@ -3,13 +3,43 @@ from unittest import mock
 from pathlib import Path
 import tempfile
 
-from evergreen import host_lock, host_transaction, hosts
+from evergreen import host_lock, host_snapshot, host_transaction, hosts
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class HostTransactionTests(unittest.TestCase):
+    def test_lock_exclusivity_survives_host_directory_rename_and_replacement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            codex = home / ".codex"
+            codex.mkdir()
+            selected = [hosts.detect_hosts(home)[1]]
+            authorization = host_snapshot.capture_authorization(selected)
+            first, first_error = host_transaction.TransactionEngine.acquire(
+                selected, authorization
+            )
+            self.assertIsNone(first_error)
+            displaced = home / "displaced-codex"
+            codex.rename(displaced)
+            codex.mkdir()
+            replacement_selected = [hosts.detect_hosts(home)[1]]
+            replacement_authorization = host_snapshot.capture_authorization(
+                replacement_selected
+            )
+            try:
+                second, second_error = host_transaction.TransactionEngine.acquire(
+                    replacement_selected, replacement_authorization
+                )
+                if second is not None:
+                    second.close()
+            finally:
+                first.close()
+
+            self.assertIsNone(second)
+            self.assertIn("another host operation", second_error)
+
     def test_release_attempts_every_unlock_and_close_in_reverse_order(self):
         unlocked, closed = [], []
 

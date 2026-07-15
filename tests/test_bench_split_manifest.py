@@ -8,6 +8,7 @@ import unittest
 
 
 from eval.bench.split_manifest import load_split_assignments, load_split_manifest
+from eval.oracle.split import POLICY_SHA256
 
 
 def dataset_row(pair_id, language="Java", label="consistent"):
@@ -124,6 +125,94 @@ class SplitManifestTests(unittest.TestCase):
             "split manifest valid: 2 rows; 2 projects do not cross dev/holdout\n",
         )
         self.assertNotIn("returns one", completed.stdout)
+
+    def test_duplicate_keys_and_nonfinite_numbers_are_rejected(self):
+        valid = self.write_manifest().read_text()
+        for name, raw in (
+            ("duplicate", valid.replace('"schema_version": 1',
+                                        '"schema_version": 1, "schema_version": 1', 1)),
+            ("nonfinite", valid.replace('"schema_version": 1',
+                                        '"schema_version": NaN', 1)),
+        ):
+            with self.subTest(name=name):
+                path = self.root / f"strict-{name}.json"
+                path.write_text(raw)
+                with self.assertRaisesRegex(ValueError, "valid JSON"):
+                    load_split_manifest(path, [self.dataset])
+
+    def test_accepts_hash_bound_oracle_v2_without_opening_packages_for_assignments(self):
+        packages = []
+        declarations = []
+        public_rows = []
+        for split, row_id in (("dev", "oracle-" + "a" * 64),
+                              ("holdout", "oracle-" + "b" * 64)):
+            path = self.root / f"{split}.jsonl"
+            row = {"id": row_id, "split": split, "language": "python",
+                   "code": "return 1", "documentation": "returns one",
+                   "label": "consistent"}
+            raw = json.dumps(row, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+            path.write_bytes(raw)
+            digest = hashlib.sha256(raw).hexdigest()
+            packages.append(path)
+            declarations.append({"sha256": digest, "split": split, "rows": 1})
+            declarations[-1]["path_sha256"] = hashlib.sha256(
+                str(path.absolute()).encode()
+            ).hexdigest()
+            public_rows.append({"id": row_id, "dataset_sha256": digest, "split": split})
+        document = {
+            "schema_version": 2,
+            "similarity_policy_sha256": POLICY_SHA256,
+            "reference_corpus_sha256": "f" * 64,
+            "subject_commit": "1" * 40,
+            "subject_tree": "2" * 40,
+            "datasets": declarations,
+            "rows": public_rows,
+        }
+        manifest = self.root / "oracle-split.json"
+        manifest.write_text(json.dumps(document))
+
+        expected = {row["id"]: row["split"] for row in public_rows}
+        self.assertEqual(load_split_assignments(manifest), expected)
+        self.assertEqual(load_split_manifest(manifest, packages), expected)
+
+    def test_oracle_v2_rejects_leaks_policy_drift_and_package_mismatch(self):
+        row_id = "oracle-" + "a" * 64
+        package = self.root / "dev.jsonl"
+        raw = json.dumps({"id": row_id, "split": "dev", "language": "python"}).encode() + b"\n"
+        package.write_bytes(raw)
+        digest = hashlib.sha256(raw).hexdigest()
+        base = {
+            "schema_version": 2,
+            "similarity_policy_sha256": POLICY_SHA256,
+            "reference_corpus_sha256": "f" * 64,
+            "subject_commit": "1" * 40,
+            "subject_tree": "2" * 40,
+            "datasets": [
+                {"sha256": digest, "path_sha256": hashlib.sha256(
+                    str(package.absolute()).encode()
+                ).hexdigest(), "split": "dev", "rows": 1},
+                {"sha256": "d" * 64, "path_sha256": "e" * 64,
+                 "split": "holdout", "rows": 0},
+            ],
+            "rows": [{"id": row_id, "dataset_sha256": digest, "split": "dev"}],
+        }
+        for name, change in (
+            ("leak", lambda value: value["rows"][0].__setitem__("project", "org/private")),
+            ("policy", lambda value: value.__setitem__("similarity_policy_sha256", "d" * 64)),
+            ("count", lambda value: value["datasets"][0].__setitem__("rows", 2)),
+        ):
+            with self.subTest(name=name):
+                document = json.loads(json.dumps(base))
+                change(document)
+                manifest = self.root / f"bad-{name}.json"
+                manifest.write_text(json.dumps(document))
+                with self.assertRaises(ValueError):
+                    load_split_assignments(manifest)
+
+        manifest = self.root / "mismatch.json"
+        manifest.write_text(json.dumps(base))
+        with self.assertRaisesRegex(ValueError, "package declarations"):
+            load_split_manifest(manifest, [package])
 
 
 if __name__ == "__main__":

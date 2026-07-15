@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "kind": "evergreen-oracle-toolchain-policy",
+  "workflow_path": ".github/workflows/test.yml",
+  "workflow_environment": {
+    "python": ["ORACLE_PYTHON_VERSION", "3.11.13"],
+    "java": ["ORACLE_JAVA_VERSION", "21.0.7+6"],
+    "typescript": ["ORACLE_NODE_VERSION", "22.17.0", "ORACLE_TYPESCRIPT_VERSION", "5.8.3"],
+    "rust": ["ORACLE_RUST_VERSION", "1.88.0"],
+    "go": ["ORACLE_GO_VERSION", "1.24.4"]
+  },
+  "typescript_install": "npm install --global \"typescript@$ORACLE_TYPESCRIPT_VERSION\"",
+  "toolchains": [
+    {
+      "language": "python",
+      "toolchain_id": "cpython-3.11.13",
+      "runtime": "CPython",
+      "version": "3.11.13",
+      "compiler": "none",
+      "setup_action": "actions/setup-python",
+      "setup_commit": "a309ff8b426b58ec0e2a45f0f869d46889d02405",
+      "adapter_id": "python-oracle-v1",
+      "identity_sha256": "632806b8f8aea1314ac8cd73952425b85d393eb7e06bc2825cbec57109c0970e"
+    },
+    {
+      "language": "java",
+      "toolchain_id": "temurin-21.0.7+6",
+      "runtime": "Eclipse Temurin",
+      "version": "21.0.7+6",
+      "compiler": "javac 21.0.7",
+      "setup_action": "actions/setup-java",
+      "setup_commit": "c5195efecf7bdfc987ee8bae7a71cb8b11521c00",
+      "adapter_id": "java-oracle-v1",
+      "identity_sha256": "1fd86aa5958aa36d57f3d34748c762a1c6aed3067e549523c3d5d3f70e26f51c"
+    },
+    {
+      "language": "typescript",
+      "toolchain_id": "node-22.17.0-typescript-5.8.3",
+      "runtime": "Node.js",
+      "version": "22.17.0",
+      "compiler": "TypeScript 5.8.3",
+      "setup_action": "actions/setup-node",
+      "setup_commit": "49933ea5288caeca8642d1e84afbd3f7d6820020",
+      "adapter_id": "typescript-oracle-v1",
+      "identity_sha256": "637ad921e96fdf5f64fffae36823babc780e404b6f3b06a9f511daea5ee45f64"
+    },
+    {
+      "language": "rust",
+      "toolchain_id": "rust-1.88.0",
+      "runtime": "rustc",
+      "version": "1.88.0",
+      "compiler": "rustc 1.88.0",
+      "setup_action": "dtolnay/rust-toolchain",
+      "setup_commit": "fa04a1451ff1842e2626ccb99004d0195b455a88",
+      "adapter_id": "rust-oracle-v1",
+      "identity_sha256": "e772524793805200106c050532b9dfe3fd7fe840cd7829bc27b07deaa84fdc4d"
+    },
+    {
+      "language": "go",
+      "toolchain_id": "go-1.24.4",
+      "runtime": "Go",
+      "version": "1.24.4",
+      "compiler": "go 1.24.4",
+      "setup_action": "actions/setup-go",
+      "setup_commit": "d35c59abb061a4a6fb18e82ac0862c26744d6ab5",
+      "adapter_id": "go-oracle-v1",
+      "identity_sha256": "7a2d5661794572451c9c30b310bbfc1254c37e82054142ebf6990c4bec8d23e6"
+    }
+  ]
+}

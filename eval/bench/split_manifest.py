@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -18,14 +19,37 @@ MAX_ROWS = 100_000
 ALLOWED_TOP = {"schema_version", "datasets", "rows"}
 ALLOWED_DATASET = {"sha256", "language"}
 ALLOWED_ROW = {"id", "dataset_sha256", "project", "split"}
+ORACLE_TOP = {
+    "schema_version", "similarity_policy_sha256", "reference_corpus_sha256",
+    "subject_commit", "subject_tree", "datasets", "rows",
+}
+ORACLE_DATASET = {"sha256", "path_sha256", "split", "rows"}
+ORACLE_ROW = {"id", "dataset_sha256", "split"}
+ORACLE_POLICY_SHA256 = "afe5010343623c9f413c3304350b751219f25137113422c241460a70260dfeb5"
 SPLITS = {"dev", "holdout"}
 
 
 def _load_json(path, max_bytes, label):
     try:
-        return json.loads(read_bytes(path, max_bytes, label=label))
-    except json.JSONDecodeError as error:
+        return _loads_strict(read_bytes(path, max_bytes, label=label))
+    except (json.JSONDecodeError, ValueError) as error:
         raise ValueError(f"{label} is not valid JSON") from error
+
+
+def _unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+
+def _loads_strict(raw):
+    return json.loads(
+        raw, parse_constant=lambda item: (_ for _ in ()).throw(ValueError(item)),
+        object_pairs_hook=_unique_object,
+    )
 
 
 def _datasets(paths):
@@ -34,7 +58,7 @@ def _datasets(paths):
     for path in map(Path, paths):
         payload = read_bytes(path, MAX_DATASET_BYTES, label="split dataset")
         digest = hashlib.sha256(payload).hexdigest()
-        rows = [json.loads(line) for line in payload.splitlines() if line.strip()]
+        rows = [_loads_strict(line) for line in payload.splitlines() if line.strip()]
         if len(rows) > MAX_ROWS:
             raise ValueError("split dataset has too many rows")
         languages = {row.get("language", "python") for row in rows}
@@ -50,8 +74,7 @@ def _datasets(paths):
     return declarations, ids
 
 
-def _manifest(path, expected_declarations=None):
-    document = _load_json(Path(path), MAX_MANIFEST_BYTES, "split manifest")
+def _manifest_v1(document, expected_declarations=None):
     if not isinstance(document, dict) or set(document) != ALLOWED_TOP:
         raise ValueError("split manifest has unknown or missing fields")
     if document["schema_version"] != 1:
@@ -106,6 +129,112 @@ def _manifest(path, expected_declarations=None):
     return result, row_datasets, declared_set, document
 
 
+def _manifest_v2(document, expected_declarations=None):
+    if set(document) != ORACLE_TOP:
+        raise ValueError("oracle split manifest has unknown or missing fields")
+    policy = document["similarity_policy_sha256"]
+    if (not isinstance(policy, str) or len(policy) != 64 or
+            any(character not in "0123456789abcdef" for character in policy) or
+            policy != ORACLE_POLICY_SHA256):
+        raise ValueError("oracle split manifest policy hash is malformed")
+    reference_corpus = document["reference_corpus_sha256"]
+    if (not isinstance(reference_corpus, str) or len(reference_corpus) != 64 or
+            any(character not in "0123456789abcdef" for character in reference_corpus)):
+        raise ValueError("oracle split manifest reference corpus hash is malformed")
+    for field in ("subject_commit", "subject_tree"):
+        identity = document[field]
+        if (not isinstance(identity, str) or len(identity) not in (40, 64) or
+                any(character not in "0123456789abcdef" for character in identity)):
+            raise ValueError("oracle split manifest subject identity is malformed")
+    declared = document["datasets"]
+    if (not isinstance(declared, list) or len(declared) != 2 or
+            any(not isinstance(item, dict) or set(item) != ORACLE_DATASET
+                for item in declared)):
+        raise ValueError("oracle split package declarations are malformed")
+    declared_set = set()
+    by_hash = {}
+    for item in declared:
+        digest = item["sha256"]
+        path_digest = item["path_sha256"]
+        split = item["split"]
+        count = item["rows"]
+        if (not isinstance(digest, str) or len(digest) != 64 or
+                any(character not in "0123456789abcdef" for character in digest) or
+                not isinstance(path_digest, str) or len(path_digest) != 64 or
+                any(character not in "0123456789abcdef" for character in path_digest) or
+                split not in SPLITS or type(count) is not int or count < 0):
+            raise ValueError("oracle split package declaration is malformed")
+        declaration = (digest, path_digest, split, count)
+        if digest in by_hash or split in by_hash.values() or declaration in declared_set:
+            raise ValueError("oracle split package declarations are duplicated")
+        declared_set.add(declaration)
+        by_hash[digest] = split
+    if set(by_hash.values()) != SPLITS:
+        raise ValueError("oracle split package declarations must cover both splits")
+    if expected_declarations is not None and declared_set != expected_declarations:
+        raise ValueError("oracle split package declarations do not match inputs")
+    rows = document["rows"]
+    if not isinstance(rows, list) or len(rows) > MAX_ROWS:
+        raise ValueError("oracle split manifest rows are malformed")
+    result = {}
+    row_datasets = {}
+    counts = {digest: 0 for digest in by_hash}
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != ORACLE_ROW:
+            raise ValueError("oracle split manifest row has forbidden or missing fields")
+        row_id = row["id"]
+        digest = row["dataset_sha256"]
+        split = row["split"]
+        if (not isinstance(row_id, str) or len(row_id) != 71 or
+                not row_id.startswith("oracle-") or
+                any(character not in "0123456789abcdef" for character in row_id[7:]) or
+                digest not in by_hash or split != by_hash[digest]):
+            raise ValueError("oracle split manifest row identity is invalid")
+        if row_id in result:
+            raise ValueError("oracle split manifest contains duplicate row id")
+        result[row_id] = split
+        row_datasets[row_id] = digest
+        counts[digest] += 1
+    declared_counts = {digest: count for digest, _path, _split, count in declared_set}
+    if counts != declared_counts:
+        raise ValueError("oracle split package row counts do not match declarations")
+    return result, row_datasets, declared_set, document
+
+
+def _manifest(path, expected_declarations=None):
+    document = _load_json(Path(path), MAX_MANIFEST_BYTES, "split manifest")
+    if (isinstance(document, dict) and type(document.get("schema_version")) is int and
+            document["schema_version"] == 2):
+        return _manifest_v2(document, expected_declarations)
+    return _manifest_v1(document, expected_declarations)
+
+
+def _oracle_packages(paths):
+    declarations = set()
+    ids = {}
+    for path in map(Path, paths):
+        payload = read_bytes(path, MAX_DATASET_BYTES, label="oracle split package")
+        digest = hashlib.sha256(payload).hexdigest()
+        try:
+            rows = [_loads_strict(line) for line in payload.splitlines() if line.strip()]
+        except (json.JSONDecodeError, ValueError) as error:
+            raise ValueError("oracle split package is not valid JSONL") from error
+        if len(rows) > MAX_ROWS:
+            raise ValueError("oracle split package has too many rows")
+        splits = {row.get("split") for row in rows if isinstance(row, dict)}
+        if len(splits) != 1 or next(iter(splits)) not in SPLITS:
+            raise ValueError("oracle split package must contain exactly one split")
+        split = next(iter(splits))
+        path_digest = hashlib.sha256(os.fsencode(str(path.absolute()))).hexdigest()
+        declarations.add((digest, path_digest, split, len(rows)))
+        for row in rows:
+            row_id = row.get("id") if isinstance(row, dict) else None
+            if not isinstance(row_id, str) or not row_id or row_id in ids:
+                raise ValueError("oracle split packages contain invalid or duplicate row ids")
+            ids[row_id] = (digest, split)
+    return declarations, ids
+
+
 def load_split_assignments(path: Path) -> dict[str, str]:
     """Load the public ID-to-split mapping without opening any label-bearing dataset."""
     return _manifest(path)[0]
@@ -113,10 +242,20 @@ def load_split_assignments(path: Path) -> dict[str, str]:
 
 def load_split_manifest(path: Path, datasets: list[Path]) -> dict[str, str]:
     """Return ID-to-split mapping after exact hash, coverage, and grouping validation."""
+    document = _load_json(Path(path), MAX_MANIFEST_BYTES, "split manifest")
+    if (isinstance(document, dict) and type(document.get("schema_version")) is int and
+            document["schema_version"] == 2):
+        actual_set, expected_ids = _oracle_packages(datasets)
+        result, row_datasets, _declared_set, _document = _manifest(path, actual_set)
+        if (set(result) != set(expected_ids) or any(
+                row_datasets[row_id] != digest or result[row_id] != split
+                for row_id, (digest, split) in expected_ids.items())):
+            raise ValueError("oracle split manifest does not exactly cover package rows")
+        return result
     actual_set, expected_ids = _datasets(datasets)
     result, row_datasets, _declared_set, _document = _manifest(path, actual_set)
-    if (set(result) != set(expected_ids) or
-            any(row_datasets[pair_id] != digest for pair_id, digest in expected_ids.items())):
+    if (set(result) != set(expected_ids) or any(
+            row_datasets[pair_id] != digest for pair_id, digest in expected_ids.items())):
         raise ValueError("split manifest does not exactly cover dataset rows")
     return result
 
@@ -127,9 +266,12 @@ def main(argv=None):
         raise SystemExit("usage: split_manifest.py MANIFEST DATASET...")
     mapping = load_split_manifest(Path(args[0]), [Path(item) for item in args[1:]])
     document = _load_json(Path(args[0]), MAX_MANIFEST_BYTES, "split manifest")
-    projects = {row["project"] for row in document["rows"]}
-    print(f"split manifest valid: {len(mapping)} rows; {len(projects)} projects "
-          "do not cross dev/holdout")
+    if document["schema_version"] == 1:
+        projects = {row["project"] for row in document["rows"]}
+        print(f"split manifest valid: {len(mapping)} rows; {len(projects)} projects "
+              "do not cross dev/holdout")
+    else:
+        print(f"oracle split manifest valid: {len(mapping)} ID-only rows; 2 private packages bound")
     return 0
 
 

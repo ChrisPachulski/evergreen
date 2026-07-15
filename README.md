@@ -164,6 +164,10 @@ That frozen Codex run passed: 2,103 of 2,104 pairs completed, every language ind
 in [`eval/bench/results-0.4.0.md`](eval/bench/results-0.4.0.md); its redacted, offline-verifiable
 decision artifacts, protocol, and dataset provenance live in [`eval/bench/`](eval/bench/).
 
+The separate [executable-oracle source-pack contract](eval/oracle/README.md) is present but not yet
+corpus-ready: no curated public source identities or external private custody package is claimed in
+this tree.
+
 ## Install
 
 Candidate queries require Python 3.10+ and Git. Host management requires Python 3.11+ and is
