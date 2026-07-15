@@ -56,6 +56,10 @@ python3 eval/bench/run_bench.py --rescore \
   eval/bench/public/0.4.0/bench-cascade-java-trial-codex-gpt-5.6-sol.json
 ```
 
+Add `--ids <file>` (one pair id per line) to restrict the rescore to an explicit subset, such as a
+locked holdout split once the label audit produces one. Every listed id must exist in the artifact;
+unknown ids fail the command rather than shrinking the subset silently.
+
 Replay stored trial stages through their versioned decision policy, require exact full-decision
 parity, and compare the strong snap diagnostically without model calls:
 

@@ -44,6 +44,7 @@ MAX_DATASET_ROWS = 100_000
 MAX_SKILL_BYTES = 1024 * 1024
 MAX_RESCORE_BYTES = 64 * 1024 * 1024
 MAX_RESCORE_ROWS = 100_000
+MAX_IDS_BYTES = 1024 * 1024
 
 
 def selftest():
@@ -232,6 +233,22 @@ def load_rescore(path):
     return rows
 
 
+def subset_rows(rows, ids_path):
+    """Restrict rescoring to an explicit id list, e.g. a locked holdout split.
+
+    Every listed id must exist in the artifact: a silently ignored id would let a
+    mistyped or stale split file masquerade as a scored one."""
+    text = read_bytes(ids_path, MAX_IDS_BYTES, label="id list").decode()
+    wanted = {line.strip() for line in text.splitlines() if line.strip()}
+    if not wanted:
+        raise ValueError("id list is empty")
+    missing = sorted(wanted - {row.get("id") for row in rows})
+    if missing:
+        raise ValueError(
+            f"{len(missing)} listed ids missing from artifact, first: {missing[0]}")
+    return [row for row in rows if row["id"] in wanted]
+
+
 def bounded_results(executor, function, items, max_in_flight):
     """Yield ordered results while keeping at most max_in_flight submitted futures."""
     if max_in_flight < 1:
@@ -259,8 +276,13 @@ def main():
         return selftest()
     if "--rescore" in sys.argv:
         path = Path(sys.argv[sys.argv.index("--rescore") + 1])
-        return report(rows_from_transcript(load_rescore(path)),
-                      f", rescored from {path.name}")
+        rows = load_rescore(path)
+        label = f", rescored from {path.name}"
+        if "--ids" in sys.argv:
+            ids_path = Path(sys.argv[sys.argv.index("--ids") + 1])
+            rows = subset_rows(rows, ids_path)
+            label += f" restricted to {len(rows)} ids from {ids_path.name}"
+        return report(rows_from_transcript(rows), label)
     require_frozen_run()
     ds = Path(sys.argv[sys.argv.index("--dataset") + 1]) if "--dataset" in sys.argv \
         else Path(os.environ.get("EVAL_DATASET", HERE / "dataset.jsonl"))

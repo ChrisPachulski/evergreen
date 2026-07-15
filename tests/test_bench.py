@@ -818,6 +818,25 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(rescored_rows, direct)
         self.assertEqual(metrics.score(rescored_rows), metrics.score(direct))
 
+    def test_subset_rows_keeps_only_listed_ids(self):
+        rows = [{"id": name} for name in ("a", "b", "c")]
+        with tempfile.TemporaryDirectory() as tmp:
+            ids_path = Path(tmp) / "holdout.txt"
+            ids_path.write_text("c\n\n a \n")
+            self.assertEqual(runner.subset_rows(rows, ids_path),
+                             [{"id": "a"}, {"id": "c"}])
+
+    def test_subset_rows_rejects_unknown_and_empty_id_lists(self):
+        rows = [{"id": "a"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            ids_path = Path(tmp) / "holdout.txt"
+            ids_path.write_text("a\nghost\n")
+            with self.assertRaisesRegex(ValueError, "ghost"):
+                runner.subset_rows(rows, ids_path)
+            ids_path.write_text("\n")
+            with self.assertRaisesRegex(ValueError, "empty"):
+                runner.subset_rows(rows, ids_path)
+
     def test_transcript_preserves_v2_semantic_status_and_infers_legacy_decisions(self):
         transcript = [
             {"id": "a", "language": "python", "label": "inconsistent",
