@@ -1,80 +1,58 @@
-# Executable-oracle source pack
+# Executable-oracle research
 
-This directory defines the public provenance and external-custody boundary for the planned
-five-language executable-oracle corpus. Pinned, non-ready source-candidate inputs or catalogs and
-extraction recipes are present for all five languages, but no candidate has been admitted to the
-public source pack and no private oracle package is present. The checked-in `provenance.json`
-therefore reports zero sources and zero claims, and readiness validation fails closed.
+This directory contains the frozen synthetic v1 source-pack contract, pinned candidate source
+catalogs, and one experimental Python in-project mutation pilot. It does not contain a completed
+five-language corpus, authorized holdout, v2 certification system, or detector-quality result.
+Current published quality evidence lives under `eval/bench/public/0.4.0`; the pilot and catalogs do
+not update or supersede it.
 
-The public contract requires at least 20 source-project groups and 250 seed claims per language
-across Python, Java, TypeScript, Rust, and Go. Every language must cover all five oracle kinds with
-at least 40 seeds and 20 projects per kind before splitting. Each public source record binds the
-exact HTTPS origin, commit and tree, SPDX license and license-file hash, shell-free extraction
-recipe and hash, a closed inventory of every seed blob's repository path, Git object ID, SHA-256,
-extracted input path, and oracle kind, the adapter hash, digest-addressed sandbox image, and pinned
-toolchain identity. The extracted-tree commitment is recomputed from that canonical blob inventory.
-`sources/toolchain-policy-v1.json` freezes those identities and their exact trusted-CI
-action commits and version variables; validation rejects drift between the policy, provenance, and
-workflow. Candidate recipes and catalogs live under `sources/<language>/`; their records remain
-non-capacity evidence until the shared provenance, derivation, adapter, and custody gates accept
-them. Reused origins or projects must keep one lineage,
-and duplicate source/content identities cannot be counted as independent capacity.
+## Frozen v1 contract
 
-The candidate work has already falsified the original raw-fixture strategy. The pinned Python and
-Go inputs name 20 projects each, but their verifier makes no semantic-witness or executable-seed
-claim. Rust has 20 pinned project candidates and one exact-span return-value derivation prototype.
-The smaller Java and TypeScript catalogs demonstrate exact-span discovery but report zero
-executable seeds.
-Generated wrappers are not upstream blobs and are not counted by the current custody contract;
-doing so requires a closed derivation receipt that recomputes the wrapper from the exact Git blob,
-semantic span, and generator identity. Human review is supplementary and is not a readiness gate.
+`schema-v1.json`, `oracle.py`, `build.py`, `split.py`, and `sources/provenance.json` retain the v1
+contract. No candidate is admitted to its public source pack, so its checked-in provenance reports
+zero sources and zero claims and readiness fails closed. The v1 floor remains 20 source-project
+groups and 250 seed claims per language across Python, Java, TypeScript, Rust, and Go. Its missing
+owner-only custody package is not inferred from public hashes or plans.
 
-The missing deliverable is one owner-only external custody receipt conforming to
-`private-custody-schema-v1.json`, plus the artifacts it commits to: the complete seed manifest,
-split-key bytes, development package, holdout package, and executable/adapter toolchain receipts.
-That receipt contains hashes and aggregate counts only. It never contains holdout code,
-documentation, labels, mutation identities, or split key bytes, and it remains outside the
-detector repository. The public manifest may contain commitments to those artifacts after they
-exist, but never their paths or contents.
+The existing `eval.oracle.build validate-provenance` CLI owns that contract, but this salvage does
+not authorize executing it. The static freeze and separate execution authorization in the active
+plan come first.
 
-Custody validation opens those owner-only artifacts through bounded, no-symlink reads without
-printing their rows. It requires four distinct files and an exact 32-byte split key, validates each
-seed with the frozen oracle schema, requires its source path, bytes, hash, and oracle kind to match
-exactly one public blob witness, derives the fixed harness command and expected
-source/mutation/no-op rows, requires each
-sealed package to be their exact closed-key, canonical JSONL serialization, recomputes the keyed
-split and per-language/kind inventories, and compares those results to the public claims.
-Self-consistent hashes or receipt totals alone are insufficient.
+## Pinned source candidates
 
-Public blob claims are independently recomputable from a local bare or working Git object database;
-the verifier reads the pinned commit and tree, license bytes, regular-blob object IDs, and blob bytes
-without checking out or executing repository content:
+Candidate recipes and catalogs live under `sources/<language>/`. Python and Go name 20 pinned
+projects each, Rust names 20 candidates and includes an earlier exact-span prototype, and Java and
+TypeScript contain smaller catalogs. These are real source candidates, not admitted corpus rows or
+evidence of detector performance.
 
-```sh
-python3 -m eval.oracle.build verify-source-checkout \
-  --manifest /path/to/provenance.json \
-  --source-id SOURCE_ID \
-  --repository /path/to/exact/git/object-database
-```
+## Python pilot
 
-Validate the checked-in, non-ready contract without network access:
+`python_pilot.py` is a standard-library Python experiment, with Git as an external executable, for
+one narrow pattern: a selected unittest asserts an integer returned by one production function. It
+is designed to check pristine, semantic-no-op, and mutant variants twice and record the original
+assertion and source byte spans. It awards no grade and is not called by the product or benchmark
+runner.
 
-```sh
-python3 -m eval.oracle.build validate-provenance \
-  --manifest eval/oracle/sources/provenance.json \
-  --contract-only
-```
+The current prototype expects the selected test to be named `ValueTests.test_value`. That limitation
+must be removed or frozen explicitly before using it on a development corpus. The report contains
+only identities derived from the exact Git tree and bound source/assertion bytes; it accepts no
+caller-supplied corpus, derivation, or grade identity.
 
-The readiness command intentionally exits `2` until real source identities, public recipes, scale,
-kind capacity, and custody commitments are present:
+Its offline dependency scan currently supports flat local Python modules, not general package-root
+discovery. Broader package support belongs only in response to a selected frozen fixture.
 
-```sh
-python3 -m eval.oracle.build validate-provenance \
-  --manifest eval/oracle/sources/provenance.json
-```
+The pilot executes project Python as the current user. Its bounded environment improves
+reproducibility but is not a security sandbox; use only explicitly trusted repositories. The
+integration test is preserved in `tests/test_oracle_python_pilot.py`, but salvage did not execute
+it.
 
-CI reruns the public contract on macOS and Linux after networked setup. A separate manual,
-environment-protected Linux job selects the exact Python, Node/TypeScript, JDK, Rust, and Go
-versions, applies offline proxy settings, and requires readiness before trusted regeneration can
-begin. Unit tests separately refuse process and socket use during provenance validation. The
-workflow does not claim that regeneration or either private package currently exists.
+## Measurement-first boundary
+
+Before any pilot or detector measurement runs, freeze the exact candidate revision, source
+revisions, selected files and assertions, mutation and evaluator bytes, command, environment,
+bounds, and output destination. Review those immutable inputs first, then obtain explicit execution
+authorization. The first result is a development measurement, not a holdout or certification.
+
+The abandoned v2 custody, runtime, ledger, attestation, category, and A-grade framework was removed
+because it preceded the evidence it was meant to protect. Those mechanisms remain deferred until a
+measured failure and concrete threat model justify the smallest necessary control.

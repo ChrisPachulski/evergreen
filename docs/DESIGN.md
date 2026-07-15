@@ -183,19 +183,26 @@ execution-policy hardening. These are backward-compatible pre-1.0 features, so t
 SemVer policy justifies minor `0.4.0`, not patch `0.3.3` or stable `1.0.0`. This plugin stream has
 no binary build-number field, and the release invents none.
 
-### 0.5.0 quality milestone gate
+### Measurement-first quality and release boundary
 
 The audit, replay, resolver-v2, Java-context, and public-verification infrastructure is additive,
-but it does not by itself prove improved shipped detection. The coupled plugin manifests remain at
-`0.4.0` until independent human labels are completed, the candidate judge is frozen against the
-development split, and the locked holdout plus paid five-language gate pass. That completed,
-backward-compatible milestone warrants `0.5.0`; it is not a patch release.
+but it does not by itself prove improved shipped detection. Before another certification framework
+or quality threshold becomes a release gate, the current detector must be measured on declared,
+immutable inputs with its candidate revision, evaluator, source revisions, mutation protocol, and
+result identity fixed before execution. Thresholds may then be proposed for a future run; they may
+not be retrofitted to turn an observed result into an A.
 
-The decision package under `eval/bench/public/0.4.0` and `results-0.4.0.md` are a separate,
+The unfinished executable-oracle certification proposal is deferred and is not an active release
+gate. Its useful in-project mutation pilot and pinned source catalogs are research inputs, not
+evidence that a corpus, five-language run, A grade, or best-in-class result exists. A future version
+is chosen from shipped product scope and completed evidence, not from the amount of certification
+machinery written.
+
+The decision package under `eval/bench/public/0.4.0` and `eval/bench/results-0.4.0.md` are a separate,
 immutable evaluated-release identity. A later source-version bump must not rename them, inherit
-their metrics, or imply that resolver v2 has passed gates that were not run. Until direct evidence
-exists, human-label validity, v2 detector quality, marketplace publication, and other external
-release state remain unverified.
+their metrics, or imply that resolver v2 or an executable-oracle candidate passed measurements that
+were not run. Until direct evidence exists, human-label validity, current detector quality,
+marketplace publication, and other external release state remain unverified.
 
 ## Hybrid provider boundary
 
