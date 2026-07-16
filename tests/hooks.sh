@@ -529,6 +529,13 @@ for case_row in \
   "command git add . && command git commit -m x|command wrapper" \
   "git add . && env X=1 git commit -m x|env wrapper" \
   "sh -c 'git add . && git commit -m x'|sh -c wrapper" \
+  "/bin/bash -c 'git add . && git commit -m x'|path-qualified bash -c wrapper" \
+  "/bin/sh -c 'git add . && git commit -m x'|path-qualified sh -c wrapper" \
+  "bash -lc 'git add . && git commit -m x'|combined -lc wrapper" \
+  "bash -xc 'git add . && git commit -m x'|combined -xc wrapper" \
+  "sh -ec 'git add . && git commit -m x'|combined -ec wrapper" \
+  "bash --norc -c 'git add . && git commit -m x'|interposed --norc -c wrapper" \
+  "/usr/bin/git add . && /usr/bin/git commit -m x|path-qualified git" \
   "git -C '/tmp/my repo' add . && git -C '/tmp/my repo' commit -m x|single-quoted git -C" \
   "git -C \"/tmp/my repo\" add . && git -C \"/tmp/my repo\" commit -m x|double-quoted git -C" \
   "git -C /tmp/my\\ repo add . && git -C /tmp/my\\ repo commit -m x|escaped git -C" \
@@ -540,12 +547,17 @@ for case_row in \
   "g''it add . && git commit -m x|quoted git fragment" \
   "git a''dd . && git commit -m x|quoted add fragment" \
   "git add . && git com''mit -m x|quoted commit fragment" \
-  "g\\it a\\dd . && g\\it com\\mit -m x|backslash-split words"; do
+  "g\\it a\\dd . && g\\it com\\mit -m x|backslash-split words" \
+  "git add . && git commit -m 'add stuff'|intent words in quoted message"; do
   cmd="${case_row%|*}"
   label="${case_row##*|}"
   has "$(guard_cmd "$cmd")" "separate" "guard: compound $label stage-and-commit is blocked"
   eq "$(guard_rc "$cmd")" "2" "guard: compound $label exits 2"
 done
+newline_compound_cmd=$'git add .\ngit commit -m x'
+has "$(guard_cmd "$newline_compound_cmd")" "separate" \
+  "guard: compound newline-separated stage-and-commit is blocked"
+eq "$(guard_rc "$newline_compound_cmd")" "2" "guard: compound newline-separated exits 2"
 spaced_json='{ "tool_input": { "command": "git add . && git commit -m x" } }'
 has "$(guard_input "$spaced_json")" "separate" "guard: JSON whitespace serialization is classified"
 eq "$(printf '%s' "$spaced_json" | bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?")" "2" \
@@ -593,10 +605,31 @@ has "$(printf '%s' "$continued_add_payload" | PATH="$TMP/no-python:$PATH" bash "
 continued_commit_payload="$(guard_payload $'git add . && git com\\\nmit -m x')"
 has "$(printf '%s' "$continued_commit_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
   "separate" "guard: unavailable Python joins continued commit word"
+newline_split_payload="$(guard_payload $'git add .\ngit commit -m x')"
+has "$(printf '%s' "$newline_split_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "separate" "guard: unavailable Python blocks newline-separated compound Git"
+wrapped_compound_payload="$(guard_payload "sh -c 'git add . && git commit -m x'")"
+has "$(printf '%s' "$wrapped_compound_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "separate" "guard: unavailable Python still blocks wrapped compound Git"
+eq "$(printf '%s' "$wrapped_compound_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?")" \
+  "2" "guard: unavailable Python wrapped compound Git exits 2"
+# Quoted-argument words must not create intent even on the degraded no-python path.
+quoted_pathspec_payload="$(guard_payload "git add -- \"my commit log.txt\"")"
+empty "$(printf '%s' "$quoted_pathspec_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "guard: unavailable Python quoted pathspec stays a plain add"
+regression_message_payload="$(guard_payload "git -C $TMP commit -m \"feat(bench): add resolver-v2 split manifest and deterministic split generator\"")"
+empty "$(printf '%s' "$regression_message_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "guard: unavailable Python quoted message with intent word is not blocked"
 git -C "$TMP" add -f .env
 commit_payload="$(guard_payload "git commit -m x")"
 has "$(printf '%s' "$commit_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
   "secret/credential" "guard: unavailable Python commit still inspects staged index"
+quoted_message_payload="$(guard_payload "git commit -m \"add stuff\"")"
+quoted_message_out="$(printf '%s' "$quoted_message_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)"
+has "$quoted_message_out" "secret/credential" \
+  "guard: unavailable Python quoted message commit still inspects staged index"
+hasnt "$quoted_message_out" "separate Bash tool calls" \
+  "guard: unavailable Python quoted message commit is not compound"
 git -C "$TMP" rm -q --cached .env
 rm -rf "$TMP/no-python"
 rm -f "$TMP/.env"
@@ -622,7 +655,11 @@ for case_row in \
   "command git commit --all -m x|command wrapper" \
   "env X=1 git commit --include .env -m x|env wrapper" \
   "sh -c 'git commit -am x'|sh -c wrapper" \
-  "eval 'git commit --all -m x'|eval wrapper"; do
+  "/bin/bash -c 'git commit -am x'|path-qualified bash -c wrapper" \
+  "bash -lc 'git commit -am x'|combined -lc wrapper" \
+  "/usr/bin/git commit -am x|path-qualified git" \
+  "eval 'git commit --all -m x'|eval wrapper" \
+  "git commit -am 'add stuff'|unsafe -a with intent words in message"; do
   cmd="${case_row%|*}"
   label="${case_row##*|}"
   has "$(guard_cmd "$cmd")" "separately staged plain commit" \
@@ -639,6 +676,31 @@ empty "$(guard_cmd "git commit --amend --no-edit")" \
   "guard: amend without unstaged-content modes remains allowed"
 empty "$(EVERGREEN_GUARD=off guard_cmd "git commit -am x")" \
   "guard: EVERGREEN_GUARD=off bypasses unsafe commit-mode rejection"
+
+# Intent lives in git-subcommand position only: words inside quoted arguments (commit messages,
+# pathspecs) must never reclassify a plain add/commit as compound stage-and-commit.
+git -C "$TMP" add -f .env   # stage the modified secret so the classification is observable
+for case_row in \
+  "git commit -m 'add resolver-v2 split manifest'|message containing add" \
+  "git commit -m \"recommit then add follow-up\"|message containing both intent words" \
+  "git -C $TMP commit -m \"feat(bench): add resolver-v2 split manifest and deterministic split generator\"|real-world quoted message"; do
+  cmd="${case_row%|*}"
+  label="${case_row##*|}"
+  out="$(guard_cmd "$cmd")"
+  has "$out" "secret/credential" "guard: $label still inspects the staged index"
+  hasnt "$out" "separate Bash tool calls" "guard: $label is not compound"
+done
+git -C "$TMP" reset -q -- .env
+eq "$(guard_rc "git -C $TMP commit -m \"feat(bench): add resolver-v2 split manifest and deterministic split generator\"")" \
+  "0" "guard: real-world quoted message exits 0 once the secret is unstaged"
+empty "$(guard_cmd "git add -- 'my commit log.txt'")" \
+  "guard: pathspec containing commit stays a plain add"
+eq "$(guard_rc "git add -- 'my commit log.txt'")" "0" "guard: pathspec containing commit exits 0"
+hasnt "$(guard_cmd "git add \"notes/add commit plan.md\"")" "separate Bash tool calls" \
+  "guard: pathspec containing add and commit is not compound"
+empty "$(guard_cmd "git log --grep 'git add'")" \
+  "guard: quoted intent words under a read-only subcommand classify none"
+eq "$(guard_rc "git log --grep 'git add'")" "0" "guard: read-only subcommand exits 0"
 git -C "$TMP" checkout -q -- .env
 git -C "$TMP" rm -q .env
 git -C "$TMP" commit -qm "remove env fixture"

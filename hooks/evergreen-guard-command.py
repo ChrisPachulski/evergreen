@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Classify decoded Bash tool input for the evergreen commit guard.
 
-The threat boundary is recognizable Git intent after simple quote/backslash word joining, not
-arbitrary commands computed through variables, substitutions, aliases, or shell evaluation.
+The threat boundary is recognizable Git intent in shlex-tokenized subcommand position — the
+first non-option token after a `git` word — not arbitrary commands computed through variables,
+substitutions, aliases, or shell evaluation. Words inside quoted arguments (commit messages,
+pathspecs) are single tokens and never create intent. Unparseable input (unbalanced quotes)
+degrades to coarse quote-stripped splitting, which may fail closed.
 """
 
 import json
@@ -17,17 +20,13 @@ def normalize_shell_word_joins(command: str) -> str:
     return command.replace("'", "").replace('"', "")
 
 
-def has_git_intent(command: str, intent: str) -> bool:
-    return bool(
-        re.search(
-            rf"(?<![\w-])git\b.*?(?<![\w-]){intent}\b",
-            command,
-            flags=re.DOTALL,
-        )
-    )
-
-
 CONTROL_TOKENS = {";", "&&", "||", "&", "|", "(", ")", "{", "}"}
+# Git global options that consume the FOLLOWING token as their value when not written in
+# `--option=value` form; the value must be skipped so it is never read as the subcommand.
+GIT_VALUE_GLOBALS = {
+    "-C", "-c", "--git-dir", "--work-tree", "--namespace",
+    "--config-env", "--attr-source", "--super-prefix", "--list-cmds",
+}
 UNSAFE_LONG = {
     "--all", "--include", "--only", "--interactive", "--patch",
     "--pathspec-from-file", "--pathspec-file-nul",
@@ -47,6 +46,45 @@ SAFE_LONG = {
 }
 SAFE_SHORT = set("qvnsSezu")
 UNSAFE_SHORT = set("aiop")
+# Basenames that execute a quoted command-string body via -c (or a short cluster containing c,
+# e.g. -lc/-xc/-ec). Matching the basename catches path-qualified forms like /bin/bash.
+SHELL_INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
+
+
+def _basename(token: str) -> str:
+    return token.rsplit("/", 1)[-1]
+
+
+def _shell_body_indices(tokens: "list[str]") -> "set[int]":
+    """Indices of tokens that are command-string bodies of `eval` or an interpreter `-c` call.
+
+    A token qualifies when walking left over option tokens (within the control segment) reaches a
+    word whose basename is a shell interpreter, and some short-option cluster in between contains
+    `c` — covering `bash -c`, `/bin/sh -c`, `bash -lc`, `sh -e -c`, and `bash --norc -c`.
+    Over-matching here is conservative: recursion can only ADD detected intents, never hide them.
+    """
+    result = set()
+    for index, token in enumerate(tokens):
+        if index and tokens[index - 1] == "eval":
+            result.add(index)
+            continue
+        if token.startswith("-") or token in CONTROL_TOKENS:
+            continue
+        back = index - 1
+        saw_command_flag = False
+        while back >= 0:
+            previous = tokens[back]
+            if previous in CONTROL_TOKENS:
+                break
+            if previous.startswith("-") and previous != "-":
+                if not previous.startswith("--") and "c" in previous[1:]:
+                    saw_command_flag = True
+                back -= 1
+                continue
+            if saw_command_flag and _basename(previous) in SHELL_INTERPRETERS:
+                result.add(index)
+            break
+    return result
 
 
 def shell_tokens(command: str) -> list[str]:
@@ -57,6 +95,44 @@ def shell_tokens(command: str) -> list[str]:
         return list(lexer)
     except ValueError:
         return normalize_shell_word_joins(command).split()
+
+
+def git_subcommand(segment: list[str], git_index: int) -> "str | None":
+    """First non-option token after segment[git_index] (a `git` word), skipping global options."""
+    index = git_index + 1
+    while index < len(segment):
+        token = segment[index]
+        if token == "--":
+            return None
+        if token.startswith("-") and token != "-":
+            option, equals, _value = token.partition("=")
+            index += 2 if option in GIT_VALUE_GLOBALS and not equals else 1
+            continue
+        return token
+    return None
+
+
+def collect_intents(command: str) -> set:
+    """add/commit intents found in git-subcommand position, recursing into eval and sh -c."""
+    intents = set()
+    tokens = shell_tokens(command.replace("\\\n", ""))
+    for index in _shell_body_indices(tokens):
+        intents |= collect_intents(tokens[index])
+    segment: list[str] = []
+    for token in tokens + [";"]:
+        if token not in CONTROL_TOKENS:
+            segment.append(token)
+            continue
+        # Every `git` token in the segment is inspected, not only the segment head: wrappers
+        # (command, env, function bodies) and even `echo git add` stay conservatively covered.
+        # Basename matching keeps path-qualified /usr/bin/git covered as well.
+        for index, word in enumerate(segment):
+            if _basename(word) == "git":
+                subcommand = git_subcommand(segment, index)
+                if subcommand in {"add", "commit"}:
+                    intents.add(subcommand)
+        segment = []
+    return intents
 
 
 def unsafe_commit_args(arguments: list[str]) -> bool:
@@ -96,12 +172,8 @@ def unsafe_commit_args(arguments: list[str]) -> bool:
 
 def has_unsafe_commit_mode(command: str) -> bool:
     tokens = shell_tokens(command)
-    for index, token in enumerate(tokens):
-        if index and tokens[index - 1] == "eval" and has_unsafe_commit_mode(token):
-            return True
-        if index >= 2 and tokens[index - 1] == "-c" and tokens[index - 2] in {
-            "sh", "bash", "zsh",
-        } and has_unsafe_commit_mode(token):
+    for index in _shell_body_indices(tokens):
+        if has_unsafe_commit_mode(tokens[index]):
             return True
     segment: list[str] = []
     for token in tokens + [";"]:
@@ -109,7 +181,9 @@ def has_unsafe_commit_mode(command: str) -> bool:
             segment.append(token)
             continue
         for index, word in enumerate(segment):
-            if word == "commit" and "git" in segment[:index]:
+            if word == "commit" and any(
+                _basename(previous) == "git" for previous in segment[:index]
+            ):
                 if unsafe_commit_args(segment[index + 1:]):
                     return True
         segment = []
@@ -126,9 +200,9 @@ def main() -> int:
         print("none")
         return 0
 
-    normalized = normalize_shell_word_joins(command)
-    has_add = has_git_intent(normalized, "add")
-    has_commit = has_git_intent(normalized, "commit")
+    intents = collect_intents(command)
+    has_add = "add" in intents
+    has_commit = "commit" in intents
     if has_add and has_commit:
         print("compound")
     elif has_commit and has_unsafe_commit_mode(command):

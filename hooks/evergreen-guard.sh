@@ -14,22 +14,59 @@ set -u
 
 STDIN="$(cat 2>/dev/null || true)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || exit 0
-# Fail-safe fallback applies the same simple quote/backslash joining as the JSON helper. It does not
-# attempt to evaluate variables, substitutions, aliases, or other computed commands.
+# Fail-safe fallback (python3 unavailable). Pure shell cannot tokenize nested/escaped shell
+# quoting exactly, so this path: extracts the JSON "command" value (missing/empty -> none, like
+# the helper's malformed-payload branch), joins backslash-newline continuations, turns real
+# newlines/tabs into spaces, removes QUOTED SPANS (content included) so quoted words never create
+# intent, then requires add/commit in git-subcommand position (option tokens, each optionally
+# followed by one value token, may intervene). It does not attempt to evaluate variables,
+# substitutions, aliases, or other computed commands. Residual false positives — all fail-closed,
+# on this degraded path only:
+#   - an UNQUOTED word in subcommand-like position (e.g. `git log --grep add`) still registers
+#     intent, so the staged index is inspected for a command that never writes it;
+#   - eval / sh -c bodies are quoted and therefore opaque after span removal; when such a wrapper
+#     appears alongside raw git+add/commit words the call is blocked as compound, even if the
+#     body is one safe command or the words sit inside its quoted message;
+#   - payloads carrying several "command" keys classify only the last one.
+FALLBACK_CMD="$(printf '%s' "$STDIN" | tr '\n' ' ' \
+  | sed -nE 's/.*"command"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*)".*/\1/p')"
 JSON_CONTINUATION='\\\n'
-FALLBACK_TEXT="${STDIN//"$JSON_CONTINUATION"/}"
-FALLBACK_TEXT="$(printf '%s' "$FALLBACK_TEXT" | tr -d '\\' | tr -d "'" | tr -d '"')"
+JSON_NEWLINE='\n'
+JSON_TAB='\t'
+FALLBACK_CMD="${FALLBACK_CMD//"$JSON_CONTINUATION"/}"
+FALLBACK_CMD="${FALLBACK_CMD//"$JSON_NEWLINE"/ }"
+FALLBACK_CMD="${FALLBACK_CMD//"$JSON_TAB"/ }"
+# Shell double quotes arrive JSON-escaped as \" — remove those spans first, then single-quoted
+# spans, then join the remaining backslash-split word fragments.
+FALLBACK_TEXT="$(printf '%s' "$FALLBACK_CMD" \
+  | sed -e 's/\\"[^"]*\\"//g' -e "s/'[^']*'//g" | tr -d '\\')"
+# Option tokens after `git`, each optionally followed by one value token (e.g. -C <path>).
+GIT_OPTION_GAP='([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'
 
 fallback_has_git_intent() {
   local wanted="$1"
   printf '%s' "$FALLBACK_TEXT" | grep -Eq \
-    "(^|[^[:alnum:]_-])git.*${wanted}([^[:alnum:]_-]|$)"
+    "(^|[^[:alnum:]_-])git${GIT_OPTION_GAP}[[:space:]]+${wanted}([^[:alnum:]_-]|\$)"
 }
 
 fallback_intent() {
+  if [ -z "$FALLBACK_CMD" ]; then
+    echo none
+    return
+  fi
   local add=false commit=false
   fallback_has_git_intent add && add=true
   fallback_has_git_intent commit && commit=true
+  # Wrapper rescan: quoted eval/sh -c bodies vanished with the quoted spans above, so a coarse
+  # raw-text match must conservatively block what the stripped text can no longer see.
+  if ! $add && ! $commit \
+     && printf '%s' "$FALLBACK_CMD" | grep -Eq \
+       '(^|[^[:alnum:]_-])(eval|(ba|z)?sh[[:space:]]+-c)([^[:alnum:]_-]|$)' \
+     && printf '%s' "$FALLBACK_CMD" | grep -Eq \
+       '(^|[^[:alnum:]_-])git.*(add|commit)([^[:alnum:]_-]|$)'; then
+    echo compound
+    return
+  fi
   if $add && $commit; then
     echo compound
   elif $commit && printf '%s' "$FALLBACK_TEXT" | grep -Eq \
