@@ -14,3 +14,7 @@ __pycache__/
 .claude/worktrees/
 # <<< autoloop managed <<<
 .worktrees/
+# Internal planning dumps stay local (cultivate 2026-07-16); in-flight docs are tracked explicitly.
+docs/superpowers/plans/
+docs/superpowers/specs/
+goal-trial-cultivate-flourish.md
