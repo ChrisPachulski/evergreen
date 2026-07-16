@@ -42,7 +42,7 @@ The implementation tests use synthetic fixtures. Packet generation uses these im
 | Rust | 304 | `bench-codocbench-rust-validated-trial-codex-gpt-5.6-sol.rows-304.88b499de0f0fcf037d54e00dc9c9d36183e6adb4c731f2441f300623a2929e0d.json` | `88b499de0f0fcf037d54e00dc9c9d36183e6adb4c731f2441f300623a2929e0d` |
 | Go | 299 | `bench-codocbench-go-validated-trial-codex-gpt-5.6-sol.rows-299.b04a027dee961480a1fe3f8505b1b9bfb5d43ffd80b3e6b50861639246ed91ef.json` | `b04a027dee961480a1fe3f8505b1b9bfb5d43ffd80b3e6b50861639246ed91ef` |
 
-The archive root is `/Users/cujo253/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2`. The tracked Python historical source pool is `eval/bench/out/codocbench-derived.jsonl`: 400 rows, 691,384 bytes, SHA-256 `6cbccfb5eb88f2a7e826e3e5f3595fb59274e04a2711c7c097d8faac4926fdae`. TypeScript, Rust, and Go historical derived pools are unavailable; their missing dropped-row counts are 76, 56, and 61 respectively.
+The archive root is `~/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2`. The tracked Python historical source pool is `eval/bench/out/codocbench-derived.jsonl`: 400 rows, 691,384 bytes, SHA-256 `6cbccfb5eb88f2a7e826e3e5f3595fb59274e04a2711c7c097d8faac4926fdae`. TypeScript, Rust, and Go historical derived pools are unavailable; their missing dropped-row counts are 76, 56, and 61 respectively.
 
 ---
 
@@ -852,7 +852,7 @@ git commit -m "docs(eval): define human label evidence protocol"
 ### Task 8: Generate the real blinded packet set and stop for humans
 
 **Files:**
-- External only: `/Users/cujo253/evergreen-human-audit/0.4.0/`
+- External only: `~/evergreen-human-audit/0.4.0/`
 - Do not modify tracked files in this task.
 
 **Interfaces:**
@@ -867,7 +867,7 @@ Run:
 ```bash
 git status --short
 git rev-parse HEAD
-shasum -a 256 /Users/cujo253/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/*.rows-{885,332,284,304,299}.*.json
+shasum -a 256 ~/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/*.rows-{885,332,284,304,299}.*.json
 shasum -a 256 eval/bench/out/codocbench-derived.jsonl eval/bench/human-audit/rubric-v1.md
 ```
 
@@ -881,14 +881,14 @@ Run:
 python3 eval/bench/label_audit.py sample \
   --audit-id evergreen-0.4.0-label-audit \
   --seed 20260713 \
-  --artifact /Users/cujo253/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/bench-cascade-java-trial-codex-gpt-5.6-sol.rows-885.a03f1b33c3f3e13ee60226298dd1dc83d611ba98ad625d86f22157544175a090.json \
-  --artifact /Users/cujo253/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/bench-codocbench-validated-trial-codex-gpt-5.6-sol.rows-332.b56b5541ad9e9ad31df3f756e6eb05509241b44651d159396ed0e93ffb566cc9.json \
-  --artifact /Users/cujo253/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/bench-codocbench-ts-validated-trial-codex-gpt-5.6-sol.rows-284.16ea13944ce98c9fa62026328903e1babd82a92daf547bd0d45a79b662cd1c94.json \
-  --artifact /Users/cujo253/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/bench-codocbench-rust-validated-trial-codex-gpt-5.6-sol.rows-304.88b499de0f0fcf037d54e00dc9c9d36183e6adb4c731f2441f300623a2929e0d.json \
-  --artifact /Users/cujo253/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/bench-codocbench-go-validated-trial-codex-gpt-5.6-sol.rows-299.b04a027dee961480a1fe3f8505b1b9bfb5d43ffd80b3e6b50861639246ed91ef.json \
+  --artifact ~/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/bench-cascade-java-trial-codex-gpt-5.6-sol.rows-885.a03f1b33c3f3e13ee60226298dd1dc83d611ba98ad625d86f22157544175a090.json \
+  --artifact ~/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/bench-codocbench-validated-trial-codex-gpt-5.6-sol.rows-332.b56b5541ad9e9ad31df3f756e6eb05509241b44651d159396ed0e93ffb566cc9.json \
+  --artifact ~/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/bench-codocbench-ts-validated-trial-codex-gpt-5.6-sol.rows-284.16ea13944ce98c9fa62026328903e1babd82a92daf547bd0d45a79b662cd1c94.json \
+  --artifact ~/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/bench-codocbench-rust-validated-trial-codex-gpt-5.6-sol.rows-304.88b499de0f0fcf037d54e00dc9c9d36183e6adb4c731f2441f300623a2929e0d.json \
+  --artifact ~/evergreen-benchmark-archive/cb24647f7c62b9704d10c97e615005d924c005f2/bench-codocbench-go-validated-trial-codex-gpt-5.6-sol.rows-299.b04a027dee961480a1fe3f8505b1b9bfb5d43ffd80b3e6b50861639246ed91ef.json \
   --source-pool python=eval/bench/out/codocbench-derived.jsonl \
   --rubric eval/bench/human-audit/rubric-v1.md \
-  --work-dir /Users/cujo253/evergreen-human-audit/0.4.0
+  --work-dir ~/evergreen-human-audit/0.4.0
 ```
 
 Expected output includes:
@@ -907,7 +907,7 @@ The command exits without annotation or adjudication files.
 Run:
 
 ```bash
-find /Users/cujo253/evergreen-human-audit/0.4.0 -maxdepth 1 -type f -exec stat -f '%Lp %N' {} \;
+find ~/evergreen-human-audit/0.4.0 -maxdepth 1 -type f -exec stat -f '%Lp %N' {} \;
 git status --short
 ```
 
@@ -923,16 +923,16 @@ After two humans return complete files, run:
 
 ```bash
 python3 eval/bench/label_audit.py check-labels \
-  --packet /Users/cujo253/evergreen-human-audit/0.4.0/annotator-a.packet.json \
-  --labels /Users/cujo253/evergreen-human-audit/0.4.0/annotator-a.annotations.json
+  --packet ~/evergreen-human-audit/0.4.0/annotator-a.packet.json \
+  --labels ~/evergreen-human-audit/0.4.0/annotator-a.annotations.json
 python3 eval/bench/label_audit.py check-labels \
-  --packet /Users/cujo253/evergreen-human-audit/0.4.0/annotator-b.packet.json \
-  --labels /Users/cujo253/evergreen-human-audit/0.4.0/annotator-b.annotations.json
+  --packet ~/evergreen-human-audit/0.4.0/annotator-b.packet.json \
+  --labels ~/evergreen-human-audit/0.4.0/annotator-b.annotations.json
 python3 eval/bench/label_audit.py make-third-review \
-  --coordinator /Users/cujo253/evergreen-human-audit/0.4.0/coordinator.json \
-  --first /Users/cujo253/evergreen-human-audit/0.4.0/annotator-a.annotations.json \
-  --second /Users/cujo253/evergreen-human-audit/0.4.0/annotator-b.annotations.json \
-  --out /Users/cujo253/evergreen-human-audit/0.4.0/annotator-c.packet.json
+  --coordinator ~/evergreen-human-audit/0.4.0/coordinator.json \
+  --first ~/evergreen-human-audit/0.4.0/annotator-a.annotations.json \
+  --second ~/evergreen-human-audit/0.4.0/annotator-b.annotations.json \
+  --out ~/evergreen-human-audit/0.4.0/annotator-c.packet.json
 ```
 
 Expected: both validation commands report `self-attested-human`, exact packet coverage, different annotator IDs, and no schema errors. The third packet contains only selected blind items and no earlier judgments. Give it to a third independent human; automation stops again.
@@ -940,7 +940,7 @@ Expected: both validation commands report `self-attested-human`, exact packet co
 ### Task 9: Human-return gate, development split, and root integration
 
 **Files:**
-- External inputs/outputs: `/Users/cujo253/evergreen-human-audit/0.4.0/`
+- External inputs/outputs: `~/evergreen-human-audit/0.4.0/`
 - Root-owned integration after human completion: `eval/bench/README.md`, `eval/bench/results-current.md`, `eval/README.md`, `README.md`
 - Root-owned integration tests if shared behavior changes: `tests/test_bench_artifact.py`, `tests/test_bench.py`
 
@@ -955,12 +955,12 @@ Run:
 
 ```bash
 python3 eval/bench/label_audit.py report \
-  --coordinator /Users/cujo253/evergreen-human-audit/0.4.0/coordinator.json \
-  --first /Users/cujo253/evergreen-human-audit/0.4.0/annotator-a.annotations.json \
-  --second /Users/cujo253/evergreen-human-audit/0.4.0/annotator-b.annotations.json \
-  --third /Users/cujo253/evergreen-human-audit/0.4.0/annotator-c.annotations.json \
-  --json-out /Users/cujo253/evergreen-human-audit/0.4.0/audit-report.json \
-  --markdown-out /Users/cujo253/evergreen-human-audit/0.4.0/audit-report.md
+  --coordinator ~/evergreen-human-audit/0.4.0/coordinator.json \
+  --first ~/evergreen-human-audit/0.4.0/annotator-a.annotations.json \
+  --second ~/evergreen-human-audit/0.4.0/annotator-b.annotations.json \
+  --third ~/evergreen-human-audit/0.4.0/annotator-c.annotations.json \
+  --json-out ~/evergreen-human-audit/0.4.0/audit-report.json \
+  --markdown-out ~/evergreen-human-audit/0.4.0/audit-report.md
 ```
 
 Expected: one of `pass`, `escalate`, or `unverified`; the current missing historical pools force `unverified` unless exact hash-bound pools were recovered before sampling.
@@ -976,13 +976,13 @@ Expected: one of `pass`, `escalate`, or `unverified`; the current missing histor
 After final human labels exist, create a private key and run:
 
 ```bash
-python3 -c 'import os,secrets; p="/Users/cujo253/evergreen-human-audit/0.4.0/split.key"; fd=os.open(p, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0o600); os.write(fd, secrets.token_bytes(32)); os.close(fd)'
+python3 -c 'import os,secrets; p="~/evergreen-human-audit/0.4.0/split.key"; fd=os.open(p, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0o600); os.write(fd, secrets.token_bytes(32)); os.close(fd)'
 python3 eval/bench/label_audit.py split \
-  --coordinator /Users/cujo253/evergreen-human-audit/0.4.0/coordinator.json \
-  --labels /Users/cujo253/evergreen-human-audit/0.4.0/audit-report.json \
-  --split-key /Users/cujo253/evergreen-human-audit/0.4.0/split.key \
+  --coordinator ~/evergreen-human-audit/0.4.0/coordinator.json \
+  --labels ~/evergreen-human-audit/0.4.0/audit-report.json \
+  --split-key ~/evergreen-human-audit/0.4.0/split.key \
   --development-fraction 0.60 \
-  --out-dir /Users/cujo253/evergreen-human-audit/0.4.0/split
+  --out-dir ~/evergreen-human-audit/0.4.0/split
 ```
 
 Expected: no repository overlap and both classes in every language's holdout. Give only `development.json` to `/root/detector_quality`; retain `holdout.json` externally until the root integrator records the frozen resolver/judge hashes.

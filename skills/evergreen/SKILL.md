@@ -253,7 +253,8 @@ Each finding carries a severity and a fix-or-flag call.
 
 - **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. A rung-3/4
   flag goes on trial (snap → challenge → three blind reads → blind-spot → weigh) before it ships;
-  the whole point is to kill the plausible-but-wrong flag, not to catch more.
+  a command may add a read where its verdict has an extra attack surface (flourish's craft trial
+  runs four). The whole point is to kill the plausible-but-wrong flag, not to catch more.
 - **Rot lives in old comments, not new lines.** Read the changed file at HEAD, not just the diff's
   `+` lines. Code moved under a stable doc = live rot (report); a doc wrong the day it was written =
   lower urgency (say which).
@@ -317,7 +318,8 @@ The reflex is the *truth* axis. Two on-demand commands, same prove-or-drop creed
   call contains both `git add` and `git commit`, use **separate tool calls**: PreToolUse cannot
   inspect the index between them, so the compound call is conservatively rejected. Commit modes
   that can source unstaged content (`-a`/`--all`, include/only, and pathspec forms) are likewise
-  rejected; use a separately staged plain commit.
+  rejected; use a separately staged plain commit. `EVERGREEN_GUARD=off` bypasses the guard for a
+  run — deliberately, on the human's call.
 
 One creed, one trial: each command runs its judgment-call verdicts through "Put the verdict on
 trial" above. Truth and craft only flag or propose; hygiene alone may block a commit (a leaked

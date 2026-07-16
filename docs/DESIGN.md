@@ -49,7 +49,7 @@ The intelligence is the skill (`skills/evergreen/SKILL.md`) — the ladder and r
 model's head. Three thin hooks make it ride along, and they never read or analyze doc *content*:
 
 - **`evergreen-activate.sh`** (SessionStart) injects the mode preamble plus the condensed
-  `DIGEST.md` (~⅓ the tokens of the full skill, which stays loadable on demand).
+  `DIGEST.md` (about two-fifths of the full skill by words, which stays loadable on demand).
 - **`evergreen-mode-tracker.sh`** (UserPromptSubmit) is the *sole writer* of the intensity state.
 - **`evergreen-stop.sh`** (Stop) is a post-turn audit request when code-with-docs changed; git/state
   guards only, always non-blocking, deduped to fire once per distinct change state (a signature in

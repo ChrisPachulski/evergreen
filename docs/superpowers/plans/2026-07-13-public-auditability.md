@@ -619,11 +619,11 @@ Run `shasum -a 256` and `stat` on the five live files and the corresponding arch
 
 ```bash
 python3 eval/bench/publication.py export \
-  --source a03f1b33c3f3e13ee60226298dd1dc83d611ba98ad625d86f22157544175a090=/Users/cujo253/evergreen-benchmark-run/eval/bench/out/bench-cascade-java-trial-codex-gpt-5.6-sol.json \
-  --source b56b5541ad9e9ad31df3f756e6eb05509241b44651d159396ed0e93ffb566cc9=/Users/cujo253/evergreen-benchmark-run/eval/bench/out/bench-codocbench-validated-trial-codex-gpt-5.6-sol.json \
-  --source 16ea13944ce98c9fa62026328903e1babd82a92daf547bd0d45a79b662cd1c94=/Users/cujo253/evergreen-benchmark-run/eval/bench/out/bench-codocbench-ts-validated-trial-codex-gpt-5.6-sol.json \
-  --source 88b499de0f0fcf037d54e00dc9c9d36183e6adb4c731f2441f300623a2929e0d=/Users/cujo253/evergreen-benchmark-run/eval/bench/out/bench-codocbench-rust-validated-trial-codex-gpt-5.6-sol.json \
-  --source b04a027dee961480a1fe3f8505b1b9bfb5d43ffd80b3e6b50861639246ed91ef=/Users/cujo253/evergreen-benchmark-run/eval/bench/out/bench-codocbench-go-validated-trial-codex-gpt-5.6-sol.json \
+  --source a03f1b33c3f3e13ee60226298dd1dc83d611ba98ad625d86f22157544175a090=~/evergreen-benchmark-run/eval/bench/out/bench-cascade-java-trial-codex-gpt-5.6-sol.json \
+  --source b56b5541ad9e9ad31df3f756e6eb05509241b44651d159396ed0e93ffb566cc9=~/evergreen-benchmark-run/eval/bench/out/bench-codocbench-validated-trial-codex-gpt-5.6-sol.json \
+  --source 16ea13944ce98c9fa62026328903e1babd82a92daf547bd0d45a79b662cd1c94=~/evergreen-benchmark-run/eval/bench/out/bench-codocbench-ts-validated-trial-codex-gpt-5.6-sol.json \
+  --source 88b499de0f0fcf037d54e00dc9c9d36183e6adb4c731f2441f300623a2929e0d=~/evergreen-benchmark-run/eval/bench/out/bench-codocbench-rust-validated-trial-codex-gpt-5.6-sol.json \
+  --source b04a027dee961480a1fe3f8505b1b9bfb5d43ffd80b3e6b50861639246ed91ef=~/evergreen-benchmark-run/eval/bench/out/bench-codocbench-go-validated-trial-codex-gpt-5.6-sol.json \
   --output-dir eval/bench/public/0.4.0 \
   --evaluated-release 0.4.0 \
   --require-language Java \

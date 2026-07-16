@@ -27,8 +27,11 @@ python3 eval/bench/frozen_run.py --dataset cascade.jsonl \
 arXiv:2502.00519) supplies the wild *Python* set — 4,573 coupled code+docstring changes with no
 drift labels, from which we derive candidates ((old doc, new code) = the doc that lagged;
 (new doc, new code) = control) and then **screen every retained label with a three-LLM majority
-vote** before scoring, reporting inter-annotator kappa. This is LLM screening, not independent
-human validation:
+vote** before scoring, reporting inter-annotator kappa. The three screeners are Anthropic models
+(`claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-5` — per-pair votes are tracked in the
+`*.votes.json` files), a different vendor from the `codex`/`gpt-5.6-sol` judge under evaluation,
+so the screen is not the judge grading itself. This is LLM screening, not independent human
+validation:
 
 ```sh
 git clone https://github.com/kunpai/codocbench
@@ -78,7 +81,9 @@ whose method can't be located exactly carry a declared unavailability reason ins
 successor protocol `java-git-window-v2` exists in code (strict-first ladder: the exact v1 match,
 then a token-aware match bridging CASCADE's AST re-serialization; 810/885 available vs v1's
 637/885, with every v1 window reproduced byte-identically); no checked-in dataset or manifest
-uses it yet — regeneration is deferred until the next declared run. The
+uses it yet — regeneration is deferred until the next declared run. The mirror set is derivable
+from the manifest itself: bare-clone every distinct `project` in
+`cascade-java-v2-split-manifest.json` (16 GitHub repos) under `<mirror-root>/<owner>/<name>`. The
 augmented files are multi-megabyte, and the grade inventory bounds every tracked blob at 1 MiB,
 so they live outside the repository; only
 [`cascade-java-v2-split-manifest.json`](cascade-java-v2-split-manifest.json) is committed, and it
@@ -196,8 +201,17 @@ therefore remains unverified for those three discarded pools.
 
 The point of the schema above is that evergreen's numbers land next to published peers, so here
 they are. **DocPrism** (arXiv:2511.00215) is the honest comparison: zero-shot, multi-language, no
-fine-tuning — evergreen's exact regime. Fine-tuned single-language systems reach F1 0.88–0.94 but
-train on one language's labels; different regime, noted and out of scope.
+fine-tuning — evergreen's exact regime. It is regime-comparable, not row-comparable: DocPrism's
+numbers come from its own corpus, not from these datasets, so the table reads as "same rules,
+different exam" until a sealed same-row peer run exists. Fine-tuned single-language systems reach
+F1 0.88–0.94 but train on one language's labels; different regime, noted and out of scope.
+
+The published tables report the observed dataset-base-rate matrices from **one frozen run**;
+no variance across repeated runs is claimed. Decision replay is deterministic
+(`replay.py --expect-stored` demands exact full-decision parity), and
+`run_bench.py --rescore <artifact>` reprints the natural 10/90 and balanced 50/50 reweighted
+splits for any artifact offline, so both reweighted views are derivable from the published
+decisions rather than taken on faith.
 
 ### The peers
 

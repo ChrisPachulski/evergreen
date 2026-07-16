@@ -71,7 +71,7 @@ resolve the same release identity. See the [package mismatch example](examples/p
 for a non-app stream that distinguishes an unreleased source version from the latest public release
 while leaving registry and deployment state deliberately unverified.
 
-One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — so this one never does.
+One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — that rule is the muzzle, and the [published benchmark](eval/bench/results-0.4.0.md) measures how well it holds instead of asking you to take the claim on faith.
 
 ### Evidence-backed completion receipts
 
@@ -352,7 +352,7 @@ Evergreen is not a hosted index, AST engine, dashboard, or automatic truth-path 
 Not unless you ask. The reflex points; you write — a dead flag or moved path it hands you a diff for, the *why* behind a design it won't touch. The one exception is `/evergreen:flourish`, invoked deliberately: it crafts a doc to the gold standard, then verifies its own rewrite against the code so it can't introduce a lie. Fact-checker by default; ghostwriter only on request — and one that cites its sources.
 
 **Won't it cry wolf?**
-It flags only what it can prove against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it offers the `.evergreen-ignore` line that keeps it dropped in every session after.
+It flags only what it can prove against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it offers the `.evergreen-ignore` line that keeps it dropped in every session after. And because "trust me" isn't proof: the [0.4.0 baseline](eval/bench/results-0.4.0.md) publishes exactly how often the judge still over-flags on isolated code/doc pairs — hard mode, no repo context, no trial gate — so you can see the honest error rate instead of a marketing claim.
 
 **Does it scale?**
 It reads paths, contracts, and prose — not your AST. Any language, any repo, nothing to compile.
