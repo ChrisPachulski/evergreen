@@ -109,10 +109,14 @@ def _validated_pair_data(pair):
             raise ValueError(f"benchmark pair {field} exceeds {limit} bytes")
     if "context" in pair:
         try:
-            from .java_context import validate_context
+            from .java_context import PROTOCOL, PROTOCOLS, validate_context
         except ImportError:  # Direct script execution.
-            from java_context import validate_context
-        data["context"] = validate_context(pair["context"])
+            from java_context import PROTOCOL, PROTOCOLS, validate_context
+        context = pair["context"]
+        declared = context.get("protocol") if isinstance(context, dict) else None
+        data["context"] = validate_context(
+            context, declared if declared in PROTOCOLS else PROTOCOL
+        )
     return data
 
 

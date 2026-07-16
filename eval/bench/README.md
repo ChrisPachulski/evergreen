@@ -74,7 +74,11 @@ unknown ids fail the command rather than shrinking the subset silently.
 Resolver v2 lanes run on `cascade-java-v2-dev.jsonl` / `cascade-java-v2-holdout.jsonl`: the same
 885 checked-in CASCADE rows, each augmented with `java-git-window-v1` context derived from local
 bare mirrors (`cascade_to_jsonl.py --context-protocol java-git-window-v1 --mirror-root …`; rows
-whose method can't be located exactly carry a declared unavailability reason instead). The
+whose method can't be located exactly carry a declared unavailability reason instead). A
+successor protocol `java-git-window-v2` exists in code (strict-first ladder: the exact v1 match,
+then a token-aware match bridging CASCADE's AST re-serialization; 810/885 available vs v1's
+637/885, with every v1 window reproduced byte-identically); no checked-in dataset or manifest
+uses it yet — regeneration is deferred until the next declared run. The
 augmented files are multi-megabyte, and the grade inventory bounds every tracked blob at 1 MiB,
 so they live outside the repository; only
 [`cascade-java-v2-split-manifest.json`](cascade-java-v2-split-manifest.json) is committed, and it

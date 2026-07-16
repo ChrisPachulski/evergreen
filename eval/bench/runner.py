@@ -18,6 +18,7 @@ try:
         artifact_document, artifact_metadata, atomic_write_json, load_json, merge_usage,
         read_bytes, resume_state, validate_benchmark_row, validate_input_hashes, validate_usage,
     )
+    from .java_context import PROTOCOLS as CONTEXT_PROTOCOLS, validate_context
     from .metrics import report, rows_from_transcript
     from .trial import (
         _validated_pair_data as validate_pair, judge, set_skill_body,
@@ -29,6 +30,7 @@ except ImportError:  # Direct script execution.
         artifact_document, artifact_metadata, atomic_write_json, load_json, merge_usage,
         read_bytes, resume_state, validate_benchmark_row, validate_input_hashes, validate_usage,
     )
+    from java_context import PROTOCOLS as CONTEXT_PROTOCOLS, validate_context
     from metrics import report, rows_from_transcript
     from trial import (
         _validated_pair_data as validate_pair, judge, set_skill_body,
@@ -91,7 +93,7 @@ def eval_resolver(environment=os.environ):
 def eval_policy_settings(environment=os.environ):
     resolver = eval_resolver(environment)
     context_protocol = environment.get("EVAL_CONTEXT_PROTOCOL", "none")
-    if context_protocol not in ("none", "java-git-window-v1"):
+    if context_protocol not in ("none", *CONTEXT_PROTOCOLS):
         raise ValueError("EVAL_CONTEXT_PROTOCOL is invalid")
     manifest = environment.get("EVAL_SPLIT_MANIFEST_SHA256") or None
     split = environment.get("EVAL_SPLIT") or None
@@ -144,12 +146,15 @@ def artifact_filename(dataset, strong_model, provider, resolver="v1"):
 
 def validate_dataset_policy(rows, policy):
     protocol = policy["context_protocol"]
-    if protocol == "none" and any("context" in row for row in rows):
-        raise ValueError("dataset context is present but not declared")
-    if protocol == "java-git-window-v1" and any(
-            row.get("language", "python").casefold() != "java" or "context" not in row
-            for row in rows):
+    if protocol == "none":
+        if any("context" in row for row in rows):
+            raise ValueError("dataset context is present but not declared")
+        return
+    if any(row.get("language", "python").casefold() != "java" or "context" not in row
+           for row in rows):
         raise ValueError("Java context protocol requires context on every row")
+    for row in rows:
+        validate_context(row["context"], protocol)
 
 
 def require_single_language(rows):

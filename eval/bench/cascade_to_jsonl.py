@@ -13,9 +13,9 @@ import json
 from pathlib import Path
 
 try:
-    from .java_context import PROTOCOL, derive_context
+    from .java_context import PROTOCOL, PROTOCOLS, derive_context
 except ImportError:  # Direct script execution.
-    from java_context import PROTOCOL, derive_context
+    from java_context import PROTOCOL, PROTOCOLS, derive_context
 
 
 def method_source(entry):
@@ -24,7 +24,7 @@ def method_source(entry):
     return f"{head}({', '.join(sig.get('params', []))}) {entry['code']}"
 
 
-def converted_rows(root, mirror_root=None):
+def converted_rows(root, mirror_root=None, protocol=PROTOCOL):
     for aj in sorted(Path(root).rglob("analyzed.json")):
         entries = json.loads(aj.read_text())
         labels = [l.strip() for l in (aj.parent / "inconsistency.txt").read_text().splitlines()
@@ -42,20 +42,20 @@ def converted_rows(root, mirror_root=None):
                 "language": e.get("language", "Java"),
             }
             if mirror_root is not None:
-                row["context"] = derive_context(row, mirror_root)
+                row["context"] = derive_context(row, mirror_root, protocol)
             yield row
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path)
-    parser.add_argument("--context-protocol", choices=("none", PROTOCOL), default="none")
+    parser.add_argument("--context-protocol", choices=("none", *PROTOCOLS), default="none")
     parser.add_argument("--mirror-root", type=Path)
     args = parser.parse_args(argv)
-    if (args.context_protocol == PROTOCOL) != (args.mirror_root is not None):
-        raise ValueError(f"{PROTOCOL} requires --mirror-root; none forbids it")
-    mirror = args.mirror_root if args.context_protocol == PROTOCOL else None
-    for row in converted_rows(args.root, mirror):
+    if (args.context_protocol != "none") != (args.mirror_root is not None):
+        raise ValueError("a context protocol requires --mirror-root; none forbids it")
+    mirror = args.mirror_root if args.context_protocol != "none" else None
+    for row in converted_rows(args.root, mirror, args.context_protocol):
         print(json.dumps(row))
 
 

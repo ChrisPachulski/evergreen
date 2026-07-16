@@ -11,12 +11,14 @@ import time
 try:
     from .. import peers as peer_protocol
     from .artifact import artifact_metadata, atomic_write_json, load_json
+    from .java_context import PROTOCOLS as CONTEXT_PROTOCOLS
     from .runner import bounded_results, load_dataset, require_frozen_run
     from .trial import UNTRUSTED_DATA_INSTRUCTION, model_json
 except ImportError:  # Direct script execution.
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from eval import peers as peer_protocol
     from artifact import artifact_metadata, atomic_write_json, load_json
+    from java_context import PROTOCOLS as CONTEXT_PROTOCOLS
     from runner import bounded_results, load_dataset, require_frozen_run
     from trial import UNTRUSTED_DATA_INSTRUCTION, model_json
 
@@ -49,7 +51,7 @@ def validate_settings(settings):
         raise ValueError("peer concurrency is invalid")
     if settings["resolver"] not in ("v1", "v2"):
         raise ValueError("peer resolver is invalid")
-    if settings["context_protocol"] not in ("none", "java-git-window-v1"):
+    if settings["context_protocol"] not in ("none", *CONTEXT_PROTOCOLS):
         raise ValueError("peer context protocol is invalid")
     manifest_hash = settings["split_manifest_sha256"]
     split = settings["split"]

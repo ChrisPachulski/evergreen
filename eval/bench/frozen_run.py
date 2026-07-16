@@ -23,7 +23,9 @@ try:
         MAX_ARTIFACT_BYTES, artifact_metadata, git_identity, read_bytes, resume_state,
     )
     from .runner import artifact_filename, load_dataset, require_single_language
-    from .java_context import PROTOCOL as JAVA_CONTEXT_PROTOCOL, validate_context
+    from .java_context import (
+        PROTOCOL as JAVA_CONTEXT_PROTOCOL, PROTOCOLS as JAVA_CONTEXT_PROTOCOLS, validate_context,
+    )
     from .split_manifest import MAX_MANIFEST_BYTES, load_split_assignments
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -32,7 +34,9 @@ except ImportError:
         MAX_ARTIFACT_BYTES, artifact_metadata, git_identity, read_bytes, resume_state,
     )
     from runner import artifact_filename, load_dataset, require_single_language
-    from java_context import PROTOCOL as JAVA_CONTEXT_PROTOCOL, validate_context
+    from java_context import (
+        PROTOCOL as JAVA_CONTEXT_PROTOCOL, PROTOCOLS as JAVA_CONTEXT_PROTOCOLS, validate_context,
+    )
     from split_manifest import MAX_MANIFEST_BYTES, load_split_assignments
 
 
@@ -148,16 +152,14 @@ def run_policy(_dataset, rows, resolver, split_manifest, split, context_protocol
     """Validate and return immutable detector-policy provenance for a frozen lane."""
     if resolver not in ("v1", "v2"):
         raise ValueError("resolver must be v1 or v2")
-    if context_protocol not in ("none", JAVA_CONTEXT_PROTOCOL):
+    if context_protocol not in ("none", *JAVA_CONTEXT_PROTOCOLS):
         raise ValueError("unknown context protocol")
     if resolver == "v2" and (split_manifest is None or split is None):
         raise ValueError("resolver v2 requires --split-manifest and --split")
     if (resolver == "v2" and
             any(row.get("language", "python").casefold() == "java" for row in rows) and
-            context_protocol != JAVA_CONTEXT_PROTOCOL):
-        raise ValueError(
-            f"Java resolver v2 requires context protocol {JAVA_CONTEXT_PROTOCOL}"
-        )
+            context_protocol == "none"):
+        raise ValueError("Java resolver v2 requires a declared context protocol")
     if (split_manifest is None) != (split is None):
         raise ValueError("split manifest and split must be declared together")
     manifest_sha256 = None
@@ -184,7 +186,7 @@ def run_policy(_dataset, rows, resolver, split_manifest, split, context_protocol
                "context" not in row for row in rows):
             raise ValueError("context protocol requires context on every Java input row")
         for row in rows:
-            validate_context(row["context"])
+            validate_context(row["context"], context_protocol)
     return {
         "resolver": resolver,
         "context_protocol": context_protocol,
@@ -490,7 +492,7 @@ def parse_args(argv=None):
     parser.add_argument("--peer-key-file", type=Path)
     parser.add_argument("--peer-checkout", type=Path)
     parser.add_argument(
-        "--context-protocol", choices=("none", JAVA_CONTEXT_PROTOCOL), default="none"
+        "--context-protocol", choices=("none", *JAVA_CONTEXT_PROTOCOLS), default="none"
     )
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--minimum-free-gib", type=float, default=8.0)
