@@ -609,7 +609,7 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
     for item in bounded_evidence:
         try:
             key, path, rank, reason = _validated_evidence(item, repo)
-        except (Exception, RecursionError) as error:
+        except Exception as error:
             warnings.add(f"evidence: {error}")
             continue
         accepted_evidence[key] = (path, rank, reason)

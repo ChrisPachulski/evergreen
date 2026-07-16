@@ -1,4 +1,4 @@
-"""Reversible Claude and Codex host integration."""
+"""Crash-safe transactional file mutation with verified backups and rollback."""
 from dataclasses import replace
 import os
 from pathlib import Path
@@ -567,7 +567,7 @@ def _restore_entry(entry, open_parent=None):
             except BaseException as error:
                 try:
                     restored = (
-                entry.before.matches(_snapshot_at(entry.before.path, parent_fd)) and
+                        entry.before.matches(_snapshot_at(entry.before.path, parent_fd)) and
                         _snapshot_at(_backup_path(entry), parent_fd).kind == "absent"
                     )
                 except Exception:

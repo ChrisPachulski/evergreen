@@ -1,4 +1,4 @@
-"""Reversible Claude and Codex host integration."""
+"""Host discovery and evidence: locate Claude and Codex installations, read their state."""
 
 import ast
 from dataclasses import asdict

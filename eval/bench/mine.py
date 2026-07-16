@@ -71,7 +71,8 @@ def documented_funcs(source, lang):
     lines = source.splitlines()
     try:
         r = lizard.analyze_file.analyze_source_code("x" + EXT[lang], source)
-    except Exception:
+    except Exception as e:
+        print(f"  ! lizard skipped a source file: {e}", file=sys.stderr, flush=True)
         return {}
     out = {}
     for f in r.function_list:
@@ -109,7 +110,8 @@ def mine_repo(url, lang, max_per_repo):
                 continue
             try:
                 changes = list(coupled_changes(mf.source_code_before, mf.source_code, lang))
-            except Exception:
+            except Exception as e:
+                print(f"  ! skipped {mf.new_path}: {e}", file=sys.stderr, flush=True)
                 continue
             for func, db, cb, da, ca in changes:
                 if len(ca) > 6000 or len(ca) < 15:
