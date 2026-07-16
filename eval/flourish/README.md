@@ -35,6 +35,8 @@ greps against — no model needed to grade.
 Both source READMEs are ACCURATE. The ugliness is the exam; don't fix it in place — the repo's
 reflex skips `eval/flourish/fixtures/*` (its own `.evergreen-ignore` line, same as
 `eval/fixture/*`). Grading is hard-goals mechanics (`skills/evergreen/hard-goals/flourish.md`):
-heading-set diff vs the ledger, evidence greps, the two face greps, the hook grep — plus body
+heading-set diff vs the ledger, evidence greps, and a five-check face gate (hero and tagline
+mandatory per goal 4, ≥4 of 5 overall). The hook check is advisory voice reporting, never
+grading — plus body
 conservation: a demoted or kept section must carry >= 70% of the source section's unique body
 tokens (sections under 10 unique body tokens keep plain heading-match semantics).

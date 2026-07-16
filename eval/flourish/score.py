@@ -640,8 +640,11 @@ def gate_face(result_text):
         "visual": {"ok": visual_ok, "kind": visual_kind},
     }
     score = sum(1 for c in checks.values() if c["ok"])
+    # hard-goals/flourish.md goal 4 requires hero AND tagline ("both greps hit");
+    # the wider 4-of-5 bar is this eval's stricter overlay, never a substitute.
     return {"checks": checks, "score": score,
-            "hero_mandatory": True}, hero_ok and score >= 4
+            "hero_mandatory": True, "tagline_mandatory": True}, \
+        hero_ok and tagline_ok and score >= 4
 
 
 # --- gate 4: voice (advisory only) -----------------------------------------

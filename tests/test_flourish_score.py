@@ -490,6 +490,20 @@ def test_face_no_hero_fails_despite_four_of_five(tmp_path):
     assert doc["face"]["score"] == 4  # four of five pass, but hero is mandatory
 
 
+def test_face_no_tagline_fails_despite_four_of_five(tmp_path):
+    # hard-goals/flourish.md goal 4: hero AND tagline are both required.
+    fixture = make_fixture(tmp_path)
+    no_tagline = "\n".join([
+        '<h1 align="center">shipit</h1>\n',
+        "[![build](https://img.shields.io/badge/build-passing-green)](https://ci.example.com)\n",
+        OPENER, QUICK_START, ARCHITECTURE, API_REFERENCE, CONFIGURATION, ROADMAP])
+    code, doc, _ = run_scorer(fixture, no_tagline, tmp_path)
+    assert code == 2
+    assert doc["gates"]["face"] is False
+    assert doc["face"]["checks"]["tagline"]["ok"] is False
+    assert doc["face"]["checks"]["hero"]["ok"] is True
+
+
 # --- voice (advisory only) -----------------------------------------------------
 
 def test_voice_kept(tmp_path):
