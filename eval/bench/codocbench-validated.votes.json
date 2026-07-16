@@ -1,0 +1,2002 @@
+{
+ "localstack/localstack/S3SigV4SignatureContext._get_signed_headers_and_filtered_query_string#0-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "AirtestProject/Airtest/Linux.snapshot#1-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "conan-io/conan/_get_test_conanfile_path#2-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "stratosphereips/StratosphereLinuxIPS/GoDirector.handle_gopy_data#3-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "deepfakes/faceswap/Extractor.detected_faces#4-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/BoundaryNorm.__init__#5-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "RasaHQ/rasa/Validator.verify_domain_validity#6-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "scikit-image/scikit-image/rescale#7-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "django/django/AutodetectorTests.test_last_dependency#8-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "tornadoweb/tornado/RequestHandler.create_template_loader#9-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ipython/ipython/Magic.magic_gui#10-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ray-project/ray/WorkflowStorage.load_step_args#11-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "ccxt/ccxt/currencycom.cancel_order#12-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-learn/scikit-learn/has_fit_parameter#13-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ccxt/ccxt/bingx.fetch_my_trades#14-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "matplotlib/matplotlib/Animation.to_html5_video#15-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "huggingface/transformers/AdamW.step#16-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "conan-io/conan/RevisionList._fix_timestamp#17-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/get_window_extent#18-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chainer/chainer/dilated_convolution_2d#19-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "python/cpython/dedent#20-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "espnet/espnet/ESPnetLanguageModel.nll#21-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "celery/celery/BaseAsyncResult.status#22-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "microsoft/DeepSpeed/Init.__init__#23-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ray-project/ray/InMemoryMetricsStore.add_metrics_point#24-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "akfamily/akshare/sw_index_third_cons#25-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "d2l-ai/d2l-en/train_2d#26-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-learn/scikit-learn/AgglomerationTransform.inverse_transform#27-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "InstaPy/InstaPy/log_record_all_followed#28-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/DatetimeLikeArrayMixin.shift#29-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "open-mmlab/mmdetection/bounded_iou_loss#30-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "freqtrade/freqtrade/IStrategy.feature_engineering_expand_all#31-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/create_script_module#32-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ManimCommunity/manim/Circle.point_at_angle#33-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/HDFStore.append_to_multiple#34-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Avaiga/taipy/unsubscribe_scenario#35-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "PaddlePaddle/PaddleOCR/PaddleOCR.__init__#36-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "chainer/chainer/deconvolution_2d#37-old": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ccxt/ccxt/bybit.create_order#38-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "InstaPy/InstaPy/get_clarifai_response#39-old": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/get_block_type#40-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "LmeSzinc/AzurLaneAutoScript/Enhancement._enhance_choose_simple#41-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pyro-ppl/pyro/DotProduct._dot_product#42-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "zulip/zulip/login_or_register_remote_user#43-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tornadoweb/tornado/RequestHandler.write_error#44-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "espnet/espnet/MultiBlocks.chunk_forward#45-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "django/django/uri_to_iri#46-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tensorflow/models/flip_horizontal#47-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "sherlock-project/sherlock/QueryResult.__init__#48-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mindsdb/mindsdb/FileHandler.get_tables#49-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mindsdb/mindsdb/APIHandler._get_table#50-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ccxt/ccxt/phemex.edit_order#51-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "freqtrade/freqtrade/IStrategy.adjust_trade_position#52-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "psf/black/can_omit_invisible_parens#53-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "python/cpython/iglob#54-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/read_sas#55-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "RasaHQ/rasa/PolicyPrediction.for_action_name#56-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chainer/chainer/squeeze#57-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/Series.value_counts#58-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "deepfakes/faceswap/Writer.write#59-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "freqtrade/freqtrade/RangeStabilityFilter._validate_pair_loc#60-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/TestReductions.test_mean_grad_case_1a#61-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tornadoweb/tornado/_parse_header#62-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "huggingface/transformers/TvltFeatureExtractor.__call__#63-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pandas-dev/pandas/StringMethods.endswith#64-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/dequantize_helper#65-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/ArtistList.__init__#66-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "django/django/Query.promote_joins#67-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "huggingface/datasets/Dataset.load_from_disk#68-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pytorch/pytorch/sdp_kernel#69-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "hpcaitech/ColossalAI/TorchDDPCheckpointIO.load_unsharded_model#70-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-learn/scikit-learn/test_encoding#71-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "aws/aws-sam-cli/Resource.do_export#72-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/_sort_mixed#73-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scrapy/scrapy/get_base_url#74-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/ContourLabeler.get_text#75-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/TestDataLoader.test_partial_workers#76-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/AxesImage.__init__#77-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ccxt/ccxt/ascendex.parse_market_leverage_tiers#78-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "django/django/Collector.related_objects#79-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/PackageExporter.save_source_string#80-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "freqtrade/freqtrade/IFreqaiModel.train#81-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "matplotlib/matplotlib/Divider.locate#82-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "readthedocs/readthedocs.org/BaseSphinx.append_conf#83-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-learn/scikit-learn/smacof#84-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/PcolorImage.__init__#85-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "espnet/espnet/E2E.source_embedding#86-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "chainer/chainer/ResNetLayers.__call__#87-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "openatx/uiautomator2/Session.swipe#88-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "piskvorky/gensim/LdaModel.sync_state#89-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "LmeSzinc/AzurLaneAutoScript/MeowfficerEnhance.meow_enhance#90-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-image/scikit-image/BRIEF.extract#91-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ipython/ipython/make_tokens_by_line#92-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ray-project/ray/cell_set#93-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/Series._set_axis#94-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pyro-ppl/pyro/markov#95-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "DLR-RM/stable-baselines3/DQN.predict#96-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "django/django/Signal._remove_receiver#97-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-rf/scikit-rf/add_markers_to_lines#98-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "sqlmapproject/sqlmap/task_delete#99-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/Series.asof#100-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Textualize/rich/decimal#101-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chainer/chainer/ComputationalGraph.dump#102-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "django/django/is_aware#103-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-learn/scikit-learn/BaseEnsemble._make_estimator#104-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "TheAlgorithms/Python/fib#105-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ray-project/ray/register_env#106-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "nicolargo/glances/GlancesProcesses.getlist#107-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "zulip/zulip/TwoFactorLoginView.done#108-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "freqtrade/freqtrade/Exchange.ohlcv_candle_limit#109-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "cupy/cupy/hstack#110-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "OpenBB-finance/OpenBBTerminal/ROUTER_fixedincome_rate.ameribor#111-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "readthedocs/readthedocs.org/PythonEnvironment.save_environment_json#112-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "d2l-ai/d2l-en/show_heatmaps#113-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "celery/celery/Control.time_limit#114-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ccxt/ccxt/bingx.create_order#115-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-learn/scikit-learn/main#116-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "aws/aws-sam-cli/EventTracker.track_event#117-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "celery/celery/get_exchange#118-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "huggingface/transformers/eval_data_collator#119-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "optuna/optuna/Study.best_trials#120-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/temp_setattr#121-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "huggingface/transformers/DebertaV2PreTrainedModel._init_weights#122-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "huggingface/pytorch-image-models/get_pretrained_cfg_value#123-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/Axes3D.tricontourf#124-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tensorflow/models/_SSDResnetV1FpnFeatureExtractor.preprocess#125-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "readthedocs/readthedocs.org/BuildConfigBase.valid_build_images#126-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "matplotlib/matplotlib/imread#127-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "piskvorky/gensim/LdaModel.inference#128-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/union_with_duplicates#129-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "huggingface/transformers/SamImageProcessor.generate_crop_boxes#130-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "cupy/cupy/contraction#131-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "LmeSzinc/AzurLaneAutoScript/ActionPointHandler.action_point_buy#132-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "plotly/dash/Dash.run_server#133-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/infer_dtype_from#134-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/ToolBase.set_figure#135-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-image/scikit-image/pyramid_expand#136-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "deepfakes/faceswap/Extractor.input_queue#137-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/_AxesBase.set_xbound#138-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "openai/gym/MultiBinary.sample#139-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "home-assistant/core/HomeAssistant.add_job#140-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Lightning-AI/pytorch-lightning/Fabric.setup#141-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "TheAlgorithms/Python/vol_circular_cylinder#142-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Textualize/textual/OptionList.get_option_index#143-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Theano/Theano/guess_n_streams#144-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/BaseBlockManager.apply#145-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "django/django/truncate_html_words#146-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "python/cpython/GrepDialog.__init__#147-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "canonical/microk8s/update_cert_auth_kubeproxy#148-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "home-assistant/core/RokuRemote.unique_id#149-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tornadoweb/tornado/BaseIOStream._read_from_buffer#150-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "MycroftAI/mycroft-core/LocalConf.store#151-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/DatetimeLikeArrayMixin._validate_scalar#152-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pyro-ppl/pyro/Delta.enumerate_support#153-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "django/django/MigrationAutodetector.suggest_name#154-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/Series.rename#155-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "readthedocs/readthedocs.org/RedirectQuerySet.get_redirect_path_with_status#156-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tornadoweb/tornado/StaticFileHandler.get_modified_time#157-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ipython/ipython/back_latex_name_matches#158-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "speechbrain/speechbrain/TransformerST.decode_asr#159-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/export#160-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "localstack/localstack/test_loading_own_specs#161-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "python/cpython/TestCase.assertDictContainsSubset#162-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/AxesImage.set_array#163-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "python/cpython/BaseEventLoop._assert_is_current_event_loop#164-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "home-assistant/core/async_load_platform#165-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "guardicore/monkey/notify_disconnect#166-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Lightning-AI/pytorch-lightning/LightningDataModule.load_from_checkpoint#167-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "freqtrade/freqtrade/Exchange.calculate_funding_fees#168-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/get_labels#169-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "deepfakes/faceswap/Extractor.set_batchsize#170-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "d2l-ai/d2l-en/train_2d#171-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/same_color#172-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "cupy/cupy/format_float_positional#173-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/draw_bbox#174-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-image/scikit-image/local_maxima#175-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "LmeSzinc/AzurLaneAutoScript/Connection.detect_package#176-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "LmeSzinc/AzurLaneAutoScript/GuildOperations._guild_operations_scan#177-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Lightning-AI/pytorch-lightning/is_cuda_available#178-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/Optimizer.register_step_post_hook#179-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Theano/Theano/multinomial#180-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ipython/ipython/InteractiveShell.save_sys_module_state#181-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "freqtrade/freqtrade/IStrategy.lock_pair#182-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "freqtrade/freqtrade/Exchange.get_funding_fees#183-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "huggingface/transformers/PreTrainedTokenizerFast.set_truncation_and_padding#184-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "django/django/ManyToManyRel.get_related_field#185-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "coqui-ai/TTS/BaseTTS.test_run#186-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "speechbrain/speechbrain/S2SBeamSearcher._get_top_score_prediction#187-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "ipython/ipython/match_dict_keys#188-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "LmeSzinc/AzurLaneAutoScript/Enhancement.enhance_ships_order#189-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/BlockManager.column_arrays#190-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-image/scikit-image/blob_log#191-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/get_cmap#192-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "reflex-dev/reflex/test_invalid_event_handler_args#193-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "explosion/spaCy/is_config#194-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/Transform.__array__#195-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/Table.infer_axes#196-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "PostHog/posthog/retrieve_entity_from#197-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/LegacyTable.read#198-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tensorflow/models/build_nasfpn_decoder#199-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "python/cpython/unpack_archive#200-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "freqtrade/freqtrade/IStrategy.check_buy_timeout#201-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "LmeSzinc/AzurLaneAutoScript/FleetSelector.parse_fleet_bar#202-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ipython/ipython/test_get_home_dir_5#203-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "facebookresearch/audiocraft/LMModel._sample_next_token#204-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "LmeSzinc/AzurLaneAutoScript/Radar.port_predict#205-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "d2l-ai/d2l-en/Vocab.__init__#206-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Theano/Theano/MRG_RandomStreams.__init__#207-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "quantopian/zipline/BcolzMinuteBarReader._find_position_of_minute#208-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "cookiecutter/cookiecutter/test_unzip_local_file#209-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "facebookresearch/detectron2/BaseKeypointRCNNHead.forward#210-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "MycroftAI/mycroft-core/AudioService._restore_volume#211-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pyro-ppl/pyro/CompartmentalModel.heuristic#212-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Sanster/IOPaint/run#213-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "matplotlib/matplotlib/Axis._set_ticklabels#214-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "home-assistant/core/WaqiSensor.extra_state_attributes#215-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/searchsorted#216-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "abey79/vpype/rotate#217-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scrapy/scrapy/walk_modules#218-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "espnet/espnet/DecoderRNNT.init_state#219-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "MycroftAI/mycroft-core/FallbackService._fallback_range#220-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "certbot/certbot/Client.update_registration#221-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pydantic/pydantic/GenerateJsonSchema.tuple_variable_schema#222-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/safe_sort#223-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tornadoweb/tornado/StaticFileHandler.get_content_version#224-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tensorflow/decision-forests/ModelV2.__init__#225-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pytorch/pytorch/_should_compress#226-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "paperless-ngx/paperless-ngx/FetchView.render_to_response#227-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "huggingface/datasets/ArrowWriter.write_batch#228-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "freqtrade/freqtrade/DataProvider.historic_ohlcv#229-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/ScalarMappable.changed#230-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "localstack/localstack/Service.for_provider#231-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "django/django/Model._check_ordering#232-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "encode/django-rest-framework/SearchFilter.get_search_terms#233-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pytorch/pytorch/compare_model_stub#234-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "deezer/spleeter/EstimatorSpecBuilder._build_mwf_output_waveform#235-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "DLR-RM/stable-baselines3/SimpleMultiObsEnv.reset#236-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ccxt/ccxt/bingx.fetch_ohlcv#237-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "optuna/optuna/Study.enqueue_trial#238-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "freqtrade/freqtrade/Exchange.refresh_latest_ohlcv#239-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Textualize/rich/Console.pager#240-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "conan-io/conan/FileTreeManifest.create#241-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-learn/scikit-learn/pyplot#242-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "cupy/cupy/csrmm#243-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Textualize/rich/open#244-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "RasaHQ/rasa/Domain._get_slots_sub_state#245-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "TheAlgorithms/Python/sudoku#246-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/Struct.__add__#247-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "python/cpython/Treeview.selection#248-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "python/cpython/BaseEventLoop.stop#249-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/is_rerun_disabled_tests#250-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "huggingface/transformers/DonutImageProcessor.align_long_axis#251-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "langchain-ai/langchain/AzureCosmosDBVectorSearch._similarity_search_with_score#252-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "python/cpython/quantiles#253-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tensorflow/models/DetectionModel.groundtruth_lists#254-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "frappe/frappe/authorize_google_access#255-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "j-bennet/wharfee/test_options_completion#256-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/_LocationIndexer._ensure_listlike_indexer#257-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "microsoft/DeepSpeed/DSStateManager.get_cache#258-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "home-assistant/core/KNXCover.current_cover_position#259-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "InstaPy/InstaPy/get_given_user_followers#260-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "sqlmapproject/sqlmap/task_flush#261-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "coqui-ai/TTS/BaseTrainerModel.load_checkpoint#262-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-rf/scikit-rf/Calibration.apply_cal_to_list#263-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ray-project/ray/ResourceDemandScheduler._get_concurrent_resource_demand_to_launch#264-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "aws/aws-sam-cli/get_unique_resource_ids#265-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "python/cpython/_signature_strip_non_python_syntax#266-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/Colorbar.set_ticklabels#267-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-learn/scikit-learn/DummyRegressor.fit#268-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "getsentry/sentry/FileBlob.from_file#269-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pandas-dev/pandas/GroupBy.nth#270-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "freqtrade/freqtrade/FreqtradeBot.create_trade#271-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "espnet/espnet/MultiHeadedAttention.forward#272-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pandas-dev/pandas/_factorize_array#273-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "OpenBB-finance/OpenBBTerminal/PackageBuilder._diff#274-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ccxt/ccxt/ascendex.set_leverage#275-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tensorflow/models/DetectionModel.restore_map#276-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "ipython/ipython/InteractiveShell.debugger#277-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "openspeech-team/openspeech/OpenspeechModel.configure_optimizers#278-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "matplotlib/matplotlib/Axes.acorr#279-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "huggingface/transformers/check_onnx_model_list#280-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ansible/ansible/IntegrationAliasesTest.check_changes#281-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "saleor/saleor/get_users_and_look_for_permissions_in_groups_with_manage_staff#282-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chainer/chainer/use_device#283-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chainer/chainer/convolution_2d#284-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-image/scikit-image/relabel_from_one#285-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/TimeSeries.at_time#286-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chubin/wttr.in/translate#287-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pyg-team/pytorch_geometric/FeatureStore.get_tensor#288-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pallets/flask/Flask.handle_exception#289-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tornadoweb/tornado/HTTP1ConnectionParameters.__init__#290-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/nnmodule_has_hooks#291-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ipython/ipython/InteractiveShell.safe_run_module#292-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "cupy/cupy/geam#293-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chainer/chainer/StaticScheduleFunction._run_param_hooks#294-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "freqtrade/freqtrade/FreqtradeBot._refresh_whitelist#295-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Theano/Theano/qr#296-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ray-project/ray/AlgorithmConfig.get_rollout_fragment_length#297-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "ultralytics/ultralytics/Model.__call__#298-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ipython/ipython/post_execute#299-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "StackStorm/st2/DatastoreService.delete_value#300-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "chainer/chainer/CupyMemoryProfileHook.print_report#301-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "fgmacedo/python-statemachine/StateMachine._process#302-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-image/scikit-image/check_shape_equality#303-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/ExtensionDtype.construct_from_string#304-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "deepfakes/faceswap/Extractor._load_mask#305-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "pallets/flask/load_dotenv#306-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pypa/pipenv/ParserElement.__add__#307-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "python/cpython/filter#308-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "RasaHQ/rasa/Domain.slots_for_entities#309-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/rank#310-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/Bbox.from_extents#311-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-rf/scikit-rf/Calibration.__init__#312-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tensorflow/models/main#313-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "mindsdb/mindsdb/TwelveLabsHandlerModel.check_for_video_urls_or_video_files#314-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "StackStorm/st2/FixturesLoader.save_fixtures_to_db#315-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ray-project/ray/NodeProvider.terminate_node#316-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/ModelReportVisualizer.generate_histogram_visualization#317-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pyro-ppl/pyro/initialize_model#318-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "django/django/DiscoverRunner.log#319-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-learn/scikit-learn/robust_scale#320-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Theano/Theano/scalar_constructor#321-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/StringMethods.replace#322-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "LmeSzinc/AzurLaneAutoScript/HPBalancer._calculate_hp#323-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/ExtensionBlock._slice#324-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "LmeSzinc/AzurLaneAutoScript/VoucherShop.run_once#325-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "celery/celery/Event#326-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tensorflow/models/NonMaxSuppressionTest.test_reference_match#327-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-learn/scikit-learn/IterativeImputer._impute_one_feature#328-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "yt-dlp/yt-dlp/Updater.latest_version#329-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "kovidgoyal/calibre/ODF2XHTML.s_text_s#330-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ray-project/ray/PhysicalOperator.add_input#331-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "cupy/cupy/elementwise_binary#332-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/subplot_tool#333-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-image/scikit-image/_mode_deprecations#334-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "stratosphereips/StratosphereLinuxIPS/RedisDB.set_organization_of_port#335-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "readthedocs/readthedocs.org/ProjectQuerySetBase.max_concurrent_builds#336-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "RasaHQ/rasa/SQLTrackerStore._create_database_and_update_engine#337-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "chainer/chainer/GoogLeNet.extract#338-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "espnet/espnet/build_body_blocks#339-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "n1nj4sec/pupy/PupyCmd.do_list_modules#340-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "deepfakes/faceswap/FaceswapConfig.get_config_file#341-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-rf/scikit-rf/Gamma0_2_swr#342-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "explosion/spaCy/SpanCategorizer.initialize#343-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "conan-io/conan/Autotools.configure#344-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "MycroftAI/mycroft-core/Configuration.set_config_update_handlers#345-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "RasaHQ/rasa/write_global_config_value#346-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "magenta/magenta/BaseDecoder.reconstruction_loss#347-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "MycroftAI/mycroft-core/pronounce_number#348-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ray-project/ray/delete_package#349-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "cupy/cupy/spilu#350-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "ray-project/ray/trial_progress_str#351-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tensorflow/models/XLNetSpanLabeling.end_logits#352-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "saleor/saleor/BaseMutation.clean_instance#353-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Lightning-AI/pytorch-lightning/_PredictionLoop._predict_step#354-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tensorflow/models/create_tf_record#355-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "RasaHQ/rasa/update_sanic_log_level#356-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "getsentry/sentry/complete#357-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/vision/resnet18#358-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "huggingface/datasets/Dataset.to_dict#359-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "deepfakes/faceswap/ModelBase.output_shapes#360-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "espnet/espnet/E2E.recognize_batch#361-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "cupy/cupy/asnumpy#362-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Theano/Theano/cuirfft#363-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "RasaHQ/rasa/NLUMessageConverter.convert_user_message#364-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "sanic-org/sanic/Config.load_environment_vars#365-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/make_axes_gridspec#366-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "deepfakes/faceswap/keras_backend_quiet#367-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "speechbrain/speechbrain/S2SBeamSearcher._check_eos_threshold#368-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Theano/Theano/failure_code#369-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pytorch/pytorch/backward#370-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "facebookresearch/detectron2/launch#371-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "home-assistant/core/load_config#372-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Theano/Theano/shape_i#373-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Lightning-AI/pytorch-lightning/test_mlflow_logger_with_many_params#374-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ipython/ipython/MagicAssign.find#375-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ray-project/ray/InfiniteLookbackBuffer.get#376-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "StackStorm/st2/RulesRegistrar.register_from_pack#377-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Theano/Theano/MRG_RandomStreams.normal#378-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "python/cpython/MimeTypes.guess_extension#379-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "AirtestProject/Airtest/IOS.snapshot#380-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ccxt/ccxt/bitbns.cancel_order#381-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "yt-dlp/yt-dlp/YoutubeBaseInfoExtractor.extract_relative_time#382-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "ccxt/ccxt/htx.create_order#383-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "PostHog/posthog/redshift_config#384-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "Lightning-AI/pytorch-lightning/test_accelerator_set_when_using_tpu#385-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "RasaHQ/rasa/YAMLStoryWriter.dump#386-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "RasaHQ/rasa/CRF.call#387-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/TextBox.__init__#388-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "matplotlib/matplotlib/uninstall_repl_displayhook#389-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "RasaHQ/rasa/FailSafeTrackerStore.__init__#390-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "scikit-image/scikit-image/resize_local_mean#391-new": {
+  "claude-fable-5": "inconsistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "inconsistent"
+ },
+ "DLR-RM/stable-baselines3/json_to_data#392-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "deepfakes/faceswap/PixelShuffler.call#393-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "pandas-dev/pandas/Series.sortlevel#394-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "inconsistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "junyanz/pytorch-CycleGAN-and-pix2pix/BaseModel.load_networks#395-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "StackStorm/st2/is_pack_virtualenv_using_python3#396-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "piskvorky/gensim/LdaModel.get_document_topics#397-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "python/cpython/get_instructions#398-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ },
+ "tornadoweb/tornado/BaseIOStream._add_io_state#399-new": {
+  "claude-fable-5": "consistent",
+  "claude-opus-4-8": "consistent",
+  "claude-sonnet-5": "consistent"
+ }
+}

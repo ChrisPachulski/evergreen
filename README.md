@@ -266,6 +266,11 @@ jobs:
           fail_on_inconclusive: true
 ```
 
+(This repo's own `.github/workflows/evergreen-pr.yml` looks different on purpose: dogfooding
+means reviewing untrusted fork PRs, so it uses `pull_request_target` with a trusted/untrusted
+double checkout. A consumer repo doesn't share that threat model — the snippet above is the
+right shape for you, and `action.yml` accepts both.)
+
 The outcomes are explicit:
 
 - **complete and clean** — the validated review finished with no drift and no unverified claims.
@@ -352,7 +357,7 @@ Evergreen is not a hosted index, AST engine, dashboard, or automatic truth-path 
 Not unless you ask. The reflex points; you write — a dead flag or moved path it hands you a diff for, the *why* behind a design it won't touch. The one exception is `/evergreen:flourish`, invoked deliberately: it crafts a doc to the gold standard, then verifies its own rewrite against the code so it can't introduce a lie. Fact-checker by default; ghostwriter only on request — and one that cites its sources.
 
 **Won't it cry wolf?**
-It flags only what it can prove against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it offers the `.evergreen-ignore` line that keeps it dropped in every session after. And because "trust me" isn't proof: the [0.4.0 baseline](eval/bench/results-0.4.0.md) publishes exactly how often the judge still over-flags on isolated code/doc pairs — hard mode, no repo context, no trial gate — so you can see the honest error rate instead of a marketing claim.
+It flags only what it can prove against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it offers the `.evergreen-ignore` line that keeps it dropped in every session after. And because "trust me" isn't proof: the [0.4.0 baseline](eval/bench/results-0.4.0.md) publishes exactly how often the judge still over-flags on isolated code/doc pairs — hard mode, no repo context, no trial gate — so you can see the honest error rate instead of a marketing claim. The asymmetry is the point: a false flag costs you the ten seconds it takes to read the cited line and say no, while the drift it exists to catch costs whoever trusts the doc next — which is why the flags carry citations you can dismiss at a glance, and why misses, not false alarms, are the failure the design spends its budget on.
 
 **Does it scale?**
 It reads paths, contracts, and prose — not your AST. Any language, any repo, nothing to compile.

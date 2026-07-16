@@ -18,19 +18,20 @@ fail(){ printf 'FAIL - %s%s\n' "$1" "${2:+ ($2)}"; fails=$((fails+1)); }
 skip(){ printf 'SKIP - %s (%s)\n' "$1" "$2"; skips=$((skips+1)); }
 
 # --- axis: test suite -------------------------------------------------------
+# CI's own command (workflows/test.yml runs unittest discover, not pytest).
 if $FAST; then
-  if python3 -m pytest tests/test_bench.py tests/test_bench_resolver.py \
-      tests/test_bench_artifact.py tests/test_flourish_score.py \
-      tests/test_oracle_build.py -q >/dev/null 2>&1; then
-    pass "focused pytest set (bench, flourish, oracle)"
+  if python3 -m unittest tests.test_bench tests.test_bench_resolver \
+      tests.test_bench_artifact tests.test_flourish_score \
+      tests.test_oracle_build >/dev/null 2>&1; then
+    pass "focused test set (bench, flourish, oracle)"
   else
-    fail "focused pytest set" "rerun without --fast for the full picture"
+    fail "focused test set" "rerun without --fast for the full picture"
   fi
 else
-  if python3 -m pytest tests/ -q >/dev/null 2>&1; then
-    pass "full pytest suite"
+  if python3 -m unittest discover -s tests -p 'test_*.py' >/dev/null 2>&1; then
+    pass "full test suite (CI's unittest discover)"
   else
-    fail "full pytest suite" "python3 -m pytest tests/ -q"
+    fail "full test suite" "python3 -m unittest discover -s tests -p 'test_*.py'"
   fi
 fi
 
@@ -77,6 +78,15 @@ for fixture in eval/flourish/fixtures/*/; do
 done
 $flourish_ok && pass "flourish golden matrix (every trap trips its gate)" \
   || fail "flourish golden matrix"
+
+# --- axis: oracle provenance contract (CI's offline job) ---------------------
+if python3 -m eval.oracle.build validate-provenance \
+    --manifest eval/oracle/sources/provenance.json --contract-only \
+    >/dev/null 2>&1; then
+  pass "oracle provenance contract validates offline"
+else
+  fail "oracle provenance contract" "python3 -m eval.oracle.build validate-provenance --contract-only"
+fi
 
 # --- axis: v2 split manifest (needs the external datasets) -------------------
 V2_DATA="$HOME/evergreen-benchmark-data"

@@ -30,8 +30,10 @@ drift labels, from which we derive candidates ((old doc, new code) = the doc tha
 vote** before scoring, reporting inter-annotator kappa. The three screeners are Anthropic models
 (`claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-5` — per-pair votes are tracked in the
 `*.votes.json` files), a different vendor from the `codex`/`gpt-5.6-sol` judge under evaluation,
-so the screen is not the judge grading itself. This is LLM screening, not independent human
-validation:
+so the screen is not the judge grading itself. Observed agreement on the retained sets: Fleiss'
+kappa 0.66 Python (400 pairs, 90% unanimous), 0.67 Go (360, 91%), 0.60 Rust (360, 88%),
+0.67 TypeScript (360, 89%) — recomputable offline from the tracked vote files. This is LLM
+screening, not independent human validation:
 
 ```sh
 git clone https://github.com/kunpai/codocbench
@@ -259,7 +261,9 @@ Evergreen's creed is **code is truth, the doc is the claim**: a doc that *over-p
 *contradicts* the code is a finding; code that quietly does *more* than the doc says
 (under-promise) is informational, not drift. DocPrism labels under-promise `inconsistent`.
 So on those pairs evergreen "misses" **by design** — the scorer reports them **separately**
-rather than dragging down recall, and names the asymmetry instead of hiding it.
+rather than dragging down recall, and names the asymmetry instead of hiding it. The 0.4.0
+publication retained zero under-promise pairs, so its tables show the carve-out's reporting
+path (0/0 lines) without yet exercising it on live data.
 
 ## Run
 
