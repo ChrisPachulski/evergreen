@@ -373,7 +373,13 @@ provided = subprocess.run(
 provider_payload = json.loads(provided.stdout)
 assert provider_payload["warnings"] == []
 assert [item["path"] for item in provider_payload["candidates"]] == [
-    "eval/fixture/README.md", "examples/provider-boundary.md", "README.md",
+    "eval/fixture/README.md",
+    "eval/flourish/fixtures/monolith/golden/fabricated.md",
+    "eval/flourish/fixtures/monolith/golden/good.md",
+    "eval/flourish/fixtures/monolith/golden/gutted.md",
+    "eval/flourish/fixtures/monolith/golden/skeleton.md",
+    "eval/flourish/fixtures/monolith/README.md",
+    "examples/provider-boundary.md", "README.md",
     "eval/fixture/config.py",
 ]
 config_candidate = provider_payload["candidates"][-1]
