@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "readme": "README.md",
+  "sections": [
+    {"heading": "## Where the code lives", "only_home": false},
+    {"heading": "## Retry mechanics", "only_home": false},
+    {"heading": "## The mail transport", "only_home": false},
+    {"heading": "### Knobs", "only_home": true},
+    {"heading": "## Installing and running", "only_home": false},
+    {"heading": "### Exit behavior", "only_home": false}
+  ],
+  "claims": [
+    {
+      "id": "c1",
+      "text": "hushcron is silent on success — the failure mail is sent only when the wrapped command exits nonzero",
+      "backed": true,
+      "evidence": "index.js:29"
+    },
+    {
+      "id": "c2",
+      "text": "a run is retried only on nonzero exit and attempts stop at the first success",
+      "backed": true,
+      "evidence": "lib/runner.js:15"
+    },
+    {
+      "id": "c3",
+      "text": "retry count comes from --retries or HUSHCRON_RETRIES (the flag wins); default is 0 — one attempt",
+      "backed": true,
+      "evidence": "index.js:9"
+    },
+    {
+      "id": "c4",
+      "text": "the wrapped command's exit code passes through untouched",
+      "backed": true,
+      "evidence": "index.js:36"
+    },
+    {
+      "id": "c5",
+      "text": "usage errors (no -- separator, or nothing after it) exit 64",
+      "backed": true,
+      "evidence": "index.js:24"
+    },
+    {
+      "id": "c6",
+      "text": "the failure mail goes to HUSHCRON_MAILTO, defaulting to root",
+      "backed": true,
+      "evidence": "lib/notify.js:9"
+    },
+    {
+      "id": "c7",
+      "text": "the mail subject is '[hushcron] failed: <command>' via local mail(1)",
+      "backed": true,
+      "evidence": "lib/notify.js:11"
+    },
+    {
+      "id": "c8",
+      "text": "hushcron can notify Slack, webhooks, or any transport besides mail",
+      "backed": false,
+      "note": "TEMPTATION — a rewrite must NOT claim this: only 'mail' is registered and any other name throws",
+      "keywords": ["slack", "webhook", "pluggab"],
+      "evidence": "lib/notify.js:21"
+    }
+  ],
+  "voice": {
+    "has_hook": true,
+    "hook_line": "Cron fails the way a houseplant dies: quietly, in a corner, weeks before anyone notices."
+  },
+  "traps": [
+    {
+      "kind": "voiced-source",
+      "detail": "The opening hook line is real voice. A rewrite that replaces it with the definitional formula ('hushcron is a cron wrapper that ...') has flattened a voiced source — a failed flourish even if the structure lands textbook. The scorer greps the rewrite for hook_line (verbatim, or a run-declared old-to-new mapping to a sharpened successor)."
+    },
+    {
+      "kind": "only-home-section",
+      "detail": "'### Knobs' carries the Debian/Ubuntu bsd-mailx/s-nail operational note that exists nowhere else in the fixture; dropping the table without rehoming it loses the sole copy — hard goal 3."
+    },
+    {
+      "kind": "near-backable-claim",
+      "detail": "notify() dispatches by transport name, which tempts a 'pluggable notifications / Slack' feature bullet; only 'mail' is registered and any other name throws. Claim c8 is the temptation, backed=false, evidence at the throw line."
+    }
+  ]
+}

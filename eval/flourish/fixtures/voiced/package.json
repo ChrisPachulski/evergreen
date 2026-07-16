@@ -1,0 +1,7 @@
+{
+  "name": "hushcron",
+  "version": "0.3.1",
+  "description": "Wrap a cron job; stay silent on success, mail the failure.",
+  "bin": { "hushcron": "index.js" },
+  "license": "MIT"
+}

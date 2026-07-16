@@ -1,0 +1,8 @@
+[project]
+name = "logloom"
+version = "0.2.0"
+description = "Read JSON Lines or logfmt logs, filter by level, print a summary."
+requires-python = ">=3.11"
+
+[project.scripts]
+logloom = "logloom.cli:main"

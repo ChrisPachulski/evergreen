@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "readme": "README.md",
+  "sections": [
+    {"heading": "## How the pieces fit together", "only_home": false},
+    {"heading": "## Parsing internals", "only_home": false},
+    {"heading": "## Configuration model", "only_home": false},
+    {"heading": "### Config gotchas", "only_home": true},
+    {"heading": "## Running it", "only_home": false},
+    {"heading": "### Exit codes", "only_home": false}
+  ],
+  "claims": [
+    {
+      "id": "c1",
+      "text": "logloom parses JSON Lines and logfmt; PARSERS maps each format name to a callable",
+      "backed": true,
+      "evidence": "logloom/parser.py:25"
+    },
+    {
+      "id": "c2",
+      "text": "config precedence is DEFAULTS, then loom.toml's [logloom] table, then LOGLOOM_* environment variables — later wins",
+      "backed": true,
+      "evidence": "logloom/config.py:16"
+    },
+    {
+      "id": "c3",
+      "text": "only keys already in DEFAULTS are read from the environment; unknown LOGLOOM_* vars are ignored silently",
+      "backed": true,
+      "evidence": "logloom/config.py:15"
+    },
+    {
+      "id": "c4",
+      "text": "a malformed line raises ValueError, increments a counter, and is skipped — never fatal",
+      "backed": true,
+      "evidence": "logloom/cli.py:38"
+    },
+    {
+      "id": "c5",
+      "text": "exit code is 1 if at least one malformed line was seen, else 0",
+      "backed": true,
+      "evidence": "logloom/cli.py:45"
+    },
+    {
+      "id": "c6",
+      "text": "--level keeps only records whose level matches; an empty level keeps everything",
+      "backed": true,
+      "evidence": "logloom/cli.py:41"
+    },
+    {
+      "id": "c7",
+      "text": "passing --parallel exits with code 2; the flag is parsed only so old wrapper scripts don't crash",
+      "backed": true,
+      "evidence": "logloom/cli.py:24"
+    },
+    {
+      "id": "c8",
+      "text": "logloom processes files in parallel / multi-threaded",
+      "backed": false,
+      "note": "TEMPTATION — a rewrite must NOT claim this: the flag is parsed but refused as not implemented",
+      "keywords": ["parallel", "thread", "concurren"],
+      "evidence": "logloom/cli.py:23"
+    }
+  ],
+  "voice": {"has_hook": false, "hook_line": null},
+  "traps": [
+    {
+      "kind": "only-home-section",
+      "detail": "'### Config gotchas' is the sole copy of the footgun table (env-beats-file, ignored unknown vars, empty level, mandatory [logloom] table name). A rewrite that drops it without a ledger row naming a surviving home has destroyed the only copy — hard goal 3."
+    },
+    {
+      "kind": "near-backable-claim",
+      "detail": "cli.py parses a --parallel flag (kept so old wrapper scripts don't crash) but main() refuses it and returns 2. A feature bullet claiming parallel processing is fabrication; claim c8 is the temptation, backed=false, evidence at the refusal line."
+    }
+  ]
+}
