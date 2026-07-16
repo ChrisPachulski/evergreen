@@ -1,22 +1,87 @@
-# External-format benchmark
+<h1 align="center">External-format benchmark</h1>
+
+<p align="center">
+  <em>A number you can't recompute is an opinion with decimal places.</em>
+</p>
+
+---
 
 The [`../`](../) eval seeds a whole fixture repo and runs a full winnow. This benchmark is the
 other axis: **per-pair** code-vs-doc consistency, in the schema the research literature uses, so
-evergreen's numbers sit next to published baselines.
+evergreen's numbers sit next to published baselines. The numbers come first; everything after
+them is the provenance that earns them.
+
+## Results — how it compares
+
+The point of running in the literature's schema is that evergreen's numbers land next to
+published peers, so here they are. **DocPrism** (arXiv:2511.00215) is the honest comparison:
+zero-shot, multi-language, no fine-tuning — evergreen's exact regime. It is regime-comparable,
+not row-comparable: DocPrism's numbers come from its own corpus, not from these datasets, so the
+table reads as "same rules, different exam" until a sealed same-row peer run exists. Fine-tuned
+single-language systems reach F1 0.88–0.94 but train on one language's labels; different regime,
+noted and out of scope.
+
+The published tables report the observed dataset-base-rate matrices from **one frozen run**;
+no variance across repeated runs is claimed. Decision replay is deterministic
+(`replay.py --expect-stored` demands exact full-decision parity), and
+`run_bench.py --rescore <artifact>` reprints the natural 10/90 and balanced 50/50 reweighted
+splits for any artifact offline, so both reweighted views are derivable from the published
+decisions rather than taken on faith. Label pedigree per dataset is stated in
+[The datasets](#the-datasets) below; in particular, 743 of CASCADE's 815 consistent controls are
+heuristic-selected rather than developer-validated, so the Java row measures agreement with
+CASCADE's labeling, not semantic correctness.
+
+### The peers
+
+| System | Regime | Precision | Recall | F1 | Flag rate |
+|---|---|---|---|---|---|
+| Fine-tuned single-language SOTA | trained, 1 language | — | — | 0.88–0.94 | — |
+| **DocPrism** (arXiv:2511.00215) | zero-shot, multi-language | 0.62 | — | — | ~0.15 |
+
+### Evergreen 0.4.0 baseline (the trial rebuild)
+
+The five-language publication gate **passes**. The full matrices, coverage, and exact frozen
+provenance are in [`results-0.4.0.md`](results-0.4.0.md). Across 2,104 attempted pairs, 2,103
+completed and one Rust pair abstained (99.95% overall completion); every language individually met
+the predeclared 99% coverage threshold.
+
+| Language | Completed | Abstained | Precision | Recall | F1 | Specificity |
+|---|---:|---:|---:|---:|---:|---:|
+| Java | 885 / 885 | 0 | 0.202 | 0.343 | 0.254 | 0.883 |
+| Python | 332 / 332 | 0 | 0.129 | 1.000 | 0.228 | 0.811 |
+| TypeScript | 284 / 284 | 0 | 0.213 | 1.000 | 0.352 | 0.780 |
+| Rust | 303 / 304 | 1 | 0.464 | 0.684 | 0.553 | 0.947 |
+| Go | 299 / 299 | 0 | 0.261 | 0.750 | 0.387 | 0.880 |
+
+These are the observed dataset-base-rate metrics, not a claim of best-in-class quality. The 0.4.0
+judge is recall-heavy on Python and TypeScript, weak on Java recall, and produces too many false
+positives in several languages. The publication proves decision-level auditability and coverage for
+this frozen run; the matrices set an honest baseline for the next judge iteration.
 
 ## The datasets
+
+Two external corpora we can run, two published peers we can't, and one hand-labeled fixture —
+with the pedigree of every label stated, not assumed.
 
 **CASCADE** ([github.com/TobiasKiecker/CASCADE](https://github.com/TobiasKiecker/CASCADE), MIT)
 is released and is the real test: 885 wild Java method/Javadoc pairs (70 inconsistent /
 815 consistent). Label provenance is mixed: the 70 inconsistent pairs and their 72
-developer-corrected counterparts in the released rows (upstream's mapping metadata explicitly
-names 71 pairs; the release carries one more corrected row than the paper's table, the same
-release-vs-paper off-by-one visible in its 70/815 vs the paper's 71/814) come from developers'
-own Javadoc-fix commits, but the other
-743 consistent controls were selected by what the CASCADE paper itself calls a weaker heuristic
-(§4.2, arXiv:2604.19400) — nominal labels, not developer-validated ground truth. Scoring
-against them measures agreement with CASCADE's labeling, not semantic correctness; evergreen
-treats those as two separate claims and reports them separately. Convert and run:
+developer-corrected counterparts in the released rows come from developers' own Javadoc-fix
+commits, but the other 743 consistent controls were selected by what the CASCADE paper itself
+calls a weaker heuristic (§4.2, arXiv:2604.19400) — nominal labels, not developer-validated
+ground truth. Scoring against them measures agreement with CASCADE's labeling, not semantic
+correctness; evergreen treats those as two separate claims and reports them separately.
+
+<details>
+<summary>Why 72 corrected rows when the paper's table says 71 — the release-vs-paper off-by-one</summary>
+
+Upstream's mapping metadata explicitly names 71 pairs; the release carries one more corrected row
+than the paper's table, the same release-vs-paper off-by-one visible in its 70/815 vs the paper's
+71/814.
+
+</details>
+
+Convert and run:
 
 ```sh
 git clone https://github.com/TobiasKiecker/CASCADE
@@ -34,10 +99,19 @@ vote** before scoring, reporting inter-annotator kappa. The three screeners are 
 (`claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-5` — per-pair votes are tracked in the
 `*.votes.json` files), a different vendor from the `codex`/`gpt-5.6-sol` judge under evaluation,
 so the screen is not the judge grading itself. Observed agreement (Fleiss' kappa via
-`validate_labels.py`, which drops rows missing a vote): 0.66 Python (400 pairs, 90% unanimous),
-0.67 Go (360, 91%), 0.66 Rust (360 screened, of which 10 carry only two of three votes; 91%
-unanimous among fully-voted), 0.67 TypeScript (360, 89%) — recomputable offline from the tracked
-vote files. This is LLM screening, not independent human validation:
+`validate_labels.py`, which drops rows missing a vote) is recomputable offline from the tracked
+vote files:
+
+| Language | Pairs | Unanimous | Fleiss' kappa |
+|---|---:|---:|---:|
+| Python | 400 | 90% | 0.66 |
+| Go | 360 | 91% | 0.67 |
+| Rust | 360 screened | 91%\* | 0.66 |
+| TypeScript | 360 | 89% | 0.67 |
+
+\* 10 of Rust's 360 screened pairs carry only two of three votes; 91% unanimous among fully-voted.
+
+This is LLM screening, not independent human validation:
 
 ```sh
 git clone https://github.com/kunpai/codocbench
@@ -81,6 +155,17 @@ locked holdout split once the label audit produces one. Every listed id must exi
 unknown ids fail the command rather than shrinking the subset silently.
 
 Resolver v2 lanes run on `cascade-java-v2-dev.jsonl` / `cascade-java-v2-holdout.jsonl`: the same
+885 checked-in CASCADE rows plus regenerable git-window context where the method can be located
+(a declared unavailability reason otherwise). The multi-megabyte augmented files live outside the
+repository; the committed
+[`cascade-java-v2-split-manifest.json`](cascade-java-v2-split-manifest.json) binds their exact
+SHA-256s, and the split ordering was fixed by a digest committed before any v2 run existed. The
+exact run declaration and the regeneration mechanics are in the fold below.
+
+<details>
+<summary>Regeneration mechanics — mirror derivation, HMAC split ordering, blob bounds, and the protocol ladder</summary>
+
+Resolver v2 lanes run on `cascade-java-v2-dev.jsonl` / `cascade-java-v2-holdout.jsonl`: the same
 885 checked-in CASCADE rows, each augmented with `java-git-window-v1` context derived from local
 bare mirrors (`cascade_to_jsonl.py --context-protocol java-git-window-v1 --mirror-root …`; rows
 whose method can't be located exactly carry a declared unavailability reason instead). A
@@ -94,13 +179,15 @@ augmented files are multi-megabyte, and the grade inventory bounds every tracked
 so they live outside the repository; only
 [`cascade-java-v2-split-manifest.json`](cascade-java-v2-split-manifest.json) is committed, and it
 binds both files' exact SHA-256s, as does every run artifact. The files are regenerable from the
-upstream zip (hash above) plus mirrors at the pair ids' fixed commits. `make_split.py` generates
+upstream zip (hash below) plus mirrors at the pair ids' fixed commits. `make_split.py` generates
 the repository-grouped 60/40 dev/holdout split and its schema-v1 manifest, ordered by HMAC-SHA256
 keyed on the checked-in `cascade-java.jsonl` SHA-256 — a digest committed before any v2 run
 existed, so the grouping was never tunable against v2 outcomes. This run split is not the human
 label audit's split: audit splits additionally balance human-label cells and stay private. A v2
 run declares `--resolver v2 --split-manifest eval/bench/cascade-java-v2-split-manifest.json
 --split dev|holdout --context-protocol java-git-window-v1`.
+
+</details>
 
 Scoring is binary for every resolver: a completed pair is flagged or it is not. Resolver v2 rows
 whose verdict lacks direct proof (`semantic_status: unverified`) score as **not flagged** —
@@ -202,49 +289,6 @@ does not reconstruct the full candidate-selection process: the TypeScript, Rust,
 do not contain the discarded candidates' source payloads or exact source revisions. Label validity,
 selection validity, and decision quality remain separate claims; candidate-selection audit status
 therefore remains unverified for those three discarded pools.
-
-## Results — how it compares
-
-The point of the schema above is that evergreen's numbers land next to published peers, so here
-they are. **DocPrism** (arXiv:2511.00215) is the honest comparison: zero-shot, multi-language, no
-fine-tuning — evergreen's exact regime. It is regime-comparable, not row-comparable: DocPrism's
-numbers come from its own corpus, not from these datasets, so the table reads as "same rules,
-different exam" until a sealed same-row peer run exists. Fine-tuned single-language systems reach
-F1 0.88–0.94 but train on one language's labels; different regime, noted and out of scope.
-
-The published tables report the observed dataset-base-rate matrices from **one frozen run**;
-no variance across repeated runs is claimed. Decision replay is deterministic
-(`replay.py --expect-stored` demands exact full-decision parity), and
-`run_bench.py --rescore <artifact>` reprints the natural 10/90 and balanced 50/50 reweighted
-splits for any artifact offline, so both reweighted views are derivable from the published
-decisions rather than taken on faith.
-
-### The peers
-
-| System | Regime | Precision | Recall | F1 | Flag rate |
-|---|---|---|---|---|---|
-| Fine-tuned single-language SOTA | trained, 1 language | — | — | 0.88–0.94 | — |
-| **DocPrism** (arXiv:2511.00215) | zero-shot, multi-language | 0.62 | — | — | ~0.15 |
-
-### Evergreen 0.4.0 baseline (the trial rebuild)
-
-The five-language publication gate **passes**. The full matrices, coverage, and exact frozen
-provenance are in [`results-0.4.0.md`](results-0.4.0.md). Across 2,104 attempted pairs, 2,103
-completed and one Rust pair abstained (99.95% overall completion); every language individually met
-the predeclared 99% coverage threshold.
-
-| Language | Completed | Abstained | Precision | Recall | F1 | Specificity |
-|---|---:|---:|---:|---:|---:|---:|
-| Java | 885 / 885 | 0 | 0.202 | 0.343 | 0.254 | 0.883 |
-| Python | 332 / 332 | 0 | 0.129 | 1.000 | 0.228 | 0.811 |
-| TypeScript | 284 / 284 | 0 | 0.213 | 1.000 | 0.352 | 0.780 |
-| Rust | 303 / 304 | 1 | 0.464 | 0.684 | 0.553 | 0.947 |
-| Go | 299 / 299 | 0 | 0.261 | 0.750 | 0.387 | 0.880 |
-
-These are the observed dataset-base-rate metrics, not a claim of best-in-class quality. The 0.4.0
-judge is recall-heavy on Python and TypeScript, weak on Java recall, and produces too many false
-positives in several languages. The publication proves decision-level auditability and coverage for
-this frozen run; the matrices set an honest baseline for the next judge iteration.
 
 ## Schema
 
