@@ -87,6 +87,12 @@ label audit's split: audit splits additionally balance human-label cells and sta
 run declares `--resolver v2 --split-manifest eval/bench/cascade-java-v2-split-manifest.json
 --split dev|holdout --context-protocol java-git-window-v1`.
 
+Scoring is binary for every resolver: a completed pair is flagged or it is not. Resolver v2 rows
+whose verdict lacks direct proof (`semantic_status: unverified`) score as **not flagged** —
+consistent-side — in the raw matrix and both reweighted splits, and are additionally reported as
+a diagnostic count. They are never excluded from the matrix, and abstentions keep their existing
+outside-the-matrix handling.
+
 Replay stored trial stages through their versioned decision policy, require exact full-decision
 parity, and compare the strong snap diagnostically without model calls:
 

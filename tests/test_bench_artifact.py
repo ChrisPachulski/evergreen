@@ -585,6 +585,8 @@ class ArtifactReportTests(unittest.TestCase):
         self.assertIn("Provider coverage: **100.0%**", text)
         self.assertIn("Decision coverage: **20.0%**", text)
         self.assertIn("| Unverified | 8 |", text)
+        # Binary scoring folds the 8 unverified consistent rows into the matrix as TN.
+        self.assertIn("| TN | 9 |", text)
 
     def test_tiny_perfect_sample_fails_minimum_reference_class_counts(self):
         from eval.bench import report

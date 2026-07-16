@@ -678,7 +678,7 @@ class JudgeAbstentionTests(unittest.TestCase):
 
 
 class ScoringTests(unittest.TestCase):
-    def test_semantic_unverified_is_provider_complete_but_not_a_decision(self):
+    def test_unverified_scores_as_not_flagged(self):
         rows = [
             {"label": "inconsistent", "category": "direct-mismatch",
              "final_status": "complete", "semantic_status": "unverified",
@@ -690,14 +690,101 @@ class ScoringTests(unittest.TestCase):
 
         result = metrics.score(rows)
 
+        # Binary scoring: the unverified direct-mismatch row is a false negative.
         self.assertEqual((result["tp"], result["fp"], result["fn"], result["tn"]),
-                         (0, 0, 0, 1))
+                         (0, 0, 1, 1))
         self.assertEqual(
             (result["provider_completed"], result["provider_abstained"]), (2, 0)
         )
+        # Diagnostic keys keep their direct-proof meaning: unverified is not decided.
         self.assertEqual((result["decided"], result["unverified"]), (1, 1))
         self.assertEqual(result["provider_completion_rate"], 1.0)
         self.assertEqual(result["decision_rate"], 0.5)
+
+    def test_unverified_consistent_row_scores_as_true_negative(self):
+        rows = [
+            {"label": "consistent", "category": None,
+             "final_status": "complete", "semantic_status": "unverified",
+             "final_verdict": None},
+            {"label": "inconsistent", "category": "direct-mismatch",
+             "final_status": "complete", "semantic_status": "decided",
+             "final_verdict": "inconsistent"},
+        ]
+
+        result = metrics.score(rows)
+
+        self.assertEqual((result["tp"], result["fp"], result["fn"], result["tn"]),
+                         (1, 0, 0, 1))
+        self.assertEqual((result["decided"], result["unverified"]), (1, 1))
+
+    def test_unverified_under_promise_counts_completed_without_flagging(self):
+        rows = [
+            {"label": "inconsistent", "category": "under-promise",
+             "final_status": "complete", "semantic_status": "unverified",
+             "final_verdict": None},
+            {"label": "inconsistent", "category": "under-promise",
+             "final_status": "complete", "semantic_status": "decided",
+             "final_verdict": "inconsistent"},
+        ]
+
+        result = metrics.score(rows)
+
+        self.assertEqual(result["under_flagged"], 1)
+        self.assertEqual(
+            (result["under_attempted"], result["under_completed"], result["under_abstained"]),
+            (2, 2, 0),
+        )
+
+    def test_split_metrics_includes_unverified_rows_in_resample_pools(self):
+        # The inconsistent class exists only as unverified rows: binary scoring
+        # still seats them in the resample pools, so metrics become available.
+        rows = [
+            {"label": "inconsistent", "category": "direct-mismatch",
+             "final_status": "complete", "semantic_status": "unverified",
+             "final_verdict": None},
+            {"label": "consistent", "category": None,
+             "final_status": "complete", "semantic_status": "decided",
+             "final_verdict": "consistent"},
+        ]
+
+        result = metrics.split_metrics(rows, 0.50, resamples=5)
+
+        self.assertTrue(result["metrics_available"])
+        self.assertEqual((result["n_pos"], result["n_neg"]), (1, 1))
+        # The lone inconsistent row is unverified, hence never flagged: recall 0.
+        self.assertEqual(result["recall"], 0.0)
+
+    def test_unverified_fold_is_a_no_op_for_v1_shaped_rows(self):
+        # v1 artifacts never carry semantic_status; the fold must not move any number.
+        rows = [
+            {"label": "inconsistent", "category": "direct-mismatch",
+             "final_status": "complete", "final_verdict": "inconsistent"},
+            {"label": "inconsistent", "category": "direct-mismatch",
+             "final_status": "complete", "final_verdict": "consistent"},
+            {"label": "consistent", "category": None,
+             "final_status": "complete", "final_verdict": "consistent"},
+            {"label": "consistent", "category": None,
+             "final_status": "complete", "final_verdict": "inconsistent"},
+            {"label": "consistent", "category": None,
+             "final_status": "abstain", "final_verdict": None},
+            {"label": "inconsistent", "category": "under-promise",
+             "final_status": "complete", "final_verdict": "inconsistent"},
+            # Legacy transport shape: verdict only, no final_status.
+            {"label": "consistent", "category": None, "verdict": "consistent"},
+        ]
+
+        result = metrics.score(rows)
+
+        self.assertEqual((result["tp"], result["fp"], result["fn"], result["tn"]),
+                         (1, 1, 1, 2))
+        self.assertEqual(result["tp"] + result["fp"] + result["fn"] + result["tn"],
+                         result["decided"] - 1)  # under-promise decided, never in matrix
+        self.assertEqual((result["decided"], result["unverified"]), (6, 0))
+        self.assertEqual(result["decision_rate"], 1.0)
+        self.assertEqual(result["under_flagged"], 1)
+        split = metrics.split_metrics(rows, 0.50, resamples=5)
+        self.assertTrue(split["metrics_available"])
+        self.assertEqual((split["n_pos"], split["n_neg"]), (2, 2))
 
     def test_abstentions_are_excluded_from_matrix_and_reported_as_coverage(self):
         rows = [

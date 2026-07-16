@@ -15,10 +15,15 @@ def selftest():
          "final_status": "complete", "final_verdict": "inconsistent"},
         {"language": "python", "label": "inconsistent", "category": "under-promise",
          "final_status": "complete", "final_verdict": "inconsistent"},
+        # Binary scoring: unverified completed rows count as not-flagged (consistent).
+        {"language": "python", "label": "inconsistent", "category": "direct-mismatch",
+         "final_status": "complete", "semantic_status": "unverified",
+         "final_verdict": None},
     ]
     result = score(rows)
     sparse = score(rows[:1])
-    if ((result["tp"], result["tn"], result["under_flagged"]) != (1, 1, 1) or
+    if ((result["tp"], result["fn"], result["tn"], result["under_flagged"]) != (1, 1, 1, 1) or
+            (result["decided"], result["unverified"]) != (3, 1) or
             sparse["metrics_available"]):
         raise RuntimeError("benchmark metrics health check failed")
     return 0
@@ -37,6 +42,7 @@ def score(rows):
         return status == "complete"
 
     def decided(row):
+        """Direct-proof diagnostic: unverified rows are scored but never decided."""
         status = row.get("final_status")
         semantic = row.get("semantic_status")
         value = row.get("final_verdict") if status is not None else row.get("verdict")
@@ -44,16 +50,25 @@ def score(rows):
             return False
         return (status in (None, "complete")) and value in VERDICTS
 
+    def scored(row):
+        """Binary scoring: decided rows plus completed-but-unverified rows."""
+        return decided(row) or (row.get("semantic_status") == "unverified" and
+                                row.get("final_status") == "complete")
+
     def verdict(row):
+        # Completed rows without direct proof are not flagged: score as consistent.
+        if row.get("semantic_status") == "unverified":
+            return "consistent"
         return row.get("final_verdict") if row.get("final_status") is not None else row.get("verdict")
 
     attempted = len(rows)
     provider_rows = [r for r in rows if provider_completed(r)]
     decided_rows = [r for r in rows if decided(r)]
     unverified_rows = [r for r in provider_rows if r.get("semantic_status") == "unverified"]
-    core = [r for r in decided_rows if r["category"] in CORE_CATEGORIES]
+    scored_rows = [r for r in rows if scored(r)]
+    core = [r for r in scored_rows if r["category"] in CORE_CATEGORIES]
     under = [r for r in rows if r["category"] == "under-promise"]
-    under_completed = [r for r in under if decided(r)]
+    under_completed = [r for r in under if scored(r)]
     tp = sum(r["label"] == "inconsistent" and verdict(r) == "inconsistent" for r in core)
     fp = sum(r["label"] == "consistent" and verdict(r) == "inconsistent" for r in core)
     fn = sum(r["label"] == "inconsistent" and verdict(r) == "consistent" for r in core)
@@ -104,10 +119,11 @@ def score(rows):
 def split_metrics(rows, pos_frac, resamples=1000, seed=0):
     """Median metrics at a fixed prevalence: keep every inconsistent core pair, resample the
     consistent class to the target ratio (CASCADE's protocol, arXiv:2604.19400)."""
-    core = [r for r in rows if r.get("semantic_status") != "unverified" and
-            r["category"] in CORE_CATEGORIES and
+    core = [r for r in rows if r["category"] in CORE_CATEGORIES and
             ((r.get("final_status") is None and r.get("verdict") in VERDICTS) or
-             (r.get("final_status") == "complete" and r.get("final_verdict") in VERDICTS))]
+             (r.get("final_status") == "complete" and
+              (r.get("final_verdict") in VERDICTS or
+               r.get("semantic_status") == "unverified")))]
     pos = [r for r in core if r["label"] == "inconsistent"]
     neg = [r for r in core if r["label"] == "consistent"]
     if not pos or not neg:
@@ -130,8 +146,9 @@ def _report_language(rows, label):
     n = m["tp"] + m["fp"] + m["fn"] + m["tn"]
     print(f"\nprovider completion: {m['provider_completed']}/{m['attempted']} completed, "
           f"{m['provider_abstained']} abstained ({m['provider_completion_rate']:.1%})")
-    print(f"semantic decisions: {m['decided']}/{m['provider_completed']} decided, "
-          f"{m['unverified']} unverified ({m['decision_rate']:.1%})")
+    unverified_rate = m["unverified"] / m["provider_completed"] if m["provider_completed"] else 0.0
+    print(f"not flagged for lack of direct proof: {m['unverified']}/{m['provider_completed']} "
+          f"completed ({unverified_rate:.1%}) — scored as consistent, not excluded")
     print(f"\ncore set (consistent + direct-mismatch + over-promise), n={n}{label}")
     if m["metrics_available"]:
         nat = split_metrics(rows, 0.10)
