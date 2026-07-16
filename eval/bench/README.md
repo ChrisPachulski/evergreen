@@ -9,7 +9,10 @@ evergreen's numbers sit next to published baselines.
 **CASCADE** ([github.com/TobiasKiecker/CASCADE](https://github.com/TobiasKiecker/CASCADE), MIT)
 is released and is the real test: 885 wild Java method/Javadoc pairs (70 inconsistent /
 815 consistent). Label provenance is mixed: the 70 inconsistent pairs and their 72
-developer-corrected counterparts come from developers' own Javadoc-fix commits, but the other
+developer-corrected counterparts in the released rows (upstream's mapping metadata explicitly
+names 71 pairs; the release carries one more corrected row than the paper's table, the same
+release-vs-paper off-by-one visible in its 70/815 vs the paper's 71/814) come from developers'
+own Javadoc-fix commits, but the other
 743 consistent controls were selected by what the CASCADE paper itself calls a weaker heuristic
 (§4.2, arXiv:2604.19400) — nominal labels, not developer-validated ground truth. Scoring
 against them measures agreement with CASCADE's labeling, not semantic correctness; evergreen
@@ -30,10 +33,11 @@ drift labels, from which we derive candidates ((old doc, new code) = the doc tha
 vote** before scoring, reporting inter-annotator kappa. The three screeners are Anthropic models
 (`claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-5` — per-pair votes are tracked in the
 `*.votes.json` files), a different vendor from the `codex`/`gpt-5.6-sol` judge under evaluation,
-so the screen is not the judge grading itself. Observed agreement on the retained sets: Fleiss'
-kappa 0.66 Python (400 pairs, 90% unanimous), 0.67 Go (360, 91%), 0.60 Rust (360, 88%),
-0.67 TypeScript (360, 89%) — recomputable offline from the tracked vote files. This is LLM
-screening, not independent human validation:
+so the screen is not the judge grading itself. Observed agreement (Fleiss' kappa via
+`validate_labels.py`, which drops rows missing a vote): 0.66 Python (400 pairs, 90% unanimous),
+0.67 Go (360, 91%), 0.66 Rust (360 screened, of which 10 carry only two of three votes; 91%
+unanimous among fully-voted), 0.67 TypeScript (360, 89%) — recomputable offline from the tracked
+vote files. This is LLM screening, not independent human validation:
 
 ```sh
 git clone https://github.com/kunpai/codocbench

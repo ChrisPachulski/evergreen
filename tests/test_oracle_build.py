@@ -395,9 +395,9 @@ class OracleBuildTests(unittest.TestCase):
             ["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True,
         ).strip()
         references, _digest = _load_reference_inventory(commit, tree, require_clean=False)
-        self.assertEqual(len(references), 88)
+        self.assertEqual(len(references), 90)
         required_comparisons = 1875 * 1875 + 3750 * len(references)
-        self.assertEqual(required_comparisons, 3_845_625)
+        self.assertEqual(required_comparisons, 3_853_125)
         self.assertEqual(split.MAX_COMPARISONS, 5_000_000)
         self.assertLessEqual(required_comparisons, split.MAX_COMPARISONS)
         rows = self.required_scale_rows()

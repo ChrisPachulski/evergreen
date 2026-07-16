@@ -3,7 +3,9 @@
 **For:** a future Fable 5 session picking this up cold.
 **Status:** ✅ COMPLETED — the frozen 0.4.0 publication shipped gate-cleared five-language
 numbers; see [`eval/bench/results-0.4.0.md`](eval/bench/results-0.4.0.md). Kept as the original
-working plan; every figure below is a pre-gate planning estimate, not a current claim.
+working plan: figures in the problem statement are pre-gate planning estimates, while the
+Definition-of-done checklist records the measured outcomes that completed it — the published
+report remains the authoritative claim.
 **Owner:** unassigned. **Written:** 2026-07-02.
 
 ## The problem

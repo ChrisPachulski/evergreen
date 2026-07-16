@@ -60,8 +60,10 @@ fi
 
 # --- axis: flourish golden matrix -------------------------------------------
 flourish_ok=true
+flourish_graded=0
 for fixture in eval/flourish/fixtures/*/; do
   for golden in "$fixture"golden/*.md; do
+    [ -f "$golden" ] || continue
     case "$(basename "$golden")" in
       good.md|flattened.md) want=0 ;;
       gutted.md|fabricated.md|skeleton.md) want=2 ;;
@@ -70,14 +72,19 @@ for fixture in eval/flourish/fixtures/*/; do
     python3 eval/flourish/score.py --fixture "$fixture" --result "$golden" \
       >/dev/null 2>&1
     got=$?
+    flourish_graded=$((flourish_graded+1))
     if [ "$got" != "$want" ]; then
       flourish_ok=false
       printf '       golden %s: exit %s, want %s\n' "$golden" "$got" "$want"
     fi
   done
 done
-$flourish_ok && pass "flourish golden matrix (every trap trips its gate)" \
-  || fail "flourish golden matrix"
+# An empty glob must never read as a pass — zero goldens graded is a failure.
+if $flourish_ok && [ "$flourish_graded" -gt 0 ]; then
+  pass "flourish golden matrix ($flourish_graded goldens, every trap trips its gate)"
+else
+  fail "flourish golden matrix" "graded $flourish_graded"
+fi
 
 # --- axis: oracle provenance contract (CI's offline job) ---------------------
 if python3 -m eval.oracle.build validate-provenance \
