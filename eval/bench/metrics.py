@@ -119,8 +119,11 @@ def score(rows):
 def split_metrics(rows, pos_frac, resamples=1000, seed=0):
     """Median metrics at a fixed prevalence: keep every inconsistent core pair, resample the
     consistent class to the target ratio (CASCADE's protocol, arXiv:2604.19400)."""
+    # Mirrors score()'s scored() predicate exactly: the unverified fold applies only to
+    # completed rows; legacy-transport rows never carry it.
     core = [r for r in rows if r["category"] in CORE_CATEGORIES and
-            ((r.get("final_status") is None and r.get("verdict") in VERDICTS) or
+            ((r.get("final_status") is None and r.get("verdict") in VERDICTS and
+              r.get("semantic_status") != "unverified") or
              (r.get("final_status") == "complete" and
               (r.get("final_verdict") in VERDICTS or
                r.get("semantic_status") == "unverified")))]

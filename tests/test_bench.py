@@ -786,6 +786,25 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(split["metrics_available"])
         self.assertEqual((split["n_pos"], split["n_neg"]), (2, 2))
 
+    def test_legacy_transport_rows_never_carry_the_unverified_fold(self):
+        # A legacy-shaped row (no final_status) marked unverified must stay out of the
+        # resample pool exactly as score() keeps it out of the matrix — a pool/matrix
+        # mismatch feeds statistics.median None metrics and crashes.
+        rows = [
+            {"label": "inconsistent", "category": "direct-mismatch",
+             "verdict": "inconsistent", "semantic_status": "unverified"},
+            {"label": "consistent", "category": None,
+             "final_status": "complete", "final_verdict": "consistent"},
+        ]
+
+        result = metrics.score(rows)
+        split = metrics.split_metrics(rows, 0.50, resamples=5)
+
+        self.assertEqual((result["tp"], result["fp"], result["fn"], result["tn"]),
+                         (0, 0, 0, 1))
+        self.assertFalse(split["metrics_available"])
+        self.assertEqual((split["n_pos"], split["n_neg"]), (0, 1))
+
     def test_abstentions_are_excluded_from_matrix_and_reported_as_coverage(self):
         rows = [
             {"label": "inconsistent", "category": "direct-mismatch", "final_status": "complete", "final_verdict": "inconsistent"},

@@ -358,8 +358,11 @@ def main():
                 path = "unverified"
             else:
                 path = "contested" if v.get("contested") else "clear"
-            mark = "-" if status == "abstain" or verdict is None else \
-                ("✓" if (verdict == "inconsistent") == (p["label"] == "inconsistent") else "✗")
+            # Binary scoring folds unverified to a consistent-side prediction; the progress
+            # mark must reflect what the row will score as, not print a third state.
+            effective = "consistent" if path == "unverified" else verdict
+            mark = "-" if status == "abstain" else \
+                ("✓" if (effective == "inconsistent") == (p["label"] == "inconsistent") else "✗")
             display_verdict = "unverified" if path == "unverified" else (verdict or "abstain")
             print(f"  {mark} [{len(done)}/{len(pairs)}] {p['id']:40} label={p['label']:12} "
                   f"verdict={display_verdict:12} [{path}]", flush=True)
