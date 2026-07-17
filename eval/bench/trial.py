@@ -60,10 +60,20 @@ V2_FALSE_POSITIVE_POLICY = (
 V2_CONTEXT_EVIDENCE = (
     "Context evidence: when data.context.snippets is present, its snippets are verified source "
     "excerpts from the same repository at the same commit (callee implementations, the "
-    "surrounding class, related overloads). They are supplied code: direct proof may rest on "
-    "them, and a called function whose implementation appears in a snippet is evaluated here, "
-    "not delegated. When context is absent or declares an unavailability reason, the method "
-    "body alone is the full evidence."
+    "surrounding class, field initializers, related overloads). They are supplied code: direct "
+    "proof may rest on them, and a called function whose implementation appears in a snippet is "
+    "evaluated here, not delegated. When context is absent or declares an unavailability "
+    "reason, the method body alone is the full evidence."
+)
+V2_PROOF_BAR = (
+    "Proof bar: a supplied callee implementation settles the delegation it was supplied for; "
+    "do not demand implementations of further calls inside it when its visible logic settles "
+    "the documentation claim. The documented contracts of JDK and java.* standard library "
+    "methods (String.trim, Long.parseLong, Object.clone, boxing) are established evidence; "
+    "their source being absent never makes a claim unsettleable when the claim matches that "
+    "contract. A plain summary claim is settled by the visible mechanism doing what the "
+    "summary says; it does not require proof over every conceivable input. Reserve unverified "
+    "for claims whose deciding implementation is genuinely absent from the supplied evidence."
 )
 
 
@@ -343,6 +353,7 @@ Judge only what the supplied code directly proves about the documentation claim.
 direct evidence from a conclusion delegated to another function and from evidence that would
 require code not shown. Use unverified when the supplied evidence cannot settle the claim.
 {V2_CONTEXT_EVIDENCE}
+{V2_PROOF_BAR}
 {V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
@@ -378,6 +389,7 @@ def challenge_call_v2(pair, snap_verdict, model, provider="claude"):
 opposing case using only code directly present in the supplied evidence. Do not treat delegated
 behavior or code that is not shown as proof. Then say whether that direct case cracks the verdict.
 {V2_CONTEXT_EVIDENCE}
+{V2_PROOF_BAR}
 {V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
@@ -432,6 +444,7 @@ when the necessary implementation is absent. Use unverified when the evidence ca
 Argue the assigned lens, but set cleared_bar=false and concede when its case does not meet the
 high evidence bar; a lens is never forced to conclude its assigned side.
 {V2_CONTEXT_EVIDENCE}
+{V2_PROOF_BAR}
 {V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
@@ -470,6 +483,7 @@ code actually shown here and could change the outcome on its own. An interesting
 nuance, or anything resting on unseen code is NOT a missed angle. Most trials have none — the
 expected answer is null. You are surfacing a candidate, not deciding.
 {V2_CONTEXT_EVIDENCE}
+{V2_PROOF_BAR}
 {V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
@@ -514,6 +528,7 @@ or code not shown, return unverified. An inconsistent decision also requires dir
 over-promise; under-promise is informational and cannot be a drift decision. If your verdict is
 consistent, category must be null.
 {V2_CONTEXT_EVIDENCE}
+{V2_PROOF_BAR}
 {V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}

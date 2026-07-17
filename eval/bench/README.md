@@ -174,8 +174,11 @@ token-aware match bridging CASCADE's AST re-serialization; 810/885 available vs 
 with every v1 window reproduced byte-identically) and its own successor `java-git-window-v3`
 (the byte-identical v2 method window plus bounded `callee-window` snippets — declarations of
 called names resolved by `git grep` at the pair's commit, first-use order, capped per name and
-by the global context byte budget) exist in code; the committed manifest currently binds the
-v3-context datasets, whose availability rows are identical to v2's. The mirror set is derivable
+by the global context byte budget) and `java-git-window-v4` (the v3 snippets byte-identically,
+plus bounded `field-window` initializer snippets from the method's own file and one further
+bounded hop of callee resolution inside first-hop callee windows) exist in code; the committed
+manifest currently binds the v4-context datasets, whose availability rows are identical to
+v2's. The mirror set is derivable
 from the manifest itself: bare-clone every distinct `project` in
 `cascade-java-v2-split-manifest.json` (16 GitHub repos) under `<mirror-root>/<owner>/<name>`. The
 augmented files are multi-megabyte, and the grade inventory bounds every tracked blob at 1 MiB,

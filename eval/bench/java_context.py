@@ -16,7 +16,8 @@ except ImportError:  # Direct script execution.
 PROTOCOL = "java-git-window-v1"
 PROTOCOL_V2 = "java-git-window-v2"
 PROTOCOL_V3 = "java-git-window-v3"
-PROTOCOLS = (PROTOCOL, PROTOCOL_V2, PROTOCOL_V3)
+PROTOCOL_V4 = "java-git-window-v4"
+PROTOCOLS = (PROTOCOL, PROTOCOL_V2, PROTOCOL_V3, PROTOCOL_V4)
 MAX_CONTEXT_BYTES = 64 * 1024
 MAX_GREP_BYTES = 1024 * 1024
 MAX_SOURCE_BYTES = 4 * 1024 * 1024
@@ -27,6 +28,9 @@ WINDOW_LINES = 200
 MAX_CALLEES_V3 = 8            # distinct called names resolved per pair
 MAX_CALLEE_DECLS_V3 = 2       # declaration windows kept per called name
 CALLEE_WINDOW_LINES = 60      # lines kept from each callee declaration
+MAX_FIELDS_V4 = 8             # distinct field initializers resolved per pair
+FIELD_WINDOW_LINES = 5        # lines kept from each field declaration
+MAX_SECOND_HOP_V4 = 8         # distinct second-hop callee names across all first-hop snippets
 JAVA_KEYWORDS = frozenset((
     "if", "for", "while", "switch", "catch", "return", "new", "throw", "this", "super",
     "assert", "synchronized", "do", "else", "try", "finally", "instanceof", "case",
@@ -337,13 +341,9 @@ def _callee_snippets(repo, commit, names, window_text):
     return snippets
 
 
-def _append_callees(context, repo, commit, pair):
-    """Append callee windows to an available v3 context inside the global byte budget."""
-    names = _called_names(pair.get("code", ""), pair.get("func", ""))
-    if not names:
-        return context
-    window_text = context["snippets"][0]["text"]
-    for snippet in _callee_snippets(repo, commit, names, window_text):
+def _append_snippets(context, snippets):
+    """Append snippets in priority order inside the global byte budget."""
+    for snippet in snippets:
         candidate = copy.deepcopy(context)
         candidate["snippets"].append(snippet)
         if len(json.dumps(candidate, sort_keys=True, separators=(",", ":")).encode()) > \
@@ -351,6 +351,73 @@ def _append_callees(context, repo, commit, pair):
             break
         context = candidate
     return context
+
+
+def _append_callees(context, repo, commit, pair):
+    """Append callee windows to an available v3/v4 context inside the global byte budget."""
+    names = _called_names(pair.get("code", ""), pair.get("func", ""))
+    if not names:
+        return context
+    window_text = context["snippets"][0]["text"]
+    return _append_snippets(context, _callee_snippets(repo, commit, names, window_text))
+
+
+def _field_names(code, called):
+    """Distinct non-called identifiers in first-use order — candidate class fields."""
+    names = []
+    seen = set(JAVA_KEYWORDS) | set(called)
+    for match in re.finditer(r"\b([A-Za-z_$][A-Za-z0-9_$]*)\b(?!\s*\()", code):
+        name = match.group(1)
+        if name not in seen:
+            seen.add(name)
+            names.append(name)
+    return names
+
+
+def _append_fields(context, source, pair):
+    """Append class-field declaration-with-initializer windows from the method's own file."""
+    called = set(_called_names(pair.get("code", ""), pair.get("func", "")))
+    window = context["snippets"][0]
+    lines = source.splitlines(keepends=True)
+    snippets = []
+    for name in _field_names(pair.get("code", ""), called):
+        if len(snippets) >= MAX_FIELDS_V4:
+            break
+        pattern = re.compile(
+            r"(private|protected|public|static|final)[^;={}()]*\b"
+            + re.escape(name) + r"\b\s*=")
+        for index, line in enumerate(lines, start=1):
+            if window["start_line"] <= index <= window["end_line"]:
+                continue  # already evidenced by the method window
+            if not pattern.search(line):
+                continue
+            end = min(len(lines), index + FIELD_WINDOW_LINES - 1)
+            text = "".join(lines[index - 1:end])
+            if text:
+                snippets.append({
+                    "kind": "field-window", "path": window["path"],
+                    "start_line": index, "end_line": end, "text": text,
+                    "sha256": hashlib.sha256(text.encode()).hexdigest(),
+                })
+            break  # first declaration per name
+    return _append_snippets(context, snippets)
+
+
+def _append_second_hop(context, repo, commit, pair):
+    """Resolve callees named inside first-hop callee windows, one extra hop, bounded."""
+    first_hop = [s for s in context["snippets"][1:] if s["kind"] == "callee-window"]
+    if not first_hop:
+        return context
+    all_text = "".join(s["text"] for s in context["snippets"])
+    already = set(_called_names(pair.get("code", ""), pair.get("func", "")))
+    names = []
+    for snippet in first_hop:
+        for name in _called_names(snippet["text"], pair.get("func", "")):
+            if name not in already and name not in names:
+                names.append(name)
+    return _append_snippets(
+        context, _callee_snippets(repo, commit, names[:MAX_SECOND_HOP_V4], all_text)
+    )
 
 
 def validate_context(context, protocol=PROTOCOL):
@@ -371,9 +438,12 @@ def validate_context(context, protocol=PROTOCOL):
             raise ValueError("benchmark pair context fields are invalid")
         source = context.get("source")
         snippets = context.get("snippets")
-        maximum_snippets = (
-            1 + MAX_CALLEES_V3 * MAX_CALLEE_DECLS_V3 if protocol == PROTOCOL_V3 else 1
-        )
+        callee_budget = MAX_CALLEES_V3 * MAX_CALLEE_DECLS_V3
+        maximum_snippets = {
+            PROTOCOL_V3: 1 + callee_budget,
+            PROTOCOL_V4: 1 + callee_budget + MAX_FIELDS_V4 +
+            MAX_SECOND_HOP_V4 * MAX_CALLEE_DECLS_V3,
+        }.get(protocol, 1)
         if (not isinstance(source, dict) or
                 set(source) != {"repo", "commit", "path", "sha256"} or
                 not isinstance(snippets, list) or
@@ -388,8 +458,10 @@ def validate_context(context, protocol=PROTOCOL):
                 not isinstance(path, str) or not path or len(path) > 4096 or
                 Path(path).is_absolute() or ".." in Path(path).parts):
             raise ValueError("benchmark pair context source identity is invalid")
+        extra_kinds = ({"callee-window", "field-window"} if protocol == PROTOCOL_V4
+                       else {"callee-window"})
         for index, snippet in enumerate(snippets):
-            expected_kind = "method-window" if index == 0 else "callee-window"
+            expected_kinds = {"method-window"} if index == 0 else extra_kinds
             snippet_path = snippet.get("path") if isinstance(snippet, dict) else None
             valid_path = (snippet_path == path if index == 0 else (
                 isinstance(snippet_path, str) and snippet_path and
@@ -397,7 +469,7 @@ def validate_context(context, protocol=PROTOCOL):
                 ".." not in Path(snippet_path).parts))
             if (not isinstance(snippet, dict) or set(snippet) != {
                     "kind", "path", "start_line", "end_line", "text", "sha256"} or
-                    snippet.get("kind") != expected_kind or not valid_path or
+                    snippet.get("kind") not in expected_kinds or not valid_path or
                     type(snippet.get("start_line")) is not int or
                     type(snippet.get("end_line")) is not int or
                     snippet["start_line"] < 1 or snippet["end_line"] < snippet["start_line"] or
@@ -501,8 +573,11 @@ def derive_context(pair, mirror_root, protocol=PROTOCOL):
         return _unavailable("source-too-large" if too_large else "no-exact-match", protocol)
     path, source, span = matches[0]
     value = _context(f"{owner}/{name}", commit, path, source, span, protocol)
-    if protocol == PROTOCOL_V3 and value.get("status") == "available":
+    if protocol in (PROTOCOL_V3, PROTOCOL_V4) and value.get("status") == "available":
         value = _append_callees(value, resolved, commit, pair)
+        if protocol == PROTOCOL_V4:
+            value = _append_fields(value, source, pair)
+            value = _append_second_hop(value, resolved, commit, pair)
     return validate_context(value, protocol)
 
 

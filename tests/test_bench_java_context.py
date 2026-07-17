@@ -328,6 +328,72 @@ class JavaContextTests(unittest.TestCase):
         data = trial._validated_pair_data(pair)
         self.assertEqual(data["context"], pair["context"])
 
+    # v4 keeps v3's snippets and appends field-initializer and second-hop callee windows.
+
+    def test_v4_appends_a_field_initializer_window(self):
+        method = "public int scaled() {\n    return factor * 3;\n}"
+        filler = "\n".join(f"    // pad line {n}" for n in range(220))
+        self.write_java("src/Scaled.java", (
+            "package sample;\n\npublic class Scaled {\n    private final int factor = 7;\n"
+            + filler + "\n" + method + "\n}\n"
+        ))
+        commit = self.snapshot("field")
+        pair = self.pair(id=f"owner/repo/{commit}/1#0", func="scaled", code=method)
+        v3 = java_context.derive_context(pair, self.root, java_context.PROTOCOL_V3)
+        v4 = java_context.derive_context(pair, self.root, java_context.PROTOCOL_V4)
+        self.assertEqual(v4["status"], "available")
+        self.assertEqual(v4["snippets"][0], v3["snippets"][0])
+        kinds = [s["kind"] for s in v4["snippets"][1:]]
+        self.assertIn("field-window", kinds)
+        field = next(s for s in v4["snippets"] if s["kind"] == "field-window")
+        self.assertIn("factor = 7", field["text"])
+        self.assertEqual(java_context.validate_context(v4, java_context.PROTOCOL_V4), v4)
+
+    def test_v4_field_already_inside_the_method_window_is_not_duplicated(self):
+        v4 = java_context.derive_context(self.pair(), self.root, java_context.PROTOCOL_V4)
+        self.assertEqual(v4["status"], "available")
+        self.assertEqual([s["kind"] for s in v4["snippets"]], ["method-window"])
+
+    def test_v4_resolves_a_second_hop_callee(self):
+        self.write_java("src/Deep.java", (
+            "package sample;\n\npublic final class Deep {\n"
+            "    public static int core(int x) {\n        return x * 10;\n    }\n}\n"
+        ))
+        self.write_java("src/Mid.java", (
+            "package sample;\n\npublic final class Mid {\n"
+            "    public static int viaMid(int x) {\n        return Deep.core(x) + 1;\n    }\n}\n"
+        ))
+        method = "public int top() {\n    return Mid.viaMid(4);\n}"
+        self.write_java("src/Top.java",
+                        "package sample;\n\npublic class Top {\n" + method + "\n}\n")
+        commit = self.snapshot("second-hop")
+        pair = self.pair(id=f"owner/repo/{commit}/1#0", func="top", code=method)
+        v3 = java_context.derive_context(pair, self.root, java_context.PROTOCOL_V3)
+        v4 = java_context.derive_context(pair, self.root, java_context.PROTOCOL_V4)
+        v3_paths = {s["path"] for s in v3["snippets"]}
+        v4_paths = {s["path"] for s in v4["snippets"]}
+        self.assertNotIn("src/Deep.java", v3_paths)   # v3 stops at one hop
+        self.assertIn("src/Deep.java", v4_paths)      # v4 resolves the second hop
+        deep = next(s for s in v4["snippets"] if s["path"] == "src/Deep.java")
+        self.assertEqual(deep["kind"], "callee-window")
+        self.assertIn("x * 10", deep["text"])
+        self.assertEqual(java_context.validate_context(v4, java_context.PROTOCOL_V4), v4)
+
+    def test_v3_rejects_a_field_window_snippet(self):
+        method = "public int scaled2() {\n    return factor2 * 3;\n}"
+        filler = "\n".join(f"    // pad {n}" for n in range(220))
+        self.write_java("src/Scaled2.java", (
+            "package sample;\n\npublic class Scaled2 {\n    private final int factor2 = 9;\n"
+            + filler + "\n" + method + "\n}\n"
+        ))
+        commit = self.snapshot("field-v3")
+        pair = self.pair(id=f"owner/repo/{commit}/1#0", func="scaled2", code=method)
+        v4 = java_context.derive_context(pair, self.root, java_context.PROTOCOL_V4)
+        self.assertIn("field-window", [s["kind"] for s in v4["snippets"]])
+        forged = {**v4, "protocol": java_context.PROTOCOL_V3}
+        with self.assertRaisesRegex(ValueError, "snippet"):
+            java_context.validate_context(forged, java_context.PROTOCOL_V3)
+
     def commit_variant(self, relative, class_name, body):
         self.write_java(relative,
                         f"package sample;\n\npublic class {class_name} {{\n{body}}}\n")
