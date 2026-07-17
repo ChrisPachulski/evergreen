@@ -50,7 +50,20 @@ V2_FALSE_POSITIVE_POLICY = (
     "False-positive policy: an ordinary summary is not a universal guarantee unless the words "
     "make it one; a hypothetical or optional input is not a contradiction unless the "
     "documentation claims that input or behavior; extra behavior remains consistent or an "
-    "informational under-promise unless it falsifies an explicit documentation claim."
+    "informational under-promise unless it falsifies an explicit documentation claim. "
+    "Documentation silence never creates a claim: an input form the documentation does not "
+    "name (zero-padded digits, signed strings, unusual encodings, hypothetical values) cannot "
+    "contradict it. Rejecting or throwing on an input the documentation explicitly places "
+    "inside its documented domain falsifies the documentation and is drift (over-promise); "
+    "tightening a documented boundary is never an informational under-promise."
+)
+V2_CONTEXT_EVIDENCE = (
+    "Context evidence: when data.context.snippets is present, its snippets are verified source "
+    "excerpts from the same repository at the same commit (callee implementations, the "
+    "surrounding class, related overloads). They are supplied code: direct proof may rest on "
+    "them, and a called function whose implementation appears in a snippet is evaluated here, "
+    "not delegated. When context is absent or declares an unavailability reason, the method "
+    "body alone is the full evidence."
 )
 
 
@@ -304,7 +317,8 @@ def model_json(prompt, model, provider="claude", **kwargs):
 # V2 replaces hardest-broken with an evidence-auditor prong, counts the snap plus only prongs that
 # explicitly clear their evidence bar, escalates a genuine plurality tie, and runs the blind-spot
 # pass on the strong tier. Its separate proof-sufficiency gate can require synthesis even without
-# dissent, while a conceded lens does not manufacture disagreement.
+# dissent, while a conceded lens does not manufacture disagreement. Every v2 stage prompt,
+# including the v2 blind-spot variant, states the context-evidence and false-positive policies.
 
 def snap_call(pair, model, provider="claude"):
     prompt = f"""{skill_body()}
@@ -328,6 +342,7 @@ def snap_call_v2(pair, model, provider="claude"):
 Judge only what the supplied code directly proves about the documentation claim. Distinguish
 direct evidence from a conclusion delegated to another function and from evidence that would
 require code not shown. Use unverified when the supplied evidence cannot settle the claim.
+{V2_CONTEXT_EVIDENCE}
 {V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
@@ -362,6 +377,7 @@ def challenge_call_v2(pair, snap_verdict, model, provider="claude"):
     prompt = f"""A first reviewer judged this documentation "{snap_verdict}". Make the strongest
 opposing case using only code directly present in the supplied evidence. Do not treat delegated
 behavior or code that is not shown as proof. Then say whether that direct case cracks the verdict.
+{V2_CONTEXT_EVIDENCE}
 {V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
@@ -415,6 +431,7 @@ depends on a called function whose implementation is not evaluated here, and req
 when the necessary implementation is absent. Use unverified when the evidence cannot settle it.
 Argue the assigned lens, but set cleared_bar=false and concede when its case does not meet the
 high evidence bar; a lens is never forced to conclude its assigned side.
+{V2_CONTEXT_EVIDENCE}
 {V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
@@ -437,6 +454,23 @@ claim in the doc — strong enough to FLIP the verdict. The bar is HIGH: the ang
 code actually shown here and could change the outcome on its own. An interesting observation, a
 nuance, or anything resting on unseen code is NOT a missed angle. Most trials have none — the
 expected answer is null. You are surfacing a candidate, not deciding.
+
+{_pair_envelope(pair)}
+
+Reply with exactly one line of JSON and nothing else:
+{{"missed_angle": "<the verdict-flipping angle, or null>"}}"""
+    return model_json(prompt, model, provider)
+
+
+def blindspot_call_v2(pair, model, provider="claude"):
+    prompt = f"""Three reviewers just judged whether this documentation matches the code. Your
+only job: name ONE angle they could ALL have missed — a reading of the code, an edge case, a
+claim in the doc — strong enough to FLIP the verdict. The bar is HIGH: the angle must rest on
+code actually shown here and could change the outcome on its own. An interesting observation, a
+nuance, or anything resting on unseen code is NOT a missed angle. Most trials have none — the
+expected answer is null. You are surfacing a candidate, not deciding.
+{V2_CONTEXT_EVIDENCE}
+{V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
 
@@ -477,7 +511,9 @@ def synthesis_call_v2(pair, snap, challenge, prongs, blindspot, model, provider=
 Resolve the trial using only evidence directly present in the supplied code. A consistent or
 inconsistent decision requires direct proof. If the answer depends on a delegated implementation
 or code not shown, return unverified. An inconsistent decision also requires direct-mismatch or
-over-promise; under-promise is informational and cannot be a drift decision.
+over-promise; under-promise is informational and cannot be a drift decision. If your verdict is
+consistent, category must be null.
+{V2_CONTEXT_EVIDENCE}
 {V2_FALSE_POSITIVE_POLICY}
 
 {_pair_envelope(pair)}
@@ -547,7 +583,7 @@ def judge(pair, models, run_test=None):
         "synthesis": synthesis_call,
     } if resolver_id == "v1" else {
         "snap": snap_call_v2, "challenge": challenge_call_v2, "prongs": run_prongs_v2,
-        "prongs_escalated": run_prongs_v2, "blindspot": blindspot_call,
+        "prongs_escalated": run_prongs_v2, "blindspot": blindspot_call_v2,
         "synthesis": synthesis_call_v2,
     })
     prong_roles = tuple(PRONGS if resolver_id == "v1" else PRONGS_V2)
