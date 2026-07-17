@@ -169,10 +169,13 @@ Resolver v2 lanes run on `cascade-java-v2-dev.jsonl` / `cascade-java-v2-holdout.
 885 checked-in CASCADE rows, each augmented with `java-git-window-v1` context derived from local
 bare mirrors (`cascade_to_jsonl.py --context-protocol java-git-window-v1 --mirror-root …`; rows
 whose method can't be located exactly carry a declared unavailability reason instead). A
-successor protocol `java-git-window-v2` exists in code (strict-first ladder: the exact v1 match,
-then a token-aware match bridging CASCADE's AST re-serialization; 810/885 available vs v1's
-637/885, with every v1 window reproduced byte-identically); no checked-in dataset or manifest
-uses it yet — regeneration is deferred until the next declared run. The mirror set is derivable
+successor protocol `java-git-window-v2` (strict-first ladder: the exact v1 match, then a
+token-aware match bridging CASCADE's AST re-serialization; 810/885 available vs v1's 637/885,
+with every v1 window reproduced byte-identically) and its own successor `java-git-window-v3`
+(the byte-identical v2 method window plus bounded `callee-window` snippets — declarations of
+called names resolved by `git grep` at the pair's commit, first-use order, capped per name and
+by the global context byte budget) exist in code; the committed manifest currently binds the
+v3-context datasets, whose availability rows are identical to v2's. The mirror set is derivable
 from the manifest itself: bare-clone every distinct `project` in
 `cascade-java-v2-split-manifest.json` (16 GitHub repos) under `<mirror-root>/<owner>/<name>`. The
 augmented files are multi-megabyte, and the grade inventory bounds every tracked blob at 1 MiB,
@@ -185,7 +188,7 @@ keyed on the checked-in `cascade-java.jsonl` SHA-256 — a digest committed befo
 existed, so the grouping was never tunable against v2 outcomes. This run split is not the human
 label audit's split: audit splits additionally balance human-label cells and stay private. A v2
 run declares `--resolver v2 --split-manifest eval/bench/cascade-java-v2-split-manifest.json
---split dev|holdout --context-protocol java-git-window-v1`.
+--split dev|holdout --context-protocol <the protocol the bound datasets carry>`.
 
 </details>
 

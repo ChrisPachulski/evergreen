@@ -261,9 +261,72 @@ class JavaContextTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "protocol"):
             java_context.validate_context(v1, java_context.PROTOCOL_V2)
         with self.assertRaisesRegex(ValueError, "protocol"):
-            java_context.validate_context(v1, "java-git-window-v3")
+            java_context.validate_context(v1, "java-git-window-v9")
         with self.assertRaisesRegex(ValueError, "protocol"):
-            java_context.derive_context(self.pair(), self.root, "java-git-window-v3")
+            java_context.derive_context(self.pair(), self.root, "java-git-window-v9")
+
+    # v3 preserves the v2 method window byte-identically and appends callee windows.
+
+    def test_v3_reproduces_the_v2_window_and_skips_callees_already_in_it(self):
+        v2 = java_context.derive_context(self.pair(), self.root, java_context.PROTOCOL_V2)
+        v3 = java_context.derive_context(self.pair(), self.root, java_context.PROTOCOL_V3)
+        # helper() is declared inside the method window, so v3 adds nothing.
+        self.assertEqual(v3["protocol"], "java-git-window-v3")
+        self.assertEqual({**v3, "protocol": v2["protocol"]}, v2)
+        self.assertEqual(v3["snippets"][0]["sha256"], v2["snippets"][0]["sha256"])
+
+    def test_v3_appends_a_cross_file_callee_declaration_window(self):
+        self.write_java("src/Util.java", (
+            "package sample;\n\npublic final class Util {\n"
+            "    public static int helperFar(int x) {\n        return x + 2;\n    }\n}\n"
+        ))
+        method = "public int far() {\n    return Util.helperFar(1);\n}"
+        self.write_java("src/Far.java",
+                        "package sample;\n\npublic class Far {\n" + method + "\n}\n")
+        commit = self.snapshot("callee")
+        pair = self.pair(id=f"owner/repo/{commit}/1#0", func="far", code=method)
+        v2 = java_context.derive_context(pair, self.root, java_context.PROTOCOL_V2)
+        v3 = java_context.derive_context(pair, self.root, java_context.PROTOCOL_V3)
+        self.assertEqual(v3["status"], "available")
+        self.assertEqual(v3["snippets"][0], v2["snippets"][0])
+        callee = v3["snippets"][1]
+        self.assertEqual(callee["kind"], "callee-window")
+        self.assertEqual(callee["path"], "src/Util.java")
+        self.assertIn("helperFar", callee["text"])
+        self.assertEqual(
+            java_context.validate_context(v3, java_context.PROTOCOL_V3), v3
+        )
+        self.assertLessEqual(
+            len(json.dumps(v3, sort_keys=True, separators=(",", ":")).encode()), 65536
+        )
+
+    def test_v3_unresolvable_callee_never_kills_availability(self):
+        method = "public int lost() {\n    return phantomCall(7);\n}"
+        self.write_java("src/Lost.java",
+                        "package sample;\n\npublic class Lost {\n" + method + "\n}\n")
+        commit = self.snapshot("lost")
+        pair = self.pair(id=f"owner/repo/{commit}/1#0", func="lost", code=method)
+        v3 = java_context.derive_context(pair, self.root, java_context.PROTOCOL_V3)
+        self.assertEqual(v3["status"], "available")
+        self.assertEqual(len(v3["snippets"]), 1)
+
+    def test_v3_context_passes_trial_validation(self):
+        self.write_java("src/Helper2.java", (
+            "package sample;\n\npublic class Helper2 {\n"
+            "    protected long lift(long v) {\n        return v * 2;\n    }\n}\n"
+        ))
+        method = "public long boost(long v) {\n    return lift(v);\n}"
+        self.write_java("src/Boost.java",
+                        "package sample;\n\npublic class Boost {\n" + method + "\n}\n")
+        commit = self.snapshot("boost")
+        pair = self.pair(id=f"owner/repo/{commit}/1#0", func="boost", code=method)
+        pair["context"] = java_context.derive_context(
+            pair, self.root, java_context.PROTOCOL_V3
+        )
+        self.assertEqual(pair["context"]["status"], "available")
+        self.assertEqual(pair["context"]["snippets"][1]["kind"], "callee-window")
+        data = trial._validated_pair_data(pair)
+        self.assertEqual(data["context"], pair["context"])
 
     def commit_variant(self, relative, class_name, body):
         self.write_java(relative,

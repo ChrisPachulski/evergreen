@@ -15,7 +15,8 @@ except ImportError:  # Direct script execution.
 
 PROTOCOL = "java-git-window-v1"
 PROTOCOL_V2 = "java-git-window-v2"
-PROTOCOLS = (PROTOCOL, PROTOCOL_V2)
+PROTOCOL_V3 = "java-git-window-v3"
+PROTOCOLS = (PROTOCOL, PROTOCOL_V2, PROTOCOL_V3)
 MAX_CONTEXT_BYTES = 64 * 1024
 MAX_GREP_BYTES = 1024 * 1024
 MAX_SOURCE_BYTES = 4 * 1024 * 1024
@@ -23,6 +24,16 @@ MAX_CANDIDATES = 256          # v1, frozen
 MAX_CANDIDATES_V2 = 2048      # v2 raises the grep-candidate ceiling
 MAX_THROWS_GAP = 4096         # v2 bounded bridge across an omitted `throws` clause
 WINDOW_LINES = 200
+MAX_CALLEES_V3 = 8            # distinct called names resolved per pair
+MAX_CALLEE_DECLS_V3 = 2       # declaration windows kept per called name
+CALLEE_WINDOW_LINES = 60      # lines kept from each callee declaration
+JAVA_KEYWORDS = frozenset((
+    "if", "for", "while", "switch", "catch", "return", "new", "throw", "this", "super",
+    "assert", "synchronized", "do", "else", "try", "finally", "instanceof", "case",
+    "break", "continue", "default", "void", "int", "long", "short", "byte", "char",
+    "float", "double", "boolean",
+))
+CALL_SITE = re.compile(r"\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\(")
 IDENT = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$")
 THROWS = IDENT | frozenset(", .<>")
 SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -254,6 +265,94 @@ def _context(repo_name, commit, path, source, span, protocol=PROTOCOL):
     return value
 
 
+def _called_names(code, own_name):
+    """Distinct called simple names in first-use order, excluding keywords and the method."""
+    names = []
+    seen = {own_name} | JAVA_KEYWORDS
+    for match in CALL_SITE.finditer(code):
+        name = match.group(1)
+        if name not in seen:
+            seen.add(name)
+            names.append(name)
+    return names[:MAX_CALLEES_V3]
+
+
+def _declaration_pattern(name):
+    """A declaration-shaped line: modifiers, then the name and its parameter list, with no
+    statement boundary between them — rejects ordinary call sites."""
+    return (r"(public|protected|private|static)[^;={}]*[ \t]"
+            + re.escape(name) + r"[ \t]*\(")
+
+
+def _callee_snippets(repo, commit, names, window_text):
+    """Bounded, deterministic callee-declaration windows from the same commit.
+
+    Every failure is conservative: a name that cannot be resolved contributes nothing and
+    never makes the row unavailable."""
+    snippets = []
+    sources = {}
+    for name in names:
+        if re.search(_declaration_pattern(name), window_text):
+            continue  # already evidenced by the method window
+        try:
+            output = _git(
+                repo, MAX_GREP_BYTES, "grep", "-n", "-E", "-e",
+                _declaration_pattern(name), commit, "--", "*.java",
+            ).decode("utf-8")
+        except (OSError, UnicodeError, subprocess.TimeoutExpired, ValueError):
+            continue
+        hits = []
+        for line in output.splitlines():
+            parts = line.split(":", 3)
+            if len(parts) < 3:
+                continue
+            path, line_number = parts[1], parts[2]
+            if (Path(path).is_absolute() or ".." in Path(path).parts or
+                    not line_number.isdigit()):
+                continue
+            hits.append((path, int(line_number)))
+        for path, line_number in sorted(hits)[:MAX_CALLEE_DECLS_V3]:
+            if path not in sources:
+                try:
+                    sources[path] = _git(
+                        repo, MAX_SOURCE_BYTES, "show", f"{commit}:{path}"
+                    ).decode("utf-8")
+                except (OSError, UnicodeError, subprocess.TimeoutExpired, ValueError):
+                    sources[path] = None
+            source = sources[path]
+            if source is None:
+                continue
+            lines = source.splitlines(keepends=True)
+            if line_number > len(lines):
+                continue
+            end = min(len(lines), line_number + CALLEE_WINDOW_LINES - 1)
+            text = "".join(lines[line_number - 1:end])
+            if not text:
+                continue
+            snippets.append({
+                "kind": "callee-window", "path": path,
+                "start_line": line_number, "end_line": end, "text": text,
+                "sha256": hashlib.sha256(text.encode()).hexdigest(),
+            })
+    return snippets
+
+
+def _append_callees(context, repo, commit, pair):
+    """Append callee windows to an available v3 context inside the global byte budget."""
+    names = _called_names(pair.get("code", ""), pair.get("func", ""))
+    if not names:
+        return context
+    window_text = context["snippets"][0]["text"]
+    for snippet in _callee_snippets(repo, commit, names, window_text):
+        candidate = copy.deepcopy(context)
+        candidate["snippets"].append(snippet)
+        if len(json.dumps(candidate, sort_keys=True, separators=(",", ":")).encode()) > \
+                MAX_CONTEXT_BYTES:
+            break
+        context = candidate
+    return context
+
+
 def validate_context(context, protocol=PROTOCOL):
     """Validate and detach a context, enforcing the exact expected protocol string."""
     if protocol not in PROTOCOLS:
@@ -272,9 +371,13 @@ def validate_context(context, protocol=PROTOCOL):
             raise ValueError("benchmark pair context fields are invalid")
         source = context.get("source")
         snippets = context.get("snippets")
+        maximum_snippets = (
+            1 + MAX_CALLEES_V3 * MAX_CALLEE_DECLS_V3 if protocol == PROTOCOL_V3 else 1
+        )
         if (not isinstance(source, dict) or
                 set(source) != {"repo", "commit", "path", "sha256"} or
-                not isinstance(snippets, list) or len(snippets) != 1):
+                not isinstance(snippets, list) or
+                not 1 <= len(snippets) <= maximum_snippets):
             raise ValueError("benchmark pair context source is invalid")
         repo_parts = source.get("repo", "").split("/")
         path = source.get("path")
@@ -285,17 +388,23 @@ def validate_context(context, protocol=PROTOCOL):
                 not isinstance(path, str) or not path or len(path) > 4096 or
                 Path(path).is_absolute() or ".." in Path(path).parts):
             raise ValueError("benchmark pair context source identity is invalid")
-        snippet = snippets[0]
-        if (not isinstance(snippet, dict) or set(snippet) != {
-                "kind", "path", "start_line", "end_line", "text", "sha256"} or
-                snippet.get("kind") != "method-window" or snippet.get("path") != path or
-                type(snippet.get("start_line")) is not int or
-                type(snippet.get("end_line")) is not int or
-                snippet["start_line"] < 1 or snippet["end_line"] < snippet["start_line"] or
-                not isinstance(snippet.get("text"), str) or not snippet["text"] or
-                hashlib.sha256(snippet["text"].encode()).hexdigest() !=
-                snippet.get("sha256")):
-            raise ValueError("benchmark pair context snippet is invalid")
+        for index, snippet in enumerate(snippets):
+            expected_kind = "method-window" if index == 0 else "callee-window"
+            snippet_path = snippet.get("path") if isinstance(snippet, dict) else None
+            valid_path = (snippet_path == path if index == 0 else (
+                isinstance(snippet_path, str) and snippet_path and
+                len(snippet_path) <= 4096 and not Path(snippet_path).is_absolute() and
+                ".." not in Path(snippet_path).parts))
+            if (not isinstance(snippet, dict) or set(snippet) != {
+                    "kind", "path", "start_line", "end_line", "text", "sha256"} or
+                    snippet.get("kind") != expected_kind or not valid_path or
+                    type(snippet.get("start_line")) is not int or
+                    type(snippet.get("end_line")) is not int or
+                    snippet["start_line"] < 1 or snippet["end_line"] < snippet["start_line"] or
+                    not isinstance(snippet.get("text"), str) or not snippet["text"] or
+                    hashlib.sha256(snippet["text"].encode()).hexdigest() !=
+                    snippet.get("sha256")):
+                raise ValueError("benchmark pair context snippet is invalid")
     canonical = json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
     if len(canonical) > MAX_CONTEXT_BYTES:
         raise ValueError(f"benchmark pair context exceeds {MAX_CONTEXT_BYTES} bytes")
@@ -391,9 +500,10 @@ def derive_context(pair, mirror_root, protocol=PROTOCOL):
     if not matches:
         return _unavailable("source-too-large" if too_large else "no-exact-match", protocol)
     path, source, span = matches[0]
-    return validate_context(
-        _context(f"{owner}/{name}", commit, path, source, span, protocol), protocol
-    )
+    value = _context(f"{owner}/{name}", commit, path, source, span, protocol)
+    if protocol == PROTOCOL_V3 and value.get("status") == "available":
+        value = _append_callees(value, resolved, commit, pair)
+    return validate_context(value, protocol)
 
 
 def augment_rows(rows, mirror_root, protocol=PROTOCOL):
