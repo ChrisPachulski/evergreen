@@ -254,7 +254,7 @@ Each finding carries a severity and a fix-or-flag call.
 - **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. A rung-3/4
   flag goes on trial (snap → challenge → three blind reads → blind-spot → weigh) before it ships;
   a command may add a read where its verdict has an extra attack surface (flourish's craft trial
-  runs four). The whole point is to kill the plausible-but-wrong flag, not to catch more.
+  runs five). The whole point is to kill the plausible-but-wrong flag, not to catch more.
 - **Rot lives in old comments, not new lines.** Read the changed file at HEAD, not just the diff's
   `+` lines. Code moved under a stable doc = live rot (report); a doc wrong the day it was written =
   lower urgency (say which).

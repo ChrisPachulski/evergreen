@@ -58,6 +58,32 @@ judge is recall-heavy on Python and TypeScript, weak on Java recall, and produce
 positives in several languages. The publication proves decision-level auditability and coverage for
 this frozen run; the matrices set an honest baseline for the next judge iteration.
 
+## How a verdict happens
+
+The judge is a general-purpose model reading cold — never fine-tuned, never shown a label,
+swappable by flag (`--provider`, `--strong-model`). Consistency comes from machinery, not from
+the model behaving:
+
+1. **No single opinion decides.** Every pair runs a small trial ([`trial.py`](trial.py)): a
+   first-instinct read, a challenge arguing the opposite, three blind reviewers with assigned
+   angles (defend the doc / prove it wrong / audit whether the evidence can settle it at all)
+   who never see each other's answers, a missed-angle pass, and a synthesis referee. Dissent,
+   a tie, or thin evidence never stands — it escalates to stronger reviewers and the referee.
+2. **No freeform verdicts.** Every response must match a rigid schema — verdict and category
+   from fixed menus, evidence quoted. A malformed answer is retried a bounded number of times,
+   then recorded as an abstention. Nothing is ever inferred from prose.
+3. **The final call is deterministic code, not a model.** [`resolver.py`](resolver.py) folds
+   the stored stage outputs into each decision; same inputs, same verdict, forever. Every
+   stage output ships in the artifact, and `replay.py --expect-stored` re-derives all
+   decisions bit-for-bit with no model call.
+4. **Everything that could drift is pinned.** Provider, CLI version, model names, the SHA-256
+   of every judge source file, the dataset hashes, and the clean published repo commit are
+   stamped into every artifact; the launcher refuses to start otherwise.
+5. **Published numbers are one frozen run, disclosed as one run** — never a best-of-N. The
+   run-to-run spread of an identical configuration is a stated open item, not a hidden one.
+
+The model supplies judgment; the machinery supplies the discipline.
+
 ## The datasets
 
 Two external corpora we can run, two published peers we can't, and one hand-labeled fixture —

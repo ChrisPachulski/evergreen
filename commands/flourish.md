@@ -91,8 +91,8 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
 
 ## The monstrosity test (before you call it done)
 
-Hold the result against `readme-style.md`. Two floors — **structure and voice** — and failing either
-means you're not done.
+Hold the result against `readme-style.md`. Four floors — **structure, conservation, voice, and the
+stranger** — and failing any of them means you're not done.
 
 Only conclude "already at gold standard, no changes" after showing the face scorecard (the five
 elements from the craft pass, each present/absent) **and** the spine check — both must pass. "Spine
@@ -119,6 +119,16 @@ a voice, is the rewrite at least as evocative — or did you flatten it to the t
 passes structure but reads neutral **fails this test**. The bar is this repo's own README; if yours is
 plainer than that, run the voice pass again.
 
+**Stranger floor** (the expert's blind spot). Read the result as someone who has never seen the
+project: list every concept, term, or moving part the doc *leans on before it explains* — the
+judge, the trial, the artifact, the split, whatever this repo's load-bearing nouns are. A doc can
+be true, structured, and voiced and still silently assume its reader already knows how the thing
+works; the other floors cannot catch that, because they only inspect what is on the page. The fix
+is cheap where it's real: a one-sentence in-place introduction, or one short "how it works"
+section high on the page — never a glossary dump. This floor is a judgment, not a count (which is
+why it has no entry in `hard-goals/flourish.md`): the deliverable is the named list, and an empty
+list is a claim like any other — it goes through the craft trial with the rest.
+
 **Put "done" on trial — the craft trial.** The two floors are the evidence; the verdict that you've
 cleared them is a judgment, and it runs the skill's shared harness, "Put the verdict on trial",
 with flourish's craft parameters. A scorecard read once is a checklist; a scorecard that survives
@@ -132,7 +142,9 @@ sailed through before.
 - **blind reads:** *defend* it's done / *attack the prose* (voice, hook, tagline, personality in
   the seams) / *attack the structure* (hero, spine, badges, earned visual) / *attack the loss*
   (which section, table, formula, or gotcha from the source doc has no home in the result? name
-  one and the verdict flips).
+  one and the verdict flips) / *attack the assumptions* (name one load-bearing concept the doc
+  uses before any reader could know it — a first-screen dependency on insider knowledge flips
+  the verdict; a deep-detail one is flagged, not fatal).
 - **blind-spot:** "did everyone miss that a badge or feature bullet claims something the code
   can't back?" — a hit here routes back to the truth trial (step 4), because a beautiful lie is
   still a lie. A beautiful gutting is too — a loss hit routes back to the conservation floor.
@@ -143,4 +155,5 @@ discipline against an over-confident "done", not a precision metric. Don't dress
 Open with a one-line read of what you restructured *and how you sharpened the voice*, the verify
 verdict (certified / cut / markered), the conservation ledger (sections kept / demoted / rehomed /
 cut-with-reason — the hard goals in `skills/evergreen/hard-goals/flourish.md` make this binary),
-then the diff.
+the stranger ledger (concepts a first-time reader must bring — each either introduced in place or
+named as assumed-with-reason), then the diff.
