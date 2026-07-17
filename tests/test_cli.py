@@ -31,13 +31,18 @@ class EvergreenCLITests(unittest.TestCase):
         self.temporary.cleanup()
 
     def run_cli(self, *args, env=None):
+        # Byte-exact help assertions require color-free output even under a
+        # FORCE_COLOR-bearing parent environment.
+        plain = dict(os.environ if env is None else env)
+        plain.pop("FORCE_COLOR", None)
+        plain["NO_COLOR"] = "1"
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args],
             cwd=self.repo,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            env=env,
+            env=plain,
         )
 
     @staticmethod

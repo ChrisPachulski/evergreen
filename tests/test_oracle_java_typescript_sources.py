@@ -1,6 +1,7 @@
 import hashlib
 import importlib
 import json
+import os
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 import subprocess
@@ -369,6 +370,11 @@ const b = `return 1; throw new Error; item = 1; [1]; !state`;
         self.assertEqual(self.generate.discover_source_witnesses(decoys), [])
 
     def run_node(self, code):
+        # Byte-exact output assertions require color-free node output even under
+        # a FORCE_COLOR-bearing parent environment.
+        plain = dict(os.environ)
+        plain.pop("FORCE_COLOR", None)
+        plain["NO_COLOR"] = "1"
         completed = subprocess.run(
             ["node", "--input-type=commonjs"],
             input=code,
@@ -376,6 +382,7 @@ const b = `return 1; throw new Error; item = 1; [1]; !state`;
             capture_output=True,
             timeout=10,
             check=False,
+            env=plain,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         return completed.stdout
