@@ -450,6 +450,60 @@ class CandidateProvenanceTests(unittest.TestCase):
                     lane["source"]["repositories_sha256"],
                 )
 
+    def test_v2_screened_selections_bind_checked_in_manifests(self):
+        from eval.bench import validate_labels
+
+        root = Path(__file__).parents[1]
+        expected = {
+            "python": (294,
+                       "0beae54f20260abcb032ac03fd64f3459a250a449754226cfc14a1b61e12adb7",
+                       "1bc19f793d2a827976c8dd706671953e7d501caaf4a43b685d449cfcee71081f"),
+            "typescript": (139,
+                           "7da2513472bef7b0bd13827679f33879a76a0e3ba517fcfbbd6cbe7f2838bd49",
+                           "5ee16abce076bb3ec0dcfd009811ca0677b895923076beaf74bf8c5a1c03393d"),
+            "rust": (251,
+                     "d28c8faebcd3cd37cd1fda564ca3a70d794d1f414d4ac547c3b9e1ef9ec279a2",
+                     "1e070d0c91eb3b791241d7c2b514d5370d5196da9bab1ff58e7053fa476f88af"),
+            "go": (346,
+                   "1ba6107a243e894d9527b28887003209e4b8f697b650efb123db738def83bbac",
+                   "c77d8e0c3c5190fdf8a29a465e73f3f9d644ae02aa3cdd28729db5b6c13373fa"),
+        }
+        protocol_sha = hashlib.sha256(Path(validate_labels.__file__).read_bytes()).hexdigest()
+        for language, (rows, dataset_sha, receipt_sha) in expected.items():
+            with self.subTest(language=language):
+                prefix = root / f"eval/bench/codocbench-{language}-v2"
+                manifest_path = Path(f"{prefix}-screened-dev-manifest.json")
+                parent_path = Path(f"{prefix}-dev-eligible-manifest.json")
+                receipt_path = Path(f"{prefix}-selection-receipt.json")
+                receipt_payload = receipt_path.read_bytes()
+                receipt = json.loads(receipt_payload)
+                self.assertEqual(hashlib.sha256(receipt_payload).hexdigest(), receipt_sha)
+                self.assertEqual(receipt["rows"], rows)
+                self.assertEqual(receipt["split"], "dev")
+                self.assertEqual(receipt["selection_protocol"], "three-model-majority-v1")
+                self.assertEqual(receipt["output_dataset_sha256"], dataset_sha)
+                self.assertEqual(
+                    hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+                    receipt["output_manifest_sha256"],
+                )
+                self.assertEqual(
+                    hashlib.sha256(parent_path.read_bytes()).hexdigest(),
+                    receipt["parent_manifest_sha256"],
+                )
+                self.assertEqual(receipt["screen_binding"]["dataset_sha256"],
+                                 receipt["parent_dataset_sha256"])
+                self.assertEqual(receipt["screen_binding"]["screen_protocol_sha256"],
+                                 protocol_sha)
+                self.assertEqual(receipt["screen_binding"]["annotators"],
+                                 validate_labels.ANNOTATORS)
+                assignments = load_split_assignments(manifest_path)
+                self.assertEqual(len(assignments), rows)
+                self.assertEqual(set(assignments.values()), {"dev"})
+                manifest = json.loads(manifest_path.read_text())
+                self.assertEqual(
+                    {item["sha256"] for item in manifest["datasets"]}, {dataset_sha}
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

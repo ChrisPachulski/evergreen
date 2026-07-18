@@ -1,0 +1,22 @@
+{
+ "output_dataset_sha256": "d28c8faebcd3cd37cd1fda564ca3a70d794d1f414d4ac547c3b9e1ef9ec279a2",
+ "output_manifest_sha256": "7c774d55d7fde9e2e8ca737a2d1a50a9dc6324d23c34d153b140dfcd0874fc5b",
+ "parent_dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+ "parent_manifest_sha256": "f92055d4f0e215ecb263b150e8dbca70f1d68ec026071b7ad100e62ab7ed80f6",
+ "rows": 251,
+ "schema_version": 1,
+ "screen_binding": {
+  "annotators": [
+   "claude-fable-5",
+   "claude-opus-4-8",
+   "claude-sonnet-5"
+  ],
+  "cli_executable_sha256": "59d2de7f49db2f75d5c33bbb46a6b8f288ad24d40b61e30602a502bb7ddc380c",
+  "cli_version": "2.1.209 (Claude Code)",
+  "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+  "screen_protocol_sha256": "127c1a438253708322edbda32cfdfcaec499f9a4abf947ea64f25afb06b74149"
+ },
+ "selection_protocol": "three-model-majority-v1",
+ "split": "dev",
+ "vote_ledger_sha256": "73bad41741958777e611f91e64d2c3ae0f803e9326ef9b6c5a9fe2b87a772506"
+}

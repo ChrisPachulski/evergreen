@@ -173,14 +173,15 @@ New derivations preserve upstream `file_path` and the new version's `commit_sha`
 legacy top-level fields; `source_status` is `complete` only when owner, project, file, and commit
 are nonempty. This does not retroactively repair the frozen 0.4.0 rows.
 
-### Current v2 development freeze (no results yet)
+### Current v2 development freeze (screen complete; judge results pending)
 
 The four cross-language candidate pools are frozen before any clean screening or judge outcome.
 [`codocbench-v2-candidate-provenance.json`](codocbench-v2-candidate-provenance.json) binds the raw
 or mined inputs, derivation parameters, generator bytes, pool hashes, repository lists, and the
-four committed candidate split manifests. Repository-grouped development partitions are the only
-rows authorized for the next screen and judge run. Twenty rows per language that were opened in a
-pre-freeze blind sanity audit are listed in
+four committed candidate split manifests. Repository-grouped development partitions were the only
+rows authorized for the clean screen; the retained screened rows are the only rows authorized for
+the pending judge run. Twenty rows per language that were opened in a pre-freeze blind sanity audit
+are listed in
 [`codocbench-v2-exposed-sanity-ids.json`](codocbench-v2-exposed-sanity-ids.json) and excluded from
 the development partitions regardless of the audit verdict.
 
@@ -196,6 +197,11 @@ holdout must be mined and sealed from untouched rows.
 | TypeScript | 600 | 259 | 7 | 333 | 1 |
 | Rust | 800 | 439 | 6 | 351 | 2 |
 | Go | 800 | 623 | 4 | 161 | 4 |
+
+The clean three-model screen retained 294 Python rows (55 inconsistent / 239 consistent), 139
+TypeScript rows (18 / 121), 251 Rust rows (38 / 213), and 346 Go rows (54 / 292). The tracked
+screened-dev manifests and selection receipts bind those exact external datasets and vote ledgers;
+no v2 judge result is claimed yet.
 
 This is a **development benchmark study**, not A-grade oracle evidence. These derived rows have no
 executable oracle category (`category` is `null`), while the frozen grade contract requires five
@@ -314,8 +320,9 @@ python3 eval/bench/replay.py out/bench-default.json \
   --resolver v1 --expect-stored --compare-snap
 ```
 
-Replay output contains hashes, counts, matrices, and mismatch IDs only. It does not print pair text
-or free-form model reasoning.
+Successful replay output contains artifact hashes and parity counts; with `--compare-snap` it also
+prints per-language v1/snap precision, recall, and F1. Successful output does not print pair text or
+free-form model reasoning; a parity failure can include mismatched decision fields for diagnosis.
 
 The Evergreen 0.4.0 execution record stores one clean implementation commit and tree in every compatible
 artifact, together with provider `codex`, Codex CLI `0.144.1`, strong and cheap model
