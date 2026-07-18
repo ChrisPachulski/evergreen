@@ -19,6 +19,7 @@ import time
 
 try:
     from .. import peers as peer_protocol
+    from . import bind_subset
     from .artifact import (
         MAX_ARTIFACT_BYTES, artifact_metadata, git_identity, read_bytes, resume_state,
     )
@@ -26,10 +27,13 @@ try:
     from .java_context import (
         PROTOCOL as JAVA_CONTEXT_PROTOCOL, PROTOCOLS as JAVA_CONTEXT_PROTOCOLS, validate_context,
     )
-    from .split_manifest import MAX_MANIFEST_BYTES, load_split_assignments
+    from .split_manifest import (
+        MAX_DATASET_BYTES, MAX_MANIFEST_BYTES, load_split_bindings_bytes,
+    )
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from eval import peers as peer_protocol
+    import bind_subset
     from artifact import (
         MAX_ARTIFACT_BYTES, artifact_metadata, git_identity, read_bytes, resume_state,
     )
@@ -37,7 +41,7 @@ except ImportError:
     from java_context import (
         PROTOCOL as JAVA_CONTEXT_PROTOCOL, PROTOCOLS as JAVA_CONTEXT_PROTOCOLS, validate_context,
     )
-    from split_manifest import MAX_MANIFEST_BYTES, load_split_assignments
+    from split_manifest import MAX_DATASET_BYTES, MAX_MANIFEST_BYTES, load_split_bindings_bytes
 
 
 HERE = Path(__file__).resolve().parent
@@ -49,21 +53,102 @@ class LiveArtifactIncompatible(ValueError):
     pass
 
 
-def peer_policy(manifest_path, peer_id, rows):
+def head_bound_bytes(path, maximum, label, commit="HEAD"):
+    """Read a tracked repository file only when its bytes exactly match HEAD."""
+    repo = REPO.resolve()
+    try:
+        resolved = Path(path).resolve(strict=True)
+        relative = resolved.relative_to(repo)
+    except (OSError, ValueError) as error:
+        raise ValueError(f"{label} must be inside the repository") from error
+    if not relative.parts or relative.parts[0] == ".git":
+        raise ValueError(f"{label} must be a tracked repository file")
+    working = read_bytes(resolved, maximum, label=label)
+    completed = subprocess.run(
+        ["git", "show", f"{commit}:{relative.as_posix()}"], cwd=repo,
+        capture_output=True, timeout=30, check=False,
+    )
+    if completed.returncode or len(completed.stdout) > maximum:
+        raise ValueError(f"{label} must be tracked at HEAD")
+    if completed.stdout != working:
+        raise ValueError(f"{label} bytes must exactly match HEAD")
+    return working
+
+
+def screen_selection_policy(
+    dataset, dataset_payload, split_manifest, split_manifest_payload, split,
+    parent_dataset, parent_manifest, vote_ledger, selection_receipt,
+    subject_commit="HEAD",
+):
+    """Recompute a screened subset and bind its full ancestry to tracked receipts."""
+    parent_before = read_bytes(
+        parent_dataset, MAX_DATASET_BYTES, label="selection parent dataset"
+    )
+    parent_manifest_before = head_bound_bytes(
+        parent_manifest, MAX_MANIFEST_BYTES, "selection parent manifest", subject_commit
+    )
+    votes_before = read_bytes(
+        vote_ledger, MAX_MANIFEST_BYTES, label="selection vote ledger"
+    )
+    receipt_before = head_bound_bytes(
+        selection_receipt, MAX_MANIFEST_BYTES, "selection receipt", subject_commit
+    )
+    try:
+        manifest_document = bind_subset._loads_strict(split_manifest_payload)
+    except (json.JSONDecodeError, ValueError) as error:
+        raise ValueError("screened split manifest is not valid JSON") from error
+    expected_manifest = bind_subset.build_manifest_bytes(
+        dataset_payload, [parent_before], parent_manifest_before, split,
+        vote_ledger_payload=votes_before,
+    )
+    if bind_subset.manifest_bytes(expected_manifest) != split_manifest_payload:
+        raise ValueError("split manifest does not match the deterministic screen result")
+    expected_receipt = bind_subset.build_screen_receipt_bytes(
+        dataset_payload, parent_before, parent_manifest_before, votes_before,
+        split, manifest_document,
+    )
+    if bind_subset.receipt_bytes(expected_receipt) != receipt_before:
+        raise ValueError("selection receipt does not match the deterministic screen result")
+    parent_after = read_bytes(
+        parent_dataset, MAX_DATASET_BYTES, label="selection parent dataset"
+    )
+    votes_after = read_bytes(
+        vote_ledger, MAX_MANIFEST_BYTES, label="selection vote ledger"
+    )
+    if (dataset_payload != read_bytes(
+            dataset, MAX_DATASET_BYTES, label="split dataset provenance") or
+            split_manifest_payload != head_bound_bytes(
+                split_manifest, MAX_MANIFEST_BYTES, "split manifest provenance",
+                subject_commit,
+            ) or parent_before != parent_after or votes_before != votes_after or
+            parent_manifest_before != head_bound_bytes(
+                parent_manifest, MAX_MANIFEST_BYTES, "selection parent manifest",
+                subject_commit,
+            ) or receipt_before != head_bound_bytes(
+                selection_receipt, MAX_MANIFEST_BYTES, "selection receipt",
+                subject_commit,
+            )):
+        raise ValueError("screen selection ancestry changed during frozen preflight")
+    return hashlib.sha256(receipt_before).hexdigest()
+
+
+def peer_policy(manifest_path, peer_id, rows, subject_commit="HEAD"):
     """Bind a label-blind peer lane to one frozen manifest entry."""
     if manifest_path is None or not isinstance(peer_id, str) or not peer_id:
         raise ValueError("peer manifest and peer ID must be declared together")
     path = Path(manifest_path)
     try:
-        before = read_bytes(
-            path, peer_protocol.MAX_MANIFEST_BYTES, label="peer manifest provenance",
+        before = head_bound_bytes(
+            path, peer_protocol.MAX_MANIFEST_BYTES, "peer manifest provenance",
+            subject_commit,
         )
     except (OSError, ValueError) as error:
         raise ValueError("peer manifest is unavailable") from error
     manifest = peer_protocol.load_manifest_bytes(before)
     try:
-        after = read_bytes(
-            path, peer_protocol.MAX_MANIFEST_BYTES, label="peer manifest provenance",
+        after = head_bound_bytes(
+            path, peer_protocol.MAX_MANIFEST_BYTES, "peer manifest provenance",
+            subject_commit,
         )
     except (OSError, ValueError) as error:
         raise ValueError("peer manifest is unavailable") from error
@@ -148,7 +233,11 @@ def load_peer_key(path, repo):
         os.close(descriptor)
 
 
-def run_policy(_dataset, rows, resolver, split_manifest, split, context_protocol):
+def run_policy(
+    _dataset, rows, resolver, split_manifest, split, context_protocol,
+    selection_parent_dataset=None, selection_parent_manifest=None,
+    selection_vote_ledger=None, selection_receipt=None, subject_commit="HEAD",
+):
     """Validate and return immutable detector-policy provenance for a frozen lane."""
     if resolver not in ("v1", "v2"):
         raise ValueError("resolver must be v1 or v2")
@@ -162,22 +251,68 @@ def run_policy(_dataset, rows, resolver, split_manifest, split, context_protocol
         raise ValueError("Java resolver v2 requires a declared context protocol")
     if (split_manifest is None) != (split is None):
         raise ValueError("split manifest and split must be declared together")
+    selection_paths = (
+        selection_parent_dataset, selection_parent_manifest,
+        selection_vote_ledger, selection_receipt,
+    )
+    if any(value is not None for value in selection_paths) and not all(
+            value is not None for value in selection_paths):
+        raise ValueError("screen selection ancestry must be declared together")
+    if any(value is not None for value in selection_paths) and split_manifest is None:
+        raise ValueError("screen selection ancestry requires a split manifest")
     manifest_sha256 = None
+    dataset_sha256 = None
     if split_manifest is not None:
         if split not in ("dev", "holdout"):
             raise ValueError("split must be dev or holdout")
-        before = read_bytes(
-            split_manifest, MAX_MANIFEST_BYTES, label="split manifest provenance"
+        dataset_before = read_bytes(
+            _dataset, MAX_DATASET_BYTES, label="split dataset provenance"
         )
-        assignments = load_split_assignments(Path(split_manifest))
+        dataset_sha256 = hashlib.sha256(dataset_before).hexdigest()
+        before = head_bound_bytes(
+            split_manifest, MAX_MANIFEST_BYTES, "split manifest provenance",
+            subject_commit,
+        )
+        assignments, row_datasets, declarations = load_split_bindings_bytes(before)
         after = read_bytes(
             split_manifest, MAX_MANIFEST_BYTES, label="split manifest provenance"
         )
+        dataset_after = read_bytes(
+            _dataset, MAX_DATASET_BYTES, label="split dataset provenance"
+        )
         if before != after:
             raise ValueError("split manifest changed during frozen preflight")
+        if dataset_before != dataset_after:
+            raise ValueError("split dataset changed during frozen preflight")
+        input_ids = {row.get("id") for row in rows}
+        bound_ids = {
+            pair_id for pair_id, digest in row_datasets.items()
+            if digest == dataset_sha256
+        }
+        if input_ids != bound_ids:
+            raise ValueError("split manifest does not bind the exact input dataset bytes")
+        input_languages = {row.get("language", "python") for row in rows}
+        declared_languages = {
+            declaration[1] for declaration in declarations
+            if len(declaration) == 2 and declaration[0] == dataset_sha256
+        }
+        if declared_languages and declared_languages != input_languages:
+            raise ValueError("split manifest dataset language does not match input rows")
         if any(assignments.get(row.get("id")) != split for row in rows):
             raise ValueError("every input row must belong to the declared split")
         manifest_sha256 = hashlib.sha256(before).hexdigest()
+    non_java_v2 = resolver == "v2" and any(
+        row.get("language", "python").casefold() != "java" for row in rows
+    )
+    if non_java_v2 and not all(value is not None for value in selection_paths):
+        raise ValueError("non-Java resolver v2 requires complete screen selection ancestry")
+    selection_receipt_sha256 = None
+    if all(value is not None for value in selection_paths):
+        selection_receipt_sha256 = screen_selection_policy(
+            _dataset, dataset_before, split_manifest, before, split,
+            selection_parent_dataset, selection_parent_manifest,
+            selection_vote_ledger, selection_receipt, subject_commit,
+        )
     if context_protocol == "none":
         if any("context" in row for row in rows):
             raise ValueError("dataset context is present but not declared")
@@ -192,7 +327,16 @@ def run_policy(_dataset, rows, resolver, split_manifest, split, context_protocol
         "context_protocol": context_protocol,
         "split_manifest_sha256": manifest_sha256,
         "split": split,
+        "selection_receipt_sha256": selection_receipt_sha256,
+        "_validated_dataset_sha256": dataset_sha256,
     }
+
+
+def require_dataset_binding(validated_sha256, metadata):
+    """Keep artifact capture bound to the dataset bytes validated by split preflight."""
+    if (validated_sha256 is not None and
+            metadata.get("dataset", {}).get("sha256") != validated_sha256):
+        raise ValueError("dataset changed after split preflight")
 
 
 def validate_locations(repo, archive):
@@ -487,6 +631,10 @@ def parse_args(argv=None):
     parser.add_argument("--resolver", choices=("v1", "v2"), default="v1")
     parser.add_argument("--split-manifest", type=Path)
     parser.add_argument("--split", choices=("dev", "holdout"))
+    parser.add_argument("--selection-parent-dataset", type=Path)
+    parser.add_argument("--selection-parent-manifest", type=Path)
+    parser.add_argument("--selection-vote-ledger", type=Path)
+    parser.add_argument("--selection-receipt", type=Path)
     parser.add_argument("--peer-manifest", type=Path)
     parser.add_argument("--peer-id")
     parser.add_argument("--peer-key-file", type=Path)
@@ -508,6 +656,10 @@ def main(argv=None):
     if args.concurrency < 1 or args.poll_seconds <= 0 or args.minimum_free_gib < 0:
         raise ValueError("concurrency, polling, and free-disk bounds must be positive")
     anchored_workspace = workspace_token(repo)
+    anchored_identity = git_identity(repo)
+    if (anchored_identity.get("dirty") is not False or
+            anchored_identity.get("commit") == "unavailable"):
+        raise ValueError("benchmark repository must be clean with available provenance")
     _payload, rows = load_dataset(args.dataset)
     if (args.peer_manifest is None) != (args.peer_id is None):
         raise ValueError("peer manifest and peer ID must be declared together")
@@ -518,14 +670,22 @@ def main(argv=None):
         raise ValueError("peer lanes require an external 32-byte opaque-ID key")
     run_settings = run_policy(
         args.dataset, rows, args.resolver, args.split_manifest, args.split,
-        args.context_protocol,
+        args.context_protocol, args.selection_parent_dataset,
+        args.selection_parent_manifest, args.selection_vote_ledger,
+        args.selection_receipt, anchored_identity["commit"],
     )
+    if (git_identity(repo) != anchored_identity or
+            workspace_token(repo) != anchored_workspace):
+        raise ValueError("repository identity changed during benchmark preflight")
+    validated_dataset_sha256 = run_settings.pop("_validated_dataset_sha256")
     peer_request = None
     peer_key = None
     peer = None
     if peer_mode:
         peer_key = load_peer_key(args.peer_key_file, repo)
-        peer = peer_policy(args.peer_manifest, args.peer_id, rows)
+        peer = peer_policy(
+            args.peer_manifest, args.peer_id, rows, anchored_identity["commit"]
+        )
         if peer["peer_source"]["kind"] == "git":
             if args.peer_checkout is None:
                 raise ValueError("local peer requires a verified checkout")
@@ -560,9 +720,10 @@ def main(argv=None):
             **run_settings,
         }
     expected_metadata = artifact_metadata(args.dataset, repo, settings)
+    require_dataset_binding(validated_dataset_sha256, expected_metadata)
     expected = expected_metadata["git"]
-    if expected.get("dirty") is not False or expected.get("commit") == "unavailable":
-        raise ValueError("benchmark repository must be clean with available provenance")
+    if expected != anchored_identity:
+        raise ValueError("repository identity changed during benchmark preflight")
     require_pushed(expected["commit"], _remote_refs(repo))
     if git_identity(repo) != expected or workspace_token(repo) != anchored_workspace:
         raise ValueError("repository identity changed during benchmark preflight")
@@ -616,6 +777,8 @@ def main(argv=None):
             "EVAL_CONTEXT_PROTOCOL": args.context_protocol,
             "EVAL_SPLIT_MANIFEST_SHA256": settings["split_manifest_sha256"] or "",
             "EVAL_SPLIT": settings["split"] or "",
+            "EVAL_SELECTION_RECEIPT_SHA256":
+                settings["selection_receipt_sha256"] or "",
         })
         inherited_fds = [read_fd]
         if peer_mode:

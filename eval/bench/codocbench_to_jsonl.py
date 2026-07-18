@@ -11,6 +11,10 @@ Prevalence is imposed at ~10/90 (CASCADE's measured natural rate); candidates ar
 label-validated by a three-LLM majority vote (validate_labels.py) — heuristic labels are ~half
 noise if trusted raw (CCISolver measured 45.67% mislabeled positives in JITDATA).
 
+Source provenance prefers upstream `file_path` and the new version's `commit_sha`, with the legacy
+top-level `file` and `commit` fields as fallbacks. A row is complete only when owner, project, file,
+and commit are all present.
+
   python3 eval/bench/codocbench_to_jsonl.py codocbench/dataset/codocbench.jsonl \
       --pos 60 --neg 540 --seed 0 > codocbench-derived.jsonl
 """
@@ -36,7 +40,9 @@ def pair(row, i, which, label):
     new = row["version_data"][1]
     doc = row["version_data"][0]["docstring"] if which == "old" else new["docstring"]
     source = {"owner": row.get("owner"), "project": row.get("project"),
-              "file": row.get("file"), "commit": row.get("commit"), "doc_version": which}
+              "file": row.get("file_path") or row.get("file"),
+              "commit": new.get("commit_sha") or row.get("commit"),
+              "doc_version": which}
     complete = all(isinstance(source[key], str) and source[key]
                    for key in ("owner", "project", "file", "commit"))
     return {"id": f"{row['owner']}/{row['project']}/{row['function']}#{i}-{which}",

@@ -215,6 +215,7 @@ class ProjectionTests(unittest.TestCase):
         for field, value in (
             ("resolver", "v2"),
             ("context_protocol", "java-git-window-v1"),
+            ("selection_receipt_sha256", "b" * 64),
             ("split_manifest_sha256", "a" * 64),
             ("split", "holdout"),
         ):

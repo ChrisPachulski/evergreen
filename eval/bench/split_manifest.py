@@ -201,12 +201,16 @@ def _manifest_v2(document, expected_declarations=None):
     return result, row_datasets, declared_set, document
 
 
-def _manifest(path, expected_declarations=None):
-    document = _load_json(Path(path), MAX_MANIFEST_BYTES, "split manifest")
+def _manifest_document(document, expected_declarations=None):
     if (isinstance(document, dict) and type(document.get("schema_version")) is int and
             document["schema_version"] == 2):
         return _manifest_v2(document, expected_declarations)
     return _manifest_v1(document, expected_declarations)
+
+
+def _manifest(path, expected_declarations=None):
+    document = _load_json(Path(path), MAX_MANIFEST_BYTES, "split manifest")
+    return _manifest_document(document, expected_declarations)
 
 
 def _oracle_packages(paths):
@@ -240,20 +244,38 @@ def load_split_assignments(path: Path) -> dict[str, str]:
     return _manifest(path)[0]
 
 
+def load_split_bindings(path: Path):
+    """Load public split assignments, row digests, and dataset declarations."""
+    assignments, row_datasets, declared, _document = _manifest(path)
+    return assignments, row_datasets, declared
+
+
+def load_split_bindings_bytes(payload: bytes):
+    """Validate one captured manifest byte snapshot without reopening its path."""
+    try:
+        document = _loads_strict(payload)
+    except (json.JSONDecodeError, ValueError) as error:
+        raise ValueError("split manifest is not valid JSON") from error
+    assignments, row_datasets, declared, _document = _manifest_document(document)
+    return assignments, row_datasets, declared
+
+
 def load_split_manifest(path: Path, datasets: list[Path]) -> dict[str, str]:
     """Return ID-to-split mapping after exact hash, coverage, and grouping validation."""
     document = _load_json(Path(path), MAX_MANIFEST_BYTES, "split manifest")
     if (isinstance(document, dict) and type(document.get("schema_version")) is int and
             document["schema_version"] == 2):
         actual_set, expected_ids = _oracle_packages(datasets)
-        result, row_datasets, _declared_set, _document = _manifest(path, actual_set)
+        result, row_datasets, _declared_set, _document = \
+            _manifest_document(document, actual_set)
         if (set(result) != set(expected_ids) or any(
                 row_datasets[row_id] != digest or result[row_id] != split
                 for row_id, (digest, split) in expected_ids.items())):
             raise ValueError("oracle split manifest does not exactly cover package rows")
         return result
     actual_set, expected_ids = _datasets(datasets)
-    result, row_datasets, _declared_set, _document = _manifest(path, actual_set)
+    result, row_datasets, _declared_set, _document = \
+        _manifest_document(document, actual_set)
     if (set(result) != set(expected_ids) or any(
             row_datasets[pair_id] != digest for pair_id, digest in expected_ids.items())):
         raise ValueError("split manifest does not exactly cover dataset rows")

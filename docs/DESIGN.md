@@ -239,15 +239,18 @@ validates the model's result before rendering or applying the configured inconcl
 ## Evaluation status
 
 Current five-language benchmark metrics are published only from one compatible run that clears every declared coverage gate.
-Those currently published metrics are the frozen Evergreen 0.4.0 baseline; they do not belong to
-the changed resolver-v2 judge.
-
-Those Python, Java, TypeScript, Rust, and Go artifacts are tied to the same 0.4.0 implementation,
-judge, dataset hashes, model/CLI identity, protocol, and settings. All five cleared the declared
-99% provider-completion gate; the generated report preserves the one abstention. Resolver v2 has
-no published result yet. Interrupted, provisional-label, development, or cross-commit diagnostics
-remain diagnostic; normal CI runs only offline verification, never provider-backed scoring or
-publication.
+The frozen Evergreen 0.4.0 five-language run is a replayable historical execution record, not valid
+performance evidence. Its artifacts share one implementation, judge, dataset hashes, model/CLI
+identity, protocol, and settings, and all five languages cleared the declared 99% provider-completion
+gate. However, canonical IDs exposed label-construction proxies to both the judge and pre-fix label
+screen, so the recorded metrics are contaminated and unverified. The current protocol masks
+canonical IDs, fails closed on incomplete screens, and binds launch input to exact dataset bytes.
+For screened v2 lanes it also recomputes the two-of-three retained set from the complete vote
+ledger, requires the split/parent manifests and selection receipt to match tracked `HEAD` bytes,
+and records the receipt hash in the paid artifact. Resolver v2 has no clean published result yet.
+Interrupted, provisional-label, development, or
+cross-commit diagnostics remain diagnostic; normal CI runs only offline verification, never
+provider-backed scoring or publication.
 
 ## Non-goals
 

@@ -3,9 +3,10 @@
 
 CoDocBench (arXiv:2502.00519) shipped Python only. Its recipe generalizes: walk a repo's commits,
 and for every function whose doc-comment AND body changed in the same commit, emit the before/after
-pair. `codocbench_to_jsonl.py` then derives drift candidates and `validate_labels.py` label-validates
-them by three-LLM majority vote — the exact pipeline we already ran for Python. Mining is allowed to
-be noisy: the validation vote is the quality gate (it rejected ~78% of Python heuristic positives).
+pair. `codocbench_to_jsonl.py` then derives drift candidates and `validate_labels.py` applies the
+current three-model screen. Clean screens use opaque IDs and fail closed; pre-fix screens are
+historical contaminated records, not quality evidence. Mining may be noisy because only a
+completed current-protocol screen can promote a candidate.
 
 Function boundaries come from Lizard (bundled with PyDriller; supports C/C++/Go/Rust/TS/JS/…); the
 doc-comment is the contiguous run of comment lines directly above the function (godoc `//`, rustdoc

@@ -71,7 +71,7 @@ resolve the same release identity. See the [package mismatch example](examples/p
 for a non-app stream that distinguishes an unreleased source version from the latest public release
 while leaving registry and deployment state deliberately unverified.
 
-One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — that rule is the muzzle, and the [published benchmark](eval/bench/results-0.4.0.md) measures how well it holds instead of asking you to take the claim on faith.
+One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — that rule is the muzzle. The [historical 0.4.0 benchmark](eval/bench/results-0.4.0.md) is replayable, but canonical IDs leaked label proxies to its judge, so its metrics are not performance evidence; a clean opaque-ID rerun is pending.
 
 ### Evidence-backed completion receipts
 
@@ -158,11 +158,12 @@ schema, but provider-supplied findings and verdicts are rejected at the boundary
 That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with catalogued lies, true claims that must not be flagged, and exempt docs, then lets a headless agent winnow it blind. The per-pair harness ([`eval/bench/`](eval/bench/)) runs the judge over labeled code/doc pairs. The [flourish eval](eval/flourish/) turns the craft command's own monstrosity test into machine-checkable gates: trapped fixtures where a beautiful gutting, a fabricated feature, or a flattened hook each trip a deterministic scorer that survived its own adversarial review.
 
 Current five-language benchmark metrics are published only from one compatible run that clears every declared coverage gate.
-The published metrics are the frozen Evergreen 0.4.0 baseline.
-That frozen Codex run passed: 2,103 of 2,104 pairs completed, every language independently cleared
-99% coverage, and the sole abstention remains visible. The full matrices and frozen provenance are
-in [`eval/bench/results-0.4.0.md`](eval/bench/results-0.4.0.md); its redacted, offline-verifiable
-decision artifacts, protocol, and dataset provenance live in [`eval/bench/`](eval/bench/).
+The frozen Evergreen 0.4.0 run is a historical execution record, not valid performance evidence.
+It completed 2,103 of 2,104 pairs and remains replayable from its redacted artifacts, but the judge
+received canonical IDs that reveal label-construction proxies; its pre-fix label screen did too.
+The full historical matrices and provenance remain in
+[`eval/bench/results-0.4.0.md`](eval/bench/results-0.4.0.md). Current clean runs hide canonical IDs,
+fail closed on incomplete screening batches, and require exact dataset-byte binding before launch.
 
 The separate [executable-oracle source-pack contract](eval/oracle/README.md) is present but not yet
 corpus-ready: no curated public source identities or external private custody package is claimed in
@@ -357,7 +358,7 @@ Evergreen is not a hosted index, AST engine, dashboard, or automatic truth-path 
 Not unless you ask. The reflex points; you write — a dead flag or moved path it hands you a diff for, the *why* behind a design it won't touch. The one exception is `/evergreen:flourish`, invoked deliberately: it crafts a doc to the gold standard, then verifies its own rewrite against the code so it can't introduce a lie. Fact-checker by default; ghostwriter only on request — and one that cites its sources.
 
 **Won't it cry wolf?**
-It flags only what it can prove against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it offers the `.evergreen-ignore` line that keeps it dropped in every session after. And because "trust me" isn't proof: the [0.4.0 baseline](eval/bench/results-0.4.0.md) publishes exactly how often the judge still over-flags on isolated code/doc pairs — hard mode, single pairs with no surrounding repo to consult, full trial harness applied — so you can see the honest post-trial error rate instead of a marketing claim. The asymmetry is the point: a false flag costs you the ten seconds it takes to read the cited line and say no, while the drift it exists to catch costs whoever trusts the doc next — which is why the flags carry citations you can dismiss at a glance, and why misses, not false alarms, are the failure the design spends its budget on.
+It flags only what it can prove against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it offers the `.evergreen-ignore` line that keeps it dropped in every session after. The historical [0.4.0 run](eval/bench/results-0.4.0.md) remains available for replay, but its label-proxy leak means it cannot honestly quantify the error rate; the clean opaque-ID benchmark is pending. The asymmetry is still the product choice: a false flag costs you the ten seconds it takes to read the cited line and say no, while missed drift costs whoever trusts the doc next — which is why every flag must carry evidence you can dismiss at a glance.
 
 **Does it scale?**
 It reads paths, contracts, and prose — not your AST. Any language, any repo, nothing to compile.

@@ -30,8 +30,8 @@ The harness prints its own numbers on each run.
 ## How it compares
 
 The per-pair benchmark ([`bench/`](bench/)) reduces each language to one confusion matrix. The
-Evergreen 0.4.0 five-language baseline passed its predeclared gate: Python, Java, TypeScript, Rust,
-and Go each reached at least 99% coverage from one frozen implementation and provider identity.
-[`bench/results-0.4.0.md`](bench/results-0.4.0.md) contains the matrices and one visible abstention;
-the checked-in [public decision package](bench/public/0.4.0/manifest.json) binds them to frozen
-provenance. Partial, interrupted, and cross-commit diagnostics remain excluded.
+Evergreen 0.4.0 five-language run reached at least 99% coverage per language from one frozen
+implementation and provider identity, but canonical IDs leaked label proxies to both the judge and
+the pre-fix label screen. Its metrics are therefore contaminated and unverified, not detector-quality
+evidence. [`bench/results-0.4.0.md`](bench/results-0.4.0.md) and the checked-in
+[public decision package](bench/public/0.4.0/manifest.json) remain replayable historical records.

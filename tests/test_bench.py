@@ -215,10 +215,12 @@ class ProviderConfigurationTests(unittest.TestCase):
         settings = runner.eval_policy_settings({
             "EVAL_RESOLVER": "v2", "EVAL_CONTEXT_PROTOCOL": "java-git-window-v1",
             "EVAL_SPLIT_MANIFEST_SHA256": "a" * 64, "EVAL_SPLIT": "dev",
+            "EVAL_SELECTION_RECEIPT_SHA256": "b" * 64,
         })
         self.assertEqual(settings, {
             "resolver": "v2", "context_protocol": "java-git-window-v1",
             "split_manifest_sha256": "a" * 64, "split": "dev",
+            "selection_receipt_sha256": "b" * 64,
         })
         with self.assertRaisesRegex(ValueError, "split provenance"):
             runner.eval_policy_settings({"EVAL_RESOLVER": "v2"})
@@ -265,6 +267,20 @@ class ProviderConfigurationTests(unittest.TestCase):
 
 
 class PromptIsolationTests(unittest.TestCase):
+    def test_pair_envelope_omits_label_coded_canonical_id(self):
+        pair = {
+            "id": "owner/repo/function#17-old", "func": "function",
+            "code": "return 1", "doc": "returns 1", "language": "python",
+        }
+
+        envelope = trial._pair_envelope(pair)
+
+        self.assertNotIn(pair["id"], envelope)
+        line = next(line for line in envelope.splitlines()
+                    if line.startswith(trial.UNTRUSTED_PAIR_PREFIX))
+        data = json.loads(line.removeprefix(trial.UNTRUSTED_PAIR_PREFIX))["data"]
+        self.assertEqual(data["id"], "pair")
+
     def test_v2_prompts_require_proof_claim_evidence_and_balanced_prongs(self):
         pair = {
             "id": "pair", "func": "f", "code": "return 1", "doc": "returns 1",
@@ -370,7 +386,7 @@ class PromptIsolationTests(unittest.TestCase):
             self.assertEqual(envelope["kind"], "untrusted_benchmark_pair")
             self.assertEqual(envelope["utf8_bytes"], len(canonical))
             self.assertEqual(envelope["sha256"], hashlib.sha256(canonical).hexdigest())
-            self.assertEqual(envelope["data"], pair)
+            self.assertEqual(envelope["data"], {**pair, "id": "pair"})
         synthesis_prompt = prompts[-1]
         self.assertNotIn(trial_injection, synthesis_prompt)
         trial_line = next(

@@ -608,6 +608,25 @@ class LabelAuditSourceTests(unittest.TestCase):
         })
         self.assertEqual(result["source_status"], "complete")
 
+    def test_upstream_codocbench_rows_use_version_commit_and_real_file_path(self):
+        from eval.bench import codocbench_to_jsonl
+        source = {
+            "owner": "owner", "project": "project", "file": "src_lib.py",
+            "file_path": "src/lib.py", "function": "f", "language": "Python",
+            "version_data": [
+                {"commit_sha": "a" * 40, "docstring": "Old docs", "code": "def f(): pass"},
+                {"commit_sha": "b" * 40, "docstring": "New docs", "code": "def f(): return 1"},
+            ],
+        }
+
+        result = codocbench_to_jsonl.pair(source, 4, "old", "inconsistent")
+
+        self.assertEqual(result["source"], {
+            "owner": "owner", "project": "project", "file": "src/lib.py",
+            "commit": "b" * 40, "doc_version": "old",
+        })
+        self.assertEqual(result["source_status"], "complete")
+
     def test_source_registry_records_missing_pools_without_fake_hashes(self):
         registry = json.loads(Path("eval/bench/human-audit/source-pools.json").read_text())
         by_language = {row["language"]: row for row in registry["pools"]}

@@ -11,6 +11,15 @@ other axis: **per-pair** code-vs-doc consistency, in the schema the research lit
 evergreen's numbers sit next to published baselines. The numbers come first; everything after
 them is the provenance that earns them.
 
+> **Integrity notice (2026-07-18).** The 0.4.0 artifacts remain byte-replayable historical
+> records, but their metrics are **not valid performance evidence**. The frozen judge prompt
+> exposed each canonical pair ID. CoDocBench-derived IDs encode candidate construction (`-old`
+> for nominal inconsistent candidates and `-new` for nominal consistent candidates), while
+> CASCADE `/cN` IDs identify heuristic consistent controls. The pre-fix three-model label screen
+> exposed the same IDs and accepted partial batches. Treat every 0.4.0 metric and every later
+> pre-fix run as contaminated and unverified until it is rerun with opaque IDs and fail-closed
+> screening. The frozen report and artifacts remain unchanged.
+
 ## Results — how it compares
 
 The point of running in the literature's schema is that evergreen's numbers land next to
@@ -38,12 +47,13 @@ CASCADE's labeling, not semantic correctness.
 | Fine-tuned single-language SOTA | trained, 1 language | — | — | 0.88–0.94 | — |
 | **DocPrism** (arXiv:2511.00215) | zero-shot, multi-language | 0.62 | — | — | ~0.15 |
 
-### Evergreen 0.4.0 baseline (the trial rebuild)
+### Historical 0.4.0 execution record (contaminated)
 
-The five-language publication gate **passes**. The full matrices, coverage, and exact frozen
-provenance are in [`results-0.4.0.md`](results-0.4.0.md). Across 2,104 attempted pairs, 2,103
-completed and one Rust pair abstained (99.95% overall completion); every language individually met
-the predeclared 99% coverage threshold.
+The five-language run passed its declared completion and artifact-provenance gates. The full
+matrices and exact frozen record are in [`results-0.4.0.md`](results-0.4.0.md). Across 2,104
+attempted pairs, 2,103 completed and one Rust pair abstained (99.95% overall completion); every
+language individually met the predeclared 99% coverage threshold. The integrity notice above means
+those matrices cannot support a detector-quality claim.
 
 | Language | Completed | Abstained | Precision | Recall | F1 | Specificity |
 |---|---:|---:|---:|---:|---:|---:|
@@ -53,29 +63,30 @@ the predeclared 99% coverage threshold.
 | Rust | 303 / 304 | 1 | 0.464 | 0.684 | 0.553 | 0.947 |
 | Go | 299 / 299 | 0 | 0.261 | 0.750 | 0.387 | 0.880 |
 
-These are the observed dataset-base-rate metrics, not a claim of best-in-class quality. The 0.4.0
-judge is recall-heavy on Python and TypeScript, weak on Java recall, and produces too many false
-positives in several languages. The publication proves decision-level auditability and coverage for
-this frozen run; the matrices set an honest baseline for the next judge iteration.
+These are the recorded dataset-base-rate matrices, not a detector-quality baseline. The publication
+still proves decision-level replay and coverage for this frozen run; label-proxy exposure prevents
+using its precision, recall, or F1 as performance evidence.
 
 ## How a verdict happens
 
-The judge is a general-purpose model reading cold — never fine-tuned, never shown a label,
-swappable by flag (`--provider`, `--strong-model`). Consistency comes from machinery, not from
-the model behaving:
+Under the current protocol, the judge is a general-purpose model reading cold — never fine-tuned,
+never shown the benchmark label or canonical pair ID, and swappable by flag (`--provider`,
+`--strong-model`). Canonical identity stays local for validated joins; the model receives the
+constant ID `pair`. Consistency comes from machinery, not from the model behaving:
 
 1. **No single opinion decides.** Every pair runs a small trial ([`trial.py`](trial.py)): a
    first-instinct read, a challenge arguing the opposite, three blind reviewers with assigned
    angles (defend the doc / prove it wrong / audit whether the evidence can settle it at all)
-   who never see each other's answers, a missed-angle pass, and a synthesis referee. Dissent,
-   a tie, or thin evidence never stands — it escalates to stronger reviewers and the referee.
-2. **No freeform verdicts.** Every response must match a rigid schema — verdict and category
-   from fixed menus, evidence quoted. A malformed answer is retried a bounded number of times,
-   then recorded as an abstention. Nothing is ever inferred from prose.
-3. **The final call is deterministic code, not a model.** [`resolver.py`](resolver.py) folds
-   the stored stage outputs into each decision; same inputs, same verdict, forever. Every
-   stage output ships in the artifact, and `replay.py --expect-stored` re-derives all
-   decisions bit-for-bit with no model call.
+   who never see each other's answers, a missed-angle pass, and a synthesis referee. A cracked
+   challenge, tie, missed angle, or thin evidence escalates; a unique direct-evidence plurality
+   can stand without synthesis.
+2. **No freeform verdicts.** Every response must match its stage's rigid schema. Verdict-bearing
+   stages use fixed verdict/category menus and evidence fields. A malformed answer is retried a
+   bounded number of times, then recorded as an abstention. Nothing is inferred from prose.
+3. **Replay and folding are deterministic code.** Contested cases can receive a synthesis-model
+   verdict; [`resolver.py`](resolver.py) validates and folds the stored stage outputs into the
+   decision. Every stage output ships in the artifact, and `replay.py --expect-stored` re-derives
+   the stored decision bit-for-bit with no model call.
 4. **Everything that could drift is pinned.** Provider, CLI version, model names, the SHA-256
    of every judge source file, the dataset hashes, and the clean published repo commit are
    stamped into every artifact; the launcher refuses to start otherwise.
@@ -120,13 +131,23 @@ python3 eval/bench/frozen_run.py --dataset cascade.jsonl \
 **CoDocBench** ([github.com/kunpai/codocbench](https://github.com/kunpai/codocbench),
 arXiv:2502.00519) supplies the wild *Python* set — 4,573 coupled code+docstring changes with no
 drift labels, from which we derive candidates ((old doc, new code) = the doc that lagged;
-(new doc, new code) = control) and then **screen every retained label with a three-LLM majority
-vote** before scoring, reporting inter-annotator kappa. The three screeners are Anthropic models
+(new doc, new code) = control) and then **screen every candidate label with a three-LLM majority
+vote** before scoring, reporting inter-annotator kappa. Current screens replace canonical IDs with
+batch-local `item-NNNN` IDs and map them back only after the model returns. A timeout, nonzero exit,
+unexpected or duplicate ID, or incomplete response aborts the screen; no partial-vote output is
+promoted. The vote ledger is atomically checkpointed and bound to the exact dataset and screening
+program bytes, three distinct model names, CLI version, and CLI-executable SHA-256. The executable
+identity is checked around every batch and fully rehashed before output promotion. The three
+screeners are Anthropic models
 (`claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-5` — per-pair votes are tracked in the
 `*.votes.json` files), a different vendor from the `codex`/`gpt-5.6-sol` judge under evaluation,
-so the screen is not the judge grading itself. Observed agreement (Fleiss' kappa via
-`validate_labels.py`, which drops rows missing a vote) is recomputable offline from the tracked
-vote files:
+so the screen is not the judge grading itself. The requested model names are pinned; provider-side
+alias-to-snapshot resolution is external state and remains unverified unless the provider exposes
+that identity.
+
+The table below describes the **legacy contaminated screen only**. Its frozen vote files preserve
+history, but canonical-ID exposure and partial batches mean the values are not label-validity
+evidence and are not resumable by the current fail-closed screener:
 
 | Language | Pairs | Unanimous | Fleiss' kappa |
 |---|---:|---:|---:|
@@ -137,7 +158,7 @@ vote files:
 
 \* 10 of Rust's 360 screened pairs carry only two of three votes; 91% unanimous among fully-voted.
 
-This is LLM screening, not independent human validation:
+Both the historical and current protocols use LLM screening, not independent human validation:
 
 ```sh
 git clone https://github.com/kunpai/codocbench
@@ -145,6 +166,64 @@ python3 eval/bench/codocbench_to_jsonl.py codocbench/dataset/codocbench.jsonl \
     --pos 40 --neg 360 --seed 0 > derived.jsonl
 EVAL_CONCURRENCY=6 python3 eval/bench/validate_labels.py derived.jsonl --out validated.jsonl
 python3 eval/bench/frozen_run.py --dataset validated.jsonl \
+  --archive-dir "$HOME/evergreen-benchmark-archive"
+```
+
+New derivations preserve upstream `file_path` and the new version's `commit_sha`, falling back to
+legacy top-level fields; `source_status` is `complete` only when owner, project, file, and commit
+are nonempty. This does not retroactively repair the frozen 0.4.0 rows.
+
+### Current v2 development freeze (no results yet)
+
+The four cross-language candidate pools are frozen before any clean screening or judge outcome.
+[`codocbench-v2-candidate-provenance.json`](codocbench-v2-candidate-provenance.json) binds the raw
+or mined inputs, derivation parameters, generator bytes, pool hashes, repository lists, and the
+four committed candidate split manifests. Repository-grouped development partitions are the only
+rows authorized for the next screen and judge run. Twenty rows per language that were opened in a
+pre-freeze blind sanity audit are listed in
+[`codocbench-v2-exposed-sanity-ids.json`](codocbench-v2-exposed-sanity-ids.json) and excluded from
+the development partitions regardless of the audit verdict.
+
+There is **no sealed holdout in this derivation**. Before the split was frozen, a discarded
+screening protocol sent the full candidate pools to labelers with label-revealing canonical IDs.
+Its outputs are excluded from this record and are not evidence, but that exposure makes the manifest's
+`holdout`-named partition development-only too. It is excluded from the current study. A future
+holdout must be mined and sealed from untouched rows.
+
+| Language | Candidates | Eligible development | Dev projects | Excluded exposed partition | Projects there |
+|---|---:|---:|---:|---:|---:|
+| Python | 900 | 527 | 76 | 360 | 51 |
+| TypeScript | 600 | 259 | 7 | 333 | 1 |
+| Rust | 800 | 439 | 6 | 351 | 2 |
+| Go | 800 | 623 | 4 | 161 | 4 |
+
+This is a **development benchmark study**, not A-grade oracle evidence. These derived rows have no
+executable oracle category (`category` is `null`), while the frozen grade contract requires five
+oracle-kind cells and the source-pack program remains incomplete. After screening,
+[`bind_subset.py`](bind_subset.py) checks every retained JSON row against the exact eligible parent,
+recomputes the complete two-of-three retained set from the byte-bound vote ledger, and emits an
+exact-byte manifest plus a selection receipt binding the parent, vote ledger, screening identity,
+and output. Both files must be tracked and byte-identical to `HEAD`. Before spawning the judge,
+[`frozen_run.py`](frozen_run.py) independently recomputes the retained set, validates both tracked
+files, and requires the same dataset and receipt digests in artifact metadata.
+
+For example, after screening the frozen Python development parent:
+
+```sh
+python3 -m eval.bench.bind_subset screened-dev.jsonl \
+  --parent-dataset python-derived-v2-dev-eligible.jsonl \
+  --parent-manifest eval/bench/codocbench-python-v2-dev-eligible-manifest.json \
+  --vote-ledger screened-dev.votes.json --split dev \
+  --out eval/bench/codocbench-python-v2-screened-dev-manifest.json \
+  --receipt-out eval/bench/codocbench-python-v2-selection-receipt.json
+# Commit and push both generated JSON files before the paid lane.
+python3 eval/bench/frozen_run.py --dataset screened-dev.jsonl \
+  --resolver v2 --context-protocol none --split dev \
+  --split-manifest eval/bench/codocbench-python-v2-screened-dev-manifest.json \
+  --selection-parent-dataset python-derived-v2-dev-eligible.jsonl \
+  --selection-parent-manifest eval/bench/codocbench-python-v2-dev-eligible-manifest.json \
+  --selection-vote-ledger screened-dev.votes.json \
+  --selection-receipt eval/bench/codocbench-python-v2-selection-receipt.json \
   --archive-dir "$HOME/evergreen-benchmark-archive"
 ```
 
@@ -238,14 +317,15 @@ python3 eval/bench/replay.py out/bench-default.json \
 Replay output contains hashes, counts, matrices, and mismatch IDs only. It does not print pair text
 or free-form model reasoning.
 
-The Evergreen 0.4.0 baseline records one clean implementation commit and tree in every compatible
+The Evergreen 0.4.0 execution record stores one clean implementation commit and tree in every compatible
 artifact, together with provider `codex`, Codex CLI `0.144.1`, strong and cheap model
 `gpt-5.6-sol`, and `EVAL_CONCURRENCY=4`. The implementation commit was frozen before any language
 started. Language processes may be serialized to stay within local scratch-space limits. The report
 gate is declared before scoring: every language artifact must finish and individually meet the
 threshold passed to `report.py`. A provider interruption is resumed only when validated atomic
 artifacts share that exact provider and provenance; partial, mixed-provider, or otherwise
-incompatible matrices are never promoted as a release baseline.
+incompatible matrices are never promoted as a release record. Those controls make the run
+replayable; they do not cure the label-proxy contamination described above.
 
 The frozen 0.4.0 report can be regenerated from its public publication set:
 
@@ -331,7 +411,7 @@ One JSON object per line:
 | `id`, `func` | identifiers |
 | `code`, `doc` | the function source and its documentation |
 | `label` | `consistent` \| `inconsistent` |
-| `category` | `null` (consistent) \| `direct-mismatch` \| `over-promise` \| `under-promise` |
+| `category` | `null` (uncategorized) \| `direct-mismatch` \| `over-promise` \| `under-promise` |
 
 The three inconsistency categories are DocPrism's.
 
@@ -360,14 +440,18 @@ python3 eval/bench/run_bench.py --selftest # prove the scoring math, no API call
 
 `EVAL_PROVIDER` accepts `claude` or `codex`. A resumable run and a publication set use one provider
 only; provider identity, CLI version, models, judge, repository state, and dataset hashes are bound
-into every artifact. Codex runs are ephemeral, read-only, schema-constrained, instructed not to use
-tools, and abstain if a tool event appears.
+into every artifact. Screened v2 lanes additionally bind the tracked selection-receipt hash, which
+commits the parent dataset/manifest, complete vote ledger, screen program, model names, and CLI
+identity. Codex runs are ephemeral, read-only, schema-constrained, instructed not to use tools, and
+abstain if a tool event appears.
 
 `frozen_run.py` is mandatory for paid runs; `run_bench.py` requires the launcher's one-time inherited
 handshake and refuses ordinary direct execution except for self-test and rescore. The launcher fails
 before spending model calls unless the repository is clean, contains exactly one dataset language,
 lives outside every managed plugin marketplace/cache path, and its exact commit is already a remote
-ref tip. A user-global lock permits only one language lane. Every runner checkpoint is mirrored
+ref tip. Split manifests, parent manifests, and selection receipts must be tracked files whose
+working bytes exactly match that commit's `HEAD`. A user-global lock permits only one language lane.
+Every runner checkpoint is mirrored
 synchronously to the absolute external archive with its row count and SHA-256 in the filename.
 Resume selects the highest untampered checkpoint whose complete metadata matches the new run; an
 incompatible or corrupt live artifact is durably quarantined before restoration. During execution

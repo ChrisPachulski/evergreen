@@ -37,7 +37,8 @@ PUBLIC_USAGE_KEYS = {
     "cost_usd", "input_tokens", "output_tokens", "reasoning_output_tokens", "requests",
 }
 FUTURE_DETECTOR_SETTINGS = {
-    "context_protocol", "resolver", "split", "split_manifest_sha256",
+    "context_protocol", "resolver", "selection_receipt_sha256", "split",
+    "split_manifest_sha256",
 }
 
 

@@ -30,7 +30,7 @@ MAX_RUN_BYTES = 64 * 1024 * 1024
 SETTING_KEYS = {
     "provider", "model", "peer_id", "peer_manifest_sha256", "peer_config_sha256",
     "peer_source_sha256", "concurrency", "resolver", "context_protocol",
-    "split_manifest_sha256", "split",
+    "split_manifest_sha256", "split", "selection_receipt_sha256",
 }
 
 
@@ -63,6 +63,11 @@ def validate_settings(settings):
             raise ValueError("peer split manifest hash is invalid")
         if split not in ("dev", "holdout"):
             raise ValueError("peer split is invalid")
+    receipt_hash = settings["selection_receipt_sha256"]
+    if (receipt_hash is not None and
+            (not isinstance(receipt_hash, str) or len(receipt_hash) != 64 or
+             any(character not in "0123456789abcdef" for character in receipt_hash))):
+        raise ValueError("peer selection receipt hash is invalid")
     return settings
 
 

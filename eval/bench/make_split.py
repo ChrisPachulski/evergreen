@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate a deterministic repository-grouped dev/holdout split manifest.
 
-The ordering key is HMAC-SHA256 keyed by the *checked-in source dataset's* SHA-256 hex
-digest — a value committed and documented before any v2 run existed — so the grouping is
-reproducible and was never tunable against v2 outcomes. Repositories never cross splits.
+The ordering key is HMAC-SHA256 keyed by the declared source dataset's SHA-256 hex digest.
+Freeze that digest and the resulting manifest before any model outcome so the grouping is
+reproducible and cannot be tuned against results. Repositories never cross splits.
 Fails closed if either split would receive zero inconsistent rows.
 """
 import argparse
@@ -15,7 +15,7 @@ from pathlib import Path
 
 def repository(pair_id):
     parts = pair_id.split("/")
-    if len(parts) < 4:
+    if len(parts) < 3:  # owner/repo/... — CASCADE has 4+ parts, CoDocBench-derived has 3
         raise ValueError(f"unexpected pair id shape: {pair_id!r}")
     return "/".join(parts[:2])
 

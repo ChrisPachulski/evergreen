@@ -1,0 +1,2645 @@
+{
+ "datasets": [
+  {
+   "language": "rust",
+   "sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599"
+  }
+ ],
+ "rows": [
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_one#0-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/seed#2-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/execute_job#3-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_many#4-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/fold_with#6-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#7-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/scheme#10-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/from_arg_matches#11-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_inclusive#13-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/file_name#14-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_bool#15-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/longs_and_visible_aliases#16-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/sample_weighted#17-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/fill#18-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/append_string#20-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/visit_unit#22-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/from_usage#26-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/init#27-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/dedup#28-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/mend_slices#30-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_bool#37-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/all_equal_value#41-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve_connection#44-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/into_parts#46-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/unzip_indexed#47-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#49-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_default_values#52-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/in_worker#53-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/send_request#54-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/send_data#55-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/fibonacci_split_iterative#56-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/choose#58-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#61-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/sample#62-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/into_parts#63-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/update_weights#64-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/min_values#70-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/value_delimiter#73-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#74-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/walk_tree_prefix#75-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/sample_efraimidis_spirakis#77-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/unit_variant#79-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#80-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#81-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_matches_from_safe_borrow#84-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/to_bytes#85-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/unset_setting#86-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_from_u64#88-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/into_parts#89-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/min#90-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_u8#91-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#92-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#93-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/isaac64#95-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/visit_i128#100-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#101-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve_connection#103-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/new#106-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/probe#107-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/get#110-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/is_present#111-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/par_sort_unstable_by_key#114-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#116-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#117-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/start_handler#118-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_inclusive#119-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/file_name#120-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/value_names#121-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/flatten#122-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve_connection#123-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/run#125-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/from_arg_matches#126-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/concat#127-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/reserve_get_tail_slice#128-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/fold_with#129-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#130-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/sample_iter#133-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#135-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/into_buffer#138-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/max_values#142-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/file_name#143-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/possible_value#145-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/expecting#146-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/partition#150-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/number_of_values#151-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/fill_via_u32_chunks#153-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_from_u64#157-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/visit#159-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/min#162-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/build#164-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/exit_handler#166-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_u8#168-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/new#169-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_many#170-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/max#171-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/into_parts#175-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#180-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve_connection#184-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/number_of_values#185-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_external_subcommand_value_parser#186-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/auto_reseed#188-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_matches_safe#190-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve_connection#192-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/euclid_parallel_full#194-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/is_short#196-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/sample_indices_inplace#197-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#198-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/yield_now#201-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#202-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/validator#203-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/duplicate_field#210-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/complete#211-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/push#212-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_seeded#213-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/partition_map#214-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/into_parts#215-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/from#217-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#219-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/visit_u128#220-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#223-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#224-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/from_one_raw_str#225-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/next_f32#227-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/add_prefix#228-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/euclid_parallel_one#229-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#230-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#232-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/check_identifier#233-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/fibonacci_split_recursive#234-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/inject#237-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_matches_from_safe#239-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/canonical_reason#244-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_field#246-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#247-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/write_help#248-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#250-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/new#254-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/choose#255-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#256-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/fill_bytes#257-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#258-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/unset_setting#259-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/min_by#264-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/into_parts#265-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/set_num_threads#268-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/flatten#269-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#270-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#272-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#274-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/step#275-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/try_len#276-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/send_data#277-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/par_sort_unstable_by_key#278-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/next_tuple#279-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/next_u32#280-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/listen#284-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#288-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/seed_from_u64#289-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/minmax_by_key#290-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_u8#292-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/remove_many#294-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/default_value#297-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/generate#300-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/write_version#301-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/zip#302-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/euclid_faux_serial#303-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_unseeded#307-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/into_parts#312-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#313-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve_connection#314-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/update_weights#316-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/spawn#317-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_seeded#318-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/thread_rng#320-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/value_hint#323-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_arg_conflicts_with#324-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/unit_variant#328-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/handshake#330-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/file_name#331-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/execute_job_closure#332-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/local_addr#336-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/random#337-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/max_values#339-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/panic_handler#340-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_bool#341-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/value_of#342-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/sample#343-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#344-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/values_of#345-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/host#347-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_matches#348-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/get#350-old",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/sample_indices#351-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#352-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#353-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#355-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/name_expr#356-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#357-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/in_worker#358-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/update#359-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/wait#361-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/end_of_stream_error#363-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/update#365-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/reseed#368-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/collect_into_vec#371-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#372-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/diff#375-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#377-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/unzip#378-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#381-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#383-old",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/choose_weighted#387-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/file_name#388-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/empty_values#389-old",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/deserialize_name_expr#390-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/gen_weighted_bool#395-old",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#396-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/unit_variant#397-old",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/par_sort_by#398-old",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/max#403-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/from_arg_matches#405-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/gen_weighted_bool#410-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#411-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#412-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/reseed#413-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/print_help#416-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/spawn_future_async_in#418-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/spawn#419-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/join#420-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/build_scoped#422-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/occurrences_of#423-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/to_bytes#425-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/interleave#427-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#429-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_name_expr#430-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#431-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/visit_tuple#432-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/generate_to#434-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#435-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/next_u32#436-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/max_by_key#440-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#444-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/tee#446-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/new#450-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_raw#452-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/sum#454-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/is_number#456-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/version#457-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#458-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#462-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_with_timer#466-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/max_frame_size#469-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#470-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/close#472-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/write_templated_help#473-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/send_request#474-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#475-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/flatten#476-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#477-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/unset_settings#478-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/to_writer#481-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#483-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/missing_field#485-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/par_sort_unstable_by#486-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#487-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/reseed#489-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/new_with_executor#491-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/set_rounds#494-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#497-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/yield_local#498-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#500-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/num_threads#501-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/par_quicksort#502-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/min_values#504-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/new#505-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/new#507-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/initialize#509-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/value_of#511-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/spawn_in#512-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/group_by#513-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/fill_via_chunks#515-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/num_threads#518-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/in_place_scope#521-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/can_write_again#524-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#526-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/from_iter#527-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_matches_mut#529-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/sample#530-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/current_thread_index#533-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/breadth_first#534-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_from_u64#537-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#540-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/next_u32#543-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/is_long#544-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#545-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/reseed#547-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/to_long#550-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/max_buf_size#552-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/execute#553-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_from_u64#554-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/task_rng#556-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_u8#558-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/group_by#559-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/fill_via_u64_chunks#562-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/file_name#564-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/to_short#567-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/validator#568-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/combinations#570-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/is_present#571-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#572-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/max_by#574-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#576-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/gen_range#578-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/next_u32#579-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/from_args#580-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/increment_indices#581-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/update_weights#582-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/wrap_stream#584-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/next_u32#585-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/par_sort_by_key#586-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/terminate#590-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/without_shutdown#591-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/missing_field#592-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#593-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/next_tuple#597-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/remove#599-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/min_values#600-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_bool#601-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/par_bridge#602-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/next_u32#603-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/minmax#604-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/new#605-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/parse_shortflags#609-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/update_weights#611-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/tee#612-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#613-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/fill_bytes#617-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/minmax_by_key#619-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/split_vec#621-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/new#622-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/gen_f64#624-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/graceful_shutdown#625-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/sample_iter#626-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/aggregate#630-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/to_os_str#632-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/insertion_sort#633-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#634-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/gen_vec#638-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/reseed#639-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve_connection#640-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/remove_one#641-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#642-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/to_pretty_writer#651-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_bool#653-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/occurrences_of#654-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_unseeded#655-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/rng#656-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/choose#658-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/send_request#659-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#660-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/initial_max_send_streams#661-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/set_counter#662-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#664-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/push#665-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#666-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve_connection#667-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/minmax_by#668-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/try_fill#672-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/next_u32#673-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/remove_many#674-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/reseed#675-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/usage#677-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/partition_map#684-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/to_bytes#685-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/isaac#686-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/init#689-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#690-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/yield_now#692-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/new#693-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/visit_unit#694-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/pop_jobs#697-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/zip#698-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/get_value_parser#699-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/remove#700-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/next_u32#701-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/scope#705-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/validator_os#707-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/choose_weighted_option#708-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/next_u32#709-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/set_counter#710-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_seeded#714-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#718-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/visit_unit#719-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve#720-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/split_at#725-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/min_by_key#727-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#728-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#729-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/reseed#731-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/new#732-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/euclid_parallel_outer#733-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/get#734-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/from_seed#735-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve_connection#736-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#738-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#739-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/unique_by#740-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#742-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/par_sort_by_key#743-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/sort_by#744-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/stack_size#745-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/unzip_into_vecs#749-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#753-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#757-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/reseed#760-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#761-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new_inclusive#762-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#764-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve_connection#766-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/get#768-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/serialize_u8#769-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/validator_os#771-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/fill_bytes#772-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/step#775-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/new#779-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/map#780-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/new#781-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "serde-rs/serde/new#783-new",
+   "project": "serde-rs/serde",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/local_addr#784-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/spawn_fifo_in#785-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "clap-rs/clap/from_arg_matches#786-new",
+   "project": "clap-rs/clap",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/yield_local#787-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-itertools/itertools/into_parts#789-new",
+   "project": "rust-itertools/itertools",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/new#791-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/shuffle_mut#792-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/log_gamma#794-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rayon-rs/rayon/par_bytes#796-new",
+   "project": "rayon-rs/rayon",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "hyperium/hyper/serve_addr_handle#798-new",
+   "project": "hyperium/hyper",
+   "split": "dev"
+  },
+  {
+   "dataset_sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599",
+   "id": "rust-random/rand/new#799-new",
+   "project": "rust-random/rand",
+   "split": "dev"
+  }
+ ],
+ "schema_version": 1
+}

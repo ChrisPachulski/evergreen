@@ -5,8 +5,10 @@ import sys
 import tempfile
 from pathlib import Path
 import unittest
+from unittest import mock
 
 
+from eval.bench import make_split, split_manifest
 from eval.bench.split_manifest import load_split_assignments, load_split_manifest
 from eval.oracle.split import POLICY_SHA256
 
@@ -52,11 +54,144 @@ class SplitManifestTests(unittest.TestCase):
         path.write_text(json.dumps(document))
         return path
 
+    def write_votes(self):
+        from eval.bench import validate_labels
+
+        binding = validate_labels._vote_binding(
+            self.dataset.read_bytes(), cli_version="claude test",
+            cli_executable_sha256="a" * 64,
+        )
+        votes = {
+            row["id"]: {model: row["label"] for model in validate_labels.ANNOTATORS}
+            for row in self.rows
+        }
+        path = self.root / "screen.votes.json"
+        validate_labels._write_votes(path, binding, votes)
+        return path
+
     def test_accepts_complete_project_grouped_id_only_manifest(self):
         manifest = self.write_manifest()
         result = load_split_manifest(manifest, [self.dataset])
         self.assertEqual(result, {"org/a/f#1": "dev", "org/b/g#1": "holdout"})
         self.assertEqual(load_split_assignments(manifest), result)
+
+    def test_byte_loader_validates_the_supplied_manifest_snapshot(self):
+        manifest = self.write_manifest()
+        frozen = manifest.read_bytes()
+        manifest.write_text("{}")
+
+        assignments, row_datasets, declarations = \
+            split_manifest.load_split_bindings_bytes(frozen)
+
+        self.assertEqual(assignments, {"org/a/f#1": "dev", "org/b/g#1": "holdout"})
+        self.assertEqual(set(row_datasets.values()), {self.digest})
+        self.assertEqual(declarations, {(self.digest, "Java")})
+
+    def test_full_validator_does_not_reopen_manifest_after_capture(self):
+        manifest = self.write_manifest()
+        with mock.patch.object(
+            split_manifest, "_manifest", side_effect=AssertionError("reopened")
+        ):
+            self.assertEqual(
+                load_split_manifest(manifest, [self.dataset]),
+                {"org/a/f#1": "dev", "org/b/g#1": "holdout"},
+            )
+
+    def test_splitter_accepts_three_component_codocbench_ids(self):
+        self.assertEqual(make_split.repository("owner/repo/function#3-old"), "owner/repo")
+        with self.assertRaisesRegex(ValueError, "id shape"):
+            make_split.repository("owner/repo")
+
+    def test_bound_subset_manifest_keeps_only_parent_assigned_split_rows(self):
+        from eval.bench import bind_subset
+
+        parent = self.write_manifest()
+        subset = self.root / "validated-dev.jsonl"
+        subset.write_text(json.dumps(self.rows[0], sort_keys=True) + "\n")
+        document = bind_subset.build_manifest(
+            subset, [self.dataset], parent, "dev", vote_ledger=self.write_votes()
+        )
+        output = self.root / "validated-dev-manifest.json"
+        output.write_text(json.dumps(document))
+
+        self.assertEqual(load_split_manifest(output, [subset]), {"org/a/f#1": "dev"})
+        with self.assertRaisesRegex(ValueError, "declared dev split"):
+            bind_subset.build_manifest(
+                self.dataset, [self.dataset], parent, "dev",
+                vote_ledger=self.write_votes(),
+            )
+
+    def test_screen_receipt_binds_parent_votes_output_and_manifest(self):
+        from eval.bench import bind_subset
+
+        parent = self.write_manifest()
+        votes = self.write_votes()
+        subset = self.root / "validated-dev.jsonl"
+        subset.write_text(json.dumps(self.rows[0], sort_keys=True) + "\n")
+        document = bind_subset.build_manifest(
+            subset, [self.dataset], parent, "dev", vote_ledger=votes
+        )
+
+        receipt = bind_subset.build_screen_receipt(
+            subset, self.dataset, parent, votes, "dev", document
+        )
+
+        self.assertEqual(receipt["output_dataset_sha256"], hashlib.sha256(
+            subset.read_bytes()
+        ).hexdigest())
+        self.assertEqual(receipt["parent_dataset_sha256"], self.digest)
+        self.assertEqual(receipt["vote_ledger_sha256"], hashlib.sha256(
+            votes.read_bytes()
+        ).hexdigest())
+        self.assertEqual(receipt["rows"], 1)
+
+    def test_bound_subset_rejects_mutated_parent_rows(self):
+        from eval.bench import bind_subset
+
+        parent = self.write_manifest()
+        subset = self.root / "forged-dev.jsonl"
+        subset.write_text(json.dumps({**self.rows[0], "code": "FORGED"}) + "\n")
+
+        with self.assertRaisesRegex(ValueError, "match the parent dataset"):
+            bind_subset.build_manifest(
+                subset, [self.dataset], parent, "dev",
+                vote_ledger=self.write_votes(),
+            )
+
+    def test_bound_subset_rejects_post_screen_cherry_picking(self):
+        from eval.bench import bind_subset
+
+        parent = self.write_manifest(rows=[
+            {"id": row["id"], "dataset_sha256": self.digest,
+             "project": make_split.repository(row["id"]), "split": "dev"}
+            for row in self.rows
+        ])
+        subset = self.root / "cherry-picked.jsonl"
+        subset.write_text(json.dumps(self.rows[0], sort_keys=True) + "\n")
+
+        with self.assertRaisesRegex(ValueError, "retained set"):
+            bind_subset.build_manifest(
+                subset, [self.dataset], parent, "dev",
+                vote_ledger=self.write_votes(),
+            )
+
+    def test_bound_subset_can_reproduce_a_predeclared_exclusion(self):
+        from eval.bench import bind_subset
+
+        parent = self.write_manifest(rows=[
+            {"id": row["id"], "dataset_sha256": self.digest,
+             "project": make_split.repository(row["id"]), "split": "dev"}
+            for row in self.rows
+        ])
+        subset = self.root / "eligible.jsonl"
+        subset.write_text(json.dumps(self.rows[0], sort_keys=True) + "\n")
+
+        document = bind_subset.build_manifest(
+            subset, [self.dataset], parent, "dev",
+            excluded_ids={self.rows[1]["id"]},
+        )
+
+        self.assertEqual([row["id"] for row in document["rows"]], [self.rows[0]["id"]])
 
     def test_rejects_project_leakage_between_splits(self):
         rows = [
@@ -113,7 +248,6 @@ class SplitManifestTests(unittest.TestCase):
                 self.write_manifest(datasets=[{"sha256": self.digest, "language": "Python"}]),
                 [self.dataset],
             )
-
     def test_cli_reports_only_counts(self):
         completed = subprocess.run(
             [sys.executable, "-m", "eval.bench.split_manifest",
@@ -213,6 +347,108 @@ class SplitManifestTests(unittest.TestCase):
         manifest.write_text(json.dumps(base))
         with self.assertRaisesRegex(ValueError, "package declarations"):
             load_split_manifest(manifest, [package])
+
+
+class CandidateProvenanceTests(unittest.TestCase):
+    def test_v2_candidate_provenance_binds_generators_manifests_and_partitions(self):
+        root = Path(__file__).parents[1]
+        path = root / "eval/bench/codocbench-v2-candidate-provenance.json"
+        provenance = json.loads(path.read_text())
+        self.assertEqual(provenance["schema_version"], 1)
+        self.assertIs(provenance["holdout_available"], False)
+        self.assertEqual(
+            provenance["prior_screen_status"],
+            "canonical-id-exposed-results-excluded",
+        )
+        self.assertEqual(
+            {row["language"] for row in provenance["languages"]},
+            {"Python", "typescript", "rust", "go"},
+        )
+        for key in ("converter", "splitter", "subset_binder"):
+            source = root / provenance["generator"][f"{key}_path"]
+            self.assertEqual(
+                hashlib.sha256(source.read_bytes()).hexdigest(),
+                provenance["generator"][f"{key}_sha256"],
+            )
+        mining_path = provenance["generator"]["mining_path"]
+        mining_commit = provenance["generator"]["mining_source_commit"]
+        mining_source = subprocess.run(
+            ["git", "show", f"{mining_commit}:{mining_path}"], cwd=root,
+            capture_output=True, check=True,
+        ).stdout
+        self.assertEqual(
+            hashlib.sha256(mining_source).hexdigest(),
+            provenance["generator"]["mining_source_sha256"],
+        )
+        exposure_path = root / provenance["exposure_inventory_path"]
+        self.assertEqual(
+            hashlib.sha256(exposure_path.read_bytes()).hexdigest(),
+            provenance["exposure_inventory_sha256"],
+        )
+        exposure = json.loads(exposure_path.read_text())["samples"]
+        language_key = {"Python": "Python", "typescript": "TypeScript",
+                        "rust": "Rust", "go": "Go"}
+        for lane in provenance["languages"]:
+            pool = lane["candidate_pool"]
+            split = lane["split"]
+            manifest_path = root / split["manifest_path"]
+            self.assertEqual(
+                hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+                split["manifest_sha256"],
+            )
+            assignments = load_split_assignments(manifest_path)
+            self.assertEqual(len(assignments), pool["rows"])
+            document = json.loads(manifest_path.read_text())
+            declared = {item["sha256"] for item in document["datasets"]}
+            self.assertEqual(
+                declared,
+                {cell["sha256"] for cell in split["assignment_partitions"].values()},
+            )
+            sample = exposure[language_key[lane["language"]]]
+            self.assertEqual(len(sample["ids"]), 20)
+            self.assertEqual(len(set(sample["ids"])), 20)
+            self.assertEqual(
+                hashlib.sha256("\n".join(sample["ids"]).encode()).hexdigest(),
+                sample["sample_ids_sha256"],
+            )
+            self.assertEqual(set(sample["ids"]) <= set(assignments), True)
+            self.assertEqual(split["target_development_fraction"], 0.6)
+            self.assertEqual(
+                split["excluded_partition_status"],
+                "pre-screen-exposed-development-only",
+            )
+            for name, cell in split["assignment_partitions"].items():
+                self.assertEqual(
+                    sum(value == name for value in assignments.values()), cell["rows"]
+                )
+                self.assertEqual(cell["consistent"] + cell["inconsistent"], cell["rows"])
+            for name, cell in split["eligible_partitions"].items():
+                eligible_path = root / cell["manifest_path"]
+                self.assertEqual(
+                    hashlib.sha256(eligible_path.read_bytes()).hexdigest(),
+                    cell["manifest_sha256"],
+                )
+                eligible = load_split_assignments(eligible_path)
+                self.assertEqual(set(eligible.values()), {name})
+                self.assertEqual(len(eligible), cell["rows"])
+                self.assertFalse(set(eligible) & set(sample["ids"]))
+                expected = {
+                    pair_id for pair_id, assigned in assignments.items()
+                    if assigned == name and pair_id not in set(sample["ids"])
+                }
+                self.assertEqual(set(eligible), expected)
+                self.assertTrue(all(assignments[pair_id] == name for pair_id in eligible))
+                eligible_document = json.loads(eligible_path.read_text())
+                self.assertEqual(
+                    {item["sha256"] for item in eligible_document["datasets"]},
+                    {cell["sha256"]},
+                )
+            if lane["source"]["kind"] == "mined-coupled-changes":
+                payload = ("\n".join(lane["source"]["repositories"]) + "\n").encode()
+                self.assertEqual(
+                    hashlib.sha256(payload).hexdigest(),
+                    lane["source"]["repositories_sha256"],
+                )
 
 
 if __name__ == "__main__":

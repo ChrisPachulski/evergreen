@@ -1,0 +1,107 @@
+{
+  "purpose": "Rows exposed during pre-freeze blind sanity review; excluded from every evaluation partition",
+  "sample_hash_encoding": "canonical IDs joined by LF with no final LF",
+  "samples": {
+    "Go": {
+      "ids": [
+        "etcd-io/etcd/NewTxnCommand#2-old",
+        "hashicorp/consul/translateConfig#78-old",
+        "etcd-io/etcd/Dial#210-old",
+        "hashicorp/consul/TestManagerInternal_cycleServer#552-new",
+        "prometheus/client_golang/GetMetricWithLabelValues#238-old",
+        "prometheus/client_golang/HandlerForTransactional#615-new",
+        "hashicorp/consul/raftApplyWithEncoder#587-new",
+        "hashicorp/consul/invalidateSession#530-new",
+        "hashicorp/consul/GetDialAddresses#349-old",
+        "etcd-io/etcd/Delete#600-new",
+        "hashicorp/consul/notify#214-old",
+        "etcd-io/etcd/ExitInShortMode#235-old",
+        "hashicorp/consul/intermediateCertRenewalWatch#426-new",
+        "hashicorp/consul/DefaultConsulSource#485-new",
+        "etcd-io/etcd/get#584-new",
+        "hashicorp/consul/NotifyFailedServer#396-old",
+        "redis/go-redis/getCachedTimeNs#207-old",
+        "hashicorp/consul/GetLANCoordinate#15-old",
+        "gorilla/mux/Headers#555-new",
+        "etcd-io/etcd/monitorActive#779-new"
+      ],
+      "sample_ids_sha256": "9de82378494c304abb98713528a85c20f2f6893446e2c9869930c773abf58b40"
+    },
+    "Python": {
+      "ids": [
+        "Theano/Theano/shape_i#373-old",
+        "pandas-dev/pandas/SQLDatabase.execute#470-new",
+        "pandas-dev/pandas/TimeSeries.at_time#286-old",
+        "quantopian/zipline/TermGraph._add_to_graph#552-new",
+        "readthedocs/readthedocs.org/BuildConfigBase.valid_build_images#126-old",
+        "matplotlib/matplotlib/same_color#172-old",
+        "Avaiga/taipy/unsubscribe_scenario#35-old",
+        "geekan/MetaGPT/set_env#888-new",
+        "pandas-dev/pandas/Series.asof#100-old",
+        "akfamily/akshare/stock_institute_hold_detail#566-new",
+        "ccxt/ccxt/coinone.fetch_my_trades#896-new",
+        "readthedocs/readthedocs.org/ProjectQuerySetBase.max_concurrent_builds#336-old",
+        "microsoft/DeepSpeed/init_inference#471-new",
+        "scikit-learn/scikit-learn/pyplot#242-old",
+        "freqtrade/freqtrade/IStrategy.check_buy_timeout#201-old",
+        "TheAlgorithms/Python/benchmark#597-new",
+        "home-assistant/core/LIFXLight.who#687-new",
+        "quantopian/zipline/make_jagged_equity_info#402-old",
+        "akfamily/akshare/stock_margin_detail_szse#743-new",
+        "ipython/ipython/InteractiveShell.magic#463-new"
+      ],
+      "sample_ids_sha256": "24bdad3d149b67215ab73a0d0b5373eb9d0a72b16507a0151d5b78f1a4c12e49"
+    },
+    "Rust": {
+      "ids": [
+        "tokio-rs/tokio/is_cancelled#40-old",
+        "chronotope/chrono/from_mdf#1-old",
+        "hyperium/hyper/get_raw#360-old",
+        "tokio-rs/tokio/set_default#96-old",
+        "tokio-rs/tokio/poll_write_ready#663-new",
+        "hyperium/hyper/get_raw#730-new",
+        "tokio-rs/tokio/remote_abort#514-new",
+        "chronotope/chrono/from_yo#496-new",
+        "serde-rs/serde/visit#42-old",
+        "clap-rs/clap/possible_values#99-old",
+        "tokio-rs/tokio/transition_to_notified_and_cancel#443-new",
+        "tokio-rs/tokio/reset_at#648-new",
+        "hyperium/hyper/poll_without_shutdown#464-new",
+        "rust-random/rand/next_u32#32-old",
+        "clap-rs/clap/get_global#329-old",
+        "rust-random/rand/weak_rng#770-new",
+        "rust-random/rand/new#460-new",
+        "clap-rs/clap/get_matches_from_safe#21-old",
+        "tokio-rs/tokio/spawn#647-new",
+        "tokio-rs/tokio/get_default#71-old"
+      ],
+      "sample_ids_sha256": "755c5bb94f3cc16da874c46342153dd41718fb3651e03d51b2ad42a9661b2b32"
+    },
+    "TypeScript": {
+      "ids": [
+        "pixijs/pixijs/findTexture#235-old",
+        "pixijs/pixijs/crossOrigin#38-old",
+        "pixijs/pixijs/constructor#461-new",
+        "pixijs/pixijs/constructor#141-old",
+        "pixijs/pixijs/get colorTexture#523-new",
+        "pixijs/pixijs/sub#290-old",
+        "pixijs/pixijs/getFontFamilyName#459-new",
+        "typescript-eslint/typescript-eslint/calculateProjectParserOptions#147-old",
+        "mui/material-ui/InputUnstyled#176-old",
+        "typescript-eslint/typescript-eslint/prepareAndTransformProjects#540-new",
+        "typescript-eslint/typescript-eslint/getTypeReferenceName#355-new",
+        "apollographql/apollo-client/readQueryFromStore#191-old",
+        "date-fns/date-fns/secondsToMinutes#510-new",
+        "pixijs/pixijs/lineTextureStyle#399-new",
+        "pixijs/pixijs/calculateTextStyle#273-old",
+        "date-fns/date-fns/isSameQuarter#364-new",
+        "date-fns/date-fns/setHours#479-new",
+        "pixijs/pixijs/hex2string#234-old",
+        "pixijs/pixijs/constructor#109-old",
+        "pixijs/pixijs/get backgroundAlpha#525-new"
+      ],
+      "sample_ids_sha256": "4bb9f3675ff6131a21ef8ba371f00c90823d256dec0f07c1993e80e3b04d0f57"
+    }
+  },
+  "schema_version": 1
+}

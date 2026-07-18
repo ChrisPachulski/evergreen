@@ -153,6 +153,7 @@ class PeerRunnerTests(unittest.TestCase):
             "peer_source_sha256": "c" * 64, "concurrency": 2,
             "resolver": "v2", "context_protocol": "none",
             "split_manifest_sha256": "d" * 64, "split": "holdout",
+            "selection_receipt_sha256": "e" * 64,
         }
         self.assertEqual(run_peer.validate_settings(copy.deepcopy(valid)), valid)
         invalid = copy.deepcopy(valid)

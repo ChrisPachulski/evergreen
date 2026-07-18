@@ -11,6 +11,17 @@ from eval.bench import frozen_run
 
 
 class FrozenRunSafetyTests(unittest.TestCase):
+    def setUp(self):
+        self.real_head_reader = frozen_run.head_bound_bytes
+        self.head_reader = mock.patch.object(
+            frozen_run, "head_bound_bytes",
+            side_effect=lambda path, _maximum, _label, *_rest: Path(path).read_bytes(),
+        )
+        self.head_reader.start()
+
+    def tearDown(self):
+        self.head_reader.stop()
+
     def test_v2_requires_split_manifest_and_validates_context_protocol(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -21,11 +32,12 @@ class FrozenRunSafetyTests(unittest.TestCase):
                 "category": None,
             }
             dataset.write_text(json.dumps(row) + "\n")
+            dataset_digest = hashlib.sha256(dataset.read_bytes()).hexdigest()
             manifest = root / "split.json"
             manifest.write_text(json.dumps({
                 "schema_version": 1,
-                "datasets": [{"sha256": "a" * 64, "language": "Java"}],
-                "rows": [{"id": row["id"], "dataset_sha256": "a" * 64,
+                "datasets": [{"sha256": dataset_digest, "language": "Java"}],
+                "rows": [{"id": row["id"], "dataset_sha256": dataset_digest,
                           "project": "org/repo", "split": "dev"}],
             }))
             manifest_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
@@ -52,17 +64,157 @@ class FrozenRunSafetyTests(unittest.TestCase):
         self.assertEqual(policy["context_protocol"], "java-git-window-v1")
         self.assertEqual(policy["split_manifest_sha256"], manifest_digest)
 
+    def test_split_policy_rejects_dataset_bytes_not_bound_by_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dataset = root / "data.jsonl"
+            row = {"id": "org/repo/f#1", "language": "Python"}
+            dataset.write_text(json.dumps(row) + "\n")
+            manifest = root / "split.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "datasets": [{"sha256": "a" * 64, "language": "Python"}],
+                "rows": [{"id": row["id"], "dataset_sha256": "a" * 64,
+                          "project": "org/repo", "split": "dev"}],
+            }))
+
+            with self.assertRaisesRegex(ValueError, "dataset bytes"):
+                frozen_run.run_policy(dataset, [row], "v2", manifest, "dev", "none")
+
+    def test_split_policy_rejects_wrong_declared_dataset_language(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dataset = root / "data.jsonl"
+            row = {"id": "org/repo/f#1", "language": "Python"}
+            dataset.write_text(json.dumps(row) + "\n")
+            digest = hashlib.sha256(dataset.read_bytes()).hexdigest()
+            manifest = root / "split.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "datasets": [{"sha256": digest, "language": "Java"}],
+                "rows": [{"id": row["id"], "dataset_sha256": digest,
+                          "project": "org/repo", "split": "dev"}],
+            }))
+
+            with self.assertRaisesRegex(ValueError, "language"):
+                frozen_run.run_policy(dataset, [row], "v2", manifest, "dev", "none")
+
+    def test_non_java_v2_requires_complete_screen_ancestry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dataset = root / "data.jsonl"
+            row = {"id": "org/repo/f#1", "language": "Python"}
+            dataset.write_text(json.dumps(row) + "\n")
+            digest = hashlib.sha256(dataset.read_bytes()).hexdigest()
+            manifest = root / "split.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "datasets": [{"sha256": digest, "language": "Python"}],
+                "rows": [{"id": row["id"], "dataset_sha256": digest,
+                          "project": "org/repo", "split": "dev"}],
+            }))
+
+            with self.assertRaisesRegex(ValueError, "screen selection ancestry"):
+                frozen_run.run_policy(dataset, [row], "v2", manifest, "dev", "none")
+
+    def test_non_java_v2_recomputes_and_binds_screen_selection(self):
+        from eval.bench import bind_subset, validate_labels
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rows = [
+                {"id": "org/a/f#1-old", "func": "f", "code": "return 1",
+                 "doc": "returns two", "label": "inconsistent", "category": None,
+                 "language": "Python"},
+                {"id": "org/b/g#1-new", "func": "g", "code": "return 1",
+                 "doc": "returns one", "label": "consistent", "category": None,
+                 "language": "Python"},
+            ]
+            parent = root / "eligible.jsonl"
+            parent.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            parent_digest = hashlib.sha256(parent.read_bytes()).hexdigest()
+            parent_manifest = root / "eligible-manifest.json"
+            parent_manifest.write_text(json.dumps({
+                "schema_version": 1,
+                "datasets": [{"sha256": parent_digest, "language": "Python"}],
+                "rows": [{"id": row["id"], "dataset_sha256": parent_digest,
+                          "project": row["id"].split("/")[0] + "/" +
+                          row["id"].split("/")[1], "split": "dev"}
+                         for row in rows],
+            }))
+            binding = validate_labels._vote_binding(
+                parent.read_bytes(), cli_version="claude test",
+                cli_executable_sha256="a" * 64,
+            )
+            ledger = root / "screen.votes.json"
+            validate_labels._write_votes(ledger, binding, {
+                rows[0]["id"]: {model: "inconsistent"
+                                for model in validate_labels.ANNOTATORS},
+                rows[1]["id"]: {model: "inconsistent"
+                                for model in validate_labels.ANNOTATORS},
+            })
+            dataset = root / "validated.jsonl"
+            dataset.write_text(json.dumps(rows[0]) + "\n")
+            manifest_document = bind_subset.build_manifest(
+                dataset, [parent], parent_manifest, "dev", vote_ledger=ledger
+            )
+            manifest = root / "validated-manifest.json"
+            manifest.write_bytes(bind_subset.manifest_bytes(manifest_document))
+            receipt_document = bind_subset.build_screen_receipt(
+                dataset, parent, parent_manifest, ledger, "dev", manifest_document
+            )
+            receipt = root / "selection-receipt.json"
+            receipt.write_bytes(bind_subset.receipt_bytes(receipt_document))
+
+            with mock.patch.object(
+                bind_subset, "build_manifest",
+                side_effect=AssertionError("reopened selection paths"),
+            ), mock.patch.object(
+                bind_subset, "build_screen_receipt",
+                side_effect=AssertionError("reopened selection paths"),
+            ):
+                policy = frozen_run.run_policy(
+                    dataset, [rows[0]], "v2", manifest, "dev", "none",
+                    parent, parent_manifest, ledger, receipt,
+                )
+
+            self.assertEqual(
+                policy["selection_receipt_sha256"],
+                hashlib.sha256(receipt.read_bytes()).hexdigest(),
+            )
+
+    def test_head_bound_manifest_rejects_external_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "external.json"
+            path.write_text("{}")
+            with self.assertRaisesRegex(ValueError, "inside the repository"):
+                self.real_head_reader(path, 1024, "split manifest")
+
+    def test_head_bound_manifest_rejects_untracked_repository_path(self):
+        with tempfile.TemporaryDirectory(dir=frozen_run.REPO) as directory:
+            path = Path(directory) / "untracked.json"
+            path.write_text("{}")
+            with self.assertRaisesRegex(ValueError, "tracked at HEAD"):
+                self.real_head_reader(path, 1024, "split manifest")
+
+    def test_artifact_metadata_must_match_split_preflight_dataset_bytes(self):
+        with self.assertRaisesRegex(ValueError, "changed after split preflight"):
+            frozen_run.require_dataset_binding(
+                "a" * 64, {"dataset": {"sha256": "b" * 64}}
+            )
+
     def test_split_policy_rejects_wrong_assignment_and_undeclared_context(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dataset = root / "data.jsonl"
             row = {"id": "org/repo/f#1", "language": "Python"}
             dataset.write_text(json.dumps(row))
+            dataset_digest = hashlib.sha256(dataset.read_bytes()).hexdigest()
             manifest = root / "split.json"
             manifest.write_text(json.dumps({
                 "schema_version": 1,
-                "datasets": [{"sha256": "a" * 64, "language": "Java"}],
-                "rows": [{"id": row["id"], "dataset_sha256": "a" * 64,
+                "datasets": [{"sha256": dataset_digest, "language": "Python"}],
+                "rows": [{"id": row["id"], "dataset_sha256": dataset_digest,
                           "project": "org/repo", "split": "holdout"}],
             }))
             with self.assertRaisesRegex(ValueError, "declared split"):
@@ -367,6 +519,34 @@ class FrozenRunArchiveTests(unittest.TestCase):
 
 
 class FrozenRunMainTests(unittest.TestCase):
+    def test_main_rejects_head_change_across_policy_preflight(self):
+        first = {"commit": "a" * 40, "tree": "1", "dirty": False}
+        second = {"commit": "b" * 40, "tree": "2", "dirty": False}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            here = repo / "eval" / "bench"
+            here.mkdir(parents=True)
+            (repo / ".git").mkdir()
+            dataset = here / "one.jsonl"
+            dataset.write_text("fixture")
+            archive = root / "archive"
+            with mock.patch.object(frozen_run, "REPO", repo), \
+                 mock.patch.object(frozen_run, "HERE", here), \
+                 mock.patch.object(
+                     frozen_run, "git_identity", side_effect=[first, second]
+                 ), \
+                 mock.patch.object(
+                     frozen_run, "load_dataset",
+                     return_value=(b"fixture", [{"language": "python"}]),
+                 ), \
+                 mock.patch.object(frozen_run, "artifact_metadata") as metadata:
+                with self.assertRaisesRegex(ValueError, "identity changed"):
+                    frozen_run.main([
+                        "--dataset", str(dataset), "--archive-dir", str(archive),
+                    ])
+        metadata.assert_not_called()
+
     def test_main_wires_preflight_handshake_restore_monitor_and_global_lock(self):
         commit = "a" * 40
         identity = {"commit": commit, "tree": "t", "dirty": False}

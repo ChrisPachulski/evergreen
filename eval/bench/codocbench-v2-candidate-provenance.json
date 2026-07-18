@@ -1,0 +1,259 @@
+{
+  "created": "2026-07-18",
+  "exposure_inventory_path": "eval/bench/codocbench-v2-exposed-sanity-ids.json",
+  "exposure_inventory_sha256": "dd5eb214d704c0ddfe27d0a1ae8d7bbb8fe0e39f91138128d613508bc360e1c5",
+  "generator": {
+    "converter_path": "eval/bench/codocbench_to_jsonl.py",
+    "converter_sha256": "2c54d0febdff0098a1f606260a2a2803e7781e4ec23eb89483c71b0451101efb",
+    "mining_path": "eval/bench/mine.py",
+    "mining_source_commit": "9d2ef035108f028891dfe46fa05b9a2d0d6d91dd",
+    "mining_source_sha256": "2311edd193e10456e0f677d28a104554a8f1375cefa709f4cf1ffcc0aa17acb6",
+    "splitter_path": "eval/bench/make_split.py",
+    "splitter_sha256": "e9efe469d8ed6522ea58178894d7a6b560b9ec942ae5cb7d155e8c3f121dcd53",
+    "subset_binder_path": "eval/bench/bind_subset.py",
+    "subset_binder_sha256": "4b68837e63ccdd1f0eb9183ebde1b4a3345e37316464d4d0e73e8eec4e732047"
+  },
+  "languages": [
+    {
+      "candidate_pool": {
+        "consistent": 450,
+        "inconsistent": 450,
+        "projects": 127,
+        "rows": 900,
+        "seed": 0,
+        "sha256": "9f18ed15e7edeb7a52f0c1f64ae7659173dd81956935b2260941910026d036e0"
+      },
+      "language": "Python",
+      "source": {
+        "kind": "upstream-codocbench",
+        "rows": 4573,
+        "sha256": "c0e8563af0baf9eab4fe1341fd0bf2099ec41030fd5c2224f1c3803a712c21d4",
+        "usable_rows": 4390
+      },
+      "split": {
+        "target_development_fraction": 0.6,
+        "excluded_partition_status": "pre-screen-exposed-development-only",
+        "manifest_path": "eval/bench/codocbench-python-v2-candidate-split-manifest.json",
+        "manifest_sha256": "9016486fe9089d0e99c7b49b9af8b38cd5c64db3e01a30dc38e2666bc564349a",
+        "assignment_partitions": {
+          "dev": {
+            "consistent": 267,
+            "inconsistent": 273,
+            "projects": 76,
+            "rows": 540,
+            "sha256": "07dfa8018f965620faed9b0075f577bb8c33660a93f02041da726fbaf7a48de7"
+          },
+          "holdout": {
+            "consistent": 183,
+            "inconsistent": 177,
+            "projects": 51,
+            "rows": 360,
+            "sha256": "180c9a7f4fb10927d6ad0c5c623f81ba50cd62b05c54bed6a4bfc3d71dedbd1e"
+          }
+        },
+        "eligible_partitions": {
+          "dev": {
+            "consistent": 260,
+            "inconsistent": 267,
+            "manifest_path": "eval/bench/codocbench-python-v2-dev-eligible-manifest.json",
+            "manifest_sha256": "f0f57c747942d12b5eb2e93bb81e20418035de1e2f64e6e43905f57416ccb53e",
+            "projects": 76,
+            "rows": 527,
+            "sha256": "a2a5ea8cf6fddefb309d680484e01abf1343b2968c0b3936921d80c40b00f01d"
+          }
+        }
+      }
+    },
+    {
+      "candidate_pool": {
+        "consistent": 300,
+        "inconsistent": 300,
+        "projects": 8,
+        "rows": 600,
+        "seed": 0,
+        "sha256": "08d1cd036254843bd02a7cf5b4b2f53c9437218d26354e89b89e8f79f0d3c85e"
+      },
+      "language": "typescript",
+      "source": {
+        "kind": "mined-coupled-changes",
+        "max_per_repository": 600,
+        "repositories": [
+          "https://github.com/pixijs/pixijs",
+          "https://github.com/date-fns/date-fns",
+          "https://github.com/mui/material-ui",
+          "https://github.com/apollographql/apollo-client",
+          "https://github.com/reduxjs/redux",
+          "https://github.com/typescript-eslint/typescript-eslint",
+          "https://github.com/nestjs/nest",
+          "https://github.com/TanStack/query"
+        ],
+        "repositories_sha256": "32e191ca75a109fd7a0e23fa81db08d1d480ad8cfed92a1fac47487b854a81d0",
+        "rows": 631,
+        "sha256": "5056b8f46804971d4d93a499e522d545d217fca807cb9dac9611571d9c2c652b",
+        "usable_rows": 629
+      },
+      "split": {
+        "target_development_fraction": 0.6,
+        "excluded_partition_status": "pre-screen-exposed-development-only",
+        "manifest_path": "eval/bench/codocbench-typescript-v2-candidate-split-manifest.json",
+        "manifest_sha256": "de5c51d38ccf68d31721f172e5e6300a15eade4fd364e4712ea101aa12582f76",
+        "assignment_partitions": {
+          "dev": {
+            "consistent": 132,
+            "inconsistent": 135,
+            "projects": 7,
+            "rows": 267,
+            "sha256": "20a5ef993c43536984b35bfb6421d3d449a979cf3e9b01bdb7afa850b24aef24"
+          },
+          "holdout": {
+            "consistent": 168,
+            "inconsistent": 165,
+            "projects": 1,
+            "rows": 333,
+            "sha256": "c7e9e72c8af277603ec07ef4923655149317b298bb190f0e235d486398e8dc73"
+          }
+        },
+        "eligible_partitions": {
+          "dev": {
+            "consistent": 127,
+            "inconsistent": 132,
+            "manifest_path": "eval/bench/codocbench-typescript-v2-dev-eligible-manifest.json",
+            "manifest_sha256": "48a8df6382a17a27eaff5572f6cfb92b43e3e9da8111388fe0d145cbbae39719",
+            "projects": 7,
+            "rows": 259,
+            "sha256": "b8d1b43695b51bcdafb79667821af97431b6319df68891b194fc740420b0f8be"
+          }
+        }
+      }
+    },
+    {
+      "candidate_pool": {
+        "consistent": 400,
+        "inconsistent": 400,
+        "projects": 8,
+        "rows": 800,
+        "seed": 0,
+        "sha256": "71742e9a9f4da87a5642fd136827e0a63c80f64c74dc29f7c9e672b4d660aff2"
+      },
+      "language": "rust",
+      "source": {
+        "kind": "mined-coupled-changes",
+        "max_per_repository": 600,
+        "repositories": [
+          "https://github.com/tokio-rs/tokio",
+          "https://github.com/rayon-rs/rayon",
+          "https://github.com/clap-rs/clap",
+          "https://github.com/chronotope/chrono",
+          "https://github.com/rust-itertools/itertools",
+          "https://github.com/hyperium/hyper",
+          "https://github.com/serde-rs/serde",
+          "https://github.com/rust-random/rand"
+        ],
+        "repositories_sha256": "41973bc2fb214ef087643d0d6ec8e4a5cf25fc2947e82c16b89ec8ee4403b814",
+        "rows": 827,
+        "sha256": "3967670be9c0d5afd8ff236fd7e34bf1b4aaa6e2136ab1f155e56905b2c73112",
+        "usable_rows": 823
+      },
+      "split": {
+        "target_development_fraction": 0.6,
+        "excluded_partition_status": "pre-screen-exposed-development-only",
+        "manifest_path": "eval/bench/codocbench-rust-v2-candidate-split-manifest.json",
+        "manifest_sha256": "4fb49f0a402ca18f60a14c58bb02deb2c6371bd8062e6efe6c2fad0eb93a8005",
+        "assignment_partitions": {
+          "dev": {
+            "consistent": 224,
+            "inconsistent": 225,
+            "projects": 6,
+            "rows": 449,
+            "sha256": "2b6a7ea17561ad7cc2d0213b128f5f64c21d76c8d21f74c777b4270742e24c70"
+          },
+          "holdout": {
+            "consistent": 176,
+            "inconsistent": 175,
+            "projects": 2,
+            "rows": 351,
+            "sha256": "eb8ca0c7b797539ce59dfddc570656f1f4b92cf311331cb01999169ee851d1ef"
+          }
+        },
+        "eligible_partitions": {
+          "dev": {
+            "consistent": 220,
+            "inconsistent": 219,
+            "manifest_path": "eval/bench/codocbench-rust-v2-dev-eligible-manifest.json",
+            "manifest_sha256": "f92055d4f0e215ecb263b150e8dbca70f1d68ec026071b7ad100e62ab7ed80f6",
+            "projects": 6,
+            "rows": 439,
+            "sha256": "6a4ff4770205c37cd9a4af2f9b552ad2bf320e4db73fd498a21283321457e599"
+          }
+        }
+      }
+    },
+    {
+      "candidate_pool": {
+        "consistent": 400,
+        "inconsistent": 400,
+        "projects": 8,
+        "rows": 800,
+        "seed": 0,
+        "sha256": "05bc2d80824923d7089dd93a6a5d00983a71ef79bf8672747b3ba176e86a82f8"
+      },
+      "language": "go",
+      "source": {
+        "kind": "mined-coupled-changes",
+        "max_per_repository": 600,
+        "repositories": [
+          "https://github.com/etcd-io/etcd",
+          "https://github.com/hashicorp/consul",
+          "https://github.com/prometheus/client_golang",
+          "https://github.com/spf13/cobra",
+          "https://github.com/gin-gonic/gin",
+          "https://github.com/redis/go-redis",
+          "https://github.com/sirupsen/logrus",
+          "https://github.com/gorilla/mux"
+        ],
+        "repositories_sha256": "9e34e60699cdd2262661d56625229947fd7e16dc35ff8f87fe7bd5985826a269",
+        "rows": 902,
+        "sha256": "b3a07d7956bc88f3a2d6691e38ab63c72764abbe5456da0a3dea6356c1315092",
+        "usable_rows": 887
+      },
+      "split": {
+        "target_development_fraction": 0.6,
+        "excluded_partition_status": "pre-screen-exposed-development-only",
+        "manifest_path": "eval/bench/codocbench-go-v2-candidate-split-manifest.json",
+        "manifest_sha256": "d23707ad77347f1555e0ac136e2decac74992aaa6b1d51eb6daf3786f1f5cab5",
+        "assignment_partitions": {
+          "dev": {
+            "consistent": 316,
+            "inconsistent": 323,
+            "projects": 4,
+            "rows": 639,
+            "sha256": "7f121fe3c79ee31192daa3315ea84fb281c5c11b3ac460dea11c9a30c7d64754"
+          },
+          "holdout": {
+            "consistent": 84,
+            "inconsistent": 77,
+            "projects": 4,
+            "rows": 161,
+            "sha256": "84e388f5b0bd4cac6fa7cc70551a6738af9df6b77dfc5bcf1c3aa4e2176aa258"
+          }
+        },
+        "eligible_partitions": {
+          "dev": {
+            "consistent": 308,
+            "inconsistent": 315,
+            "manifest_path": "eval/bench/codocbench-go-v2-dev-eligible-manifest.json",
+            "manifest_sha256": "79219d16b0a2852506578b7a10d8b1dee936262f0d1d490bdbc6dcae2a9efed4",
+            "projects": 4,
+            "rows": 623,
+            "sha256": "aba10ddd45afd64b3132e91fa780d188e1d80b22a67f47bb9b3babaad42d8800"
+          }
+        }
+      }
+    }
+  ],
+  "holdout_available": false,
+  "prior_screen_status": "canonical-id-exposed-results-excluded",
+  "purpose": "Frozen candidate identity for a four-language development study; not A-grade oracle evidence",
+  "repository_list_encoding": "UTF-8 URLs joined by LF with one final LF",
+  "schema_version": 1
+}

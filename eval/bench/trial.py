@@ -145,6 +145,7 @@ def _validated_pair_data(pair):
 
 def _pair_envelope(pair):
     data = _validated_pair_data(pair)
+    data["id"] = "pair"
     return _data_envelope("untrusted_benchmark_pair", data, UNTRUSTED_PAIR_PREFIX)
 
 

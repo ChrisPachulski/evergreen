@@ -97,6 +97,7 @@ def eval_policy_settings(environment=os.environ):
         raise ValueError("EVAL_CONTEXT_PROTOCOL is invalid")
     manifest = environment.get("EVAL_SPLIT_MANIFEST_SHA256") or None
     split = environment.get("EVAL_SPLIT") or None
+    selection_receipt = environment.get("EVAL_SELECTION_RECEIPT_SHA256") or None
     if (manifest is None) != (split is None):
         raise ValueError("frozen split provenance must include both manifest hash and split")
     if resolver == "v2" and (manifest is None or split is None):
@@ -105,9 +106,13 @@ def eval_policy_settings(environment=os.environ):
         raise ValueError("frozen split provenance hash is invalid")
     if split is not None and split not in ("dev", "holdout"):
         raise ValueError("frozen split provenance split is invalid")
+    if (selection_receipt is not None and
+            not re.fullmatch(r"[0-9a-f]{64}", selection_receipt)):
+        raise ValueError("frozen selection receipt hash is invalid")
     return {
         "resolver": resolver, "context_protocol": context_protocol,
         "split_manifest_sha256": manifest, "split": split,
+        "selection_receipt_sha256": selection_receipt,
     }
 
 

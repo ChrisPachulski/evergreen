@@ -3,8 +3,9 @@
 This directory contains the frozen synthetic v1 source-pack contract, pinned candidate source
 catalogs, and one experimental Python in-project mutation pilot. It does not contain a completed
 five-language corpus, authorized holdout, v2 certification system, or detector-quality result.
-Current published quality evidence lives under `eval/bench/public/0.4.0`; the pilot and catalogs do
-not update or supersede it.
+The package under `eval/bench/public/0.4.0` is a replayable historical execution record whose
+metrics are contaminated by canonical-ID label proxies; the pilot and catalogs do not update or
+supersede it.
 
 ## Frozen v1 contract
 
