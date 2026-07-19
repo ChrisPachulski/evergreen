@@ -210,9 +210,62 @@ def resolve_v2(stages):
     }
 
 
+def valid_screen_value(result):
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        return None
+    record = _proof_record(result.get("value"), role=None)
+    if record is None:
+        return None
+    if type(record.get("uncertain")) is not bool:
+        return None
+    if "uncertainty_reason" not in record:
+        return None
+    reason = record["uncertainty_reason"]
+    if reason is not None and (not isinstance(reason, str) or not reason.strip()):
+        return None
+    return record
+
+
+def route_screen_v3(result):
+    """Asymmetric router: may cheaply clear a boring negative, never a drift flag."""
+    value = valid_screen_value(result)
+    if value is None:
+        return {"decision": "jury", "reason": "screen-invalid-or-abstained"}
+    if value["verdict"] != "consistent":
+        return {"decision": "jury", "reason": value["verdict"]}
+    if value["proof"] != "direct":
+        return {"decision": "jury", "reason": "non-direct-proof"}
+    if value["category"] is not None:
+        return {"decision": "jury", "reason": "category-present"}
+    if value["uncertain"]:
+        return {"decision": "jury", "reason": "screen-uncertain"}
+    return {"decision": "clear", "reason": "direct-consistent"}
+
+
+def resolve_v3(stages):
+    """Resolve cascade stages: a validated screen auto-clears or defers to the v2 jury."""
+    route = route_screen_v3(stages.get("screen"))
+    if stages.get("route") != route:
+        return _abstain_v2(stages, "stored route does not match recomputed route")
+    if route["decision"] == "clear":
+        value = valid_screen_value(stages.get("screen"))
+        return {
+            "final_status": "complete", "semantic_status": "decided",
+            "final_verdict": "consistent", "verdict": "consistent",
+            "category": None, "why": value["evidence"],
+            "proof": value["proof"], "claim": value["claim"],
+            "evidence": value["evidence"], "contested": False,
+            "stages": stages,
+        }
+    jury_stages = stages.get("jury")
+    return resolve_v2(jury_stages if isinstance(jury_stages, dict) else {})
+
+
 def resolve(stages, resolver_id):
     if resolver_id == "v1":
         return resolve_v1(stages)
     if resolver_id == "v2":
         return resolve_v2(stages)
-    raise ValueError("resolver must be v1 or v2")
+    if resolver_id == "v3":
+        return resolve_v3(stages)
+    raise ValueError("resolver must be v1, v2, or v3")

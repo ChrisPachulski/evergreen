@@ -3,6 +3,7 @@ import unittest
 
 from eval.bench.resolver import (
     needs_synthesis_v1, needs_synthesis_v2, resolve, resolve_v1, resolve_v2,
+    resolve_v3, route_screen_v3,
 )
 
 
@@ -220,6 +221,172 @@ class ResolverV2Tests(unittest.TestCase):
 
     def test_dispatch_accepts_v2(self):
         self.assertEqual(resolve(self.unanimous(), "v2")["semantic_status"], "decided")
+
+
+def screen_verdict(value, proof="direct", category=None, uncertain=False,
+                    uncertainty_reason=None):
+    return {
+        "verdict": value, "proof": proof, "category": category,
+        "claim": "the documentation claim", "evidence": "return 1",
+        "uncertain": uncertain, "uncertainty_reason": uncertainty_reason,
+    }
+
+
+def v1_unanimous(value="consistent"):
+    category = "direct-mismatch" if value == "inconsistent" else None
+    return {
+        "snap": ok(verdict(value, category)),
+        "challenge": ok({"cracks": False, "why": "did not land"}),
+        "prongs": [ok({"role": role, "verdict": value, "why": "evidence"})
+                   for role in ("defend", "prove-wrong", "hardest-broken")],
+        "blindspot": ok({"missed_angle": None}),
+    }
+
+
+def v2_unanimous(value="consistent", proof="direct"):
+    category = "direct-mismatch" if value == "inconsistent" else None
+    roles = ("defend", "prove-wrong", "evidence-auditor")
+    return {
+        "snap": ok(proof_verdict(value, proof, category)),
+        "challenge": ok({"cracks": False, "why": "attack failed"}),
+        "prongs": [ok(proof_verdict(value, proof, category, role)) for role in roles],
+        "blindspot": ok({"missed_angle": None}),
+    }
+
+
+class RouteScreenV3Tests(unittest.TestCase):
+    def test_route_decision_matrix(self):
+        missing_evidence = {
+            "verdict": "consistent", "proof": "direct", "category": None,
+            "claim": "x", "uncertain": False, "uncertainty_reason": None,
+        }
+        non_bool_uncertain = screen_verdict("consistent")
+        non_bool_uncertain["uncertain"] = "yes"
+        missing_uncertainty_reason = screen_verdict("consistent")
+        del missing_uncertainty_reason["uncertainty_reason"]
+
+        cases = (
+            ("direct, category-free, non-uncertain consistent",
+             ok(screen_verdict("consistent")), "clear", "direct-consistent"),
+            ("inconsistent verdict",
+             ok(screen_verdict("inconsistent")), "jury", "inconsistent"),
+            ("unverified verdict",
+             ok(screen_verdict("unverified")), "jury", "unverified"),
+            ("delegated proof",
+             ok(screen_verdict("consistent", proof="delegated")),
+             "jury", "non-direct-proof"),
+            ("requires-unseen-code proof",
+             ok(screen_verdict("consistent", proof="requires-unseen-code")),
+             "jury", "non-direct-proof"),
+            ("category present",
+             ok(screen_verdict("consistent", category="under-promise")),
+             "jury", "category-present"),
+            ("uncertain screen",
+             ok(screen_verdict("consistent", uncertain=True, uncertainty_reason="not sure")),
+             "jury", "screen-uncertain"),
+            ("malformed value: missing evidence",
+             ok(missing_evidence), "jury", "screen-invalid-or-abstained"),
+            ("malformed value: uncertain is not a bool",
+             ok(non_bool_uncertain), "jury", "screen-invalid-or-abstained"),
+            ("malformed value: uncertainty_reason absent",
+             ok(missing_uncertainty_reason), "jury", "screen-invalid-or-abstained"),
+            ("stage abstention",
+             {"status": "abstain", "value": None}, "jury", "screen-invalid-or-abstained"),
+        )
+        for name, result, decision, reason in cases:
+            with self.subTest(name=name):
+                self.assertEqual(
+                    route_screen_v3(result), {"decision": decision, "reason": reason}
+                )
+
+
+class ResolverV3Tests(unittest.TestCase):
+    def clear_stages(self, **overrides):
+        screen = ok(screen_verdict("consistent"))
+        stages = {"screen": screen, "route": route_screen_v3(screen)}
+        stages.update(overrides)
+        return stages
+
+    def jury_stages(self, nested, screen_value="unverified", **screen_kwargs):
+        screen = ok(screen_verdict(screen_value, **screen_kwargs))
+        return {"screen": screen, "route": route_screen_v3(screen), "jury": nested}
+
+    def test_clear_route_produces_direct_consistent_decision_with_no_jury(self):
+        stages = self.clear_stages()
+        result = resolve_v3(stages)
+        self.assertEqual(result["final_status"], "complete")
+        self.assertEqual(result["semantic_status"], "decided")
+        self.assertEqual(result["final_verdict"], "consistent")
+        self.assertEqual(result["verdict"], "consistent")
+        self.assertIsNone(result["category"])
+        self.assertEqual(result["proof"], "direct")
+        self.assertFalse(result["contested"])
+        self.assertNotIn("jury", stages)
+
+    def test_stored_route_mismatch_is_infrastructure_abstention(self):
+        stages = self.clear_stages(route={"decision": "clear", "reason": "wrong-reason"})
+        result = resolve_v3(stages)
+        self.assertEqual(result["final_status"], "abstain")
+        self.assertIsNone(result["final_verdict"])
+        self.assertEqual(result["why"], "stored route does not match recomputed route")
+
+    def test_missing_stored_route_is_infrastructure_abstention(self):
+        stages = {"screen": ok(screen_verdict("consistent"))}
+        result = resolve_v3(stages)
+        self.assertEqual(result["final_status"], "abstain")
+        self.assertEqual(result["why"], "stored route does not match recomputed route")
+
+    def test_jury_route_reproduces_resolve_v2_exactly(self):
+        nested = v2_unanimous()
+        stages = self.jury_stages(nested, "consistent", proof="requires-unseen-code")
+        expected = resolve_v2(nested)
+        result = resolve_v3(stages)
+        for key in ("final_status", "semantic_status", "final_verdict", "verdict",
+                    "category", "proof", "claim", "evidence", "why"):
+            self.assertEqual(result.get(key), expected.get(key), key)
+
+    def test_incomplete_nested_jury_abstains_and_preserves_exact_reason(self):
+        nested = v2_unanimous()
+        del nested["snap"]["value"]["evidence"]
+        stages = self.jury_stages(nested)
+        expected = resolve_v2(nested)
+        result = resolve_v3(stages)
+        self.assertEqual(result["final_status"], "abstain")
+        self.assertEqual(result["why"], expected["why"])
+
+    def test_dispatch_accepts_v3_clear(self):
+        self.assertEqual(resolve(self.clear_stages(), "v3")["semantic_status"], "decided")
+
+    def test_dispatch_accepts_v3_jury(self):
+        nested = v2_unanimous()
+        stages = self.jury_stages(nested)
+        self.assertEqual(resolve(stages, "v3"), resolve_v2(nested))
+
+    def test_dispatch_rejects_unknown_resolver_mentions_all_three(self):
+        with self.assertRaisesRegex(ValueError, "v1, v2, or v3"):
+            resolve({}, "unknown")
+
+
+class ResolverV1V2FixtureStabilityTests(unittest.TestCase):
+    """v3's addition to resolve() must not perturb v1/v2 fixture outputs."""
+
+    def test_v1_fixture_output_is_unchanged(self):
+        stages = v1_unanimous()
+        self.assertEqual(resolve(stages, "v1"), {
+            "final_status": "complete", "final_verdict": "consistent",
+            "verdict": "consistent", "category": None, "why": "evidence",
+            "contested": False, "stages": stages,
+        })
+
+    def test_v2_fixture_output_is_unchanged(self):
+        stages = v2_unanimous()
+        self.assertEqual(resolve(stages, "v2"), {
+            "final_status": "complete", "semantic_status": "decided",
+            "final_verdict": "consistent", "verdict": "consistent",
+            "category": None, "why": "return 1", "proof": "direct",
+            "claim": "the documentation claim", "evidence": "return 1",
+            "contested": False, "stages": stages,
+        })
 
 
 if __name__ == "__main__":
