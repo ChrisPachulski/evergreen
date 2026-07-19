@@ -204,6 +204,10 @@ def bind_artifact_to_probe(metadata, rows, dataset_sha256, dataset_by_id):
         got = row.get("got") or {}
         if got.get("final_status") != "complete":
             raise ValueError(f"v3 probe artifact row {row['id']!r} did not complete (abstention)")
+        if not isinstance(got.get("execution"), dict):
+            raise ValueError(
+                f"v3 probe artifact row {row['id']!r} is missing the required execution ledger"
+            )
 
 
 # -- adjudicated label overlay ------------------------------------------------------------------
@@ -317,8 +321,12 @@ def load_historical_lane_summary(path):
 def measured_full_v2_counterfactual(rows, probe_ids):
     """A same-row full-v2 artifact's ACTUAL attempts, when its rows carry an execution ledger.
 
-    Returns None (never raises for this alone) when the supplied artifact has no ledger, so the
-    caller can fall back to a conservative projection rather than manufacture a measured claim.
+    Returns None (never raises for this alone) when the supplied artifact has no ledger at all
+    — a legitimate pre-ledger full-v2 artifact — so the caller can fall back to a conservative
+    projection rather than manufacture a measured claim. But a MIX of ledger-bearing and
+    ledger-less rows is never legitimate (no artifact vintage produces that); it is the same
+    undercounting hazard as bind_artifact_to_probe guards against, so it fails closed here too
+    rather than silently summing only the rows that happen to carry a ledger.
     """
     ids = [row.get("id") for row in rows]
     if len(set(ids)) != len(ids) or set(ids) != set(probe_ids):
@@ -330,6 +338,16 @@ def measured_full_v2_counterfactual(rows, probe_ids):
         artifact.validate_benchmark_row(row, require_result=True)
         if (row.get("got") or {}).get("final_status") != "complete":
             raise ValueError(f"full-v2 counterfactual row {row['id']!r} did not complete")
+    has_any_ledger = any(
+        isinstance((row.get("got") or {}).get("execution"), dict) for row in rows
+    )
+    if has_any_ledger:
+        for row in rows:
+            if not isinstance((row.get("got") or {}).get("execution"), dict):
+                raise ValueError(
+                    f"full-v2 counterfactual row {row['id']!r} is missing the required "
+                    "execution ledger"
+                )
     accounting = report.execution_accounting(rows)
     if accounting["provider_attempts"] is None:
         return None

@@ -173,13 +173,16 @@ def execution_accounting(rows):
 
     Historical v1/v2 artifacts never carried a ledger; a mixed or all-historical row set
     reports every derived field as None (rendered "unverified") rather than a zero or a count
-    inferred from stage names — the ledger is the only trusted source of attempt counts.
+    inferred from stage names — the ledger is the only trusted source of attempt counts. A
+    partial ledger (some rows carry one, some don't) is just as untrustworthy as none at all:
+    summing only the rows that happen to have a ledger silently undercounts attempts, so any
+    row missing one voids the whole accounting.
     """
     ledgers = [
         row["got"]["execution"] for row in rows
         if isinstance(row.get("got"), dict) and isinstance(row["got"].get("execution"), dict)
     ]
-    if not ledgers:
+    if not rows or len(ledgers) != len(rows):
         return {
             "rows": len(rows), "clear": None, "jury": None, "escalation_rate": None,
             "logical_calls": None, "provider_attempts": None, "retries": None,

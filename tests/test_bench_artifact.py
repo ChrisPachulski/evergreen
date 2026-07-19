@@ -1279,6 +1279,30 @@ class ExecutionSummaryReportTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertIsNone(accounting[field])
 
+    def test_accounting_reports_unverified_for_a_mixed_row_set(self):
+        # A mixed row set (some rows carry a valid execution ledger, some don't) must NOT be
+        # summed as if only the ledger-bearing rows existed — that silently undercounts
+        # provider_attempts and is exactly what let the cascade gate manufacture a PASS. Per
+        # the module docstring, "a mixed or all-historical row set reports every derived field
+        # as None"; this pins the mixed half of that contract.
+        from eval.bench import report
+
+        rows = [
+            completed_v3(
+                "p1", "python", "consistent", None, "consistent", None,
+                clear_execution(attempts=2),
+            ),
+            completed("p2", "python", "inconsistent", None, "inconsistent"),
+        ]
+
+        accounting = report.execution_accounting(rows)
+
+        self.assertEqual(accounting["rows"], 2)
+        for field in ("clear", "jury", "escalation_rate", "logical_calls",
+                      "provider_attempts", "retries", "attempts_per_row"):
+            with self.subTest(field=field):
+                self.assertIsNone(accounting[field])
+
     def test_accounting_sums_ledgers_and_derives_retries_from_the_ledger_not_stage_count(self):
         from eval.bench import report
 

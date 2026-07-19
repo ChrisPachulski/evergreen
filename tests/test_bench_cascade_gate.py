@@ -396,6 +396,14 @@ class QualityGateIntegrationTests(TempDirTestCase):
         self.assertEqual(packet["quality"]["nominal"]["recall"], 0.8)
         self.assertAlmostEqual(packet["quality"]["nominal"]["f1"], 0.8)
         self.assertTrue(packet["gates"]["quality"]["passed"])
+        # End-to-end (not just the unit-level auto_clear_false_negatives() coverage above):
+        # the packet's own field, built through build_decision_packet, must carry the same
+        # auto-cleared missed-drift ids for both label views once adjudication merely confirms
+        # the nominal labels.
+        self.assertEqual(packet["auto_clear_false_negatives"]["nominal"], sorted(fixture.fn_clear_ids))
+        self.assertEqual(
+            packet["auto_clear_false_negatives"]["adjudicated"], sorted(fixture.fn_clear_ids)
+        )
 
     def test_probe_just_below_precision_threshold_fails(self):
         fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=11, tn=39)
@@ -522,6 +530,19 @@ class CounterfactualTests(unittest.TestCase):
     def test_measured_counterfactual_rejects_a_row_set_not_matching_the_probe(self):
         rows = [jury_row("a", "inconsistent", "inconsistent")]
         with self.assertRaisesRegex(ValueError, "exactly the probe"):
+            cascade_gate.measured_full_v2_counterfactual(rows, {"a", "b"})
+
+    def test_measured_counterfactual_fails_closed_on_a_partially_missing_ledger(self):
+        # A mix of ledger-bearing and ledger-less rows is never a legitimate artifact vintage
+        # (unlike "no ledger anywhere," which is a valid pre-ledger full-v2 artifact) — it is
+        # the same undercounting hazard the probe-side fix closes, so this must raise rather
+        # than silently fall back to a projection built on a partial sum.
+        rows = [
+            jury_row("a", "inconsistent", "inconsistent"),
+            jury_row("b", "consistent", "consistent"),
+        ]
+        del rows[1]["got"]["execution"]
+        with self.assertRaisesRegex(ValueError, "execution ledger"):
             cascade_gate.measured_full_v2_counterfactual(rows, {"a", "b"})
 
     def test_projected_reconstruction_uses_a_six_call_floor_per_row(self):
@@ -653,6 +674,65 @@ class ExecutionAccountingPacketTests(TempDirTestCase):
 
         with self.assertRaisesRegex(ValueError, "execution ledger"):
             cascade_gate.build_decision_packet(artifact_path, dataset_path, receipt_path)
+
+    def test_one_of_one_hundred_rows_missing_its_ledger_fails_closed(self):
+        # Boundary: everything else about the artifact is valid (hashes, ids, labels,
+        # final_status) — only a single row's execution ledger is gone. A gate that only
+        # checks "is the ledger present anywhere" would let this slide straight through and
+        # silently undercount provider attempts by one row's worth of jury calls.
+        fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=10, tn=40)
+        del fixture.artifact_rows[0]["got"]["execution"]
+        dataset_path, receipt_path, artifact_path = fixture.write(self.root)
+
+        with self.assertRaisesRegex(ValueError, "execution ledger"):
+            cascade_gate.build_decision_packet(artifact_path, dataset_path, receipt_path)
+
+    def test_fifty_four_of_one_hundred_rows_missing_their_ledger_fails_closed(self):
+        # This is the reviewer's exact reproduction: 54/55 jury rows stripped of `execution`
+        # while every hash/id/label/final_status stays valid. Before the fix this undercounted
+        # provider_attempts to the point the cost gate's reduction crossed 70% and the whole
+        # packet exited 0 — a manufactured PASS on an artifact that never measured what it
+        # claimed to measure.
+        fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=10, tn=40)
+        jury_rows = [
+            row for row in fixture.artifact_rows if row["got"]["execution"]["route"] == "jury"
+        ]
+        self.assertEqual(len(jury_rows), 55)
+        for row in jury_rows[:54]:
+            del row["got"]["execution"]
+        dataset_path, receipt_path, artifact_path = fixture.write(self.root)
+        overlay_path = self.write_json("adjudicated.json", fixture.identity_overlay())
+
+        with self.assertRaisesRegex(ValueError, "execution ledger"):
+            cascade_gate.build_decision_packet(
+                artifact_path, dataset_path, receipt_path, adjudicated_path=overlay_path,
+                accept_projected_cost_gate=True,
+            )
+
+    def test_cli_fails_closed_and_exits_nonzero_on_a_partially_missing_ledger(self):
+        # Same reproduction, driven through the CLI entry point the gate is actually run
+        # through: the structural error must surface as a FAIL packet and a nonzero exit,
+        # never a bare traceback and never exit 0.
+        fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=10, tn=40)
+        jury_rows = [
+            row for row in fixture.artifact_rows if row["got"]["execution"]["route"] == "jury"
+        ]
+        for row in jury_rows[:54]:
+            del row["got"]["execution"]
+        dataset_path, receipt_path, artifact_path = fixture.write(self.root)
+        overlay_path = self.write_json("adjudicated.json", fixture.identity_overlay())
+        json_out = self.root / "packet.json"
+
+        exit_code = cascade_gate.main([
+            "--artifact", str(artifact_path), "--dataset", str(dataset_path),
+            "--receipt", str(receipt_path), "--adjudicated", str(overlay_path),
+            "--accept-projected-cost-gate", "--json", str(json_out),
+        ])
+
+        self.assertNotEqual(exit_code, 0)
+        packet = json.loads(json_out.read_text())
+        self.assertFalse(packet["passed"])
+        self.assertIn("execution ledger", packet["error"])
 
 
 # -- CLI ---------------------------------------------------------------------------------------
