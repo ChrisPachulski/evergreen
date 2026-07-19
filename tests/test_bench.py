@@ -693,6 +693,182 @@ class JudgeAbstentionTests(unittest.TestCase):
         synthesis.assert_not_called()
 
 
+def screen_verdict(value, proof="direct", category=None, uncertain=False,
+                    uncertainty_reason=None):
+    return {
+        "verdict": value, "proof": proof, "category": category,
+        "claim": "the documentation claim", "evidence": "return 1",
+        "uncertain": uncertain, "uncertainty_reason": uncertainty_reason,
+    }
+
+
+class JudgeCascadeV3Tests(unittest.TestCase):
+    roles = ("defend", "prove-wrong", "evidence-auditor")
+
+    def setUp(self):
+        self.pair = {
+            "id": "pair-1",
+            "func": "f",
+            "code": "def f(): return 1",
+            "doc": "f returns 1",
+            "language": "python",
+        }
+        self.models = {"strong": "strong", "cheap": "cheap", "resolver": "v3"}
+
+    def jury_stub(self, record, extra=None):
+        # A v2-shaped stub: unanimous, direct evidence, so the jury never needs synthesis.
+        stub = {
+            "snap": ok(record),
+            "challenge": ok({"cracks": False, "why": "held"}),
+            "prongs": [ok({**record, "role": role, "cleared_bar": True})
+                       for role in self.roles],
+            "blindspot": ok({"missed_angle": None}),
+        }
+        stub.update(extra or {})
+        return stub
+
+    def test_direct_consistent_screen_makes_one_call_and_never_touches_the_jury(self):
+        calls = []
+
+        def stub(stage, *_args):
+            calls.append(stage)
+            if stage == "screen":
+                return ok(screen_verdict("consistent"))
+            raise AssertionError(f"jury stage invoked on a clear route: {stage}")
+
+        result = trial.judge(self.pair, self.models, run_test=stub)
+
+        self.assertEqual(calls, ["screen"])
+        self.assertEqual(result["final_status"], "complete")
+        self.assertEqual(result["semantic_status"], "decided")
+        self.assertEqual(result["final_verdict"], "consistent")
+        self.assertNotIn("jury", result["stages"])
+
+    def test_all_six_escalation_classes_invoke_the_unchanged_full_v2_jury(self):
+        jury_record = {
+            "verdict": "consistent", "proof": "direct", "category": None,
+            "claim": "claim", "evidence": "return 1",
+        }
+        escalating_screens = {
+            "inconsistent verdict": ok(screen_verdict("inconsistent")),
+            "unverified verdict": ok(screen_verdict("unverified")),
+            "delegated proof": ok(screen_verdict("consistent", proof="delegated")),
+            "requires-unseen-code proof":
+                ok(screen_verdict("consistent", proof="requires-unseen-code")),
+            "uncertain screen": ok(screen_verdict(
+                "consistent", uncertain=True, uncertainty_reason="not sure"
+            )),
+            "invalid/abstained screen": {"status": "abstain", "reason": "no response"},
+        }
+        for name, screen_result in escalating_screens.items():
+            with self.subTest(name=name):
+                calls = []
+                jury = self.jury_stub(jury_record)
+
+                def stub(stage, *_args, screen_result=screen_result, jury=jury):
+                    calls.append(stage)
+                    return screen_result if stage == "screen" else jury[stage]
+
+                result = trial.judge(self.pair, self.models, run_test=stub)
+
+                self.assertEqual(calls[0], "screen")
+                for jury_stage in ("snap", "challenge", "prongs", "blindspot"):
+                    self.assertIn(jury_stage, calls)
+                self.assertEqual(result["final_status"], "complete")
+
+    def test_inconsistent_screen_cannot_flag_until_the_jury_resolves_it(self):
+        jury_consistent = {
+            "verdict": "consistent", "proof": "direct", "category": None,
+            "claim": "claim", "evidence": "return 1",
+        }
+        jury = self.jury_stub(jury_consistent)
+        screen_result = ok(screen_verdict("inconsistent", category="direct-mismatch"))
+
+        def stub(stage, *_args):
+            return screen_result if stage == "screen" else jury[stage]
+
+        result = trial.judge(self.pair, self.models, run_test=stub)
+
+        # The screen alone called it inconsistent; only the jury's own resolution counts.
+        self.assertEqual(result["final_verdict"], "consistent")
+        self.assertIsNone(result["category"])
+
+    def test_screen_abstention_escalates_instead_of_defaulting_consistent(self):
+        jury_inconsistent = {
+            "verdict": "inconsistent", "proof": "direct", "category": "direct-mismatch",
+            "claim": "claim", "evidence": "does not return 1",
+        }
+        jury = self.jury_stub(jury_inconsistent)
+
+        def stub(stage, *_args):
+            return {"status": "abstain", "reason": "cli timeout"} if stage == "screen" \
+                else jury[stage]
+
+        # resolve_v3's own "stages" field, for a jury decision, is resolve_v2's inner trail
+        # (see resolver.resolve_v3) — so the route the cascade computed is only visible on the
+        # call into resolve_v3, not on its return. Spy on that call to see it.
+        with mock.patch.object(trial, "resolve_v3", wraps=trial.resolve_v3) as spy:
+            result = trial.judge(self.pair, self.models, run_test=stub)
+
+        cascade_stages = spy.call_args.args[0]
+        self.assertEqual(
+            cascade_stages["route"],
+            {"decision": "jury", "reason": "screen-invalid-or-abstained"},
+        )
+        self.assertEqual(result["final_verdict"], "inconsistent")
+
+    def test_jury_stages_nest_under_stages_jury(self):
+        jury_record = {
+            "verdict": "consistent", "proof": "direct", "category": None,
+            "claim": "claim", "evidence": "return 1",
+        }
+        jury = self.jury_stub(jury_record)
+
+        def stub(stage, *_args):
+            return ok(screen_verdict("unverified")) if stage == "screen" else jury[stage]
+
+        with mock.patch.object(trial, "resolve_v3", wraps=trial.resolve_v3) as spy:
+            trial.judge(self.pair, self.models, run_test=stub)
+
+        cascade_stages = spy.call_args.args[0]
+        self.assertEqual(cascade_stages["jury"], jury)
+
+    def test_clear_and_jury_decisions_replay_through_resolve_v3(self):
+        def clear_stub(stage, *_args):
+            if stage != "screen":
+                raise AssertionError(f"jury stage invoked on a clear route: {stage}")
+            return ok(screen_verdict("consistent"))
+
+        clear_result = trial.judge(self.pair, self.models, run_test=clear_stub)
+        # A clear decision's own "stages" field IS the full cascade trail (screen + route), so
+        # replaying resolve_v3 straight off the returned decision reproduces it exactly.
+        self.assertEqual(trial.resolve_v3(clear_result["stages"]), clear_result)
+
+        jury_record = {
+            "verdict": "inconsistent", "proof": "direct", "category": "direct-mismatch",
+            "claim": "claim", "evidence": "does not return 1",
+        }
+        jury = self.jury_stub(jury_record)
+        screen_result = ok(screen_verdict("inconsistent"))
+
+        def jury_stub(stage, *_args):
+            return screen_result if stage == "screen" else jury[stage]
+
+        jury_result = trial.judge(self.pair, self.models, run_test=jury_stub)
+        # A jury decision's own "stages" field is resolve_v2's inner trail (the escalation
+        # reruns the unchanged v2 sequence verbatim), so replay the same cascade trail the
+        # orchestrator built rather than the decision's own (already-unwrapped) "stages" field.
+        cascade_trail = {
+            "screen": screen_result, "route": trial.route_screen_v3(screen_result),
+            "jury": jury,
+        }
+        self.assertEqual(trial.resolve_v3(cascade_trail), jury_result)
+
+    def test_dispatch_error_lists_all_three_resolvers(self):
+        with self.assertRaisesRegex(ValueError, "v1, v2, or v3"):
+            trial.judge(self.pair, {**self.models, "resolver": "future"})
+
+
 class ScoringTests(unittest.TestCase):
     def test_unverified_scores_as_not_flagged(self):
         rows = [

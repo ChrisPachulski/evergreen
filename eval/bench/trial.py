@@ -13,10 +13,12 @@ from types import SimpleNamespace
 try:
     from .resolver import (
         needs_synthesis_v1, needs_synthesis_v2, plurality_v2, resolve_v1, resolve_v2,
+        resolve_v3, route_screen_v3,
     )
 except ImportError:  # Direct script execution.
     from resolver import (
         needs_synthesis_v1, needs_synthesis_v2, plurality_v2, resolve_v1, resolve_v2,
+        resolve_v3, route_screen_v3,
     )
 
 HERE = Path(__file__).parent
@@ -330,6 +332,11 @@ def model_json(prompt, model, provider="claude", **kwargs):
 # pass on the strong tier. Its separate proof-sufficiency gate can require synthesis even without
 # dissent, while a conceded lens does not manufacture disagreement. Every v2 stage prompt,
 # including the v2 blind-spot variant, states the context-evidence and false-positive policies.
+# V3 puts a cheap screen ahead of the unchanged v2 sequence: the deterministic router
+# (resolver.route_screen_v3) may clear a direct, category-free, non-uncertain consistent screen
+# without a jury, but escalates to the full v2 jury on any drift verdict, non-direct proof,
+# category, self-reported uncertainty, or an invalid/abstained screen. The model never decides
+# whether to escalate — only the router does.
 
 def snap_call(pair, model, provider="claude"):
     prompt = f"""{skill_body()}
@@ -542,6 +549,27 @@ Reply with exactly one line of JSON and nothing else:
     return model_json(prompt, model, provider)
 
 
+def screen_call_v3(pair, cheap_model, provider="claude"):
+    prompt = f"""{skill_body()}
+
+# Task
+Judge only what the supplied code directly proves about the documentation claim. Distinguish
+direct evidence from a conclusion delegated to another function and from evidence that would
+require code not shown. Use unverified when the supplied evidence cannot settle the claim. This
+is a cheap first screen, not the final decision: judge honestly and report your own uncertainty
+in the uncertain and uncertainty_reason fields. Never decide whether to escalate — that is
+handled elsewhere.
+{V2_CONTEXT_EVIDENCE}
+{V2_PROOF_BAR}
+{V2_FALSE_POSITIVE_POLICY}
+
+{_pair_envelope(pair)}
+
+Reply with exactly one line of JSON and nothing else:
+{{"verdict": "consistent" | "inconsistent" | "unverified", "proof": "direct" | "delegated" | "requires-unseen-code", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "claim": "<the exact claim being judged>", "evidence": "<the exact supplied code evidence>", "uncertain": true | false, "uncertainty_reason": "<why you are unsure, or null>"}}"""
+    return model_json(prompt, cheap_model, provider)
+
+
 VERDICTS = {"consistent", "inconsistent"}
 V2_VERDICTS = VERDICTS | {"unverified"}
 PROOFS = {"direct", "delegated", "requires-unseen-code"}
@@ -586,12 +614,21 @@ def _abstained(trail, reason, resolver_id="v1"):
 
 
 def judge(pair, models, run_test=None):
+    """Dispatch one claim to trial. models: {strong, cheap, resolver}. v3 runs a cheap screen
+    (_judge_cascade_v3) ahead of the unchanged v1/v2 5-step process (_judge_full)."""
+    resolver_id = models.get("resolver", "v1")
+    if resolver_id not in ("v1", "v2", "v3"):
+        raise ValueError("resolver must be v1, v2, or v3")
+    if resolver_id == "v3":
+        return _judge_cascade_v3(pair, models, run_test)
+    return _judge_full(pair, models, run_test)
+
+
+def _judge_full(pair, models, run_test=None):
     """Put one claim on trial (the 5-step process). models: {strong, cheap}."""
     strong, cheap = models["strong"], models["cheap"]
     provider = models.get("provider", "claude")
     resolver_id = models.get("resolver", "v1")
-    if resolver_id not in ("v1", "v2"):
-        raise ValueError("resolver must be v1 or v2")
     trail = {}
     calls = ({
         "snap": snap_call, "challenge": challenge_call, "prongs": run_prongs,
@@ -703,6 +740,25 @@ def judge(pair, models, run_test=None):
         if syn is None:
             return _abstained(trail, synthesis_result["reason"], resolver_id)
     return resolve_v1(trail) if resolver_id == "v1" else resolve_v2(trail)
+
+
+def _judge_cascade_v3(pair, models, run_test=None):
+    """Screen cheap first; escalate to the unchanged full v2 jury only when the deterministic
+    router (resolver.route_screen_v3) demands it. The model never decides whether to escalate."""
+    cheap = models["cheap"]
+    provider = models.get("provider", "claude")
+    calls = {"screen": screen_call_v3}
+
+    def invoke(stage, *args):
+        return run_test(stage, *args) if run_test is not None else calls[stage](*args, provider)
+
+    stages = {"screen": invoke("screen", pair, cheap)}                  # 1. cheap screen
+    stages["route"] = route_screen_v3(stages["screen"])
+    if stages["route"]["decision"] == "clear":
+        return resolve_v3(stages)
+    jury = _judge_full(pair, {**models, "resolver": "v2"}, run_test)    # 2. escalate to full jury
+    stages["jury"] = jury["stages"]
+    return resolve_v3(stages)
 
 
 def selftest():
