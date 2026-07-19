@@ -132,6 +132,38 @@ def _abstain_v2(stages, reason):
     }
 
 
+def _recorded_abstention_reason_v2(stages):
+    def terminal_reason(name):
+        record = stages.get(name)
+        if not isinstance(record, dict) or record.get("status") != "abstain":
+            return None
+        reason = record.get("reason")
+        return reason if isinstance(reason, str) and reason else None
+
+    for name in ("snap", "challenge"):
+        reason = terminal_reason(name)
+        if reason is not None:
+            return reason
+
+    for name, reason in (
+        ("prongs", "one or more prong responses are missing required fields"),
+        ("prongs_escalated",
+         "one or more escalated prong responses are missing required fields"),
+    ):
+        records = stages.get(name)
+        if isinstance(records, list) and (
+                len(records) != len(V2_PRONG_ROLES) or
+                any(not isinstance(record, dict) or record.get("status") != "ok"
+                    for record in records)):
+            return reason
+
+    for name in ("blindspot", "synthesis"):
+        reason = terminal_reason(name)
+        if reason is not None:
+            return reason
+    return None
+
+
 def plurality_v2(snap, prongs):
     """Return the unique plurality among snap and high-bar prongs; concessions do not dissent."""
     votes = [snap["verdict"], *(
@@ -175,7 +207,8 @@ def resolve_v2(stages):
     """Resolve proof-bearing stages, preserving uncertainty as a semantic outcome."""
     values = _validated_v2(stages)
     if values is None:
-        return _abstain_v2(stages, "trial record is incomplete")
+        reason = _recorded_abstention_reason_v2(stages)
+        return _abstain_v2(stages, reason or "trial record is incomplete")
     snap, challenge, prongs, blindspot = values
     contested = needs_synthesis_v2(stages)
     winner = plurality_v2(snap, prongs)
@@ -184,7 +217,10 @@ def resolve_v2(stages):
     if contested:
         source = _proof_record(_value(stages, "synthesis"))
         if source is None:
-            return _abstain_v2(stages, "synthesis response is missing required fields")
+            reason = _recorded_abstention_reason_v2(stages)
+            return _abstain_v2(
+                stages, reason or "synthesis response is missing required fields"
+            )
 
     verdict = source["verdict"]
     direct_consistent = (

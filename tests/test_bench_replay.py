@@ -73,6 +73,30 @@ class ReplayTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaisesRegex(ValueError, field):
                 replay_rows([row], "v1", expect_stored=True)
 
+    def test_v2_expect_stored_preserves_early_snap_abstention(self):
+        reason = "snap response is missing required fields"
+        trial_stages = {
+            "snap": {"status": "abstain", "reason": reason},
+        }
+        stored = {
+            "final_status": "abstain",
+            "semantic_status": "not-evaluated",
+            "final_verdict": None,
+            "verdict": None,
+            "category": None,
+            "why": reason,
+            "contested": False,
+            "stages": trial_stages,
+        }
+        row = {
+            **source_row("rust-itertools/itertools/new#487-new", "rust"),
+            "got": stored,
+        }
+
+        replayed = replay_rows([row], "v2", expect_stored=True)
+
+        self.assertEqual(replayed[0]["got"], stored)
+
     def test_artifact_hash_uses_the_same_bounded_snapshot_that_is_parsed(self):
         from eval.bench import replay
 

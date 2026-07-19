@@ -205,6 +205,86 @@ class ResolverV2Tests(unittest.TestCase):
         result = resolve_v2(stages)
         self.assertEqual(result["final_status"], "abstain")
         self.assertEqual(result["semantic_status"], "not-evaluated")
+        self.assertEqual(result["why"], "trial record is incomplete")
+
+    def test_terminal_stage_abstention_reason_is_preserved(self):
+        snap = {
+            "snap": {
+                "status": "abstain",
+                "reason": "snap response is missing required fields",
+            },
+        }
+
+        challenge = self.unanimous()
+        challenge["challenge"] = {
+            "status": "abstain",
+            "reason": "challenge provider timeout",
+        }
+
+        blindspot = self.unanimous()
+        blindspot["blindspot"] = {
+            "status": "abstain",
+            "reason": "blindspot provider timeout",
+        }
+
+        synthesis = self.unanimous()
+        synthesis["challenge"]["value"]["cracks"] = True
+        synthesis["synthesis"] = {
+            "status": "abstain",
+            "reason": "synthesis provider timeout",
+        }
+
+        for stage, stages, reason in (
+            ("snap", snap, "snap response is missing required fields"),
+            ("challenge", challenge, "challenge provider timeout"),
+            ("blindspot", blindspot, "blindspot provider timeout"),
+            ("synthesis", synthesis, "synthesis provider timeout"),
+        ):
+            with self.subTest(stage=stage):
+                result = resolve_v2(stages)
+                self.assertEqual(
+                    (result["final_status"], result["semantic_status"], result["why"]),
+                    ("abstain", "not-evaluated", reason),
+                )
+
+    def test_prong_abstentions_keep_aggregate_reasons(self):
+        initial = self.unanimous()
+        initial["prongs"][1] = {
+            "status": "abstain",
+            "reason": "provider timeout",
+        }
+
+        truncated = self.unanimous()
+        truncated["prongs"] = truncated["prongs"][:2]
+
+        escalated = self.unanimous()
+        escalated["prongs_escalated"] = [
+            ok(proof_verdict("consistent", role=role)) for role in self.roles
+        ]
+        escalated["prongs_escalated"][1] = {
+            "status": "abstain",
+            "reason": "provider timeout",
+        }
+
+        for name, stages, reason in (
+            ("initial", initial,
+             "one or more prong responses are missing required fields"),
+            ("truncated", truncated,
+             "one or more prong responses are missing required fields"),
+            ("escalated", escalated,
+             "one or more escalated prong responses are missing required fields"),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(resolve_v2(stages)["why"], reason)
+
+    def test_missing_synthesis_record_keeps_generic_reason(self):
+        stages = self.unanimous()
+        stages["challenge"]["value"]["cracks"] = True
+
+        self.assertEqual(
+            resolve_v2(stages)["why"],
+            "synthesis response is missing required fields",
+        )
 
     def test_prong_without_cleared_bar_is_infrastructure_abstention(self):
         stages = self.unanimous()
