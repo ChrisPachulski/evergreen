@@ -258,6 +258,12 @@ def resolve_v3(stages):
             "stages": stages,
         }
     jury_stages = stages.get("jury")
+    # Jury path returns resolve_v2's envelope verbatim, whose "stages" is the inner v2 trail
+    # only -- NOT this {screen, route, jury} wrapper. The caller (_judge_cascade_v3) overwrites
+    # decision["stages"] with the full wrapper before persistence, so replay can recompute the
+    # route and execution ledger from the stored row. "stages" is excluded from replay's compared
+    # fields, so the asymmetry is invisible today; if "stages" is ever added to the compared or
+    # persisted set, the wrapper must be reconstructed here too.
     return resolve_v2(jury_stages if isinstance(jury_stages, dict) else {})
 
 
