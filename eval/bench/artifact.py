@@ -280,6 +280,55 @@ def artifact_metadata(dataset: Path, repo: Path, settings: dict) -> dict:
     }
 
 
+VALID_EXECUTION_ROUTES = {"clear", "jury"}
+VALID_EXECUTION_TIERS = {"cheap", "strong"}
+VALID_EXECUTION_STAGES = {"screen", "snap", "challenge", "prongs", "blindspot", "synthesis"}
+
+
+def _non_negative_int(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _validate_execution(got):
+    """Validate the got.execution provider-attempt ledger a v3 row carries.
+
+    Historical rows never reach this — the caller only invokes it when "execution" is present,
+    so v1/v2 artifacts (and any v3 row predating the ledger) stay valid without it.
+    """
+    execution = got["execution"]
+    if not isinstance(execution, dict):
+        raise ValueError("benchmark row execution ledger must be an object")
+    if execution.get("strategy") != "cascade-v1":
+        raise ValueError("benchmark row execution ledger strategy is invalid")
+    route = execution.get("route")
+    if route not in VALID_EXECUTION_ROUTES:
+        raise ValueError("benchmark row execution ledger route is invalid")
+    if not _non_negative_int(execution.get("logical_calls")):
+        raise ValueError("benchmark row execution ledger logical_calls is invalid")
+    provider_attempts = execution.get("provider_attempts")
+    if not _non_negative_int(provider_attempts):
+        raise ValueError("benchmark row execution ledger provider_attempts is invalid")
+    by_tier = execution.get("attempts_by_tier")
+    if (not isinstance(by_tier, dict) or set(by_tier) != VALID_EXECUTION_TIERS or
+            not all(_non_negative_int(value) for value in by_tier.values())):
+        raise ValueError("benchmark row execution ledger attempts_by_tier is invalid")
+    by_stage = execution.get("attempts_by_stage")
+    if (not isinstance(by_stage, dict) or not by_stage or
+            not set(by_stage) <= VALID_EXECUTION_STAGES or
+            not all(_non_negative_int(value) for value in by_stage.values())):
+        raise ValueError("benchmark row execution ledger attempts_by_stage is invalid")
+    if sum(by_tier.values()) != provider_attempts or sum(by_stage.values()) != provider_attempts:
+        raise ValueError("benchmark row execution ledger counts do not sum to provider_attempts")
+    if route == "clear":
+        if (execution["logical_calls"] != 1 or set(by_stage) != {"screen"} or
+                by_tier["strong"] != 0):
+            raise ValueError("benchmark row execution ledger is inconsistent with its route")
+        if got.get("final_verdict") != "consistent" or got.get("category") is not None:
+            raise ValueError("benchmark row execution ledger route does not match its decision")
+    elif not {"screen", "snap"} <= set(by_stage):
+        raise ValueError("benchmark row execution ledger is missing the jury's own snap stage")
+
+
 def validate_benchmark_row(row, require_result):
     if not isinstance(row, dict):
         raise ValueError("benchmark row must be an object")
@@ -314,6 +363,8 @@ def validate_benchmark_row(row, require_result):
             )
         if not valid:
             raise ValueError("benchmark row result status combination is invalid")
+        if "execution" in got:
+            _validate_execution(got)
 
 
 def validate_input_hashes(
@@ -386,8 +437,16 @@ def load_json(path, max_bytes):
     return json.loads(read_bytes(path, max_bytes, label="artifact"))
 
 
-def resume_state(document, expected_metadata, dataset_rows=None):
-    """Validate a resumable envelope and return its accumulated accounting."""
+def resume_state(document, expected_metadata, dataset_rows=None, provider_attempt_ceiling=None):
+    """Validate a resumable envelope and return its accumulated accounting.
+
+    provider_attempt_ceiling, when given, is the hard per-run provider-attempt budget: resumed
+    rows' own got.execution.provider_attempts ledgers are summed (rows lacking a ledger, i.e.
+    every v1/v2 row, contribute 0 — never the top-level provider_usage token counts, which do not
+    measure provider-process attempts) into "prior_provider_attempts". An artifact whose stored
+    attempts already exceed the ceiling is rejected outright: resuming can only spend the budget
+    down, never reset it.
+    """
     if isinstance(document, list):
         raise ValueError("legacy artifacts have unknown provenance and cannot be resumed")
     if (not isinstance(document, dict) or type(document.get("schema_version")) is not int or
@@ -426,9 +485,18 @@ def resume_state(document, expected_metadata, dataset_rows=None):
             source = {key: value for key, value in row.items() if key != "got"}
             if expected.get(row["id"]) != source:
                 raise ValueError("resumed row does not match hashed dataset")
+    prior_provider_attempts = sum(
+        row["got"]["execution"]["provider_attempts"] for row in rows
+        if isinstance(row.get("got"), dict) and isinstance(row["got"].get("execution"), dict)
+    )
+    if (provider_attempt_ceiling is not None and
+            prior_provider_attempts > provider_attempt_ceiling):
+        raise ValueError(
+            "resumed provider attempts already exceed the configured provider-attempt ceiling"
+        )
     return {
         "rows": rows, "started_at": started_at, "elapsed_seconds": elapsed,
-        "provider_usage": usage,
+        "provider_usage": usage, "prior_provider_attempts": prior_provider_attempts,
     }
 
 

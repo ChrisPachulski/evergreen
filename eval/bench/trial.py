@@ -7,6 +7,7 @@ from pathlib import Path
 import selectors
 import subprocess
 import tempfile
+import threading
 import time
 from types import SimpleNamespace
 
@@ -206,8 +207,46 @@ def bounded_cli_run(command, capture_output=True, text=True, timeout=300, input=
     return SimpleNamespace(returncode=return_code, stdout=stdout, stderr=stderr)
 
 
-def claude_json(prompt, model, tools="", timeout=300, max_retries=2, runner=None):
-    """Run one headless CLI call with bounded retries and return an explicit result status."""
+class CallBudget:
+    """A hard, thread-safe ceiling on provider-process invocations shared across one run.
+
+    reserve() is an atomic check-and-decrement under a single lock, so many judges sharing one
+    budget can call it concurrently and the total ever granted never exceeds the limit. Callers
+    must call it immediately before each CLI process invocation — once per attempt, not once per
+    logical call — so a retry loop can be cut off mid-retry at the exact ceiling.
+    """
+
+    def __init__(self, limit):
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
+            raise ValueError("CallBudget limit must be a non-negative int")
+        self._lock = threading.Lock()
+        self._remaining = limit
+
+    def reserve(self):
+        with self._lock:
+            if self._remaining <= 0:
+                return False
+            self._remaining -= 1
+            return True
+
+    @property
+    def remaining(self):
+        with self._lock:
+            return self._remaining
+
+
+def _forwarded_budget(budget):
+    """Omit the budget kwarg entirely when unset, so callers that stub model_json with a
+    fixed-arity fake keep working unchanged; only a real budget needs to be threaded through."""
+    return {"budget": budget} if budget is not None else {}
+
+
+def claude_json(prompt, model, tools="", timeout=300, max_retries=2, runner=None, budget=None):
+    """Run one headless CLI call with bounded retries and return an explicit result status.
+
+    Every returned dict carries "attempts": the number of actual provider-process invocations
+    made (never inferred from token usage), counting a first-try success as 1.
+    """
     cmd = [
         "claude", "-p", prompt, "--safe-mode", "--no-session-persistence",
         "--tools", "", "--allowedTools", tools,
@@ -216,17 +255,27 @@ def claude_json(prompt, model, tools="", timeout=300, max_retries=2, runner=None
         cmd += ["--model", model]
     runner = runner or bounded_cli_run
     reason = "malformed response"
+    attempts = 0
     for _ in range(max_retries + 1):
+        if budget is not None and not budget.reserve():
+            return {
+                "status": "abstain", "reason": "provider-attempt budget exhausted",
+                "attempts": attempts,
+            }
+        attempts += 1
         try:
             completed = runner(cmd, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             reason = "timeout"
             continue
         except OSError as error:
-            return {"status": "abstain", "reason": str(error)}
+            return {"status": "abstain", "reason": str(error), "attempts": attempts}
         if (len(getattr(completed, "stdout", "").encode()) > MAX_MODEL_STDOUT_BYTES or
                 len(getattr(completed, "stderr", "").encode()) > MAX_MODEL_STDERR_BYTES):
-            return {"status": "abstain", "reason": "model CLI output limit exceeded"}
+            return {
+                "status": "abstain", "reason": "model CLI output limit exceeded",
+                "attempts": attempts,
+            }
         if getattr(completed, "returncode", 0):
             reason = f"CLI exited {completed.returncode}"
             continue
@@ -238,13 +287,16 @@ def claude_json(prompt, model, tools="", timeout=300, max_retries=2, runner=None
                 except json.JSONDecodeError:
                     continue
                 if isinstance(value, dict):
-                    return {"status": "ok", "value": value}
+                    return {"status": "ok", "value": value, "attempts": attempts}
         reason = "malformed response"
-    return {"status": "abstain", "reason": reason}
+    return {"status": "abstain", "reason": reason, "attempts": attempts}
 
 
-def codex_json(prompt, model, timeout=300, max_retries=2, runner=None):
-    """Run one isolated Codex CLI call and return the shared explicit result status."""
+def codex_json(prompt, model, timeout=300, max_retries=2, runner=None, budget=None):
+    """Run one isolated Codex CLI call and return the shared explicit result status.
+
+    Every returned dict carries "attempts", counted the same way as claude_json.
+    """
     cmd = [
         "codex", "exec", "--strict-config", "--ephemeral", "--ignore-user-config",
         "--ignore-rules", "--skip-git-repo-check", "-c", 'approval_policy="never"',
@@ -258,9 +310,16 @@ def codex_json(prompt, model, timeout=300, max_retries=2, runner=None):
         cmd += ["--model", model]
     runner = runner or bounded_cli_run
     reason = "malformed response"
+    attempts = 0
     with tempfile.TemporaryDirectory(prefix="evergreen-codex-") as empty_cwd:
         isolated_cmd = [*cmd, "-C", empty_cwd, "-"]
         for _ in range(max_retries + 1):
+            if budget is not None and not budget.reserve():
+                return {
+                    "status": "abstain", "reason": "provider-attempt budget exhausted",
+                    "attempts": attempts,
+                }
+            attempts += 1
             try:
                 completed = runner(
                     isolated_cmd, capture_output=True, text=True, timeout=timeout,
@@ -270,10 +329,13 @@ def codex_json(prompt, model, timeout=300, max_retries=2, runner=None):
                 reason = "timeout"
                 continue
             except OSError as error:
-                return {"status": "abstain", "reason": str(error)}
+                return {"status": "abstain", "reason": str(error), "attempts": attempts}
             if (len(getattr(completed, "stdout", "").encode()) > MAX_MODEL_STDOUT_BYTES or
                     len(getattr(completed, "stderr", "").encode()) > MAX_MODEL_STDERR_BYTES):
-                return {"status": "abstain", "reason": "model CLI output limit exceeded"}
+                return {
+                    "status": "abstain", "reason": "model CLI output limit exceeded",
+                    "attempts": attempts,
+                }
             if getattr(completed, "returncode", 0):
                 reason = f"CLI exited {completed.returncode}"
                 continue
@@ -301,7 +363,10 @@ def codex_json(prompt, model, timeout=300, max_retries=2, runner=None):
                         elif item_type not in ("reasoning", "error"):
                             used_tool = True
             if used_tool:
-                return {"status": "abstain", "reason": "Codex attempted a tool call"}
+                return {
+                    "status": "abstain", "reason": "Codex attempted a tool call",
+                    "attempts": attempts,
+                }
             if turn_completed and isinstance(agent_message, str) and not malformed:
                 try:
                     wrapper = json.loads(agent_message)
@@ -309,9 +374,9 @@ def codex_json(prompt, model, timeout=300, max_retries=2, runner=None):
                 except (json.JSONDecodeError, KeyError, TypeError):
                     value = None
                 if isinstance(value, dict):
-                    return {"status": "ok", "value": value}
+                    return {"status": "ok", "value": value, "attempts": attempts}
             reason = "malformed or incomplete Codex response"
-    return {"status": "abstain", "reason": reason}
+    return {"status": "abstain", "reason": reason, "attempts": attempts}
 
 
 def model_json(prompt, model, provider="claude", **kwargs):
@@ -338,7 +403,7 @@ def model_json(prompt, model, provider="claude", **kwargs):
 # category, self-reported uncertainty, or an invalid/abstained screen. The model never decides
 # whether to escalate — only the router does.
 
-def snap_call(pair, model, provider="claude"):
+def snap_call(pair, model, provider="claude", budget=None):
     prompt = f"""{skill_body()}
 
 # Task
@@ -350,10 +415,10 @@ contradicts or fails to deliver; extra undocumented behavior is NOT an inconsist
 
 Reply with exactly one line of JSON and nothing else:
 {{"id": "<copy data.id exactly>", "verdict": "consistent" | "inconsistent", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "why": "<cite the code>"}}"""
-    return model_json(prompt, model, provider)
+    return model_json(prompt, model, provider, **_forwarded_budget(budget))
 
 
-def snap_call_v2(pair, model, provider="claude"):
+def snap_call_v2(pair, model, provider="claude", budget=None):
     prompt = f"""{skill_body()}
 
 # Task
@@ -368,10 +433,10 @@ require code not shown. Use unverified when the supplied evidence cannot settle 
 
 Reply with exactly one line of JSON and nothing else:
 {{"verdict": "consistent" | "inconsistent" | "unverified", "proof": "direct" | "delegated" | "requires-unseen-code", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "claim": "<the exact claim being judged>", "evidence": "<the exact supplied code evidence>"}}"""
-    return model_json(prompt, model, provider)
+    return model_json(prompt, model, provider, **_forwarded_budget(budget))
 
 
-def challenge_call(pair, snap_verdict, model, provider="claude"):
+def challenge_call(pair, snap_verdict, model, provider="claude", budget=None):
     attack = ("Argue the documentation is actually INCONSISTENT — find the specific code that "
               "breaks its claim." if snap_verdict == "consistent" else
               "Argue the documentation is actually CONSISTENT — give the reading of the code "
@@ -389,10 +454,10 @@ either way; most first verdicts survive a decent attack. When unsure, cracks=fal
 Reply with exactly one line of JSON and nothing else:
 {{"cracks": true | false, "why": "<your strongest case, citing the code>"}}"""
     # cracks=true  → the first verdict does NOT survive the challenge (it was contestable)
-    return model_json(prompt, model, provider)
+    return model_json(prompt, model, provider, **_forwarded_budget(budget))
 
 
-def challenge_call_v2(pair, snap_verdict, model, provider="claude"):
+def challenge_call_v2(pair, snap_verdict, model, provider="claude", budget=None):
     prompt = f"""A first reviewer judged this documentation "{snap_verdict}". Make the strongest
 opposing case using only code directly present in the supplied evidence. Do not treat delegated
 behavior or code that is not shown as proof. Then say whether that direct case cracks the verdict.
@@ -404,7 +469,7 @@ behavior or code that is not shown as proof. Then say whether that direct case c
 
 Reply with exactly one line of JSON and nothing else:
 {{"cracks": true | false, "why": "<the strongest directly cited case>"}}"""
-    return model_json(prompt, model, provider)
+    return model_json(prompt, model, provider, **_forwarded_budget(budget))
 
 
 PRONGS = {
@@ -420,7 +485,7 @@ PRONGS_V2 = {
 }
 
 
-def prong_call(pair, role, model, provider="claude"):
+def prong_call(pair, role, model, provider="claude", budget=None):
     # BLIND: the prong sees only the claim + code + its assigned angle — never the snap, the
     # challenge, or its tier. That blindness is what stops a "confirming" prong rubber-stamping.
     prompt = f"""{skill_body()}
@@ -433,16 +498,18 @@ consistent with the code? Code doing MORE than the doc says is consistent (infor
 
 Reply with exactly one line of JSON and nothing else:
 {{"role": "{role}", "verdict": "consistent" | "inconsistent", "why": "<cite the code>"}}"""
-    return model_json(prompt, model, provider)
+    return model_json(prompt, model, provider, **_forwarded_budget(budget))
 
 
-def run_prongs(pair, model, provider="claude"):
+def run_prongs(pair, model, provider="claude", budget=None):
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=3) as pool:
-        return list(pool.map(lambda r: prong_call(pair, r, model, provider), PRONGS))
+        return list(pool.map(
+            lambda r: prong_call(pair, r, model, provider, budget=budget), PRONGS
+        ))
 
 
-def prong_call_v2(pair, role, model, provider="claude"):
+def prong_call_v2(pair, role, model, provider="claude", budget=None):
     prompt = f"""{skill_body()}
 
 # Task ({role})
@@ -459,16 +526,18 @@ high evidence bar; a lens is never forced to conclude its assigned side.
 
 Reply with exactly one line of JSON and nothing else:
 {{"role": "{role}", "verdict": "consistent" | "inconsistent" | "unverified", "cleared_bar": true | false, "proof": "direct" | "delegated" | "requires-unseen-code", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "claim": "<the exact claim being judged>", "evidence": "<the exact supplied code evidence>"}}"""
-    return model_json(prompt, model, provider)
+    return model_json(prompt, model, provider, **_forwarded_budget(budget))
 
 
-def run_prongs_v2(pair, model, provider="claude"):
+def run_prongs_v2(pair, model, provider="claude", budget=None):
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=3) as pool:
-        return list(pool.map(lambda role: prong_call_v2(pair, role, model, provider), PRONGS_V2))
+        return list(pool.map(
+            lambda role: prong_call_v2(pair, role, model, provider, budget=budget), PRONGS_V2
+        ))
 
 
-def blindspot_call(pair, model, provider="claude"):
+def blindspot_call(pair, model, provider="claude", budget=None):
     prompt = f"""Three reviewers just judged whether this documentation matches the code. Your
 only job: name ONE angle they could ALL have missed — a reading of the code, an edge case, a
 claim in the doc — strong enough to FLIP the verdict. The bar is HIGH: the angle must rest on
@@ -480,10 +549,10 @@ expected answer is null. You are surfacing a candidate, not deciding.
 
 Reply with exactly one line of JSON and nothing else:
 {{"missed_angle": "<the verdict-flipping angle, or null>"}}"""
-    return model_json(prompt, model, provider)
+    return model_json(prompt, model, provider, **_forwarded_budget(budget))
 
 
-def blindspot_call_v2(pair, model, provider="claude"):
+def blindspot_call_v2(pair, model, provider="claude", budget=None):
     prompt = f"""Three reviewers just judged whether this documentation matches the code. Your
 only job: name ONE angle they could ALL have missed — a reading of the code, an edge case, a
 claim in the doc — strong enough to FLIP the verdict. The bar is HIGH: the angle must rest on
@@ -498,10 +567,10 @@ expected answer is null. You are surfacing a candidate, not deciding.
 
 Reply with exactly one line of JSON and nothing else:
 {{"missed_angle": "<the verdict-flipping angle, or null>"}}"""
-    return model_json(prompt, model, provider)
+    return model_json(prompt, model, provider, **_forwarded_budget(budget))
 
 
-def synthesis_call(pair, snap, challenge, prongs, blindspot, model, provider="claude"):
+def synthesis_call(pair, snap, challenge, prongs, blindspot, model, provider="claude", budget=None):
     ev = {"snap": snap, "challenge": challenge, "prongs": prongs, "blindspot": blindspot}
     prompt = f"""{skill_body()}
 
@@ -521,10 +590,12 @@ the picture, account for it. Code doing more than the doc says is consistent, no
 
 Reply with exactly one line of JSON and nothing else:
 {{"verdict": "consistent" | "inconsistent", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "why": "<the deciding reasoning, citing the code>"}}"""
-    return model_json(prompt, model, provider)
+    return model_json(prompt, model, provider, **_forwarded_budget(budget))
 
 
-def synthesis_call_v2(pair, snap, challenge, prongs, blindspot, model, provider="claude"):
+def synthesis_call_v2(
+    pair, snap, challenge, prongs, blindspot, model, provider="claude", budget=None
+):
     evidence = {"snap": snap, "challenge": challenge, "prongs": prongs,
                 "blindspot": blindspot}
     prompt = f"""{skill_body()}
@@ -546,10 +617,10 @@ consistent, category must be null.
 
 Reply with exactly one line of JSON and nothing else:
 {{"verdict": "consistent" | "inconsistent" | "unverified", "proof": "direct" | "delegated" | "requires-unseen-code", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "claim": "<the exact claim being judged>", "evidence": "<the deciding supplied code evidence>"}}"""
-    return model_json(prompt, model, provider)
+    return model_json(prompt, model, provider, **_forwarded_budget(budget))
 
 
-def screen_call_v3(pair, cheap_model, provider="claude"):
+def screen_call_v3(pair, cheap_model, provider="claude", budget=None):
     prompt = f"""{skill_body()}
 
 # Task
@@ -567,7 +638,7 @@ handled elsewhere.
 
 Reply with exactly one line of JSON and nothing else:
 {{"verdict": "consistent" | "inconsistent" | "unverified", "proof": "direct" | "delegated" | "requires-unseen-code", "category": "direct-mismatch" | "over-promise" | "under-promise" | null, "claim": "<the exact claim being judged>", "evidence": "<the exact supplied code evidence>", "uncertain": true | false, "uncertainty_reason": "<why you are unsure, or null>"}}"""
-    return model_json(prompt, cheap_model, provider)
+    return model_json(prompt, cheap_model, provider, **_forwarded_budget(budget))
 
 
 VERDICTS = {"consistent", "inconsistent"}
@@ -642,9 +713,11 @@ def _judge_full(pair, models, run_test=None):
     prong_roles = tuple(PRONGS if resolver_id == "v1" else PRONGS_V2)
     valid_snap = (lambda value: value.get("verdict") in VERDICTS) if resolver_id == "v1" \
         else _valid_proof_stage
+    budget = models.get("budget")
 
     def invoke(stage, *args):
-        return run_test(stage, *args) if run_test is not None else calls[stage](*args, provider)
+        return run_test(stage, *args) if run_test is not None \
+            else calls[stage](*args, provider, budget=budget)
 
     snap_result, snap = _checked_stage(
         invoke("snap", pair, strong), "snap", valid_snap
@@ -742,23 +815,80 @@ def _judge_full(pair, models, run_test=None):
     return resolve_v1(trail) if resolver_id == "v1" else resolve_v2(trail)
 
 
+# The execution ledger reads attempt counts straight back off the stored trail rather than
+# threading tier labels through every call, so it stays exactly reproducible from stages alone
+# on replay. Tiers follow the resolver's fixed dispatch policy (documented above): the screen and
+# challenge always run cheap; snap, blindspot, synthesis, and escalated prongs always run strong;
+# the initial prongs run cheap unless the challenge cracked the snap.
+_EXECUTION_JURY_TIERS = {
+    "snap": "strong", "challenge": "cheap", "blindspot": "strong", "synthesis": "strong",
+}
+
+
+def _stage_attempts(result):
+    """Sum actual provider-process attempts recorded on one stage result or a list of them."""
+    if isinstance(result, list):
+        return sum(_stage_attempts(item) for item in result)
+    attempts = result.get("attempts") if isinstance(result, dict) else None
+    return attempts if isinstance(attempts, int) and not isinstance(attempts, bool) else 0
+
+
+def _stage_logical_calls(result):
+    return len(result) if isinstance(result, list) else 1
+
+
+def _execution_ledger(route, screen_result, jury_trail):
+    """Build the deterministic got.execution provider-attempt ledger for one v3 decision."""
+    by_stage = {"screen": _stage_attempts(screen_result)}
+    by_tier = {"cheap": by_stage["screen"], "strong": 0}
+    logical_calls = _stage_logical_calls(screen_result)
+    jury_trail = jury_trail or {}
+    for name, tier in _EXECUTION_JURY_TIERS.items():
+        if name in jury_trail:
+            attempts = _stage_attempts(jury_trail[name])
+            by_stage[name] = attempts
+            by_tier[tier] += attempts
+            logical_calls += _stage_logical_calls(jury_trail[name])
+    challenge = jury_trail.get("challenge")
+    cracked = bool(isinstance(challenge, dict) and
+                   isinstance(challenge.get("value"), dict) and challenge["value"].get("cracks"))
+    for key, tier in (("prongs", "strong" if cracked else "cheap"), ("prongs_escalated", "strong")):
+        if key in jury_trail:
+            attempts = _stage_attempts(jury_trail[key])
+            by_stage["prongs"] = by_stage.get("prongs", 0) + attempts
+            by_tier[tier] += attempts
+            logical_calls += _stage_logical_calls(jury_trail[key])
+    provider_attempts = sum(by_stage.values())
+    return {
+        "strategy": "cascade-v1", "route": route, "logical_calls": logical_calls,
+        "provider_attempts": provider_attempts, "attempts_by_tier": by_tier,
+        "attempts_by_stage": by_stage,
+    }
+
+
 def _judge_cascade_v3(pair, models, run_test=None):
     """Screen cheap first; escalate to the unchanged full v2 jury only when the deterministic
     router (resolver.route_screen_v3) demands it. The model never decides whether to escalate."""
     cheap = models["cheap"]
     provider = models.get("provider", "claude")
+    budget = models.get("budget")
     calls = {"screen": screen_call_v3}
 
     def invoke(stage, *args):
-        return run_test(stage, *args) if run_test is not None else calls[stage](*args, provider)
+        return run_test(stage, *args) if run_test is not None \
+            else calls[stage](*args, provider, budget=budget)
 
     stages = {"screen": invoke("screen", pair, cheap)}                  # 1. cheap screen
     stages["route"] = route_screen_v3(stages["screen"])
-    if stages["route"]["decision"] == "clear":
-        return resolve_v3(stages)
-    jury = _judge_full(pair, {**models, "resolver": "v2"}, run_test)    # 2. escalate to full jury
-    stages["jury"] = jury["stages"]
-    return resolve_v3(stages)
+    jury_trail = None
+    if stages["route"]["decision"] != "clear":
+        jury = _judge_full(pair, {**models, "resolver": "v2"}, run_test)  # 2. escalate to full jury
+        jury_trail = stages["jury"] = jury["stages"]
+    decision = resolve_v3(stages)
+    decision["execution"] = _execution_ledger(
+        stages["route"]["decision"], stages["screen"], jury_trail
+    )
+    return decision
 
 
 def selftest():

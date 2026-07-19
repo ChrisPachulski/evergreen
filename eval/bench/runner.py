@@ -139,6 +139,20 @@ def require_frozen_run(environment=os.environ):
         )
 
 
+def build_provider_attempt_budget(ceiling, prior_provider_attempts=0):
+    """Instantiate the per-run CallBudget from a hard provider-attempt ceiling, net of attempts
+    already spent by resumed rows (see artifact.resume_state's "prior_provider_attempts").
+
+    A None ceiling means unlimited: no budget object, which is exactly today's v1/v2 behavior
+    with the ceiling unset. Whoever supplies a positive ceiling is responsible for validating it
+    is positive and for rejecting prior_provider_attempts that already exceed it (resume_state
+    does the latter); this function only nets the two together.
+    """
+    if ceiling is None:
+        return None
+    return trial_module.CallBudget(max(ceiling - prior_provider_attempts, 0))
+
+
 def artifact_filename(dataset, strong_model, provider, resolver="v1"):
     parts = (Path(dataset).stem, provider, strong_model)
     if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", part) for part in parts):
@@ -333,8 +347,12 @@ def main():
     else:
         state = {
             "rows": [], "started_at": new_started_at, "elapsed_seconds": 0,
-            "provider_usage": None,
+            "provider_usage": None, "prior_provider_attempts": 0,
         }
+    # No launcher flag sets a ceiling yet (v3's --max-provider-attempts is out of this task's
+    # scope), so this is always unlimited today; resuming an artifact that already carries
+    # got.execution ledgers nets its prior attempts out of the budget the moment a ceiling exists.
+    models["budget"] = build_provider_attempt_budget(None, state["prior_provider_attempts"])
     done = {item["id"]: item for item in state["rows"]}
     started_at = state["started_at"]
     prior_elapsed = state["elapsed_seconds"]

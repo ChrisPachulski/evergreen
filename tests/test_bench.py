@@ -1,9 +1,11 @@
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib.util
 import json
 import os
 import subprocess
 import tempfile
+import threading
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -44,6 +46,49 @@ class ModuleBoundaryTests(unittest.TestCase):
         self.assertEqual(output.getvalue(), "selftest ok\n")
 
 
+class CallBudgetTests(unittest.TestCase):
+    def test_limit_must_be_a_non_negative_int(self):
+        for limit in (-1, 1.5, True, "3"):
+            with self.subTest(limit=limit), self.assertRaisesRegex(ValueError, "non-negative"):
+                trial.CallBudget(limit)
+        self.assertEqual(trial.CallBudget(0).remaining, 0)
+
+    def test_reserve_grants_up_to_the_limit_then_fails(self):
+        budget = trial.CallBudget(2)
+
+        self.assertTrue(budget.reserve())
+        self.assertEqual(budget.remaining, 1)
+        self.assertTrue(budget.reserve())
+        self.assertEqual(budget.remaining, 0)
+        # At the exact ceiling the next reservation fails, and stays failed.
+        self.assertFalse(budget.reserve())
+        self.assertFalse(budget.reserve())
+        self.assertEqual(budget.remaining, 0)
+
+    def test_reserve_is_atomic_under_concurrent_threads(self):
+        limit = 10
+        budget = trial.CallBudget(limit)
+        granted = []
+        lock = threading.Lock()
+
+        def contend():
+            ok_ = budget.reserve()
+            with lock:
+                granted.append(ok_)
+
+        threads = [threading.Thread(target=contend) for _ in range(50)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        # A shared budget under concurrent contention must grant exactly the limit, never more —
+        # a check-then-act race would let some threads slip past a nearly-exhausted budget.
+        self.assertEqual(granted.count(True), limit)
+        self.assertEqual(granted.count(False), len(threads) - limit)
+        self.assertEqual(budget.remaining, 0)
+
+
 class ClaudeJSONTests(unittest.TestCase):
     def test_cli_disables_customizations_tools_and_session_persistence(self):
         commands = []
@@ -54,7 +99,7 @@ class ClaudeJSONTests(unittest.TestCase):
 
         result = trial.claude_json("prompt", "model", runner=runner)
 
-        self.assertEqual(result, {"status": "ok", "value": {"ok": True}})
+        self.assertEqual(result, {"status": "ok", "value": {"ok": True}, "attempts": 1})
         self.assertEqual(len(commands), 1)
         command = commands[0]
         self.assertIn("--safe-mode", command)
@@ -75,6 +120,9 @@ class ClaudeJSONTests(unittest.TestCase):
         self.assertEqual(result["status"], "abstain")
         self.assertIn("timeout", result["reason"])
         self.assertEqual(len(calls), 3)
+        # Every retry is a real provider-process invocation: three timed-out attempts still
+        # counts as three, even though none of them produced a usable response.
+        self.assertEqual(result["attempts"], 3)
 
     def test_malformed_response_abstains_after_two_retries(self):
         calls = []
@@ -88,6 +136,7 @@ class ClaudeJSONTests(unittest.TestCase):
         self.assertEqual(result["status"], "abstain")
         self.assertIn("malformed", result["reason"])
         self.assertEqual(len(calls), 3)
+        self.assertEqual(result["attempts"], 3)
 
     def test_bounded_retry_can_recover_on_third_attempt(self):
         replies = iter([
@@ -103,7 +152,9 @@ class ClaudeJSONTests(unittest.TestCase):
 
         result = trial.claude_json("prompt", "model", runner=runner)
 
-        self.assertEqual(result, {"status": "ok", "value": {"verdict": "consistent"}})
+        self.assertEqual(
+            result, {"status": "ok", "value": {"verdict": "consistent"}, "attempts": 3}
+        )
         self.assertEqual(len(calls), 3)
 
     def test_missing_cli_abstains_instead_of_raising(self):
@@ -114,6 +165,78 @@ class ClaudeJSONTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "abstain")
         self.assertIn("claude not found", result["reason"])
+        # An OS error abstains on the same attempt it happened on — it never retries.
+        self.assertEqual(result["attempts"], 1)
+
+    def test_output_limit_abstain_reports_the_one_attempt_that_hit_it(self):
+        oversized = SimpleNamespace(stdout="x" * 100, stderr="", returncode=0)
+        with mock.patch.object(trial, "MAX_MODEL_STDOUT_BYTES", 10):
+            result = trial.claude_json("prompt", "model", runner=lambda *_a, **_k: oversized)
+
+        self.assertEqual(result["status"], "abstain")
+        self.assertIn("output limit", result["reason"])
+        self.assertEqual(result["attempts"], 1)
+
+    def test_budget_exhaustion_abstains_before_invoking_the_runner_again(self):
+        calls = []
+
+        def malformed(*args, **kwargs):
+            calls.append((args, kwargs))
+            return SimpleNamespace(stdout="not json", returncode=0)
+
+        budget = trial.CallBudget(2)
+        result = trial.claude_json(
+            "prompt", "model", max_retries=5, runner=malformed, budget=budget
+        )
+
+        # The budget only allows two attempts; the third (and every later) reservation fails
+        # before the fake runner is ever invoked again.
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result, {
+            "status": "abstain", "reason": "provider-attempt budget exhausted", "attempts": 2,
+        })
+        self.assertEqual(budget.remaining, 0)
+
+    def test_budget_exhaustion_is_never_folded_into_a_consistent_result(self):
+        budget = trial.CallBudget(0)
+
+        result = trial.claude_json(
+            "prompt", "model",
+            runner=lambda *_a, **_k: SimpleNamespace(
+                stdout='{"verdict":"consistent"}\n', returncode=0
+            ),
+            budget=budget,
+        )
+
+        self.assertEqual(result["status"], "abstain")
+        self.assertNotIn("value", result)
+        self.assertEqual(result["reason"], "provider-attempt budget exhausted")
+
+    def test_shared_budget_never_oversubscribes_across_concurrent_claude_json_calls(self):
+        limit = 5
+        budget = trial.CallBudget(limit)
+        invocations = []
+        lock = threading.Lock()
+
+        def ok_runner(*_args, **_kwargs):
+            with lock:
+                invocations.append(1)
+            return SimpleNamespace(stdout='{"ok":true}\n', stderr="", returncode=0)
+
+        def call():
+            return trial.claude_json("prompt", "model", runner=ok_runner, budget=budget)
+
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            results = list(pool.map(lambda _: call(), range(20)))
+
+        succeeded = [r for r in results if r["status"] == "ok"]
+        exhausted = [r for r in results if r["status"] == "abstain"]
+        self.assertEqual(len(succeeded), limit)
+        self.assertEqual(len(exhausted), 20 - limit)
+        self.assertTrue(all(r["reason"] == "provider-attempt budget exhausted" for r in exhausted))
+        # The real provider process (the fake runner) was itself only ever invoked limit times —
+        # the budget cut the rest off before the CLI call, not after.
+        self.assertEqual(len(invocations), limit)
 
 
 class CodexJSONTests(unittest.TestCase):
@@ -136,7 +259,7 @@ class CodexJSONTests(unittest.TestCase):
 
         result = trial.model_json("prompt", "gpt-5.6-sol", provider="codex", runner=capture)
 
-        self.assertEqual(result, {"status": "ok", "value": {"ok": True}})
+        self.assertEqual(result, {"status": "ok", "value": {"ok": True}, "attempts": 1})
         command = commands[0]
         self.assertEqual(command[:2], ["codex", "exec"])
         self.assertIn("--ephemeral", command)
@@ -177,6 +300,7 @@ class CodexJSONTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "abstain")
         self.assertIn("tool", result["reason"])
+        self.assertEqual(result["attempts"], 1)
 
     def test_failed_turn_abstains_without_accepting_an_agent_message(self):
         stdout = (
@@ -192,10 +316,26 @@ class CodexJSONTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "abstain")
         self.assertIn("CLI exited 1", result["reason"])
+        self.assertEqual(result["attempts"], 1)
 
     def test_unknown_provider_is_rejected_before_cli_execution(self):
         with self.assertRaisesRegex(ValueError, "EVAL_PROVIDER"):
             trial.model_json("prompt", "model", provider="unknown")
+
+    def test_codex_budget_exhaustion_abstains_before_invoking_the_runner_again(self):
+        calls = []
+
+        def bad_turn(*args, **kwargs):
+            calls.append((args, kwargs))
+            return SimpleNamespace(stdout="not json", stderr="", returncode=0)
+
+        budget = trial.CallBudget(1)
+        result = trial.codex_json("prompt", "gpt", max_retries=5, runner=bad_turn, budget=budget)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result, {
+            "status": "abstain", "reason": "provider-attempt budget exhausted", "attempts": 1,
+        })
 
 
 class ProviderConfigurationTests(unittest.TestCase):
@@ -264,6 +404,21 @@ class ProviderConfigurationTests(unittest.TestCase):
             "EVAL_FROZEN_TOKEN_SHA256": hashlib.sha256(token).hexdigest(),
         }
         self.assertIsNone(runner.require_frozen_run(environment))
+
+    def test_provider_attempt_budget_is_unlimited_when_no_ceiling_is_configured(self):
+        self.assertIsNone(runner.build_provider_attempt_budget(None))
+        self.assertIsNone(runner.build_provider_attempt_budget(None, prior_provider_attempts=40))
+
+    def test_provider_attempt_budget_nets_out_attempts_already_resumed(self):
+        budget = runner.build_provider_attempt_budget(10, prior_provider_attempts=4)
+        self.assertIsInstance(budget, trial.CallBudget)
+        self.assertEqual(budget.remaining, 6)
+
+    def test_provider_attempt_budget_never_goes_negative(self):
+        # resume_state is what rejects prior attempts that exceed the ceiling outright; this
+        # function just nets the two together and floors at zero rather than raising itself.
+        budget = runner.build_provider_attempt_budget(5, prior_provider_attempts=5)
+        self.assertEqual(budget.remaining, 0)
 
 
 class PromptIsolationTests(unittest.TestCase):
@@ -834,6 +989,11 @@ class JudgeCascadeV3Tests(unittest.TestCase):
         self.assertEqual(cascade_stages["jury"], jury)
 
     def test_clear_and_jury_decisions_replay_through_resolve_v3(self):
+        # resolve_v3 (frozen resolver logic) knows nothing about the execution ledger trial.py
+        # layers on top of its return, so replay is compared on everything resolve_v3 itself owns.
+        def without_execution(decision):
+            return {key: value for key, value in decision.items() if key != "execution"}
+
         def clear_stub(stage, *_args):
             if stage != "screen":
                 raise AssertionError(f"jury stage invoked on a clear route: {stage}")
@@ -842,7 +1002,7 @@ class JudgeCascadeV3Tests(unittest.TestCase):
         clear_result = trial.judge(self.pair, self.models, run_test=clear_stub)
         # A clear decision's own "stages" field IS the full cascade trail (screen + route), so
         # replaying resolve_v3 straight off the returned decision reproduces it exactly.
-        self.assertEqual(trial.resolve_v3(clear_result["stages"]), clear_result)
+        self.assertEqual(trial.resolve_v3(clear_result["stages"]), without_execution(clear_result))
 
         jury_record = {
             "verdict": "inconsistent", "proof": "direct", "category": "direct-mismatch",
@@ -862,11 +1022,268 @@ class JudgeCascadeV3Tests(unittest.TestCase):
             "screen": screen_result, "route": trial.route_screen_v3(screen_result),
             "jury": jury,
         }
-        self.assertEqual(trial.resolve_v3(cascade_trail), jury_result)
+        self.assertEqual(trial.resolve_v3(cascade_trail), without_execution(jury_result))
 
     def test_dispatch_error_lists_all_three_resolvers(self):
         with self.assertRaisesRegex(ValueError, "v1, v2, or v3"):
             trial.judge(self.pair, {**self.models, "resolver": "future"})
+
+
+class BudgetThreadingTests(unittest.TestCase):
+    """Prove models["budget"] reaches the real per-stage call functions and, from there,
+    model_json — not just that CallBudget and claude_json work correctly in isolation."""
+
+    def setUp(self):
+        self.pair = {
+            "id": "pair-1", "func": "f", "code": "def f(): return 1", "doc": "f returns 1",
+            "language": "python",
+        }
+
+    def test_stage_functions_omit_the_budget_kwarg_when_unset(self):
+        # A caller that stubs model_json with a fixed-arity fake (no **kwargs) — the shape every
+        # existing test in this file uses — must keep working when no budget is configured.
+        calls = []
+
+        def capture(prompt, _model, provider="claude"):
+            calls.append(True)
+            return ok({"verdict": "consistent"})
+
+        with mock.patch.object(trial, "model_json", side_effect=capture):
+            trial.snap_call(self.pair, "strong")
+            trial.screen_call_v3(self.pair, "cheap")
+        self.assertEqual(len(calls), 2)
+
+    def test_screen_call_v3_forwards_a_real_budget_to_model_json(self):
+        budget = trial.CallBudget(3)
+        seen = []
+
+        def capture(prompt, model, provider="claude", **kwargs):
+            seen.append(kwargs.get("budget"))
+            return ok({"verdict": "consistent"})
+
+        with mock.patch.object(trial, "model_json", side_effect=capture):
+            trial.screen_call_v3(self.pair, "cheap", budget=budget)
+        self.assertEqual(seen, [budget])
+
+    def test_run_prongs_v2_forwards_the_same_budget_to_all_three_parallel_calls(self):
+        budget = trial.CallBudget(3)
+        seen = []
+        lock = threading.Lock()
+
+        def capture(prompt, model, provider="claude", **kwargs):
+            with lock:
+                seen.append(kwargs.get("budget"))
+            return ok({"verdict": "consistent"})
+
+        with mock.patch.object(trial, "model_json", side_effect=capture):
+            trial.run_prongs_v2(self.pair, "cheap", budget=budget)
+        self.assertEqual(len(seen), 3)
+        self.assertTrue(all(b is budget for b in seen))
+
+    def test_judge_v2_threads_models_budget_into_every_real_stage_call(self):
+        budget = trial.CallBudget(10)
+        consistent = {
+            "verdict": "consistent", "proof": "direct", "category": None,
+            "claim": "claim", "evidence": "return 1",
+        }
+        seen_budgets = []
+
+        def record(return_value):
+            def _call(*_args, **kwargs):
+                seen_budgets.append(kwargs.get("budget"))
+                return return_value
+            return _call
+
+        with mock.patch.object(trial, "snap_call_v2", side_effect=record(ok(consistent))), \
+             mock.patch.object(
+                 trial, "challenge_call_v2",
+                 side_effect=record(ok({"cracks": False, "why": "held"})),
+             ), \
+             mock.patch.object(
+                 trial, "run_prongs_v2",
+                 side_effect=record([
+                     ok({**consistent, "role": role, "cleared_bar": True})
+                     for role in trial.PRONGS_V2
+                 ]),
+             ), \
+             mock.patch.object(
+                 trial, "blindspot_call_v2", side_effect=record(ok({"missed_angle": None})),
+             ):
+            result = trial.judge(self.pair, {
+                "strong": "strong", "cheap": "cheap", "resolver": "v2", "budget": budget,
+            })
+
+        self.assertEqual(result["final_status"], "complete")
+        self.assertNotIn("synthesis", result["stages"])  # unanimous: synthesis never runs
+        self.assertTrue(seen_budgets)
+        self.assertTrue(all(b is budget for b in seen_budgets))
+
+    def test_judge_v3_clear_route_threads_models_budget_into_the_real_screen_call(self):
+        budget = trial.CallBudget(2)
+        screen_record = screen_verdict("consistent")
+        seen = []
+
+        def capture(prompt, model, provider="claude", **kwargs):
+            seen.append(kwargs.get("budget"))
+            return ok(screen_record)
+
+        with mock.patch.object(trial, "model_json", side_effect=capture):
+            result = trial.judge(self.pair, {
+                "strong": "strong", "cheap": "cheap", "resolver": "v3", "budget": budget,
+            })
+
+        self.assertEqual(result["final_verdict"], "consistent")
+        self.assertEqual(seen, [budget])
+
+
+class ExecutionLedgerTests(unittest.TestCase):
+    roles = ("defend", "prove-wrong", "evidence-auditor")
+
+    def setUp(self):
+        self.pair = {
+            "id": "pair-1", "func": "f", "code": "def f(): return 1", "doc": "f returns 1",
+            "language": "python",
+        }
+        self.models = {"strong": "strong", "cheap": "cheap", "resolver": "v3"}
+
+    def test_clear_route_ledger_is_screen_only_one_logical_call_and_zero_strong(self):
+        def stub(stage, *_args):
+            self.assertEqual(stage, "screen")
+            return {"status": "ok", "value": screen_verdict("consistent"), "attempts": 2}
+
+        result = trial.judge(self.pair, self.models, run_test=stub)
+
+        self.assertEqual(result["execution"], {
+            "strategy": "cascade-v1", "route": "clear", "logical_calls": 1,
+            "provider_attempts": 2, "attempts_by_tier": {"cheap": 2, "strong": 0},
+            "attempts_by_stage": {"screen": 2},
+        })
+
+    def test_jury_route_ledger_sums_screen_and_every_nested_jury_stage(self):
+        record = {
+            "verdict": "consistent", "proof": "direct", "category": None,
+            "claim": "claim", "evidence": "return 1",
+        }
+        jury = {
+            "snap": {"status": "ok", "value": record, "attempts": 2},
+            "challenge": {
+                "status": "ok", "value": {"cracks": False, "why": "held"}, "attempts": 1,
+            },
+            "prongs": [
+                {"status": "ok", "value": {**record, "role": role, "cleared_bar": True},
+                 "attempts": attempts}
+                for role, attempts in zip(self.roles, (1, 2, 3))
+            ],
+            "blindspot": {"status": "ok", "value": {"missed_angle": None}, "attempts": 1},
+        }
+
+        def stub(stage, *_args):
+            if stage == "screen":
+                return {"status": "ok", "value": screen_verdict("inconsistent"), "attempts": 1}
+            return jury[stage]
+
+        result = trial.judge(self.pair, self.models, run_test=stub)
+
+        execution = result["execution"]
+        self.assertEqual(execution["strategy"], "cascade-v1")
+        self.assertEqual(execution["route"], "jury")
+        # Prongs sums three independent results: 1 + 2 + 3 = 6.
+        self.assertEqual(execution["attempts_by_stage"], {
+            "screen": 1, "snap": 2, "challenge": 1, "prongs": 6, "blindspot": 1,
+        })
+        self.assertEqual(execution["provider_attempts"], 11)
+        # The challenge did not crack the snap, so the initial prongs stay on the cheap tier.
+        self.assertEqual(execution["attempts_by_tier"], {"cheap": 1 + 1 + 6, "strong": 2 + 1})
+        self.assertEqual(
+            sum(execution["attempts_by_tier"].values()), execution["provider_attempts"]
+        )
+        self.assertEqual(
+            sum(execution["attempts_by_stage"].values()), execution["provider_attempts"]
+        )
+        # screen(1) + snap(1) + challenge(1) + three independent prong calls + blindspot(1).
+        self.assertEqual(execution["logical_calls"], 7)
+
+    def test_escalated_prongs_land_on_the_strong_tier_folded_into_the_prongs_stage(self):
+        consistent = {
+            "verdict": "consistent", "proof": "direct", "category": None,
+            "claim": "claim", "evidence": "return 1",
+        }
+        inconsistent = {**consistent, "verdict": "inconsistent", "category": "direct-mismatch"}
+        # A 2-2 plurality tie (not a cracked challenge) is what triggers v2's prong escalation —
+        # see _judge_full — so the initial batch still dispatches at the cheap tier.
+        jury = {
+            "snap": {"status": "ok", "value": consistent, "attempts": 1},
+            "challenge": {
+                "status": "ok", "value": {"cracks": False, "why": "survived"}, "attempts": 1,
+            },
+            "prongs": [
+                {"status": "ok",
+                 "value": {**consistent, "role": self.roles[0], "cleared_bar": True},
+                 "attempts": 1},
+                {"status": "ok",
+                 "value": {**inconsistent, "role": self.roles[1], "cleared_bar": True},
+                 "attempts": 1},
+                {"status": "ok",
+                 "value": {**inconsistent, "role": self.roles[2], "cleared_bar": True},
+                 "attempts": 1},
+            ],
+            "prongs_escalated": [
+                {"status": "ok", "value": {**consistent, "role": role, "cleared_bar": True},
+                 "attempts": 2}
+                for role in self.roles
+            ],
+            "blindspot": {"status": "ok", "value": {"missed_angle": None}, "attempts": 1},
+            "synthesis": {"status": "ok", "value": consistent, "attempts": 1},
+        }
+
+        def stub(stage, *_args):
+            if stage == "screen":
+                return {"status": "ok", "value": screen_verdict("inconsistent"), "attempts": 1}
+            return jury[stage]
+
+        result = trial.judge(self.pair, self.models, run_test=stub)
+
+        execution = result["execution"]
+        self.assertEqual(execution["route"], "jury")
+        # Both the initial (cheap) and escalated (strong) prong batches are real provider spend,
+        # folded together under the single "prongs" stage bucket.
+        self.assertEqual(execution["attempts_by_stage"]["prongs"], 3 + 6)
+        # snap + blindspot + synthesis + the escalated prong batch.
+        self.assertEqual(execution["attempts_by_tier"]["strong"], 1 + 1 + 1 + 6)
+        self.assertEqual(execution["attempts_by_tier"]["cheap"], 1 + 1 + 3)  # screen+challenge+initial
+        self.assertEqual(
+            sum(execution["attempts_by_tier"].values()), execution["provider_attempts"]
+        )
+        self.assertEqual(
+            sum(execution["attempts_by_stage"].values()), execution["provider_attempts"]
+        )
+
+    def test_ledger_is_reproducible_by_recomputing_from_the_stored_trail(self):
+        record = {
+            "verdict": "inconsistent", "proof": "direct", "category": "direct-mismatch",
+            "claim": "claim", "evidence": "does not return 1",
+        }
+        jury = {
+            "snap": {"status": "ok", "value": record, "attempts": 1},
+            "challenge": {
+                "status": "ok", "value": {"cracks": False, "why": "held"}, "attempts": 1,
+            },
+            "prongs": [
+                {"status": "ok", "value": {**record, "role": role, "cleared_bar": True},
+                 "attempts": 1}
+                for role in self.roles
+            ],
+            "blindspot": {"status": "ok", "value": {"missed_angle": None}, "attempts": 1},
+        }
+        screen_result = {"status": "ok", "value": screen_verdict("inconsistent"), "attempts": 1}
+
+        def stub(stage, *_args):
+            return screen_result if stage == "screen" else jury[stage]
+
+        result = trial.judge(self.pair, self.models, run_test=stub)
+
+        replayed = trial._execution_ledger("jury", screen_result, jury)
+        self.assertEqual(replayed, result["execution"])
 
 
 class ScoringTests(unittest.TestCase):

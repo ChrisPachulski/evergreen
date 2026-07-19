@@ -24,6 +24,40 @@ def completed(identifier, language, label, category, verdict):
     }
 
 
+def clear_execution(attempts=1):
+    return {
+        "strategy": "cascade-v1", "route": "clear", "logical_calls": 1,
+        "provider_attempts": attempts, "attempts_by_tier": {"cheap": attempts, "strong": 0},
+        "attempts_by_stage": {"screen": attempts},
+    }
+
+
+def jury_execution(screen=1, snap=1, challenge=1, prongs=3, blindspot=1):
+    total = screen + snap + challenge + prongs + blindspot
+    return {
+        "strategy": "cascade-v1", "route": "jury", "logical_calls": 5,
+        "provider_attempts": total,
+        "attempts_by_tier": {"cheap": screen + challenge + prongs, "strong": snap + blindspot},
+        "attempts_by_stage": {
+            "screen": screen, "snap": snap, "challenge": challenge, "prongs": prongs,
+            "blindspot": blindspot,
+        },
+    }
+
+
+def completed_v3(identifier, language, label, category, verdict, got_category, execution):
+    return {
+        "id": identifier,
+        "language": language,
+        "label": label,
+        "category": category,
+        "got": {
+            "final_status": "complete", "semantic_status": "decided",
+            "final_verdict": verdict, "category": got_category, "execution": execution,
+        },
+    }
+
+
 class ArtifactMetadataTests(unittest.TestCase):
     def test_row_validation_rejects_invalid_and_unhashable_categories(self):
         from eval.bench import artifact
@@ -477,6 +511,233 @@ else:
                     artifact.atomic_write_json(path, {"payload": "x" * 100}, max_bytes=32)
             self.assertEqual(json.loads(path.read_text()), {"old": True})
             self.assertEqual(list(Path(directory).iterdir()), [path])
+
+
+class ExecutionLedgerValidationTests(unittest.TestCase):
+    def test_valid_clear_ledger_passes_validation(self):
+        from eval.bench import artifact
+
+        row = completed_v3(
+            "p1", "python", "consistent", None, "consistent", None, clear_execution(attempts=2)
+        )
+        artifact.validate_benchmark_row(row, require_result=True)  # must not raise
+
+    def test_valid_jury_ledger_passes_validation(self):
+        from eval.bench import artifact
+
+        row = completed_v3(
+            "p2", "python", "inconsistent", "direct-mismatch", "inconsistent",
+            "direct-mismatch", jury_execution(),
+        )
+        artifact.validate_benchmark_row(row, require_result=True)
+
+    def test_historical_rows_without_execution_remain_valid(self):
+        from eval.bench import artifact
+
+        row = completed("p3", "python", "consistent", None, "consistent")
+        artifact.validate_benchmark_row(row, require_result=True)
+
+    def test_negative_counts_are_rejected(self):
+        from eval.bench import artifact
+
+        bad = clear_execution(attempts=1)
+        bad["provider_attempts"] = -1
+        row = completed_v3("p4", "python", "consistent", None, "consistent", None, bad)
+        with self.assertRaisesRegex(ValueError, "provider_attempts"):
+            artifact.validate_benchmark_row(row, require_result=True)
+
+    def test_mismatched_sums_are_rejected(self):
+        from eval.bench import artifact
+
+        bad = jury_execution()
+        bad["attempts_by_tier"]["cheap"] += 1
+        row = completed_v3(
+            "p5", "python", "inconsistent", "direct-mismatch", "inconsistent",
+            "direct-mismatch", bad,
+        )
+        with self.assertRaisesRegex(ValueError, "do not sum"):
+            artifact.validate_benchmark_row(row, require_result=True)
+
+    def test_unknown_stage_names_are_rejected(self):
+        from eval.bench import artifact
+
+        bad = jury_execution()
+        bad["attempts_by_stage"]["mystery"] = 1
+        bad["provider_attempts"] += 1
+        bad["attempts_by_tier"]["cheap"] += 1
+        row = completed_v3(
+            "p6", "python", "inconsistent", "direct-mismatch", "inconsistent",
+            "direct-mismatch", bad,
+        )
+        with self.assertRaisesRegex(ValueError, "attempts_by_stage"):
+            artifact.validate_benchmark_row(row, require_result=True)
+
+    def test_unknown_or_missing_tier_keys_are_rejected(self):
+        from eval.bench import artifact
+
+        for mutate in (
+            lambda execution: execution["attempts_by_tier"].pop("strong"),
+            lambda execution: execution["attempts_by_tier"].__setitem__("gpu", 0),
+        ):
+            with self.subTest(mutate=mutate):
+                bad = jury_execution()
+                mutate(bad)
+                row = completed_v3(
+                    "p7", "python", "inconsistent", "direct-mismatch", "inconsistent",
+                    "direct-mismatch", bad,
+                )
+                with self.assertRaisesRegex(ValueError, "attempts_by_tier"):
+                    artifact.validate_benchmark_row(row, require_result=True)
+
+    def test_unknown_route_value_is_rejected(self):
+        from eval.bench import artifact
+
+        bad = clear_execution()
+        bad["route"] = "maybe"
+        row = completed_v3("p8", "python", "consistent", None, "consistent", None, bad)
+        with self.assertRaisesRegex(ValueError, "route is invalid"):
+            artifact.validate_benchmark_row(row, require_result=True)
+
+    def test_unknown_strategy_is_rejected(self):
+        from eval.bench import artifact
+
+        bad = clear_execution()
+        bad["strategy"] = "cascade-v2"
+        row = completed_v3("p9", "python", "consistent", None, "consistent", None, bad)
+        with self.assertRaisesRegex(ValueError, "strategy"):
+            artifact.validate_benchmark_row(row, require_result=True)
+
+    def test_route_decision_inconsistency_is_rejected(self):
+        from eval.bench import artifact
+
+        # A clear route claiming a verdict other than consistent.
+        wrong_verdict = completed_v3(
+            "p10", "python", "consistent", None, "inconsistent", "direct-mismatch",
+            clear_execution(),
+        )
+        with self.assertRaisesRegex(ValueError, "does not match its decision"):
+            artifact.validate_benchmark_row(wrong_verdict, require_result=True)
+
+        # A clear route carrying a non-screen stage — inconsistent with a one-call clear.
+        extra_stage = clear_execution()
+        extra_stage["attempts_by_stage"]["snap"] = 1
+        extra_stage["provider_attempts"] += 1
+        extra_stage["attempts_by_tier"]["strong"] += 1
+        wrong_stage = completed_v3(
+            "p11", "python", "consistent", None, "consistent", None, extra_stage,
+        )
+        with self.assertRaisesRegex(ValueError, "inconsistent with its route"):
+            artifact.validate_benchmark_row(wrong_stage, require_result=True)
+
+        # A jury route missing its own snap stage — every jury run calls snap first.
+        no_snap = jury_execution()
+        del no_snap["attempts_by_stage"]["snap"]
+        no_snap["provider_attempts"] -= 1
+        no_snap["attempts_by_tier"]["strong"] -= 1
+        missing_snap = completed_v3(
+            "p12", "python", "inconsistent", "direct-mismatch", "inconsistent",
+            "direct-mismatch", no_snap,
+        )
+        with self.assertRaisesRegex(ValueError, "missing the jury's own snap"):
+            artifact.validate_benchmark_row(missing_snap, require_result=True)
+
+
+class ResumeProviderAttemptBudgetTests(unittest.TestCase):
+    def test_resume_sums_prior_provider_attempts_from_v3_rows_only(self):
+        from eval.bench import artifact
+
+        metadata = {"dataset": {"sha256": "a"}, "git": {"commit": "c"}}
+        rows = [
+            completed("p1", "python", "consistent", None, "consistent"),  # v1/v2: no ledger
+            completed_v3(
+                "p2", "python", "consistent", None, "consistent", None,
+                clear_execution(attempts=3),
+            ),
+            completed_v3(
+                "p3", "python", "inconsistent", "direct-mismatch", "inconsistent",
+                "direct-mismatch", jury_execution(),  # totals 7
+            ),
+        ]
+        document = artifact.artifact_document(
+            rows, metadata, started_at="2026-01-01T00:00:00Z", elapsed_seconds=1,
+        )
+
+        state = artifact.resume_state(document, metadata)
+
+        self.assertEqual(state["prior_provider_attempts"], 3 + 7)
+
+    def test_resume_ignores_top_level_provider_usage_for_attempt_counts(self):
+        from eval.bench import artifact
+
+        metadata = {"dataset": {"sha256": "a"}, "git": {"commit": "c"}}
+        rows = [completed_v3(
+            "p1", "python", "consistent", None, "consistent", None, clear_execution(attempts=2)
+        )]
+        document = artifact.artifact_document(
+            rows, metadata, started_at="2026-01-01T00:00:00Z", elapsed_seconds=1,
+            provider_usage={"input_tokens": 999999},
+        )
+
+        state = artifact.resume_state(document, metadata)
+
+        # provider_usage is an unrelated token-accounting field; call counts never come from it.
+        self.assertEqual(state["prior_provider_attempts"], 2)
+
+    def test_resume_without_a_ceiling_never_raises_but_still_reports_prior_attempts(self):
+        from eval.bench import artifact
+
+        metadata = {"dataset": {"sha256": "a"}, "git": {"commit": "c"}}
+        rows = [completed_v3(
+            "p1", "python", "consistent", None, "consistent", None,
+            clear_execution(attempts=1000),
+        )]
+        document = artifact.artifact_document(
+            rows, metadata, started_at="2026-01-01T00:00:00Z", elapsed_seconds=1,
+        )
+
+        state = artifact.resume_state(document, metadata)
+
+        self.assertEqual(state["prior_provider_attempts"], 1000)
+
+    def test_resume_rejects_an_artifact_whose_stored_attempts_exceed_the_ceiling(self):
+        from eval.bench import artifact
+
+        metadata = {"dataset": {"sha256": "a"}, "git": {"commit": "c"}}
+        rows = [completed_v3(
+            "p1", "python", "consistent", None, "consistent", None,
+            clear_execution(attempts=10),
+        )]
+        document = artifact.artifact_document(
+            rows, metadata, started_at="2026-01-01T00:00:00Z", elapsed_seconds=1,
+        )
+
+        with self.assertRaisesRegex(ValueError, "exceed"):
+            artifact.resume_state(document, metadata, provider_attempt_ceiling=9)
+        # At exactly the ceiling, resume is still allowed — remaining is simply zero.
+        self.assertEqual(
+            artifact.resume_state(
+                document, metadata, provider_attempt_ceiling=10
+            )["prior_provider_attempts"],
+            10,
+        )
+
+    def test_runner_nets_the_remaining_budget_from_ceiling_minus_prior_attempts(self):
+        from eval.bench import artifact
+
+        metadata = {"dataset": {"sha256": "a"}, "git": {"commit": "c"}}
+        rows = [completed_v3(
+            "p1", "python", "consistent", None, "consistent", None,
+            clear_execution(attempts=4),
+        )]
+        document = artifact.artifact_document(
+            rows, metadata, started_at="2026-01-01T00:00:00Z", elapsed_seconds=1,
+        )
+
+        state = artifact.resume_state(document, metadata, provider_attempt_ceiling=10)
+        budget = runner.build_provider_attempt_budget(10, state["prior_provider_attempts"])
+
+        # Resume can only spend the shared budget down, never reset it.
+        self.assertEqual(budget.remaining, 6)
 
 
 class ArtifactReportTests(unittest.TestCase):
