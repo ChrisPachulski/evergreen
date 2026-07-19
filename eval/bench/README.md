@@ -95,6 +95,107 @@ constant ID `pair`. Consistency comes from machinery, not from the model behavin
 
 The model supplies judgment; the machinery supplies the discipline.
 
+## The staged judge cascade (resolver v3)
+
+Resolver `v3` is a cost engineering layer over the jury above, not a new judge. It puts one cheap
+"screen" call ahead of the unchanged v2 jury, and a deterministic router — never the model —
+decides whether a pair needs the full jury at all.
+
+1. **The screen reads once, cheap.** [`screen_call_v3`](trial.py) asks the cheap model to read the
+   doc/code pair and return the same proof-bearing shape v2's snap stage collects (`verdict`,
+   `proof`, `category`, `claim`, `evidence`), plus two fields unique to the screen: `uncertain` and
+   `uncertainty_reason`, so the model can flag its own doubt without deciding what happens next.
+2. **A deterministic router decides, not the model.** [`route_screen_v3`](resolver.py) auto-clears
+   a pair *only* when the screen is structurally valid and reports `verdict: "consistent"`,
+   `proof: "direct"`, `category: null`, and `uncertain: false` — a directly evidenced,
+   category-free, non-uncertain negative. Every other outcome escalates to the unchanged full v2
+   jury: any `inconsistent` or `unverified` verdict, non-direct proof (`delegated` or
+   `requires-unseen-code`), a category present, self-reported uncertainty, or a malformed or
+   abstained screen response. The router is pure code over the stored screen value; the model is
+   never asked whether to escalate and cannot opt a pair out of the jury by claiming confidence.
+3. **Escalation runs the same jury as v2, unchanged.** When the router says `jury`, the pair goes
+   through exactly the sequence documented above — snap, challenge, prongs, blind-spot, and, when
+   contested, synthesis — with no new logic. [`resolve_v3`](resolver.py) either resolves the
+   cleared screen directly or defers whole to `resolve_v2` on the jury path.
+
+**The hard budget.** Resolver v3 requires a provider-attempt ceiling; there is no "run and see how
+much it costs." `frozen_run.py --resolver v3` refuses to start without `--max-provider-attempts
+<N>` (mirrored to the worker process as `EVAL_MAX_PROVIDER_ATTEMPTS`), and every actual provider
+process attempt — including retries — is counted and charged against that ceiling *before* the
+call is made, netted against attempts a resumed run already spent. Exhausting the budget produces
+an honest abstention; it can never manufacture a `consistent` result. Each completed row records
+exactly what it spent in `got.execution`: `strategy` (`"cascade-v1"`), `route` (`"clear"` or
+`"jury"`), `logical_calls`, `provider_attempts`, and both counts broken out by `attempts_by_tier`
+(`cheap`/`strong`) and `attempts_by_stage`. v3 artifacts checkpoint every completed row rather than
+every 25th, each checkpoint synchronously mirrored to the archive, so a crash never loses more than
+one row's worth of spent budget. The artifact filename carries a `-resolver-v3` suffix, alongside
+the existing `-resolver-v2` pattern.
+
+**The probe, and what it proves.** [`make_probe.py`](make_probe.py) freezes a 50-positive
+(`inconsistent`) / 50-control (`consistent`) probe from an already-bound development dataset:
+within each label stratum, rows are ranked by HMAC-SHA256 keyed on the parent dataset's own hash,
+and the lowest N are kept, so selection is deterministic and reproducible without touching
+outcomes or votes. The output preserves each row's original JSON bytes, and a receipt binds the
+parent and output hashes plus the exact selection rule.
+
+[`cascade_gate.py`](cascade_gate.py) is an offline, fail-closed pass/fail check over one completed
+v3 probe artifact — no model, network, or subprocess calls. It requires clearing two independent
+gates:
+
+- **Quality gate:** precision AND recall AND F1 must each be **≥ 0.80** on the probe, scored
+  against adjudicated labels. There is no fallback to nominal labels — without an adjudication
+  overlay covering exactly the probe's 100 ids, the gate fails outright rather than scoring
+  something weaker and calling it a pass.
+- **Cost gate:** actual provider attempts must be **≥ 70% fewer** than a full-v2 counterfactual on
+  the same rows, with retries counted, never hidden. The counterfactual prefers a measured
+  same-row full-v2 artifact; lacking one, it falls back to a conservative *projected*
+  reconstruction — a 6-logical-call-per-row floor (snap, challenge, three prongs, blind-spot: the
+  full jury's minimum dispatch) up to a ceiling that adds escalated prongs and synthesis, optionally
+  weighted toward an expected value by a supplied historical lane's escalation and synthesis rates
+  — and a projected counterfactual can only pass with an explicit `--accept-projected-cost-gate`; a
+  projection never manufactures a pass on its own.
+
+These are **gates the probe has to clear, not results it has produced.** The cascade has not yet
+been run: no precision, recall, F1, or cost-reduction number exists for it yet, measured or
+otherwise. Both thresholds are demanding by construction — the probe is a balanced 50/50, and the
+router's asymmetric rule (only a direct, category-free, non-uncertain `consistent` screen may
+clear) means the 50 positive rows always escalate to the full jury, and any control row whose
+screen isn't as clean does too, so at most half the probe can ever auto-clear. A 70%-fewer-attempts
+bar sized for that probe is suited to natural-prevalence deployment, where most pairs are boring
+negatives, not to a probe deliberately built to contain as many hard cases as easy ones. A passing
+probe is engineering go/no-go evidence for a larger run — it is not a best-in-class claim, and it
+does not by itself authorize one.
+
+**Reporting.** Every artifact's execution accounting renders from the row-level `got.execution`
+ledgers alone ([`report.execution_accounting`](report.py)): clear/jury counts and the escalation
+rate, logical calls vs. actual provider attempts (their difference is retries), attempts per row,
+and budget used/remaining against the frozen ceiling. Historical v1/v2 artifacts never carried this
+ledger; a row set missing it — wholly or partially — reports every derived field as `unverified`
+rather than a zero or an inferred count, because a partial ledger is exactly as untrustworthy as no
+ledger here.
+
+Run the cascade end to end:
+
+```sh
+python3 eval/bench/make_probe.py screened-dev.jsonl \
+  --positive-count 50 --control-count 50 \
+  --out probe.jsonl --receipt-out probe-receipt.json
+
+python3 eval/bench/frozen_run.py --dataset probe.jsonl \
+  --archive-dir "$HOME/evergreen-benchmark-archive" \
+  --resolver v3 --max-provider-attempts <N> \
+  --provider codex --strong-model gpt-5.6-sol --cheap-model gpt-5.6-sol
+
+python3 eval/bench/cascade_gate.py \
+  --artifact eval/bench/out/bench-probe-trial-codex-gpt-5.6-sol-resolver-v3.json \
+  --dataset probe.jsonl --receipt probe-receipt.json \
+  --adjudicated probe-adjudication.json \
+  --json cascade-gate-decision.json --table cascade-gate-decision.txt
+```
+
+`<N>` is a deliberately unfilled placeholder: this repository does not yet declare a chosen probe
+budget, because the probe itself has not been authorized to run.
+
 ## The datasets
 
 Two external corpora we can run, two published peers we can't, and one hand-labeled fixture —
