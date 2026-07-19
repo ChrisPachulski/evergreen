@@ -237,10 +237,19 @@ def run_policy(
     _dataset, rows, resolver, split_manifest, split, context_protocol,
     selection_parent_dataset=None, selection_parent_manifest=None,
     selection_vote_ledger=None, selection_receipt=None, subject_commit="HEAD",
+    max_provider_attempts=None,
 ):
     """Validate and return immutable detector-policy provenance for a frozen lane."""
-    if resolver not in ("v1", "v2"):
-        raise ValueError("resolver must be v1 or v2")
+    if resolver not in ("v1", "v2", "v3"):
+        raise ValueError("resolver must be v1, v2, or v3")
+    if resolver == "v3":
+        if (not isinstance(max_provider_attempts, int) or
+                isinstance(max_provider_attempts, bool) or max_provider_attempts <= 0):
+            raise ValueError(
+                "resolver v3 requires --max-provider-attempts to be a positive integer"
+            )
+    elif max_provider_attempts is not None:
+        raise ValueError("--max-provider-attempts requires resolver v3")
     if context_protocol not in ("none", *JAVA_CONTEXT_PROTOCOLS):
         raise ValueError("unknown context protocol")
     if resolver == "v2" and (split_manifest is None or split is None):
@@ -322,7 +331,7 @@ def run_policy(
             raise ValueError("context protocol requires context on every Java input row")
         for row in rows:
             validate_context(row["context"], context_protocol)
-    return {
+    result = {
         "resolver": resolver,
         "context_protocol": context_protocol,
         "split_manifest_sha256": manifest_sha256,
@@ -330,6 +339,11 @@ def run_policy(
         "selection_receipt_sha256": selection_receipt_sha256,
         "_validated_dataset_sha256": dataset_sha256,
     }
+    if resolver == "v3":
+        # Folded in only for v3, so v1/v2 settings — and therefore their metadata and artifact
+        # filenames — stay byte-identical to runs from before the ceiling ever existed.
+        result["max_provider_attempts"] = max_provider_attempts
+    return result
 
 
 def require_dataset_binding(validated_sha256, metadata):
@@ -628,7 +642,8 @@ def parse_args(argv=None):
     parser.add_argument("--provider", choices=("claude", "codex"), default="codex")
     parser.add_argument("--strong-model", default="gpt-5.6-sol")
     parser.add_argument("--cheap-model", default="gpt-5.6-sol")
-    parser.add_argument("--resolver", choices=("v1", "v2"), default="v1")
+    parser.add_argument("--resolver", choices=("v1", "v2", "v3"), default="v1")
+    parser.add_argument("--max-provider-attempts", type=int)
     parser.add_argument("--split-manifest", type=Path)
     parser.add_argument("--split", choices=("dev", "holdout"))
     parser.add_argument("--selection-parent-dataset", type=Path)
@@ -673,6 +688,7 @@ def main(argv=None):
         args.context_protocol, args.selection_parent_dataset,
         args.selection_parent_manifest, args.selection_vote_ledger,
         args.selection_receipt, anchored_identity["commit"],
+        max_provider_attempts=args.max_provider_attempts,
     )
     if (git_identity(repo) != anchored_identity or
             workspace_token(repo) != anchored_workspace):
@@ -780,6 +796,8 @@ def main(argv=None):
             "EVAL_SELECTION_RECEIPT_SHA256":
                 settings["selection_receipt_sha256"] or "",
         })
+        if args.resolver == "v3":
+            environment["EVAL_MAX_PROVIDER_ATTEMPTS"] = str(args.max_provider_attempts)
         inherited_fds = [read_fd]
         if peer_mode:
             peer_read_fd, peer_write_fd = os.pipe()

@@ -64,6 +64,41 @@ class FrozenRunSafetyTests(unittest.TestCase):
         self.assertEqual(policy["context_protocol"], "java-git-window-v1")
         self.assertEqual(policy["split_manifest_sha256"], manifest_digest)
 
+    def test_v3_requires_a_positive_provider_attempt_ceiling(self):
+        dataset = Path("data.jsonl")
+        rows = [{"id": "org/repo/f#1", "language": "python"}]
+        for bad_ceiling in (None, 0, -1, "50", 5.0, True):
+            with self.subTest(bad_ceiling=bad_ceiling), self.assertRaisesRegex(
+                ValueError, "max-provider-attempts"
+            ):
+                frozen_run.run_policy(
+                    dataset, rows, "v3", None, None, "none",
+                    max_provider_attempts=bad_ceiling,
+                )
+        # A positive int is accepted and frozen into the returned settings only for v3.
+        policy = frozen_run.run_policy(
+            dataset, rows, "v3", None, None, "none", max_provider_attempts=50,
+        )
+        self.assertEqual(policy["max_provider_attempts"], 50)
+
+    def test_ceiling_is_rejected_for_v1_and_v2(self):
+        dataset = Path("data.jsonl")
+        rows = [{"id": "org/repo/f#1", "language": "python"}]
+        for resolver in ("v1", "v2"):
+            with self.subTest(resolver=resolver), self.assertRaisesRegex(
+                ValueError, "requires resolver v3"
+            ):
+                frozen_run.run_policy(
+                    dataset, rows, resolver, None, None, "none",
+                    max_provider_attempts=50,
+                )
+
+    def test_v1_and_v2_settings_never_carry_a_max_provider_attempts_key(self):
+        dataset = Path("data.jsonl")
+        rows = [{"id": "org/repo/f#1", "language": "python"}]
+        policy = frozen_run.run_policy(dataset, rows, "v1", None, None, "none")
+        self.assertNotIn("max_provider_attempts", policy)
+
     def test_split_policy_rejects_dataset_bytes_not_bound_by_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -606,9 +641,88 @@ class FrozenRunMainTests(unittest.TestCase):
         self.assertEqual(metadata_call.call_args.args[2]["context_protocol"], "none")
         self.assertIsNone(metadata_call.call_args.args[2]["split_manifest_sha256"])
         self.assertIsNone(metadata_call.call_args.args[2]["split"])
+        # A v1 run must never carry the v3 ceiling key at all — not even as null — so v1/v2
+        # settings, metadata, and artifact filenames stay byte-identical to pre-ceiling runs.
+        self.assertNotIn("max_provider_attempts", metadata_call.call_args.args[2])
+        self.assertNotIn("EVAL_MAX_PROVIDER_ATTEMPTS", environment)
         self.assertEqual(len(popen.call_args.kwargs["pass_fds"]), 1)
         self.assertEqual(monitor.call_args.kwargs["expected_metadata"], metadata)
         lock.close.assert_called_once_with()
+
+    def test_v3_launch_without_ceiling_fails_before_spawn(self):
+        commit = "a" * 40
+        identity = {"commit": commit, "tree": "t", "dirty": False}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            here = repo / "eval" / "bench"
+            here.mkdir(parents=True)
+            (repo / ".git").mkdir()
+            dataset = here / "one.jsonl"
+            dataset.write_text("fixture")
+            archive = root / "archive"
+            with mock.patch.object(frozen_run, "REPO", repo), \
+                 mock.patch.object(frozen_run, "HERE", here), \
+                 mock.patch.object(frozen_run, "git_identity", return_value=identity), \
+                 mock.patch.object(frozen_run, "load_dataset", return_value=(b"fixture", [
+                     {"language": "python"}
+                 ])), \
+                 mock.patch.object(frozen_run, "artifact_metadata") as metadata_call, \
+                 mock.patch.object(frozen_run.subprocess, "Popen") as popen:
+                with self.assertRaisesRegex(ValueError, "max-provider-attempts"):
+                    frozen_run.main([
+                        "--dataset", str(dataset), "--archive-dir", str(archive),
+                        "--resolver", "v3",
+                    ])
+
+        metadata_call.assert_not_called()
+        popen.assert_not_called()
+
+    def test_main_wires_v3_ceiling_into_settings_metadata_and_environment(self):
+        commit = "a" * 40
+        identity = {"commit": commit, "tree": "t", "dirty": False}
+        metadata = {"git": identity, "settings": {"concurrency": 4, "max_provider_attempts": 50}}
+        process = SimpleNamespace(returncode=0)
+        lock = mock.Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            here = repo / "eval" / "bench"
+            here.mkdir(parents=True)
+            (repo / ".git").mkdir()
+            dataset = here / "one.jsonl"
+            dataset.write_text("fixture")
+            archive = root / "archive"
+            with mock.patch.object(frozen_run, "REPO", repo), \
+                 mock.patch.object(frozen_run, "HERE", here), \
+                 mock.patch.object(frozen_run, "git_identity", return_value=identity), \
+                 mock.patch.object(
+                     frozen_run, "artifact_metadata", return_value=metadata
+                 ) as metadata_call, \
+                 mock.patch.object(frozen_run, "load_dataset", return_value=(b"fixture", [
+                     {"language": "python"}
+                 ])), \
+                 mock.patch.object(frozen_run, "_remote_refs", return_value=(
+                     f"{commit}\trefs/heads/main\n"
+                 )), \
+                 mock.patch.object(frozen_run, "acquire_lock", return_value=lock), \
+                 mock.patch.object(frozen_run, "prepare_output"), \
+                 mock.patch.object(frozen_run.subprocess, "Popen", return_value=process) as popen, \
+                 mock.patch.object(frozen_run, "monitor_process", return_value=0), \
+                 mock.patch.object(frozen_run.shutil, "disk_usage", return_value=(
+                     SimpleNamespace(free=20 * 1024 ** 3)
+                 )):
+                status = frozen_run.main([
+                    "--dataset", str(dataset), "--archive-dir", str(archive),
+                    "--resolver", "v3", "--max-provider-attempts", "50",
+                ])
+
+        self.assertEqual(status, 0)
+        self.assertEqual(metadata_call.call_args.args[2]["resolver"], "v3")
+        self.assertEqual(metadata_call.call_args.args[2]["max_provider_attempts"], 50)
+        environment = popen.call_args.kwargs["env"]
+        self.assertEqual(environment["EVAL_RESOLVER"], "v3")
+        self.assertEqual(environment["EVAL_MAX_PROVIDER_ATTEMPTS"], "50")
 
     def test_peer_main_spawns_single_pass_runner_with_matching_settings_and_two_secrets(self):
         commit = "a" * 40

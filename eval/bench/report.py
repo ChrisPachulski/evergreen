@@ -164,6 +164,60 @@ def _metric(value):
     return "unavailable" if value is None else f"{value:.3f}"
 
 
+def _unverified(value, spec="{}"):
+    return "unverified" if value is None else spec.format(value)
+
+
+def execution_accounting(rows):
+    """Sum the deterministic got.execution provider-attempt ledger across rows.
+
+    Historical v1/v2 artifacts never carried a ledger; a mixed or all-historical row set
+    reports every derived field as None (rendered "unverified") rather than a zero or a count
+    inferred from stage names — the ledger is the only trusted source of attempt counts.
+    """
+    ledgers = [
+        row["got"]["execution"] for row in rows
+        if isinstance(row.get("got"), dict) and isinstance(row["got"].get("execution"), dict)
+    ]
+    if not ledgers:
+        return {
+            "rows": len(rows), "clear": None, "jury": None, "escalation_rate": None,
+            "logical_calls": None, "provider_attempts": None, "retries": None,
+            "attempts_per_row": None,
+        }
+    clear = sum(1 for ledger in ledgers if ledger.get("route") == "clear")
+    jury = sum(1 for ledger in ledgers if ledger.get("route") == "jury")
+    logical_calls = sum(ledger.get("logical_calls", 0) for ledger in ledgers)
+    provider_attempts = sum(ledger.get("provider_attempts", 0) for ledger in ledgers)
+    return {
+        "rows": len(rows), "clear": clear, "jury": jury,
+        "escalation_rate": jury / (clear + jury) if (clear + jury) else 0.0,
+        "logical_calls": logical_calls, "provider_attempts": provider_attempts,
+        # Retries come straight from the ledger's own counted fields, never from re-counting
+        # entries in "stages" — a retried stage looks identical to a first-try stage there.
+        "retries": provider_attempts - logical_calls,
+        "attempts_per_row": provider_attempts / len(rows) if rows else 0.0,
+    }
+
+
+def render_execution_summary(rows, budget=None):
+    """Render the v3 provider-attempt accounting block: route mix, logical-vs-attempted call
+    counts and retries, and budget usage against the frozen ceiling (when known)."""
+    accounting = execution_accounting(rows)
+    used = accounting["provider_attempts"]
+    remaining = (budget - used) if (budget is not None and used is not None) else None
+    return "\n".join([
+        f"rows={accounting['rows']} clear={_unverified(accounting['clear'])} "
+        f"jury={_unverified(accounting['jury'])} "
+        f"escalation_rate={_unverified(accounting['escalation_rate'], '{:.1%}')}",
+        f"logical_calls={_unverified(accounting['logical_calls'])} "
+        f"provider_attempts={_unverified(accounting['provider_attempts'])} "
+        f"retries={_unverified(accounting['retries'])} "
+        f"attempts_per_row={_unverified(accounting['attempts_per_row'], '{:.2f}')}",
+        f"budget={_unverified(budget)} used={_unverified(used)} remaining={_unverified(remaining)}",
+    ])
+
+
 def _required_languages(values):
     if type(values) not in (list, tuple) or not values:
         raise ValueError("required languages must be explicitly declared as a non-empty list")
@@ -599,6 +653,15 @@ def main(argv=None):
         passed = False
     args.markdown.parent.mkdir(parents=True, exist_ok=True)
     args.markdown.write_text(markdown)
+    try:
+        # Best-effort: the markdown above already carries the authoritative pass/fail reason,
+        # so a load failure here must never change the exit status — only skip the summary line.
+        artifacts = _load_artifacts(args.artifacts)
+        rows = [row for artifact in artifacts for row in artifact["rows"]]
+        budget = artifacts[0]["metadata"].get("settings", {}).get("max_provider_attempts")
+        print(render_execution_summary(rows, budget))
+    except (RecursionError, OSError, ValueError, json.JSONDecodeError):
+        pass
     return 0 if passed else 2
 
 

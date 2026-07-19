@@ -739,6 +739,41 @@ class ResumeProviderAttemptBudgetTests(unittest.TestCase):
         # Resume can only spend the shared budget down, never reset it.
         self.assertEqual(budget.remaining, 6)
 
+    def test_resume_rejects_a_changed_provider_attempt_ceiling_as_incompatible_provenance(self):
+        from eval.bench import artifact
+
+        # The ceiling is frozen into metadata via settings["max_provider_attempts"] (runner.py's
+        # eval_settings / frozen_run.py's run_policy). resume_state's generic metadata-equality
+        # check is what turns a changed ceiling into a rejected resume: the launch-time metadata
+        # (bound to the NEW ceiling) will never equal a live artifact's stored metadata (bound
+        # to the OLD one), regardless of what provider_attempt_ceiling itself is passed here.
+        metadata = {
+            "dataset": {"sha256": "a"}, "git": {"commit": "c"},
+            "settings": {"max_provider_attempts": 50},
+        }
+        rows = [completed_v3(
+            "p1", "python", "consistent", None, "consistent", None,
+            clear_execution(attempts=3),
+        )]
+        document = artifact.artifact_document(
+            rows, metadata, started_at="2026-01-01T00:00:00Z", elapsed_seconds=1,
+        )
+        changed_ceiling_metadata = {
+            **metadata, "settings": {"max_provider_attempts": 100},
+        }
+
+        with self.assertRaisesRegex(ValueError, "provenance"):
+            artifact.resume_state(
+                document, changed_ceiling_metadata, provider_attempt_ceiling=100,
+            )
+        # The same ceiling resumes cleanly.
+        self.assertEqual(
+            artifact.resume_state(
+                document, metadata, provider_attempt_ceiling=50,
+            )["prior_provider_attempts"],
+            3,
+        )
+
 
 class ArtifactReportTests(unittest.TestCase):
     def metadata(self, dataset="dataset"):
@@ -1231,6 +1266,126 @@ class ArtifactReportTests(unittest.TestCase):
             ]), 2)
 
 
+class ExecutionSummaryReportTests(unittest.TestCase):
+    def test_accounting_reports_unverified_for_rows_without_a_ledger(self):
+        from eval.bench import report
+
+        rows = [completed("p1", "python", "consistent", None, "consistent")]
+        accounting = report.execution_accounting(rows)
+
+        self.assertEqual(accounting["rows"], 1)
+        for field in ("clear", "jury", "escalation_rate", "logical_calls",
+                      "provider_attempts", "retries", "attempts_per_row"):
+            with self.subTest(field=field):
+                self.assertIsNone(accounting[field])
+
+    def test_accounting_sums_ledgers_and_derives_retries_from_the_ledger_not_stage_count(self):
+        from eval.bench import report
+
+        rows = [
+            completed_v3(
+                "p1", "python", "consistent", None, "consistent", None,
+                clear_execution(attempts=2),
+            ),
+            completed_v3(
+                "p2", "python", "inconsistent", "direct-mismatch", "inconsistent",
+                "direct-mismatch", jury_execution(),  # 7 attempts, 5 logical_calls
+            ),
+        ]
+
+        accounting = report.execution_accounting(rows)
+
+        self.assertEqual(accounting["rows"], 2)
+        self.assertEqual(accounting["clear"], 1)
+        self.assertEqual(accounting["jury"], 1)
+        self.assertEqual(accounting["escalation_rate"], 0.5)
+        self.assertEqual(accounting["logical_calls"], 1 + 5)
+        self.assertEqual(accounting["provider_attempts"], 2 + 7)
+        # Retries must come straight from provider_attempts - logical_calls on the ledger —
+        # never from counting entries under got["stages"], which a retried stage cannot be
+        # told apart from a first-try stage in.
+        self.assertEqual(accounting["retries"], (2 + 7) - (1 + 5))
+        self.assertEqual(accounting["attempts_per_row"], (2 + 7) / 2)
+
+    def test_render_execution_summary_formats_rows_calls_and_budget(self):
+        from eval.bench import report
+
+        rows = [
+            completed_v3(
+                "p1", "python", "consistent", None, "consistent", None,
+                clear_execution(attempts=2),
+            ),
+            completed_v3(
+                "p2", "python", "inconsistent", "direct-mismatch", "inconsistent",
+                "direct-mismatch", jury_execution(),
+            ),
+        ]
+
+        summary = report.render_execution_summary(rows, budget=50)
+
+        self.assertEqual(summary, "\n".join([
+            "rows=2 clear=1 jury=1 escalation_rate=50.0%",
+            "logical_calls=6 provider_attempts=9 retries=3 attempts_per_row=4.50",
+            "budget=50 used=9 remaining=41",
+        ]))
+
+    def test_render_execution_summary_is_unverified_without_any_ledger(self):
+        from eval.bench import report
+
+        rows = [completed("p1", "python", "consistent", None, "consistent")]
+
+        summary = report.render_execution_summary(rows)
+
+        self.assertEqual(summary, "\n".join([
+            "rows=1 clear=unverified jury=unverified escalation_rate=unverified",
+            "logical_calls=unverified provider_attempts=unverified retries=unverified "
+            "attempts_per_row=unverified",
+            "budget=unverified used=unverified remaining=unverified",
+        ]))
+
+    def test_cli_prints_the_execution_summary_pulling_budget_from_settings(self):
+        from eval.bench import report
+
+        rows = [completed_v3(
+            "p1", "python", "consistent", None, "consistent", None,
+            clear_execution(attempts=4),
+        )]
+        metadata = {
+            "dataset": {"path": "d.jsonl", "sha256": hashlib.sha256(b"d").hexdigest()},
+            "provider": "claude",
+            "skill": {"path": "skills/evergreen/SKILL.md", "sha256": "1" * 64},
+            "judge": {"path": "eval/bench/run_bench.py", "sha256": "2" * 64},
+            "git": {"commit": "c" * 40, "tree": "d" * 40, "dirty": False,
+                    "status_sha256": hashlib.sha256(b"").hexdigest(),
+                    "diff_sha256": hashlib.sha256(b"").hexdigest(),
+                    "untracked_sha256": hashlib.sha256(b"").hexdigest()},
+            "cli_version": "claude 1.0",
+            "settings": {"resolver": "v3", "max_provider_attempts": 20},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "v3.json"
+            path.write_text(json.dumps({
+                "schema_version": 1, "metadata": metadata,
+                "timing": {"started_at": "2026-01-01T00:00:00Z", "elapsed_seconds": 1},
+                "rows": rows,
+            }))
+            markdown = Path(directory) / "report.md"
+            with mock.patch("builtins.print") as printed:
+                status = report.main([
+                    str(path), "--markdown", str(markdown), "--require-language", "python",
+                ])
+
+        # A single row can never clear the (floor-20) minimum reference decision gate, so the
+        # publication verdict itself is FAIL — the execution summary prints regardless, since
+        # it is diagnostic accounting, not a publication gate.
+        self.assertEqual(status, 2)
+        printed.assert_called_once_with(
+            "rows=1 clear=1 jury=0 escalation_rate=0.0%\n"
+            "logical_calls=1 provider_attempts=4 retries=3 attempts_per_row=4.00\n"
+            "budget=20 used=4 remaining=16"
+        )
+
+
 class RunBenchArtifactIntegrationTests(unittest.TestCase):
     def test_checkpoint_write_requires_full_runtime_provenance_to_remain_frozen(self):
         expected = {"git": {"commit": "a"}, "judge": {"sha256": "b"}}
@@ -1280,6 +1435,62 @@ class RunBenchArtifactIntegrationTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "EVAL_CONCURRENCY"):
                 runner.eval_concurrency({"EVAL_CONCURRENCY": value})
         self.assertEqual(runner.eval_concurrency({"EVAL_CONCURRENCY": "32"}), 32)
+
+    def test_resolver_accepts_v3(self):
+        self.assertEqual(runner.eval_resolver({"EVAL_RESOLVER": "v3"}), "v3")
+        with self.assertRaisesRegex(ValueError, "v1, v2, or v3"):
+            runner.eval_resolver({"EVAL_RESOLVER": "v4"})
+
+    def test_artifact_filename_v3_suffix_and_v1_v2_are_unchanged(self):
+        self.assertEqual(
+            runner.artifact_filename("dataset.jsonl", "opus", "claude", "v3"),
+            "bench-dataset-trial-claude-opus-resolver-v3.json",
+        )
+        self.assertEqual(
+            runner.artifact_filename("dataset.jsonl", "opus", "claude", "v1"),
+            "bench-dataset-trial-claude-opus.json",
+        )
+        self.assertEqual(
+            runner.artifact_filename("dataset.jsonl", "opus", "claude", "v2"),
+            "bench-dataset-trial-claude-opus-resolver-v2.json",
+        )
+        with self.assertRaisesRegex(ValueError, "v1, v2, or v3"):
+            runner.artifact_filename("dataset.jsonl", "opus", "claude", "v4")
+
+    def test_max_provider_attempts_parses_positive_ints_and_treats_absence_as_unlimited(self):
+        self.assertIsNone(runner.eval_max_provider_attempts({}))
+        self.assertIsNone(runner.eval_max_provider_attempts({"EVAL_MAX_PROVIDER_ATTEMPTS": ""}))
+        self.assertEqual(
+            runner.eval_max_provider_attempts({"EVAL_MAX_PROVIDER_ATTEMPTS": "50"}), 50
+        )
+        for bad in ("0", "-1", "not-an-int"):
+            with self.subTest(bad=bad), self.assertRaisesRegex(
+                ValueError, "EVAL_MAX_PROVIDER_ATTEMPTS"
+            ):
+                runner.eval_max_provider_attempts({"EVAL_MAX_PROVIDER_ATTEMPTS": bad})
+
+    def test_v3_requires_the_ceiling_but_v1_v2_do_not(self):
+        with self.assertRaisesRegex(ValueError, "EVAL_MAX_PROVIDER_ATTEMPTS"):
+            runner.require_provider_attempt_ceiling("v3", None)
+        self.assertIsNone(runner.require_provider_attempt_ceiling("v3", 50))
+        for resolver in ("v1", "v2"):
+            self.assertIsNone(runner.require_provider_attempt_ceiling(resolver, None))
+
+    def test_settings_carry_the_ceiling_only_for_v3(self):
+        policy = {"resolver": "v1", "context_protocol": "none",
+                  "split_manifest_sha256": None, "split": None,
+                  "selection_receipt_sha256": None}
+        v1_settings = runner.eval_settings("claude", "opus", "sonnet", 4, policy, None)
+        self.assertNotIn("max_provider_attempts", v1_settings)
+
+        v3_policy = {**policy, "resolver": "v3"}
+        v3_settings = runner.eval_settings("claude", "opus", "sonnet", 4, v3_policy, 50)
+        self.assertEqual(v3_settings["max_provider_attempts"], 50)
+
+    def test_checkpoint_interval_is_one_for_v3_and_coarser_otherwise(self):
+        self.assertEqual(runner.checkpoint_interval("v3"), 1)
+        self.assertEqual(runner.checkpoint_interval("v1"), 25)
+        self.assertEqual(runner.checkpoint_interval("v2"), 25)
 
     def test_provider_usage_requires_incremental_envelope(self):
         valid = {"EVAL_PROVIDER_USAGE_JSON": json.dumps({

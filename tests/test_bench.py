@@ -345,10 +345,11 @@ class ProviderConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "claude or codex"):
             runner.eval_provider({"EVAL_PROVIDER": "other"})
 
-    def test_resolver_defaults_to_v1_and_accepts_v2_only(self):
+    def test_resolver_defaults_to_v1_and_accepts_v2_or_v3(self):
         self.assertEqual(runner.eval_resolver({}), "v1")
         self.assertEqual(runner.eval_resolver({"EVAL_RESOLVER": "v2"}), "v2")
-        with self.assertRaisesRegex(ValueError, "v1 or v2"):
+        self.assertEqual(runner.eval_resolver({"EVAL_RESOLVER": "v3"}), "v3")
+        with self.assertRaisesRegex(ValueError, "v1, v2, or v3"):
             runner.eval_resolver({"EVAL_RESOLVER": "future"})
 
     def test_policy_settings_validate_frozen_split_identity(self):
@@ -990,9 +991,16 @@ class JudgeCascadeV3Tests(unittest.TestCase):
 
     def test_clear_and_jury_decisions_replay_through_resolve_v3(self):
         # resolve_v3 (frozen resolver logic) knows nothing about the execution ledger trial.py
-        # layers on top of its return, so replay is compared on everything resolve_v3 itself owns.
-        def without_execution(decision):
-            return {key: value for key, value in decision.items() if key != "execution"}
+        # layers on top of its return, so semantic replay is compared on everything resolve_v3
+        # itself owns except "stages": on the jury path, resolve_v3 delegates to resolve_v2,
+        # which sets its own "stages" key to the inner v2 trail it was handed — collapsing the
+        # {screen, route, jury} wrapper resolve_v3 was actually given. _judge_cascade_v3
+        # corrects for that by overwriting the PERSISTED decision's "stages" with the full
+        # cascade trail (see its comment), so replay must feed that persisted trail back into
+        # resolve_v3 rather than resolve_v3's own (already-unwrapped) return value.
+        def semantic_fields(decision):
+            return {key: value for key, value in decision.items()
+                    if key not in ("execution", "stages")}
 
         def clear_stub(stage, *_args):
             if stage != "screen":
@@ -1000,9 +1008,15 @@ class JudgeCascadeV3Tests(unittest.TestCase):
             return ok(screen_verdict("consistent"))
 
         clear_result = trial.judge(self.pair, self.models, run_test=clear_stub)
-        # A clear decision's own "stages" field IS the full cascade trail (screen + route), so
-        # replaying resolve_v3 straight off the returned decision reproduces it exactly.
-        self.assertEqual(trial.resolve_v3(clear_result["stages"]), without_execution(clear_result))
+        # A clear decision's own "stages" field IS the full cascade trail (screen + route): no
+        # jury path means no collapse, so the persisted "stages" already equals the full trail.
+        self.assertEqual(clear_result["stages"], {
+            "screen": clear_result["stages"]["screen"], "route": clear_result["stages"]["route"],
+        })
+        self.assertEqual(
+            semantic_fields(trial.resolve_v3(clear_result["stages"])),
+            semantic_fields(clear_result),
+        )
 
         jury_record = {
             "verdict": "inconsistent", "proof": "direct", "category": "direct-mismatch",
@@ -1015,14 +1029,18 @@ class JudgeCascadeV3Tests(unittest.TestCase):
             return screen_result if stage == "screen" else jury[stage]
 
         jury_result = trial.judge(self.pair, self.models, run_test=jury_stub)
-        # A jury decision's own "stages" field is resolve_v2's inner trail (the escalation
-        # reruns the unchanged v2 sequence verbatim), so replay the same cascade trail the
-        # orchestrator built rather than the decision's own (already-unwrapped) "stages" field.
-        cascade_trail = {
+        # The persisted "stages" field is now the full cascade trail the orchestrator built
+        # (screen + route + jury) — not resolve_v2's already-unwrapped inner trail — so a bare
+        # resolve(got["stages"], "v3") on replay can recompute the route and reach the jury
+        # without any manual reconstruction.
+        self.assertEqual(jury_result["stages"], {
             "screen": screen_result, "route": trial.route_screen_v3(screen_result),
             "jury": jury,
-        }
-        self.assertEqual(trial.resolve_v3(cascade_trail), without_execution(jury_result))
+        })
+        self.assertEqual(
+            semantic_fields(trial.resolve_v3(jury_result["stages"])),
+            semantic_fields(jury_result),
+        )
 
     def test_dispatch_error_lists_all_three_resolvers(self):
         with self.assertRaisesRegex(ValueError, "v1, v2, or v3"):

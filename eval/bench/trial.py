@@ -885,6 +885,13 @@ def _judge_cascade_v3(pair, models, run_test=None):
         jury = _judge_full(pair, {**models, "resolver": "v2"}, run_test)  # 2. escalate to full jury
         jury_trail = stages["jury"] = jury["stages"]
     decision = resolve_v3(stages)
+    # resolve_v2 (invoked inside resolve_v3 on the jury path) sets its own "stages" key to the
+    # inner v2 trail it was handed, collapsing the {screen, route, jury} wrapper this cascade
+    # built. Left uncorrected, a persisted jury row's got["stages"] would lose the screen/route
+    # that let replay recompute the cascade decision from the row alone. Overwrite with the full
+    # cascade trail so resolve(got["stages"], "v3") reproduces this decision; the clear path
+    # already sets "stages" to this same dict, so this is a no-op there.
+    decision["stages"] = stages
     decision["execution"] = _execution_ledger(
         stages["route"]["decision"], stages["screen"], jury_trail
     )

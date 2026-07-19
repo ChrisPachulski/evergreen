@@ -14,15 +14,17 @@ import tempfile
 try:
     from .artifact import MAX_ARTIFACT_BYTES, read_bytes
     from .metrics import rows_from_transcript, score
-    from .resolver import resolve
+    from .resolver import resolve, route_screen_v3
     from .runner import artifact_rows
     from .split_manifest import load_split_manifest
+    from .trial import _execution_ledger
 except ImportError:  # Direct script execution.
     from artifact import MAX_ARTIFACT_BYTES, read_bytes
     from metrics import rows_from_transcript, score
-    from resolver import resolve
+    from resolver import resolve, route_screen_v3
     from runner import artifact_rows
     from split_manifest import load_split_manifest
+    from trial import _execution_ledger
 
 
 MAX_LABEL_BYTES = 16 * 1024 * 1024
@@ -34,7 +36,7 @@ CATEGORIES = {None, "direct-mismatch", "over-promise"}
 DECISION_FIELDS = (
     "final_status", "final_verdict", "verdict", "category", "why", "contested",
 )
-OPTIONAL_DECISION_FIELDS = ("semantic_status", "proof", "claim", "evidence")
+OPTIONAL_DECISION_FIELDS = ("semantic_status", "proof", "claim", "evidence", "execution")
 
 
 def _decision_differences(stored, replayed):
@@ -44,12 +46,31 @@ def _decision_differences(stored, replayed):
     return [field for field in fields if stored.get(field) != replayed.get(field)]
 
 
+def _v3_execution_ledger(stages):
+    """Recompute the got.execution provider-attempt ledger purely from persisted v3 stages, the
+    same way trial._judge_cascade_v3 built it when the row was first judged. Never trusts the
+    stored "route" reason text — the route is recomputed straight from the screen stage."""
+    screen_result = stages.get("screen")
+    route = route_screen_v3(screen_result)
+    return _execution_ledger(route["decision"], screen_result, stages.get("jury"))
+
+
 def replay_rows(rows, resolver_id, expect_stored=False):
-    """Return a deep replay of rows, optionally requiring stored-decision parity."""
+    """Return a deep replay of rows, optionally requiring stored-decision parity.
+
+    Resolver v3 rows also carry a got.execution provider-attempt ledger alongside the decision
+    fields resolve() itself owns; it is recomputed independently from the persisted stages and
+    folded into the replayed decision so expect_stored compares it exactly like every other
+    decision field — a decision that reproduces without its ledger matching would otherwise
+    hide a broken accounting change.
+    """
     replayed = copy.deepcopy(rows)
     for original, row in zip(rows, replayed):
         got = original.get("got") or {}
-        decision = resolve(got.get("stages") or {}, resolver_id)
+        stages = got.get("stages") or {}
+        decision = resolve(stages, resolver_id)
+        if resolver_id == "v3" and "execution" in got:
+            decision["execution"] = _v3_execution_ledger(stages)
         differences = _decision_differences(got, decision) if expect_stored else []
         if differences:
             field = differences[0]
@@ -189,7 +210,7 @@ def _snap_rows(rows):
 def _replay_main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("artifacts", nargs="+")
-    parser.add_argument("--resolver", choices=("v1", "v2"), default="v1")
+    parser.add_argument("--resolver", choices=("v1", "v2", "v3"), default="v1")
     parser.add_argument("--expect-stored", action="store_true")
     parser.add_argument("--compare-snap", action="store_true")
     args = parser.parse_args(argv)

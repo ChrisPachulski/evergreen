@@ -85,9 +85,36 @@ def eval_provider(environment=os.environ):
 
 def eval_resolver(environment=os.environ):
     resolver = environment.get("EVAL_RESOLVER", "v1")
-    if resolver not in ("v1", "v2"):
-        raise ValueError("EVAL_RESOLVER must be v1 or v2")
+    if resolver not in ("v1", "v2", "v3"):
+        raise ValueError("EVAL_RESOLVER must be v1, v2, or v3")
     return resolver
+
+
+def eval_max_provider_attempts(environment=os.environ):
+    """Parse the optional hard provider-attempt ceiling frozen_run.py freezes for v3 runs.
+
+    Absent or empty means no ceiling (today's unlimited v1/v2 behavior); a present value must
+    be a positive integer. Whether a ceiling is REQUIRED is a resolver-specific policy decision
+    left to require_provider_attempt_ceiling, not this parser.
+    """
+    raw = environment.get("EVAL_MAX_PROVIDER_ATTEMPTS")
+    if raw is None or raw == "":
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError("EVAL_MAX_PROVIDER_ATTEMPTS must be a positive integer") from None
+    if value <= 0:
+        raise ValueError("EVAL_MAX_PROVIDER_ATTEMPTS must be a positive integer")
+    return value
+
+
+def require_provider_attempt_ceiling(resolver, ceiling):
+    """Resolver v3 must never launch unbounded: enforce the ceiling before any row runs."""
+    if resolver == "v3" and ceiling is None:
+        raise ValueError(
+            "resolver v3 requires EVAL_MAX_PROVIDER_ATTEMPTS to be a positive integer"
+        )
 
 
 def eval_policy_settings(environment=os.environ):
@@ -157,10 +184,32 @@ def artifact_filename(dataset, strong_model, provider, resolver="v1"):
     parts = (Path(dataset).stem, provider, strong_model)
     if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", part) for part in parts):
         raise ValueError("dataset, provider, and model names must be safe filename components")
-    if resolver not in ("v1", "v2"):
-        raise ValueError("resolver must be v1 or v2")
+    if resolver not in ("v1", "v2", "v3"):
+        raise ValueError("resolver must be v1, v2, or v3")
     suffix = "" if resolver == "v1" else f"-resolver-{resolver}"
     return f"bench-{parts[0]}-trial-{parts[1]}-{parts[2]}{suffix}.json"
+
+
+def eval_settings(provider, strong, cheap, workers, policy, max_provider_attempts=None):
+    """Assemble the frozen settings dict from launch policy.
+
+    A v3 provider-attempt ceiling is folded in only when the resolver is v3, so v1/v2 settings
+    — and therefore their metadata and artifact filenames — stay byte-identical to runs that
+    predate the ceiling ever existing.
+    """
+    settings = {"provider": provider, "models": {"strong": strong, "cheap": cheap},
+                "concurrency": workers}
+    settings.update(policy)
+    if policy["resolver"] == "v3":
+        settings["max_provider_attempts"] = max_provider_attempts
+    return settings
+
+
+def checkpoint_interval(resolver):
+    """v3 checkpoints (and, via write_artifact, synchronously mirrors) every completed row so a
+    crash never loses more than one row's worth of provider-attempt spend; v1/v2 keep the
+    coarser interval that predates the ceiling and its per-row accounting."""
+    return 1 if resolver == "v3" else 25
 
 
 def validate_dataset_policy(rows, policy):
@@ -316,6 +365,8 @@ def main():
     # Fable is banned from every role in this project.
     provider = eval_provider()
     policy = eval_policy_settings()
+    max_provider_attempts = eval_max_provider_attempts()
+    require_provider_attempt_ceiling(policy["resolver"], max_provider_attempts)
     default_strong = "claude-opus-4-8" if provider == "claude" else "gpt-5.6-sol"
     default_cheap = "claude-sonnet-5" if provider == "claude" else "gpt-5.6-sol"
     strong = os.environ.get("EVAL_MODEL_STRONG", default_strong)
@@ -329,9 +380,7 @@ def main():
     models = {"strong": strong, "cheap": cheap, "provider": provider,
               "resolver": policy["resolver"]}
     workers = eval_concurrency()
-    settings = {"provider": provider, "models": {"strong": strong, "cheap": cheap},
-                "concurrency": workers}
-    settings.update(policy)
+    settings = eval_settings(provider, strong, cheap, workers, policy, max_provider_attempts)
     validate_dataset_policy(pairs, policy)
     metadata = artifact_metadata(ds, HERE.parent.parent, settings)
     if hashlib.sha256(dataset_payload).hexdigest() != metadata["dataset"]["sha256"]:
@@ -343,16 +392,24 @@ def main():
     out_dir = HERE / "out"; out_dir.mkdir(exist_ok=True)
     out_path = out_dir / artifact_filename(ds, strong, provider, policy["resolver"])
     if out_path.exists():
-        state = resume_state(load_json(out_path, MAX_RESUME_BYTES), metadata, dataset_rows=pairs)
+        state = resume_state(
+            load_json(out_path, MAX_RESUME_BYTES), metadata, dataset_rows=pairs,
+            provider_attempt_ceiling=max_provider_attempts,
+        )
     else:
         state = {
             "rows": [], "started_at": new_started_at, "elapsed_seconds": 0,
             "provider_usage": None, "prior_provider_attempts": 0,
         }
-    # No launcher flag sets a ceiling yet (v3's --max-provider-attempts is out of this task's
-    # scope), so this is always unlimited today; resuming an artifact that already carries
-    # got.execution ledgers nets its prior attempts out of the budget the moment a ceiling exists.
-    models["budget"] = build_provider_attempt_budget(None, state["prior_provider_attempts"])
+    # A v1/v2 ceiling is always None (unlimited, exactly today's behavior). A v3 ceiling is a
+    # positive int frozen into settings/metadata above, so a resumed artifact whose metadata
+    # carries a DIFFERENT ceiling never reaches this line — resume_state's metadata-equality
+    # check (via the settings match built into `metadata`) already rejected it as incompatible
+    # provenance; a SAME ceiling instead nets resumed rows' got.execution attempts out of the
+    # budget below.
+    models["budget"] = build_provider_attempt_budget(
+        max_provider_attempts, state["prior_provider_attempts"]
+    )
     done = {item["id"]: item for item in state["rows"]}
     started_at = state["started_at"]
     prior_elapsed = state["elapsed_seconds"]
@@ -373,6 +430,9 @@ def main():
         atomic_write_json(out_path, document)
         mirror_frozen_checkpoint(out_path, metadata)
 
+    # Each write_artifact call is itself a synchronous atomic write plus a synchronous archive
+    # mirror, so setting the interval to 1 for v3 satisfies "checkpoint every row" directly.
+    interval = checkpoint_interval(policy["resolver"])
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for p, v in bounded_results(pool, lambda pair: judge(pair, models), todo, workers):
@@ -394,7 +454,7 @@ def main():
             display_verdict = "unverified" if path == "unverified" else (verdict or "abstain")
             print(f"  {mark} [{len(done)}/{len(pairs)}] {p['id']:40} label={p['label']:12} "
                   f"verdict={display_verdict:12} [{path}]", flush=True)
-            if len(done) % 25 == 0:
+            if len(done) % interval == 0:
                 write_artifact([done[pair["id"]] for pair in pairs if pair["id"] in done])
     transcript = [done[p["id"]] for p in pairs]
     write_artifact(transcript)

@@ -9,11 +9,21 @@ import unittest
 from unittest import mock
 
 
+from eval.bench import trial
 from eval.bench.replay import replay_rows, select_split
 
 
 def ok(value):
     return {"status": "ok", "value": value}
+
+
+def screen_verdict(value, proof="direct", category=None, uncertain=False,
+                    uncertainty_reason=None):
+    return {
+        "verdict": value, "proof": proof, "category": category,
+        "claim": "the documentation claim", "evidence": "return 1",
+        "uncertain": uncertain, "uncertainty_reason": uncertainty_reason,
+    }
 
 
 def stages(verdict="consistent"):
@@ -103,6 +113,89 @@ class ReplayTests(unittest.TestCase):
         with mock.patch("eval.bench.trial.model_json", side_effect=AssertionError("paid path")):
             self.assertEqual(replay_rows([self.row()], "v1")[0]["got"]["final_verdict"],
                              "consistent")
+
+
+class V3ReplayTests(unittest.TestCase):
+    """A real trial.judge(resolver="v3") decision, packaged the way runner.py persists it
+    (source row + "got"), must replay cleanly — this is what the trial.py stages-persistence
+    fix (see _judge_cascade_v3) buys: without it, a jury row's got["stages"] would be
+    resolve_v2's inner trail alone, replay would find no "screen" key, misroute, and abstain."""
+
+    def setUp(self):
+        self.pair = {
+            "id": "org/repo/f#1", "func": "f", "code": "def f(): return 1",
+            "doc": "f returns 1", "language": "python",
+        }
+        self.models = {"strong": "strong", "cheap": "cheap", "resolver": "v3"}
+
+    def persisted_row(self, run_test, label="consistent", category=None):
+        decision = trial.judge(self.pair, self.models, run_test=run_test)
+        return {**source_row(self.pair["id"], "python"), "label": label,
+                "category": category, "got": decision}
+
+    def clear_row(self):
+        def stub(stage, *_args):
+            if stage != "screen":
+                raise AssertionError(f"jury stage invoked on a clear route: {stage}")
+            return ok(screen_verdict("consistent"))
+        return self.persisted_row(stub)
+
+    def jury_row(self):
+        jury_record = {
+            "verdict": "inconsistent", "proof": "direct", "category": "direct-mismatch",
+            "claim": "claim", "evidence": "does not return 1",
+        }
+        jury = {
+            "snap": ok(jury_record),
+            "challenge": ok({"cracks": False, "why": "held"}),
+            "prongs": [ok({**jury_record, "role": role, "cleared_bar": True})
+                       for role in ("defend", "prove-wrong", "evidence-auditor")],
+            "blindspot": ok({"missed_angle": None}),
+        }
+        screen_result = ok(screen_verdict("inconsistent"))
+
+        def stub(stage, *_args):
+            return screen_result if stage == "screen" else jury[stage]
+
+        return self.persisted_row(stub, label="inconsistent", category="direct-mismatch")
+
+    def test_v3_replay_round_trips_a_persisted_clear_row(self):
+        row = self.clear_row()
+
+        with mock.patch("eval.bench.trial.model_json", side_effect=AssertionError("paid path")):
+            replayed = replay_rows([row], "v3", expect_stored=True)
+
+        self.assertEqual(replayed[0]["got"]["final_verdict"], "consistent")
+        self.assertEqual(replayed[0]["got"]["execution"], row["got"]["execution"])
+
+    def test_v3_replay_round_trips_a_persisted_jury_row(self):
+        row = self.jury_row()
+        # Prove the persistence fix actually took: the full cascade trail, not just the inner
+        # v2 jury trail, is what got persisted.
+        self.assertIn("screen", row["got"]["stages"])
+        self.assertIn("route", row["got"]["stages"])
+        self.assertIn("jury", row["got"]["stages"])
+
+        with mock.patch("eval.bench.trial.model_json", side_effect=AssertionError("paid path")):
+            replayed = replay_rows([row], "v3", expect_stored=True)
+
+        self.assertEqual(replayed[0]["got"]["final_verdict"], "inconsistent")
+        self.assertEqual(replayed[0]["got"]["category"], "direct-mismatch")
+        self.assertEqual(replayed[0]["got"]["execution"], row["got"]["execution"])
+
+    def test_v3_replay_detects_a_tampered_execution_ledger(self):
+        row = self.clear_row()
+        row["got"]["execution"]["provider_attempts"] += 1
+
+        with self.assertRaisesRegex(ValueError, "execution"):
+            replay_rows([row], "v3", expect_stored=True)
+
+    def test_v3_replay_never_calls_model_boundary(self):
+        row = self.jury_row()
+        with mock.patch("eval.bench.trial.model_json", side_effect=AssertionError("paid path")):
+            self.assertEqual(
+                replay_rows([row], "v3")[0]["got"]["final_verdict"], "inconsistent"
+            )
 
 
 class SelectSplitTests(unittest.TestCase):
