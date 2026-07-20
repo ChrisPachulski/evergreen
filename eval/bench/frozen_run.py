@@ -30,6 +30,7 @@ try:
     from .split_manifest import (
         MAX_DATASET_BYTES, MAX_MANIFEST_BYTES, load_split_bindings_bytes,
     )
+    from .workdir import work_dir
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from eval import peers as peer_protocol
@@ -42,6 +43,7 @@ except ImportError:
         PROTOCOL as JAVA_CONTEXT_PROTOCOL, PROTOCOLS as JAVA_CONTEXT_PROTOCOLS, validate_context,
     )
     from split_manifest import MAX_DATASET_BYTES, MAX_MANIFEST_BYTES, load_split_bindings_bytes
+    from workdir import work_dir
 
 
 HERE = Path(__file__).resolve().parent
@@ -638,7 +640,7 @@ def monitor_process(
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", required=True, type=Path)
-    parser.add_argument("--archive-dir", required=True, type=Path)
+    parser.add_argument("--archive-dir", type=Path, default=None)
     parser.add_argument("--provider", choices=("claude", "codex"), default="codex")
     parser.add_argument("--strong-model", default="gpt-5.6-sol")
     parser.add_argument("--cheap-model", default="gpt-5.6-sol")
@@ -666,8 +668,11 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
     repo = REPO.resolve()
-    archive = args.archive_dir.resolve()
-    validate_locations(repo, args.archive_dir)
+    archive_arg = (
+        args.archive_dir if args.archive_dir is not None else work_dir("benchmark-archive")
+    )
+    archive = archive_arg.resolve()
+    validate_locations(repo, archive_arg)
     if args.concurrency < 1 or args.poll_seconds <= 0 or args.minimum_free_gib < 0:
         raise ValueError("concurrency, polling, and free-disk bounds must be positive")
     anchored_workspace = workspace_token(repo)

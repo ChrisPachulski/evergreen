@@ -844,5 +844,155 @@ class FrozenRunMainTests(unittest.TestCase):
                     frozen_run.load_peer_key(key, repo)
 
 
+class FrozenRunArchiveDefaultTests(unittest.TestCase):
+    """--archive-dir becomes optional, defaulting to work_dir("benchmark-archive")."""
+
+    def test_parse_args_archive_dir_defaults_to_none(self):
+        args = frozen_run.parse_args(["--dataset", "one.jsonl"])
+        self.assertIsNone(args.archive_dir)
+
+    def test_parse_args_archive_dir_explicit_still_parses(self):
+        args = frozen_run.parse_args([
+            "--dataset", "one.jsonl", "--archive-dir", "/tmp/archive",
+        ])
+        self.assertEqual(args.archive_dir, Path("/tmp/archive"))
+
+    def test_main_uses_work_dir_default_when_archive_dir_omitted(self):
+        commit = "a" * 40
+        identity = {"commit": commit, "tree": "t", "dirty": False}
+        metadata = {"git": identity, "settings": {"concurrency": 4}}
+        process = SimpleNamespace(returncode=0)
+        lock = mock.Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            here = repo / "eval" / "bench"
+            here.mkdir(parents=True)
+            (repo / ".git").mkdir()
+            dataset = here / "one.jsonl"
+            dataset.write_text("fixture")
+            # Deliberately outside both the repo and any real $HOME — proves the derived
+            # default is used without touching the real filesystem's evergreen-* dirs.
+            default_archive = root / "work-root" / "benchmark-archive"
+            resolved_archive = default_archive.resolve()
+            with mock.patch.object(frozen_run, "REPO", repo), \
+                 mock.patch.object(frozen_run, "HERE", here), \
+                 mock.patch.object(frozen_run, "git_identity", return_value=identity), \
+                 mock.patch.object(
+                     frozen_run, "artifact_metadata", return_value=metadata
+                 ), \
+                 mock.patch.object(frozen_run, "load_dataset", return_value=(b"fixture", [
+                     {"language": "python"}
+                 ])), \
+                 mock.patch.object(frozen_run, "_remote_refs", return_value=(
+                     f"{commit}\trefs/heads/main\n"
+                 )), \
+                 mock.patch.object(frozen_run, "acquire_lock", return_value=lock), \
+                 mock.patch.object(frozen_run, "prepare_output") as prepare, \
+                 mock.patch.object(
+                     frozen_run, "work_dir", return_value=default_archive
+                 ) as work_dir_mock, \
+                 mock.patch.object(frozen_run.subprocess, "Popen", return_value=process) as popen, \
+                 mock.patch.object(frozen_run, "monitor_process", return_value=0), \
+                 mock.patch.object(frozen_run.shutil, "disk_usage", return_value=(
+                     SimpleNamespace(free=20 * 1024 ** 3)
+                 )):
+                status = frozen_run.main([
+                    "--dataset", str(dataset),
+                ])
+
+        self.assertEqual(status, 0)
+        work_dir_mock.assert_called_once_with("benchmark-archive")
+        prepare.assert_called_once_with(
+            here / "out" / "bench-one-trial-codex-gpt-5.6-sol.json",
+            resolved_archive,
+            metadata,
+            dataset_rows=[{"language": "python"}],
+        )
+        environment = popen.call_args.kwargs["env"]
+        self.assertEqual(environment["EVAL_FROZEN_ARCHIVE_DIR"], str(resolved_archive))
+
+    def test_main_prefers_explicit_archive_dir_over_work_dir_default(self):
+        commit = "a" * 40
+        identity = {"commit": commit, "tree": "t", "dirty": False}
+        metadata = {"git": identity, "settings": {"concurrency": 4}}
+        process = SimpleNamespace(returncode=0)
+        lock = mock.Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            here = repo / "eval" / "bench"
+            here.mkdir(parents=True)
+            (repo / ".git").mkdir()
+            dataset = here / "one.jsonl"
+            dataset.write_text("fixture")
+            archive = root / "archive"
+            resolved_archive = archive.resolve()
+            with mock.patch.object(frozen_run, "REPO", repo), \
+                 mock.patch.object(frozen_run, "HERE", here), \
+                 mock.patch.object(frozen_run, "git_identity", return_value=identity), \
+                 mock.patch.object(
+                     frozen_run, "artifact_metadata", return_value=metadata
+                 ), \
+                 mock.patch.object(frozen_run, "load_dataset", return_value=(b"fixture", [
+                     {"language": "python"}
+                 ])), \
+                 mock.patch.object(frozen_run, "_remote_refs", return_value=(
+                     f"{commit}\trefs/heads/main\n"
+                 )), \
+                 mock.patch.object(frozen_run, "acquire_lock", return_value=lock), \
+                 mock.patch.object(frozen_run, "prepare_output"), \
+                 mock.patch.object(
+                     frozen_run, "work_dir",
+                     return_value=root / "should-not-be-used",
+                 ) as work_dir_mock, \
+                 mock.patch.object(frozen_run.subprocess, "Popen", return_value=process) as popen, \
+                 mock.patch.object(frozen_run, "monitor_process", return_value=0), \
+                 mock.patch.object(frozen_run.shutil, "disk_usage", return_value=(
+                     SimpleNamespace(free=20 * 1024 ** 3)
+                 )):
+                status = frozen_run.main([
+                    "--dataset", str(dataset), "--archive-dir", str(archive),
+                ])
+
+        self.assertEqual(status, 0)
+        work_dir_mock.assert_not_called()
+        environment = popen.call_args.kwargs["env"]
+        self.assertEqual(environment["EVAL_FROZEN_ARCHIVE_DIR"], str(resolved_archive))
+
+    def test_main_validates_the_derived_default_archive_location(self):
+        commit = "a" * 40
+        identity = {"commit": commit, "tree": "t", "dirty": False}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            here = repo / "eval" / "bench"
+            here.mkdir(parents=True)
+            (repo / ".git").mkdir()
+            dataset = here / "one.jsonl"
+            dataset.write_text("fixture")
+            cases = (
+                (Path("relative-archive"), "absolute"),
+                (repo / "archive", "outside"),
+            )
+            for bad_default, expected in cases:
+                with self.subTest(bad_default=bad_default), \
+                     mock.patch.object(frozen_run, "REPO", repo), \
+                     mock.patch.object(frozen_run, "HERE", here), \
+                     mock.patch.object(frozen_run, "git_identity", return_value=identity), \
+                     mock.patch.object(frozen_run, "load_dataset", return_value=(b"fixture", [
+                         {"language": "python"}
+                     ])), \
+                     mock.patch.object(frozen_run, "artifact_metadata") as metadata_call, \
+                     mock.patch.object(frozen_run, "work_dir", return_value=bad_default), \
+                     mock.patch.object(frozen_run.subprocess, "Popen") as popen:
+                    with self.assertRaisesRegex(ValueError, expected):
+                        frozen_run.main([
+                            "--dataset", str(dataset),
+                        ])
+                    metadata_call.assert_not_called()
+                    popen.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
