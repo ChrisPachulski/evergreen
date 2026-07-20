@@ -22,15 +22,15 @@ def work_root(environ=os.environ, home=None):
     explicit = environ.get("EVERGREEN_WORK_DIR")
     if explicit:
         return Path(explicit)
-    home = Path(home) if home else Path.home()
+    home = Path(home) if home is not None else Path.home()
     base = environ.get("XDG_DATA_HOME") or str(home / ".local" / "share")
     return Path(base) / "evergreen"
 
 
 def work_dir(purpose, environ=os.environ, home=None):
-    if not PURPOSE_RE.match(purpose):
+    if not PURPOSE_RE.fullmatch(purpose):
         raise ValueError(f"invalid purpose {purpose!r}: must match {PURPOSE_RE.pattern}")
-    home = Path(home) if home else Path.home()
+    home = Path(home) if home is not None else Path.home()
     legacy = home / f"evergreen-{purpose}"
     if legacy.exists():
         return legacy

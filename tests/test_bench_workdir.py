@@ -63,6 +63,15 @@ class WorkDirTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     work_dir(bad, environ=environ, home=self.tmp_path)
 
+    def test_trailing_newline_purpose_raises_value_error(self):
+        # Python's `$` in re also matches just before a trailing "\n", so a
+        # `.match()`-based check would wrongly accept this. Must use fullmatch.
+        environ = {"EVERGREEN_WORK_DIR": str(self.tmp_path / "root")}
+        for bad in ("cascade\n", "a\nb"):
+            with self.subTest(purpose=bad):
+                with self.assertRaises(ValueError):
+                    work_dir(bad, environ=environ, home=self.tmp_path)
+
     def test_no_directories_are_created(self):
         environ = {"EVERGREEN_WORK_DIR": str(self.tmp_path / "root")}
         work_dir("cascade", environ=environ, home=self.tmp_path)
