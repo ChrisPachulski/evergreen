@@ -96,7 +96,13 @@ else
 fi
 
 # --- axis: v2 split manifest (needs the external datasets) -------------------
-V2_DATA="$HOME/evergreen-benchmark-data"
+# Canonical resolver: eval/bench/workdir.py (work_dir). Shell mirror + legacy shim.
+if [ -d "$HOME/evergreen-benchmark-data" ]; then
+  V2_DATA="$HOME/evergreen-benchmark-data"
+else
+  _EG_ROOT="${EVERGREEN_WORK_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/evergreen}"
+  V2_DATA="$_EG_ROOT/benchmark-data"
+fi
 if [ -f "$V2_DATA/cascade-java-v2-dev.jsonl" ] && \
    [ -f "$V2_DATA/cascade-java-v2-holdout.jsonl" ]; then
   if python3 eval/bench/split_manifest.py \
