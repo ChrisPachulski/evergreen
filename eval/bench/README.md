@@ -182,7 +182,7 @@ python3 eval/bench/make_probe.py screened-dev.jsonl \
   --out probe.jsonl --receipt-out probe-receipt.json
 
 python3 eval/bench/frozen_run.py --dataset probe.jsonl \
-  --archive-dir "$HOME/evergreen-benchmark-archive" \
+  --archive-dir "${EVERGREEN_WORK_DIR:-$HOME/.local/share/evergreen}/benchmark-archive" \
   --resolver v3 --max-provider-attempts <N> \
   --provider codex --strong-model gpt-5.6-sol --cheap-model gpt-5.6-sol
 
@@ -226,7 +226,7 @@ git clone https://github.com/TobiasKiecker/CASCADE
 unzip CASCADE/PaperEvaluation/dataset.zip -d cascade_dataset
 python3 eval/bench/cascade_to_jsonl.py cascade_dataset > cascade.jsonl
 python3 eval/bench/frozen_run.py --dataset cascade.jsonl \
-  --archive-dir "$HOME/evergreen-benchmark-archive"
+  --archive-dir "${EVERGREEN_WORK_DIR:-$HOME/.local/share/evergreen}/benchmark-archive"
 ```
 
 **CoDocBench** ([github.com/kunpai/codocbench](https://github.com/kunpai/codocbench),
@@ -267,7 +267,7 @@ python3 eval/bench/codocbench_to_jsonl.py codocbench/dataset/codocbench.jsonl \
     --pos 40 --neg 360 --seed 0 > derived.jsonl
 EVAL_CONCURRENCY=6 python3 eval/bench/validate_labels.py derived.jsonl --out validated.jsonl
 python3 eval/bench/frozen_run.py --dataset validated.jsonl \
-  --archive-dir "$HOME/evergreen-benchmark-archive"
+  --archive-dir "${EVERGREEN_WORK_DIR:-$HOME/.local/share/evergreen}/benchmark-archive"
 ```
 
 New derivations preserve upstream `file_path` and the new version's `commit_sha`, falling back to
@@ -331,7 +331,7 @@ python3 eval/bench/frozen_run.py --dataset screened-dev.jsonl \
   --selection-parent-manifest eval/bench/codocbench-python-v2-dev-eligible-manifest.json \
   --selection-vote-ledger screened-dev.votes.json \
   --selection-receipt eval/bench/codocbench-python-v2-selection-receipt.json \
-  --archive-dir "$HOME/evergreen-benchmark-archive"
+  --archive-dir "${EVERGREEN_WORK_DIR:-$HOME/.local/share/evergreen}/benchmark-archive"
 ```
 
 **DocPrism's** set is still not runnable — its `anonymous.4open.science/r/DocPrism-5746`
@@ -533,12 +533,26 @@ rather than dragging down recall, and names the asymmetry instead of hiding it. 
 publication retained zero under-promise pairs, so its tables show the carve-out's reporting
 path (0/0 lines) without yet exercising it on live data.
 
+## Work directory
+
+Benchmark sinks — the archive directory, local dataset caches, and similar out-of-tree scratch
+paths — resolve through one convention ([`workdir.py`](workdir.py)): `$EVERGREEN_WORK_DIR` if set,
+else `${XDG_DATA_HOME:-$HOME/.local/share}/evergreen`. Each caller gets its own sub-directory under
+that root by purpose, e.g. `benchmark-data`, `benchmark-archive`. An existing legacy
+`$HOME/evergreen-<purpose>` directory (e.g. `$HOME/evergreen-benchmark-archive`) keeps taking
+precedence over the derived path until it's migrated away, so anything already on disk keeps
+resolving with no action required. `frozen_run.py --archive-dir` may now be omitted entirely; when
+omitted it defaults to the derived `benchmark-archive` path above, validated exactly as an explicit
+value is, and an explicit `--archive-dir` always wins over the default. `evergreen-java-mirrors`
+(the `--mirror-root` bare-clone cache used by the Java context protocols) currently lives in
+`~/.Trash` — restore or re-clone it before a Java-context run.
+
 ## Run
 
 ```sh
 python3 eval/bench/frozen_run.py \
   --dataset eval/bench/dataset.jsonl \
-  --archive-dir "$HOME/evergreen-benchmark-archive" \
+  --archive-dir "${EVERGREEN_WORK_DIR:-$HOME/.local/share/evergreen}/benchmark-archive" \
   --provider codex \
   --strong-model gpt-5.6-sol \
   --cheap-model gpt-5.6-sol \
