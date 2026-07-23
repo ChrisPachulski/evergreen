@@ -321,8 +321,10 @@ Python row and the other two. Figures are the raw full-set matrix, rescorable of
 | Python | 266 / 294 | 28 | 0.576 | 0.891 | 0.700 | 0.829 |
 
 Python's cascade auto-cleared 96 of the 294 rows and sent the other 198 to the full jury, producing
-exactly one auto-clear false negative across the run; at F1 0.700 it lands close to Rust's 0.711 at
-natural prevalence. Go is not reported: its full development run was abandoned after the provider's
+exactly one auto-clear false negative across the run; at a raw full-set F1 of 0.700 it lands close
+to Rust's raw 0.711 — both on the prevalence-skewed dev set, not prevalence-corrected (the scorer's
+natural 10/90 headline puts Python lower, at F1 0.52). Go is not reported: its full development run
+was abandoned after the provider's
 usage quota was exhausted mid-run (all 346 rows honestly abstained rather than yielding an unfounded
 result), and it is not being re-run.
 
