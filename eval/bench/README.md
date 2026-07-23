@@ -302,7 +302,8 @@ holdout must be mined and sealed from untouched rows.
 The clean three-model screen retained 294 Python rows (55 inconsistent / 239 consistent), 139
 TypeScript rows (18 / 121), 251 Rust rows (38 / 213), and 346 Go rows (54 / 292). The tracked
 screened-dev manifests and selection receipts bind those exact external datasets and vote ledgers.
-Judge results below have landed for three of the four languages; Go's is pending.
+Judge results below have landed for three of the four languages; Go is not reported (its run did
+not complete and is not being pursued — see below).
 
 ### v2 development-lane judge results (nominal labels, not holdout)
 
@@ -318,14 +319,12 @@ Python row and the other two. Figures are the raw full-set matrix, rescorable of
 | TypeScript | 139 / 139 | 0 | 0.433 | 0.722 | 0.542 | 0.860 |
 | Rust | 250 / 251 | 1 | 0.711 | 0.711 | 0.711 | 0.948 |
 | Python | 266 / 294 | 28 | 0.576 | 0.891 | 0.700 | 0.829 |
-| Go | pending | — | — | — | — | — |
 
 Python's cascade auto-cleared 96 of the 294 rows and sent the other 198 to the full jury, producing
 exactly one auto-clear false negative across the run; at F1 0.700 it lands close to Rust's 0.711 at
-natural prevalence. Go's full development run did not complete: the provider's usage quota was
-exhausted mid-run and all 346 rows honestly abstained rather than yielding an unfounded result — a
-quota condition, not a data or code defect (the Go probe ran clean earlier) — so no Go F1 is reported
-here; it is pending a quota reset or added credits.
+natural prevalence. Go is not reported: its full development run was abandoned after the provider's
+usage quota was exhausted mid-run (all 346 rows honestly abstained rather than yielding an unfounded
+result), and it is not being re-run.
 
 This is a **development benchmark study**, not A-grade oracle evidence. These derived rows have no
 executable oracle category (`category` is `null`), while the frozen grade contract requires five
