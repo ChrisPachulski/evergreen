@@ -728,14 +728,75 @@ has "$(guard_cmd "$heredoc_compound_cmd")" "separate" \
 heredoc_piped_cmd=$'cat <<\'EOF\' | bash\ngit add . && git commit -m x\nEOF'
 has "$(guard_cmd "$heredoc_piped_cmd")" "separate" \
   "guard: heredoc piped into a shell is still code"
-# A body no shell executes is data, exactly like a quoted -m message: describing git commands in
-# a commit message or writing them into a file must not manufacture intent.
+# Three body shapes are provably not shell code -- a commit message, a payload copied into a file,
+# a script for a language that is not the shell -- and each is inert exactly like a quoted -m
+# message. Describing git commands inside one of them must not manufacture intent.
 heredoc_about_git_cmd=$'git commit -F - <<\'MSG\'\nfix: explain the rule\n\nAn ordinary `git commit -F -` was blocked, as was `git add -p`.\nMSG'
 empty "$(guard_cmd "$heredoc_about_git_cmd")" \
   "guard: commit-message body describing git commands is not compound"
 heredoc_written_file_cmd=$'cat > notes.txt <<\'EOF\'\ngit add . && git commit -m x\nEOF'
 empty "$(guard_cmd "$heredoc_written_file_cmd")" \
   "guard: heredoc written to a file is data, not intent"
+python_body_cmd=$'python3 <<\'EOF\'\ngit commit -am x\nEOF'
+empty "$(guard_cmd "$python_body_cmd")" \
+  "guard: a python heredoc body is a script in another language, not shell intent"
+# Everything the three rules above do not name is classified, because an allowlist of shells cannot
+# be trusted to be complete -- fish, `sh<<EOF` with no space, and `. /dev/stdin` all executed
+# bodies the old interpreter allowlist would not have recognized.
+for case_row in \
+  "fish|fish shell not on the interpreter list" \
+  "sh|no space between interpreter and operator"; do
+  interpreter="${case_row%|*}"
+  label="${case_row##*|}"
+  if [ "$interpreter" = "sh" ]; then
+    cmd=$'sh<<\'EOF\'\ngit commit -am x\nEOF'
+  else
+    cmd=$'fish <<\'EOF\'\ngit commit -am x\nEOF'
+  fi
+  has "$(guard_cmd "$cmd")" "separately staged plain commit" \
+    "guard: unsafe commit in a heredoc is caught despite $label"
+done
+dot_source_cmd=$'. /dev/stdin <<\'EOF\'\ngit commit -am x\nEOF'
+has "$(guard_cmd "$dot_source_cmd")" "separately staged plain commit" \
+  "guard: unsafe commit sourced from a heredoc is caught"
+# A body is judged by the command that owns the operator. Judging the whole line let a harmless
+# commit prefix vouch for a body belonging to something else on the same line.
+laundered_body_cmd=$'git commit -m x ; fish <<\'EOF\'\ngit commit -am y\nEOF'
+has "$(guard_cmd "$laundered_body_cmd")" "separately staged plain commit" \
+  "guard: a commit earlier on the line does not make another command's body prose"
+owned_body_cmd=$'git commit -F - <<\'MSG\' ; echo done\nmentions git add . here\nMSG'
+empty "$(guard_cmd "$owned_body_cmd")" \
+  "guard: a commit message body stays prose when the line continues past it"
+# Text is never hidden: a delimiter that never arrives must leave the following lines readable.
+unterminated_cmd=$'cat <<EOF\nnot the delimiter\ngit commit -am x'
+has "$(guard_cmd "$unterminated_cmd")" "separately staged plain commit" \
+  "guard: an unterminated heredoc does not hide a later unsafe commit"
+quoted_operator_cmd=$'git commit -m "shift << operator"\ngit add .'
+has "$(guard_cmd "$quoted_operator_cmd")" "separate" \
+  "guard: a << inside a quoted message does not swallow the next line"
+here_string_cmd=$'grep foo <<<bar\ngit add .\ngit commit -m x'
+has "$(guard_cmd "$here_string_cmd")" "separate" \
+  "guard: a here-string is not a heredoc and swallows nothing"
+here_string_unsafe_cmd=$'echo <<<"hello"\ngit commit -am x'
+has "$(guard_cmd "$here_string_unsafe_cmd")" "separately staged plain commit" \
+  "guard: a here-string does not hide the next line's unsafe commit"
+glued_operator_cmd=$'echo a<<b\ngit commit -am x'
+has "$(guard_cmd "$glued_operator_cmd")" "separately staged plain commit" \
+  "guard: << glued inside a word opens no heredoc and hides nothing"
+# Redirection operators carrying shlex punctuation must not strand later arguments.
+for case_row in \
+  "git commit 2>&1 -a -m x|file-descriptor duplication" \
+  "git commit >| f -a -m x|forced write" \
+  "git commit &>out -a -m x|both-streams redirect"; do
+  cmd="${case_row%|*}"
+  label="${case_row##*|}"
+  has "$(guard_cmd "$cmd")" "separately staged plain commit" \
+    "guard: unsafe flag after $label is still reached"
+done
+empty "$(guard_cmd "git commit -m x >")" \
+  "guard: a dangling redirection operator names no pathspec"
+has "$(guard_cmd "git commit -F <(echo x) -a")" "separately staged plain commit" \
+  "guard: process substitution in a commit is refused rather than parsed"
 # Degraded path: an option must OPEN a token, or hyphenated prose reads as a short-flag cluster.
 NOPY="$TMP/no-python-guard"
 mkdir -p "$NOPY"; printf '#!/bin/sh\nexit 127\n' > "$NOPY/python3"; chmod +x "$NOPY/python3"
