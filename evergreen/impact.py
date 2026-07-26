@@ -56,15 +56,33 @@ COMMON_SYMBOL_MIN_DOCS = 4
 SYMBOL_RANK_TIERS = (SYMBOL_RANK_CODE_CONTEXT, SYMBOL_RANK_DISTINCT_WORD, SYMBOL_RANK_PLAIN_WORD)
 MAX_SYMBOL_MATCHES = 10_000
 
-FENCE_RE = re.compile(rb"(?m)^[ \t]{0,3}(`{3,}|~{3,})[^\r\n]*$")
-INLINE_CODE_RE = re.compile(rb"(?s)(`+)(.+?)\1")
+FENCE_RE = re.compile(rb"(?m)^[ \t]{0,3}(`{3,}|~{3,})[^\r\n]*\r?$")
+# An inline span closes on its own line. Allowing one to run across lines let a stray backtick
+# pair with the next one anywhere in the file and read every word between them as code.
+INLINE_CODE_RE = re.compile(rb"(`+)([^\r\n]+?)\1")
 
 DECLARATION_RE = re.compile(
-    rb"(?m)^[ \t]*(?:export[ \t]+)?"
-    rb"(?:public[ \t]+|pub(?:\([^\r\n)]*\))?[ \t]+)?(?:async[ \t]+)?"
-    rb"(?:class|struct|enum|protocol|interface|type|def|func|fn|function)[ \t]+"
+    rb"(?m)^([ \t]*)((?:export[ \t]+)?"
+    rb"(?:public[ \t]+|pub(?:\([^\r\n)]*\))?[ \t]+)?)(?:async[ \t]+)?"
+    rb"(class|struct|enum|protocol|interface|type|def|func|fn|function)[ \t]+"
     rb"([A-Za-z_][A-Za-z0-9_]*)"
 )
+# Only a declaration a reader can reach from outside the file is a documentation contract, and
+# nesting decides that before any naming convention does: a method inside a class is API, a
+# closure inside a function never is. Indentation is the nesting signal because it is the only
+# structure available without one parser per language, and it costs nothing to be wrong about --
+# an unindented file reads as all module scope, which is exactly what this replaced.
+TYPE_DECLARATION_KEYWORDS = frozenset(
+    (b"class", b"struct", b"enum", b"protocol", b"interface", b"type")
+)
+# Visibility itself is only decided outright where a compiler decides it. Go exports on an
+# uppercase initial and Rust on `pub`, with no exceptions to be wrong about. TypeScript's `export`
+# and Java's `public` are not on this list: a `.ts` script file has no module boundary and a
+# package-private Java type is still documented by its package, so demanding the marker there
+# would drop real surfaces. Those fall back to the convention every language shares -- an explicit
+# marker means public, a leading underscore means private, and anything else is assumed public.
+UPPERCASE_EXPORT_SUFFIXES = frozenset((".go",))
+MARKED_EXPORT_SUFFIXES = frozenset((".rs",))
 EXEMPT_DOC_PARTS = {
     "adr", "adrs", "archive", "archives", "audit", "audits", "plans", "readiness",
     "roadmaps", "specs",
@@ -531,6 +549,34 @@ def _bounded_regular_bytes(path, limit):
         return None
 
 
+def _declares_public(suffix, markers, name):
+    """Decide one declaration's visibility by the rule its own language enforces."""
+    if suffix in UPPERCASE_EXPORT_SUFFIXES:
+        return name[:1].isupper()
+    if suffix in MARKED_EXPORT_SUFFIXES:
+        return bool(markers)
+    return bool(markers) or not name.startswith(b"_")
+
+
+def _public_declarations(payload, suffix):
+    """Names in one source file that could be a public documentation contract."""
+    names = set()
+    scopes = []
+    for match in DECLARATION_RE.finditer(payload):
+        indent, markers, keyword, name = match.groups()
+        while scopes and scopes[-1][0] >= len(indent):
+            scopes.pop()
+        public = _declares_public(suffix, markers, name)
+        # Reachability outranks whatever a declaration calls itself: a closure cannot be imported
+        # however loudly it is exported, and a member of a private type is private with it.
+        if scopes and not (scopes[-1][1] and scopes[-1][2]):
+            public = False
+        scopes.append((len(indent), keyword in TYPE_DECLARATION_KEYWORDS, public))
+        if public:
+            names.add(name.decode("ascii"))
+    return names
+
+
 def _contract_symbols(repo, paths):
     symbols = set()
     scanned_bytes = 0
@@ -559,7 +605,7 @@ def _contract_symbols(repo, paths):
             truncated = True
             break
         scanned_bytes += len(payload)
-        symbols.update(match.decode("ascii") for match in DECLARATION_RE.findall(payload))
+        symbols.update(_public_declarations(payload, PurePosixPath(path).suffix.lower()))
         if len(symbols) > MAX_CONTRACT_SYMBOLS:
             truncated = True
             break
@@ -578,8 +624,9 @@ def _code_context_spans(payload):
         elif marker[:1] == fence_marker[:1] and len(marker) >= len(fence_marker):
             spans.append((fence_open, match.end()))
             fence_open = fence_marker = None
-    if fence_open is not None:
-        spans.append((fence_open, len(payload)))
+    # A fence that never closes claims nothing. Running it to end of file would let one stray
+    # ``` -- or a ~~~ that a later ``` cannot close -- promote the whole remaining document to
+    # code context, which is how prose comes to outrank a real reference.
     fenced = list(spans)
     for match in INLINE_CODE_RE.finditer(payload):
         if not any(start <= match.start() < end for start, end in fenced):

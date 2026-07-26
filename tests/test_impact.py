@@ -660,6 +660,46 @@ class SymbolContextRankTests(unittest.TestCase):
 
         self.assertEqual(self.ranks(["src/resolver.py"])["docs/fenced.md"], 80)
 
+    def test_a_stray_backtick_does_not_make_a_later_line_code_context(self):
+        (self.repo / "src/resolver.py").write_text("def resolve():\n    pass\n", encoding="utf-8")
+        (self.repo / "docs/stray.md").write_text(
+            "A ` stray backtick opens nothing.\n\n"
+            "The path must resolve to a regular file.\n\n"
+            "Another ` sits here.\n",
+            encoding="utf-8",
+        )
+        self.commit()
+
+        self.assertEqual(self.ranks(["src/resolver.py"])["docs/stray.md"], 20)
+
+    def test_an_unclosed_fence_does_not_claim_the_rest_of_the_document(self):
+        (self.repo / "src/resolver.py").write_text("def resolve():\n    pass\n", encoding="utf-8")
+        (self.repo / "docs/unclosed.md").write_text(
+            "Example:\n\n```python\nprint(1)\n\n"
+            "The path must resolve to a regular file.\n",
+            encoding="utf-8",
+        )
+        (self.repo / "docs/mismatched.md").write_text(
+            "Example:\n\n~~~python\nprint(1)\n```\n\n"
+            "The path must resolve to a regular file.\n",
+            encoding="utf-8",
+        )
+        self.commit()
+
+        ranks = self.ranks(["src/resolver.py"])
+
+        self.assertEqual(ranks["docs/unclosed.md"], 20)
+        self.assertEqual(ranks["docs/mismatched.md"], 20)
+
+    def test_carriage_returns_do_not_hide_a_fenced_block(self):
+        (self.repo / "src/resolver.py").write_text("def resolve():\n    pass\n", encoding="utf-8")
+        (self.repo / "docs/crlf.md").write_bytes(
+            b"Example:\r\n\r\n```python\r\nresolve\r\n```\r\n"
+        )
+        self.commit()
+
+        self.assertEqual(self.ranks(["src/resolver.py"])["docs/crlf.md"], 80)
+
     def test_identifier_shaped_bare_word_outranks_a_plain_english_bare_word(self):
         (self.repo / "src/resolver.py").write_text(
             "def resolve():\n    pass\n\n\ndef resolve_v3():\n    pass\n", encoding="utf-8"
@@ -712,6 +752,142 @@ class SymbolContextRankTests(unittest.TestCase):
             self.assertIn(f"docs/page{index:02d}.md", ranks)
         for index in range(15, 20):
             self.assertNotIn(f"docs/page{index:02d}.md", ranks)
+
+
+class ContractSymbolScopeTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.repo = Path(self.temporary.name) / "repo"
+        self.repo.mkdir()
+        (self.repo / "src").mkdir()
+        (self.repo / "docs").mkdir()
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def contracts(self, name, source, quoted):
+        """Which of `quoted` the source file offers as a public contract symbol."""
+        from evergreen.impact import impact
+
+        (self.repo / "src" / name).write_text(source, encoding="utf-8")
+        (self.repo / "docs/api.md").write_text(
+            "".join(f"See `{symbol}`.\n" for symbol in quoted), encoding="utf-8"
+        )
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+        report = impact(self.repo, [f"src/{name}"], [])
+        prefix = "living doc mentions contract symbol "
+        return {
+            reason[len(prefix):]
+            for candidate in report.candidates if candidate.path == "docs/api.md"
+            for reason in candidate.reasons if reason.startswith(prefix)
+        }
+
+    def test_python_keeps_module_scope_and_methods_but_drops_closures_and_underscores(self):
+        source = (
+            "class Client:\n"
+            "    def resolve(self):\n"
+            "        def cached():\n"
+            "            pass\n"
+            "\n"
+            "    def _reset(self):\n"
+            "        pass\n"
+            "\n"
+            "\n"
+            "class _Internal:\n"
+            "    def result(self):\n"
+            "        pass\n"
+            "\n"
+            "\n"
+            "def load():\n"
+            "    def helper():\n"
+            "        pass\n"
+            "\n"
+            "\n"
+            "def _bootstrap():\n"
+            "    pass\n"
+        )
+        quoted = [
+            "Client", "resolve", "cached", "_reset", "_Internal", "result",
+            "load", "helper", "_bootstrap",
+        ]
+
+        self.assertEqual(
+            self.contracts("client.py", source, quoted), {"Client", "resolve", "load"}
+        )
+
+    def test_java_public_members_indented_inside_a_class_stay_contracts(self):
+        source = (
+            "package registry;\n"
+            "\n"
+            "public class Registry {\n"
+            "    public interface Listener {\n"
+            "    }\n"
+            "\n"
+            "    public enum Mode {\n"
+            "        ONCE\n"
+            "    }\n"
+            "}\n"
+        )
+
+        self.assertEqual(
+            self.contracts("Registry.java", source, ["Registry", "Listener", "Mode"]),
+            {"Registry", "Listener", "Mode"},
+        )
+
+    def test_typescript_exports_survive_while_a_function_body_does_not(self):
+        source = (
+            "export class Widget {\n"
+            "}\n"
+            "\n"
+            "export interface Options {\n"
+            "}\n"
+            "\n"
+            "export function build() {\n"
+            "  class Draft {\n"
+            "  }\n"
+            "}\n"
+        )
+        quoted = ["Widget", "Options", "build", "Draft"]
+
+        self.assertEqual(
+            self.contracts("widget.ts", source, quoted), {"Widget", "Options", "build"}
+        )
+
+    def test_go_visibility_follows_the_exported_initial(self):
+        source = (
+            "package store\n"
+            "\n"
+            "type Config struct {\n"
+            "\tName string\n"
+            "}\n"
+            "\n"
+            "func Open() {}\n"
+            "\n"
+            "func reopen() {}\n"
+        )
+
+        self.assertEqual(
+            self.contracts("store.go", source, ["Config", "Open", "reopen"]), {"Config", "Open"}
+        )
+
+    def test_rust_requires_the_pub_marker_including_inside_an_impl_block(self):
+        source = (
+            "pub struct Config {\n"
+            "    pub name: String,\n"
+            "}\n"
+            "\n"
+            "impl Config {\n"
+            "    pub fn open() {}\n"
+            "\n"
+            "    fn reopen() {}\n"
+            "}\n"
+            "\n"
+            "fn helper() {}\n"
+        )
+        quoted = ["Config", "open", "reopen", "helper"]
+
+        self.assertEqual(self.contracts("store.rs", source, quoted), {"Config", "open"})
 
 
 if __name__ == "__main__":
