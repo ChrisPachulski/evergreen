@@ -201,6 +201,13 @@ changelog and ISO-dated filenames. A repository-local
 candidates, reasons, and warnings only—never findings or verdicts—and the query does not write
 project state.
 
+A symbol match is ranked by how far the surrounding prose commits to it being code. A quoted,
+called, or qualified reference (`` `resolve` ``, `resolve()`, `router.resolve`, a fenced block)
+ranks highest; a bare identifier-shaped word ranks lower; a bare plain word — the English verb in
+"the path must resolve to a regular file" — ranks lowest. A symbol carried by most of the scanned
+corpus is a vocabulary word rather than a link, and drops one tier. Ranking orders the candidate
+set; it never suppresses a candidate, and it never settles the semantic claim.
+
 ### Reversible Claude and Codex setup
 
 The local CLI can wire the canonical skill into either host while preserving existing instructions:

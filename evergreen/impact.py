@@ -40,6 +40,25 @@ MAX_SOURCE_SCAN_WORK = 1000
 SOURCE_SCAN_TIMEOUT_SECONDS = 3
 DOC_SEARCH_TIMEOUT_SECONDS = 3
 
+# A symbol match is graded by how much the surrounding prose commits to it being code.
+# A bare word is the weakest evidence there is: "the path must resolve to a regular file"
+# matches the symbol `resolve` on a word boundary while documenting nothing about it.
+SYMBOL_RANK_CODE_CONTEXT = 80
+SYMBOL_RANK_DISTINCT_WORD = 45
+SYMBOL_RANK_PLAIN_WORD = 20
+# A symbol spread across the corpus is vocabulary, not a link. Measured against this repo's 50
+# tracked docs, generic declarations land high (`result` 36%, `add` 20%) while the symbols that
+# genuinely bind a doc to a source file stay low (`resolve` 8%, `resolve_v3` 2%), so the demotion
+# thresholds sit between them. Demotion only reorders; it never suppresses a candidate.
+COMMON_SYMBOL_DOC_RATIO = 0.30
+FREQUENT_SYMBOL_DOC_RATIO = 0.20
+COMMON_SYMBOL_MIN_DOCS = 4
+SYMBOL_RANK_TIERS = (SYMBOL_RANK_CODE_CONTEXT, SYMBOL_RANK_DISTINCT_WORD, SYMBOL_RANK_PLAIN_WORD)
+MAX_SYMBOL_MATCHES = 10_000
+
+FENCE_RE = re.compile(rb"(?m)^[ \t]{0,3}(`{3,}|~{3,})[^\r\n]*$")
+INLINE_CODE_RE = re.compile(rb"(?s)(`+)(.+?)\1")
+
 DECLARATION_RE = re.compile(
     rb"(?m)^[ \t]*(?:export[ \t]+)?"
     rb"(?:public[ \t]+|pub(?:\([^\r\n)]*\))?[ \t]+)?(?:async[ \t]+)?"
@@ -547,6 +566,56 @@ def _contract_symbols(repo, paths):
     return sorted(symbols)[:max(MAX_CONTRACT_SYMBOLS, 0)], truncated
 
 
+def _code_context_spans(payload):
+    """Byte ranges where a doc is quoting code: fenced blocks and inline code spans."""
+    spans = []
+    fence_open = None
+    fence_marker = None
+    for match in FENCE_RE.finditer(payload):
+        marker = match.group(1)
+        if fence_open is None:
+            fence_open, fence_marker = match.start(), marker
+        elif marker[:1] == fence_marker[:1] and len(marker) >= len(fence_marker):
+            spans.append((fence_open, match.end()))
+            fence_open = fence_marker = None
+    if fence_open is not None:
+        spans.append((fence_open, len(payload)))
+    fenced = list(spans)
+    for match in INLINE_CODE_RE.finditer(payload):
+        if not any(start <= match.start() < end for start, end in fenced):
+            spans.append((match.start(), match.end()))
+    spans.sort()
+    return spans
+
+
+def _in_span(spans, offset):
+    for start, end in spans:
+        if start <= offset < end:
+            return True
+        if start > offset:
+            break
+    return False
+
+
+def _is_distinct_identifier(symbol):
+    """True when the bare word could not plausibly be English prose."""
+    return ("_" in symbol or any(character.isdigit() for character in symbol) or
+            any(character.isupper() for character in symbol))
+
+
+def _symbol_match_rank(symbol, payload, spans, match):
+    """Grade one symbol occurrence by how strongly its context commits to code."""
+    if _in_span(spans, match.start()):
+        return SYMBOL_RANK_CODE_CONTEXT
+    after = payload[match.end():match.end() + 1]
+    before = payload[max(match.start() - 2, 0):match.start()]
+    if after == b"(" or after == b"." or before.endswith(b".") or before.endswith(b"::"):
+        return SYMBOL_RANK_CODE_CONTEXT
+    if _is_distinct_identifier(symbol):
+        return SYMBOL_RANK_DISTINCT_WORD
+    return SYMBOL_RANK_PLAIN_WORD
+
+
 def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactReport:
     """Return additive candidates; maps never suppress and limits retain caller-order prefixes."""
     repo = Path(repo)
@@ -676,6 +745,9 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
             f"or {SOURCE_SCAN_TIMEOUT_SECONDS} seconds)"
         )
     search_bytes = 0
+    symbol_matches = []
+    symbol_document_frequency = {}
+    scanned_docs = 0
     for doc in living_docs:
         remaining = MAX_DOC_SEARCH_BYTES - search_bytes
         if remaining <= 0:
@@ -692,6 +764,7 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
         if payload is None:
             continue
         search_bytes += len(payload)
+        scanned_docs += 1
         for source in changed_paths:
             if not spend_work():
                 break
@@ -699,17 +772,36 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
                 add(doc, 80, f"living doc mentions changed path {source}")
         if work_truncated:
             break
+        spans = _code_context_spans(payload)
         for symbol in symbols:
             if not spend_work():
                 break
             encoded = symbol.encode("utf-8")
-            if re.search(rb"(?<![A-Za-z0-9_])" + re.escape(encoded) +
-                         rb"(?![A-Za-z0-9_])", payload):
-                add(doc, 80, f"living doc mentions contract symbol {symbol}")
+            pattern = (rb"(?<![A-Za-z0-9_])" + re.escape(encoded) + rb"(?![A-Za-z0-9_])")
+            best = None
+            for match in re.finditer(pattern, payload):
+                rank = _symbol_match_rank(symbol, payload, spans, match)
+                if best is None or rank > best:
+                    best = rank
+                if best == SYMBOL_RANK_CODE_CONTEXT:
+                    break
+            if best is None:
+                continue
+            symbol_document_frequency[symbol] = symbol_document_frequency.get(symbol, 0) + 1
+            if len(symbol_matches) < MAX_SYMBOL_MATCHES:
+                symbol_matches.append((doc, symbol, best))
         if work_truncated:
             break
     if work_truncated:
         warnings.add(f"matching work truncated (maximum {MAX_MATCH_WORK} operations)")
+
+    common = max(COMMON_SYMBOL_MIN_DOCS, scanned_docs * COMMON_SYMBOL_DOC_RATIO)
+    frequent = max(COMMON_SYMBOL_MIN_DOCS, scanned_docs * FREQUENT_SYMBOL_DOC_RATIO)
+    for doc, symbol, rank in symbol_matches:
+        frequency = symbol_document_frequency.get(symbol, 0)
+        steps = 2 if frequency >= common else 1 if frequency >= frequent else 0
+        index = min(SYMBOL_RANK_TIERS.index(rank) + steps, len(SYMBOL_RANK_TIERS) - 1)
+        add(doc, SYMBOL_RANK_TIERS[index], f"living doc mentions contract symbol {symbol}")
 
     retained_paths = sorted(candidates, key=selection_key)
     limit = candidate_limit()

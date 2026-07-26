@@ -602,6 +602,117 @@ class ImpactTests(unittest.TestCase):
             "reject-containing-map",
         )
 
+class SymbolContextRankTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.repo = Path(self.temporary.name) / "repo"
+        self.repo.mkdir()
+        (self.repo / "src").mkdir()
+        (self.repo / "docs").mkdir()
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def commit(self):
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+
+    def ranks(self, changed):
+        from evergreen.impact import impact
+
+        report = impact(self.repo, changed, [])
+        return {candidate.path: candidate.rank for candidate in report.candidates}
+
+    def test_prose_use_of_a_symbol_ranks_below_a_quoted_code_reference(self):
+        (self.repo / "src/resolver.py").write_text("def resolve():\n    pass\n", encoding="utf-8")
+        (self.repo / "docs/api.md").write_text(
+            "Call `resolve` to pick a lane.\n", encoding="utf-8"
+        )
+        (self.repo / "docs/prose.md").write_text(
+            "The path must resolve to a regular file.\n", encoding="utf-8"
+        )
+        self.commit()
+
+        ranks = self.ranks(["src/resolver.py"])
+
+        self.assertEqual(ranks["docs/api.md"], 80)
+        self.assertEqual(ranks["docs/prose.md"], 20)
+
+    def test_call_and_qualified_forms_count_as_code_context(self):
+        (self.repo / "src/resolver.py").write_text("def resolve():\n    pass\n", encoding="utf-8")
+        (self.repo / "docs/call.md").write_text("Invoke resolve() first.\n", encoding="utf-8")
+        (self.repo / "docs/qualified.md").write_text(
+            "Delegates to router.resolve for each row.\n", encoding="utf-8"
+        )
+        self.commit()
+
+        ranks = self.ranks(["src/resolver.py"])
+
+        self.assertEqual(ranks["docs/call.md"], 80)
+        self.assertEqual(ranks["docs/qualified.md"], 80)
+
+    def test_fenced_blocks_are_code_context_and_survive_inline_backticks(self):
+        (self.repo / "src/resolver.py").write_text("def resolve():\n    pass\n", encoding="utf-8")
+        (self.repo / "docs/fenced.md").write_text(
+            "Example:\n\n```python\nresolve\n```\n", encoding="utf-8"
+        )
+        self.commit()
+
+        self.assertEqual(self.ranks(["src/resolver.py"])["docs/fenced.md"], 80)
+
+    def test_identifier_shaped_bare_word_outranks_a_plain_english_bare_word(self):
+        (self.repo / "src/resolver.py").write_text(
+            "def resolve():\n    pass\n\n\ndef resolve_v3():\n    pass\n", encoding="utf-8"
+        )
+        (self.repo / "docs/distinct.md").write_text(
+            "The resolve_v3 stage runs second.\n", encoding="utf-8"
+        )
+        (self.repo / "docs/plain.md").write_text(
+            "We resolve the question later.\n", encoding="utf-8"
+        )
+        self.commit()
+
+        ranks = self.ranks(["src/resolver.py"])
+
+        self.assertEqual(ranks["docs/distinct.md"], 45)
+        self.assertEqual(ranks["docs/plain.md"], 20)
+
+    def build_frequency_corpus(self):
+        """20 docs: `alpha` in 8 (40%), `bravo` in 5 (25%), `charlie` in 2 (10%)."""
+        (self.repo / "src/runner.py").write_text(
+            "def alpha():\n    pass\n\n\ndef bravo():\n    pass\n\n\ndef charlie():\n    pass\n",
+            encoding="utf-8",
+        )
+        spread = ["alpha"] * 8 + ["bravo"] * 5 + ["charlie"] * 2 + [None] * 5
+        for index, symbol in enumerate(spread):
+            body = f"Use `{symbol}` to start.\n" if symbol else "Nothing here.\n"
+            (self.repo / f"docs/page{index:02d}.md").write_text(body, encoding="utf-8")
+        self.commit()
+        return self.ranks(["src/runner.py"])
+
+    def test_a_symbol_spread_across_the_corpus_drops_two_tiers(self):
+        ranks = self.build_frequency_corpus()
+
+        self.assertEqual(sorted({ranks[f"docs/page{index:02d}.md"] for index in range(8)}), [20])
+
+    def test_a_moderately_frequent_symbol_drops_one_tier(self):
+        ranks = self.build_frequency_corpus()
+
+        self.assertEqual(sorted({ranks[f"docs/page{index:02d}.md"] for index in range(8, 13)}), [45])
+
+    def test_a_rare_symbol_keeps_its_code_context_rank(self):
+        ranks = self.build_frequency_corpus()
+
+        self.assertEqual(sorted({ranks[f"docs/page{index:02d}.md"] for index in range(13, 15)}), [80])
+
+    def test_frequency_demotion_never_suppresses_a_candidate(self):
+        ranks = self.build_frequency_corpus()
+
+        for index in range(15):
+            self.assertIn(f"docs/page{index:02d}.md", ranks)
+        for index in range(15, 20):
+            self.assertNotIn(f"docs/page{index:02d}.md", ranks)
+
 
 if __name__ == "__main__":
     unittest.main()
