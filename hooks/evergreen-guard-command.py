@@ -430,9 +430,29 @@ def unsafe_commit_args(arguments: list[str]) -> bool:
     return consume_value
 
 
+def _has_process_substitution(text: str) -> bool:
+    """True when `<(` or `>(` appears as syntax rather than inside a quoted word.
+
+    The parentheses have to be found before tokenizing, because they are exactly what tokenizing
+    trips over. Quoting still has to be honoured while looking, or `-m 'use <(cmd)'` reads as
+    syntax and a message about process substitution refuses the commit that describes it.
+    """
+    quote = None
+    for index, character in enumerate(text):
+        if quote is not None:
+            quote = None if character == quote else quote
+            continue
+        if character in "'\"":
+            quote = character
+            continue
+        if text.startswith(PROCESS_SUBSTITUTION, index):
+            return True
+    return False
+
+
 def has_unsafe_commit_mode(command: str) -> bool:
     normalized, heredoc_bodies = prepare(command)
-    if any(marker in normalized for marker in PROCESS_SUBSTITUTION):
+    if _has_process_substitution(normalized):
         return True
     tokens = shell_tokens(normalized)
     for index in _shell_body_indices(tokens):

@@ -797,6 +797,8 @@ empty "$(guard_cmd "git commit -m x >")" \
   "guard: a dangling redirection operator names no pathspec"
 has "$(guard_cmd "git commit -F <(echo x) -a")" "separately staged plain commit" \
   "guard: process substitution in a commit is refused rather than parsed"
+empty "$(guard_cmd "git commit -m 'use <(cmd) for input'")" \
+  "guard: a quoted mention of process substitution is not syntax"
 # Degraded path: an option must OPEN a token, or hyphenated prose reads as a short-flag cluster.
 NOPY="$TMP/no-python-guard"
 mkdir -p "$NOPY"; printf '#!/bin/sh\nexit 127\n' > "$NOPY/python3"; chmod +x "$NOPY/python3"
