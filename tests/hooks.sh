@@ -683,6 +683,70 @@ empty "$(guard_cmd "git commit --amend --no-edit")" \
 empty "$(EVERGREEN_GUARD=off guard_cmd "git commit -am x")" \
   "guard: EVERGREEN_GUARD=off bypasses unsafe commit-mode rejection"
 
+# Redirections, heredoc bodies, and newline-separated follow-on commands are shell plumbing or
+# data — never arguments to the commit. Scanning them as arguments read every message word as a
+# positional pathspec, so an ordinary `git commit -F - <<MSG` was blocked as unsafe.
+heredoc_commit_cmd=$'git commit -F - <<\'MSG\'\nfeat: identifier-shaped word handling\n\nA bare word-boundary match is not evidence.\nMSG'
+empty "$(guard_cmd "$heredoc_commit_cmd")" \
+  "guard: heredoc commit-message body is not a pathspec"
+heredoc_amend_cmd=$'git commit --amend -F - <<\'MSG\'\nsubject only\nMSG'
+empty "$(guard_cmd "$heredoc_amend_cmd")" \
+  "guard: amend reading a heredoc message remains allowed"
+heredoc_tab_cmd=$'git commit -F - <<-MSG\n\tsubject only\n\tMSG'
+empty "$(guard_cmd "$heredoc_tab_cmd")" \
+  "guard: tab-stripping heredoc body is not a pathspec"
+heredoc_then_cmd=$'git commit -F - <<\'MSG\'\nsubject only\nMSG\ngit log --oneline -2'
+empty "$(guard_cmd "$heredoc_then_cmd")" \
+  "guard: command after a heredoc terminator is not a pathspec"
+newline_follow_cmd=$'git commit -m x\ngit log --oneline'
+empty "$(guard_cmd "$newline_follow_cmd")" \
+  "guard: newline-separated follow-on command is not a pathspec"
+empty "$(guard_cmd "git commit --amend --no-edit > /tmp/out.txt")" \
+  "guard: separated redirection target is not a pathspec"
+empty "$(guard_cmd "git commit -m x >/tmp/out.txt")" \
+  "guard: glued redirection target is not a pathspec"
+empty "$(guard_cmd "git commit -m x 2>/dev/null")" \
+  "guard: numbered stderr redirection is not a pathspec"
+empty "$(guard_cmd "git commit -F /tmp/message.txt")" \
+  "guard: message file read with -F is not a pathspec"
+# Skipping plumbing must not skip what follows it.
+for case_row in \
+  "git commit -m x > /tmp/out .env|pathspec written after a redirection" \
+  "git commit >/tmp/out -a -m x|unsafe short flag after a redirection"; do
+  cmd="${case_row%|*}"
+  label="${case_row##*|}"
+  has "$(guard_cmd "$cmd")" "separately staged plain commit" \
+    "guard: $label is still blocked"
+  eq "$(guard_rc "$cmd")" "2" "guard: $label exits 2"
+done
+heredoc_unsafe_cmd=$'bash <<\'EOF\'\ngit commit -am x\nEOF'
+has "$(guard_cmd "$heredoc_unsafe_cmd")" "separately staged plain commit" \
+  "guard: unsafe commit inside a heredoc fed to a shell is blocked"
+heredoc_compound_cmd=$'bash <<\'EOF\'\ngit add . && git commit -m x\nEOF'
+has "$(guard_cmd "$heredoc_compound_cmd")" "separate" \
+  "guard: compound stage-and-commit inside a heredoc is blocked"
+heredoc_piped_cmd=$'cat <<\'EOF\' | bash\ngit add . && git commit -m x\nEOF'
+has "$(guard_cmd "$heredoc_piped_cmd")" "separate" \
+  "guard: heredoc piped into a shell is still code"
+# A body no shell executes is data, exactly like a quoted -m message: describing git commands in
+# a commit message or writing them into a file must not manufacture intent.
+heredoc_about_git_cmd=$'git commit -F - <<\'MSG\'\nfix: explain the rule\n\nAn ordinary `git commit -F -` was blocked, as was `git add -p`.\nMSG'
+empty "$(guard_cmd "$heredoc_about_git_cmd")" \
+  "guard: commit-message body describing git commands is not compound"
+heredoc_written_file_cmd=$'cat > notes.txt <<\'EOF\'\ngit add . && git commit -m x\nEOF'
+empty "$(guard_cmd "$heredoc_written_file_cmd")" \
+  "guard: heredoc written to a file is data, not intent"
+# Degraded path: an option must OPEN a token, or hyphenated prose reads as a short-flag cluster.
+NOPY="$TMP/no-python-guard"
+mkdir -p "$NOPY"; printf '#!/bin/sh\nexit 127\n' > "$NOPY/python3"; chmod +x "$NOPY/python3"
+degraded(){ printf '%s' "$(guard_payload "$1")" | PATH="$NOPY:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1; }
+empty "$(degraded "$heredoc_commit_cmd")" \
+  "guard: degraded path allows a hyphenated heredoc commit-message body"
+has "$(degraded "git commit -am x")" "separately staged plain commit" \
+  "guard: degraded path still blocks unsafe commit modes"
+has "$(degraded "git commit --all -m x")" "separately staged plain commit" \
+  "guard: degraded path still blocks --all"
+
 # Intent lives in git-subcommand position only: words inside quoted arguments (commit messages,
 # pathspecs) must never reclassify a plain add/commit as compound stage-and-commit.
 git -C "$TMP" add -f .env   # stage the modified secret so the classification is observable

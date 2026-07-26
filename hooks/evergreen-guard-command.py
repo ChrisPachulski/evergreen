@@ -6,6 +6,13 @@ first non-option token after a `git` word — not arbitrary commands computed th
 substitutions, aliases, or shell evaluation. Words inside quoted arguments (commit messages,
 pathspecs) are single tokens and never create intent. Unparseable input (unbalanced quotes)
 degrades to coarse quote-stripped splitting, which may fail closed.
+
+shlex knows nothing of shell grammar beyond quoting, so three constructs must be separated from
+the argument list before a commit's options are read, or their words are misread as positional
+pathspecs: newlines (which end a command), redirection operators with their targets, and heredoc
+bodies. A heredoc body is treated like a quoted argument — data for the command it feeds, whose
+words create no intent — unless the introducing line hands it to a shell or to eval, in which case
+it is code and is recursed into. Recursion can only add detected intent, never hide it.
 """
 
 import json
@@ -49,10 +56,69 @@ UNSAFE_SHORT = set("aiop")
 # Basenames that execute a quoted command-string body via -c (or a short cluster containing c,
 # e.g. -lc/-xc/-ec). Matching the basename catches path-qualified forms like /bin/bash.
 SHELL_INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
+# A redirection operator and its target are shell plumbing, not arguments to the command. Both
+# glued (`>out`, `2>&1`, `<<EOF`) and separated (`> out`) forms occur; `<<<` is a here-string.
+REDIRECTION_RE = re.compile(r"^(?:\d+|&)?(?:<<-|<<<|<<|>>|>\||&>>|&>|<>|<|>)(.*)$")
+# `<<WORD`, `<<'WORD'`, `<<"WORD"`, and the tab-stripping `<<-WORD`. `<<<` cannot match: the
+# delimiter must open with a quote or an identifier character, and `<` is neither.
+HEREDOC_RE = re.compile(r"<<-?[ \t]*(?:'([^']*)'|\"([^\"]*)\"|([A-Za-z_][A-Za-z0-9_]*))")
 
 
 def _basename(token: str) -> str:
     return token.rsplit("/", 1)[-1]
+
+
+def _feeds_a_shell(line: str) -> bool:
+    """True when the line introducing a heredoc hands its body to a shell or to eval.
+
+    Deliberately coarse — any interpreter word anywhere on the line qualifies, so `cat <<EOF |
+    bash` counts. Over-matching only adds recursion, and recursion only adds detected intent.
+    """
+    for token in shell_tokens(line):
+        if token == "eval" or _basename(token) in SHELL_INTERPRETERS:
+            return True
+    return False
+
+
+def split_heredocs(command: str) -> "tuple[str, list[str]]":
+    """Separate heredoc bodies from the command text that introduces them.
+
+    A heredoc body is DATA for the command it feeds — a commit message, a file payload — not part
+    of that command's argument list, and scanning it as arguments misreads every word as a
+    pathspec. This mirrors the rule already applied to quoted arguments: a `<<'EOF'` body is the
+    shell's most literal quoting form, so words inside it no more create intent than words inside
+    `-m '...'`. The exception is a body a shell will execute, which is code and is returned for
+    recursion. An unterminated or mis-detected heredoc consumes to end of input; that only removes
+    text from the argument scan, and the same text is still classified when a shell consumes it.
+    """
+    lines = command.split("\n")
+    kept: list[str] = []
+    executable: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        kept.append(line)
+        index += 1
+        for match in HEREDOC_RE.finditer(line):
+            delimiter = next(group for group in match.groups() if group is not None)
+            strip_tabs = match.group(0).startswith("<<-")
+            body: list[str] = []
+            while index < len(lines):
+                candidate = lines[index]
+                index += 1
+                compared = candidate.lstrip("\t") if strip_tabs else candidate
+                if compared == delimiter:
+                    break
+                body.append(candidate)
+            if _feeds_a_shell(line):
+                executable.append("\n".join(body))
+    return "\n".join(kept), executable
+
+
+def prepare(command: str) -> "tuple[str, list[str]]":
+    """Normalize joined lines, lift heredoc bodies out, and make newlines separate commands."""
+    stripped, executable = split_heredocs(command.replace("\\\n", ""))
+    return stripped.replace("\n", " ; "), executable
 
 
 def _shell_body_indices(tokens: "list[str]") -> "set[int]":
@@ -115,9 +181,12 @@ def git_subcommand(segment: list[str], git_index: int) -> "str | None":
 def collect_intents(command: str) -> set:
     """add/commit intents found in git-subcommand position, recursing into eval and sh -c."""
     intents = set()
-    tokens = shell_tokens(command.replace("\\\n", ""))
+    normalized, heredoc_bodies = prepare(command)
+    tokens = shell_tokens(normalized)
     for index in _shell_body_indices(tokens):
         intents |= collect_intents(tokens[index])
+    for body in heredoc_bodies:
+        intents |= collect_intents(body)
     segment: list[str] = []
     for token in tokens + [";"]:
         if token not in CONTROL_TOKENS:
@@ -143,6 +212,13 @@ def unsafe_commit_args(arguments: list[str]) -> bool:
             continue
         if argument == "--":
             return True
+        redirection = REDIRECTION_RE.match(argument)
+        if redirection:
+            # A separated operator (`> out`) owns the next token as its target; a glued one
+            # (`>out`) carries it. Skipping the pair keeps scanning, so a pathspec or unsafe flag
+            # written after a redirection is still reached.
+            consume_value = not redirection.group(1)
+            continue
         option, equals, _value = argument.partition("=")
         if option in UNSAFE_LONG:
             return True
@@ -171,9 +247,13 @@ def unsafe_commit_args(arguments: list[str]) -> bool:
 
 
 def has_unsafe_commit_mode(command: str) -> bool:
-    tokens = shell_tokens(command)
+    normalized, heredoc_bodies = prepare(command)
+    tokens = shell_tokens(normalized)
     for index in _shell_body_indices(tokens):
         if has_unsafe_commit_mode(tokens[index]):
+            return True
+    for body in heredoc_bodies:
+        if has_unsafe_commit_mode(body):
             return True
     segment: list[str] = []
     for token in tokens + [";"]:

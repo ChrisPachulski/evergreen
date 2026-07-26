@@ -69,8 +69,11 @@ fallback_intent() {
   fi
   if $add && $commit; then
     echo compound
+  # An option must OPEN a token. Without the leading boundary the short-flag branch also matched
+  # the tail of any hyphenated word — `identifier-shaped` in a commit-message body read as a
+  # cluster containing `a`/`p` — so ordinary prose blocked a safe commit on this degraded path.
   elif $commit && printf '%s' "$FALLBACK_TEXT" | grep -Eq \
-      'commit([^[:alnum:]_-]|$).*(--(all|include|only|interactive|patch|pathspec-from-file|pathspec-file-nul)([=[:space:]]|$)|-[[:alpha:]]*[aiop][[:alpha:]]*([[:space:]]|$))'; then
+      'commit([^[:alnum:]_-]|$)(.*[[:space:]])?(--(all|include|only|interactive|patch|pathspec-from-file|pathspec-file-nul)([=[:space:]]|$)|-[[:alpha:]]*[aiop][[:alpha:]]*([[:space:]]|$))'; then
     echo unsafe
   elif $add || $commit; then
     echo git
