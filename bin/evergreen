@@ -333,11 +333,7 @@ def print_human(payload):
         print(f"- [{candidate['rank']}] {terminal_display(candidate['path'])}")
         for reason in candidate["reasons"]:
             print(f"  reason: {terminal_display(reason)}")
-    warnings = payload["warnings"]
-    if warnings:
-        print(f"Warnings ({len(warnings)}):")
-        for warning in warnings:
-            print(f"- {terminal_display(warning)}")
+    print_warnings(payload)
 
 
 def print_gaps(payload):
@@ -355,6 +351,10 @@ def print_gaps(payload):
         f"Source files: scanned {payload['source_files_scanned']} "
         f"of {payload['source_files_in_scope']} in scope"
     )
+    print_warnings(payload)
+
+
+def print_warnings(payload):
     warnings = payload["warnings"]
     if warnings:
         print(f"Warnings ({len(warnings)}):")

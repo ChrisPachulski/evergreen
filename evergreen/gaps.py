@@ -34,11 +34,10 @@ MAX_GAP_CANDIDATES = 10_000
 MAX_GAP_SCOPE_PATHS = 1000
 GAP_SCAN_TIMEOUT_SECONDS = 10
 
-# Only suffixes DECLARATION_RE actually parses. Adding a language is one glob here
+# Only suffixes DECLARATION_RE actually parses. Adding a language is one entry here
 # once the regex knows its declaration keyword.
-GAP_SOURCE_GLOBS = ("*.py", "*.go", "*.rs", "*.swift",
-                    "*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs")
-GAP_SOURCE_SUFFIXES = frozenset(glob[1:] for glob in GAP_SOURCE_GLOBS)
+GAP_SOURCE_SUFFIXES = frozenset((".py", ".go", ".rs", ".swift",
+                                 ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"))
 # Suffixes that plainly hold source DECLARATION_RE cannot parse. Files wearing one are never
 # inventoried, so their presence is surfaced as a scope note instead of vanishing silently.
 UNPARSED_SOURCE_SUFFIXES = frozenset((
@@ -64,6 +63,7 @@ IMPORT_LINE_RE = re.compile(
 _TYPE_KINDS = frozenset(keyword.decode("ascii") for keyword in TYPE_DECLARATION_KEYWORDS)
 MAX_NAMED_EXCLUSIONS = 5
 SHEBANG_SNIFF_BYTES = 128
+SCAN_DEADLINE_WARNING = f"source scan truncated (maximum {GAP_SCAN_TIMEOUT_SECONDS} seconds)"
 
 
 @dataclass(frozen=True)
@@ -118,6 +118,26 @@ def _named_exclusions(paths):
     shown = sorted(paths)[:MAX_NAMED_EXCLUSIONS]
     remainder = len(paths) - len(shown)
     return ", ".join(shown) + (f" and {remainder} more" if remainder else "")
+
+
+def _admissible(pure):
+    """Shared inventory filter: exempt directory parts and test-file names never count."""
+    if {part.lower() for part in pure.parts} & EXEMPT_SOURCE_PARTS:
+        return False
+    return not TEST_FILE_RE.match(pure.name.lower())
+
+
+def _script_bucket(path, repo, kind):
+    """Bucket an extensionless path by shebang: ("py", checked) joins the inventory; ("other",
+    None) is a non-Python or unresolvable script, outside inventory; (None, None) is data."""
+    try:
+        checked = _path(path, repo, kind)
+    except ValueError:
+        return "other", None  # cannot prove it is not source: surface it
+    script = _script_suffix(repo / checked)
+    if script == ".py":
+        return "py", checked
+    return ("other", None) if script is not None else (None, None)
 
 
 def _scope_hits(path, scope_set):
@@ -188,9 +208,7 @@ def gaps(repo: Path, scope: tuple[str, ...] = ()) -> GapsReport:
             if not hits:
                 continue
             matched_scopes.update(hits)
-        if {part.lower() for part in pure.parts} & EXEMPT_SOURCE_PARTS:
-            continue
-        if TEST_FILE_RE.match(pure.name.lower()):
+        if not _admissible(pure):
             continue
         suffix = pure.suffix.lower()
         if suffix in GAP_SOURCE_SUFFIXES:
@@ -204,22 +222,14 @@ def gaps(repo: Path, scope: tuple[str, ...] = ()) -> GapsReport:
             unparsed.append(path)
         elif not suffix:
             if time.monotonic() >= deadline:
-                collector.add(
-                    f"source scan truncated (maximum {GAP_SCAN_TIMEOUT_SECONDS} seconds)"
-                )
+                collector.add(SCAN_DEADLINE_WARNING)
                 break
-            try:
-                checked = _path(path, repo, "tracked file")
-            except ValueError:
-                # Cannot even resolve it, so cannot prove it is not source: surface it.
-                unparsed.append(path)
-                continue
-            script = _script_suffix(repo / checked)
-            if script == ".py":
+            bucket, checked = _script_bucket(path, repo, "tracked file")
+            if bucket == "py":
                 # A Python-shebang script is the CLI surface itself; excluding it made the
                 # tool blind to its own primary documented entry point.
                 files.append((checked, ".py"))
-            elif script is not None:
+            elif bucket:
                 unparsed.append(path)
     if scope and not truncated:
         for entry in scope:
@@ -254,9 +264,7 @@ def gaps(repo: Path, scope: tuple[str, ...] = ()) -> GapsReport:
             except UnicodeError:
                 untracked.append(ascii(encoded))
                 continue
-            if {part.lower() for part in pure.parts} & EXEMPT_SOURCE_PARTS:
-                continue
-            if TEST_FILE_RE.match(pure.name.lower()):
+            if not _admissible(pure):
                 continue
             if scope and not _scope_hits(path, scope_set):
                 continue
@@ -265,16 +273,9 @@ def gaps(repo: Path, scope: tuple[str, ...] = ()) -> GapsReport:
                 untracked.append(path)
             elif not suffix:
                 if time.monotonic() >= deadline:
-                    collector.add(
-                        f"source scan truncated (maximum {GAP_SCAN_TIMEOUT_SECONDS} seconds)"
-                    )
+                    collector.add(SCAN_DEADLINE_WARNING)
                     break
-                try:
-                    checked = _path(path, repo, "untracked file")
-                except ValueError:
-                    untracked.append(path)
-                    continue
-                if _script_suffix(repo / checked) is not None:
+                if _script_bucket(path, repo, "untracked file")[0]:
                     untracked.append(path)
         if untracked:
             collector.add(
@@ -298,7 +299,7 @@ def gaps(repo: Path, scope: tuple[str, ...] = ()) -> GapsReport:
             collector.add(f"source scan truncated (maximum {MAX_GAP_SCAN_BYTES} bytes)")
             break
         if time.monotonic() >= deadline:
-            collector.add(f"source scan truncated (maximum {GAP_SCAN_TIMEOUT_SECONDS} seconds)")
+            collector.add(SCAN_DEADLINE_WARNING)
             break
         content = _bounded_regular_bytes(repo / path, MAX_FILE_BYTES)
         if content is None:
