@@ -75,6 +75,34 @@ doc bends to the code, never the reverse.
 **F · Propose.** Emit new files / purely additive diffs for approval. Never rewrite existing prose,
 never auto-commit. Nothing lands until the owner approves the batch.
 
+## Put the worthiness verdict on trial (before any candidate consumes budget)
+
+The mechanical evidence never stands trial — the provider inventory, the pre-diff grep, the line
+counts are facts. The **conclusion drawn from them** does: "this gap is worth a doc — write it" is
+seed's judgment call, and a wrong YES is the over-population failure this command exists to avoid.
+Run every would-be `seed` verdict (at most `K ≤ 3` per run — never the informational tail) through
+the skill's shared harness, "Put the verdict on trial", with seed's parameters:
+
+- **claim / snap:** "this undocumented gap supports a concrete reader use the declaration/signature
+  alone can't recover — write it."
+- **challenge (must survive):** "no — everything this doc would say is recoverable from the
+  declaration alone, or the reader use is speculative, not concrete." A "write it" that can't beat
+  its challenge is `informational — not worthy`; the budget slot passes to the next candidate in
+  provider order.
+- **three blind reads:** *defend* the write (the reader use and the behavior-bearing fact, at its
+  code `file:line`, that earns it — concede if the strongest case is signature-restatement) /
+  *prove-unworthy* (show that each fact the doc would carry is recoverable from the
+  declaration/signature, or say "one is not: <file:line>") / *hardest-noise* (the airtight case
+  this doc is bloat that will cost readers more than it gives — concede if it isn't airtight).
+- **blind-spot (the money one here):** "did all three miss that this candidate is *already
+  documented* — under an alias, a renamed wrapper, or prose the fixed-string grep can't see?" A hit
+  routes the candidate back to `documented`; it is never written.
+
+The certification side needs no second harness: pass E already runs the seeded claims through
+winnow's trial verbatim. Between the two, every judgment in seed stands trial — worthiness before
+the budget is spent, truth before the proposal ships — while the mechanical goals in
+`hard-goals/seed.md` skip it, as facts always do.
+
 ## Output
 
 1. The provider command and its N surface-shaped candidates (pass B, verbatim), with the scanned

@@ -332,7 +332,8 @@ The reflex is the *truth* axis. Three on-demand commands, same prove-or-drop cre
   silently dropped (`hard-goals/seed.md` makes each of those binary).
 
 One creed, one trial: each command runs its judgment-call verdicts through "Put the verdict on
-trial" above. Truth and craft only flag or propose; hygiene alone may block a commit (a leaked
+trial" above — winnow's drift flags, flourish's "done", cultivate's delete/block, seed's "worth a
+doc". Truth, craft, and creation only flag or propose; hygiene alone may block a commit (a leaked
 secret or slop dump is irreversible once pushed), always with an escape hatch. The human keeps the
 final call.
 

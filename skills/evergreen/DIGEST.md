@@ -101,7 +101,7 @@ failures remain `behavior-asserted — verify manually`.
 Rules:
 - **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. Every
   judgment-call verdict in the family — a rung-3/4 drift flag, cultivate's delete/block, flourish's
-  "done" — goes on the same trial before it ships: a snap call, a challenge it must survive (in
+  "done", seed's "worth a doc" — goes on the same trial before it ships: a snap call, a challenge it must survive (in
   either direction), three independent blind reads (winnow's: defend / prove-wrong /
   hardest-broken), a blind-spot pass, weighed into the verdict, never a veto. Mechanical facts
   (a grep, a reference count) skip the trial. Prove by test is the default where the code runs: a
