@@ -21,8 +21,10 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
 1. **MUST start from a complete, surface-shaped inventory.**
    CHECK: the report states source files in scope `S`, provider-scanned files `S`, and candidates
    `N`; every candidate has `symbol`, `kind`, declaration code `path:line`, and rank; no warning
-   contains `truncated`. Pass = counts match and every row has the required fields. Path-only or
-   incomplete output is not done.
+   contains `truncated`; every provider warning containing `outside inventory` is quoted in the
+   report as a named exclusion (the files it counts are out of surface, never classified). Pass =
+   counts match, every row has the required fields, and every `outside inventory` warning is
+   quoted. Path-only or incomplete output is not done.
 
 2. **MUST inspect a bounded impact prefix without cherry-picking.**
    CHECK: let `P` be the candidates inspected before `K` seeds qualify, or all `N` if fewer
@@ -53,10 +55,12 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
 
 8. **MUST seed useful, small, repeat-visible documentation.**
    CHECK: every written candidate has at least one `reader-use` ledger row citing code outside its
-   declaration/signature; `git diff --numstat` shows added lines `A ≤ 60 × written` and `A ≤ 180`;
-   changed doc paths and `seed:gap` markers are each `≤ written`; post-diff fixed-string grep over
-   `D` returns a non-marker hit for every written symbol. Pass = all checks hold; `written == 0`
-   implies no documentation diff.
+   declaration/signature; `git add -N` every newly created doc file first (untracked files produce
+   no `git diff --numstat` row, so an unregistered new doc would evade the bounds entirely), then
+   `git diff --numstat` shows added lines `A ≤ 60 × written` and `A ≤ 180`; changed doc paths and
+   `seed:gap` markers are each `≤ written`; post-diff fixed-string grep over `D` **plus every
+   newly created doc path** returns a non-marker hit for every written symbol. Pass = all checks
+   hold; `written == 0` implies no documentation diff.
 
 ## Why this works without a second AI at runtime
 

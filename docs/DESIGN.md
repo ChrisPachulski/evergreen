@@ -88,9 +88,14 @@ bypass. Semantic truth findings and CI drift findings do not use this blocking p
 
 ## Shipped local and host surface
 
-`bin/evergreen impact` is the dependency-free, read-only entry point for changed paths, optional
-evidence JSON, and repository-local `.evergreen-map.json` mappings. Its human and JSON forms expose
-ranked candidates, reasons, and warnings; they do not expose semantic findings or verdicts.
+`bin/evergreen impact` and `bin/evergreen gaps` are the dependency-free, read-only query entry
+points. `impact` takes changed paths, optional evidence JSON, and repository-local
+`.evergreen-map.json` mappings; `gaps` inventories the tracked public declaration surface for seed
+and fails closed with a `truncated` warning whenever the inventory it builds could be incomplete;
+files outside the parseable surface (unparsed languages, extensionless scripts, untracked source)
+are surfaced with `outside inventory` warnings rather than silently skipped. Their
+human and JSON forms expose ranked candidates, reasons or scan counts, and warnings; they do not
+expose semantic findings or verdicts.
 
 The same CLI provides reversible `install`, `doctor`, and `uninstall` operations for Claude and
 Codex. Install owns only a marked instruction block, a skill link, and a bounded ownership record;

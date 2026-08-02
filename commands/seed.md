@@ -38,18 +38,24 @@ one.
 **B · Surface inventory.** Seed proceeds only from a complete, surface-shaped provider result. Each
 candidate must include `symbol · kind · declaration code path:line · impact rank`, and the provider
 must report the number of source files scanned. A path-only result, missing scan count, or any
-truncation warning is `not done — surface inventory unavailable`; write nothing. (Today's `impact`
-subcommand emits path candidates only — until the deterministic `gaps` subcommand ships beside it,
-seed fails closed here. Candidates are nominations, never verdicts.)
+truncation warning is `not done — surface inventory unavailable`; write nothing. (The provider is
+`python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" gaps --json --repo <repo> [path…]` — deterministic
+and read-only; a scope path narrows the inventory. Candidates are nominations, never verdicts.)
 
 **C · Gap, worthiness, and budget.** Before inspection, set `K`: default `1`; the owner may
 explicitly choose `0..3`. Enumerate the exact tracked living-document path set `D`; in-code
-docstrings remain informational until a syntax-aware gap check exists. Walk candidates in provider
-order and run:
+docstrings remain informational until a syntax-aware gap check exists. If `D` is empty, skip the
+grep entirely — `git grep … --` with no pathspec searches the whole tracked tree and would mark
+every symbol "documented" by its own declaration; with no living docs, every candidate is
+undocumented by definition. Otherwise walk candidates in provider order and run:
 ```sh
-git grep -F -n -e "<symbol>" -- <D...>
+git grep -F -w -n -e "<symbol>" -- <D...>
 ```
-A hit means `documented`; never write it. Zero hits nominate a gap but do not make it worthy. An
+(`-w` is required: without word boundaries a symbol like `main` is "documented" by any prose
+containing `remains` or `domain`.) A hit means `documented` only when at least one matched line
+names the symbol **as code** — inline backticks, inside a fenced block, or with a `path:line`
+citation. A bare prose reuse of the word ("the main branch", "a cache key") documents nothing;
+if every hit is prose-only, the candidate stays a gap. Zero hits nominate a gap but do not make it worthy. An
 inspected gap is `seed` only when it supports a concrete reader use backed by at least one
 behavior, result, error, side effect, default, constraint, or invocation sequence that is not
 recoverable from the declaration/signature alone. Otherwise mark it `informational — not worthy`.

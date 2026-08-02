@@ -322,8 +322,8 @@ The reflex is the *truth* axis. Three on-demand commands, same prove-or-drop cre
   run — deliberately, on the human's call.
 - **`/evergreen:seed [path]` — creation.** The sanctioned doc-creation exception (explicit request
   only), built as a bounded, fail-closed proposer: it proceeds only from a complete surface-shaped
-  inventory (`symbol · kind · declaration path:line · rank` — today's path-only `impact` output is
-  not enough, so seed fails closed until the deterministic `gaps` provider ships), writes at most
+  inventory (`symbol · kind · declaration path:line · rank`, from the deterministic `gaps`
+  subcommand — path-only `impact` output is not enough and fails closed), writes at most
   `K ≤ 3` docs per run (default 1), and each must earn its place with a concrete reader use the
   declaration/signature alone can't recover. Every sentence is ledgered to a code `file:line` or
   markered `<!-- seed:gap — author: … -->`, and the whole output is winnowed at birth (all four
