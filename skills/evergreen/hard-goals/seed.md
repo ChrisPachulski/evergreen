@@ -18,15 +18,16 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
 
 ## The goals
 
-1. **MUST enumerate the candidate set from the impact provider, not taste.**
-   CHECK: the run states `N` = ranked candidates in scope **and shows the executed command** that
-   produced N (`python3 <plugin-root>/bin/evergreen impact --json <scope>`). Pass = N is shown with
-   its command and output.
+1. **MUST start from a complete, surface-shaped inventory.**
+   CHECK: the report states source files in scope `S`, provider-scanned files `S`, and candidates
+   `N`; every candidate has `symbol`, `kind`, declaration code `path:line`, and rank; no warning
+   contains `truncated`. Pass = counts match and every row has the required fields. Path-only or
+   incomplete output is not done.
 
-2. **MUST cross-reference every candidate against the existing doc set.**
-   CHECK: gap rows == N — each candidate has a row with its executed `git grep` over the doc set and
-   the verdict `documented` / `undocumented`. Pass = every candidate has a row; nothing says "the
-   rest are covered".
+2. **MUST inspect a bounded impact prefix without cherry-picking.**
+   CHECK: let `P` be the candidates inspected before `K` seeds qualify, or all `N` if fewer
+   qualify. Pre-diff fixed-string grep rows == `P`, in provider order, with no skipped rank.
+   Candidates after `P` are `budget-deferred`, never falsely classified as documented or unworthy.
 
 3. **MUST ledger every prose claim in the seeded docs with a code `file:line`.**
    CHECK: the report contains a claim ledger; every row cites a code `path:line` (the code that
@@ -45,9 +46,17 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
    CHECK: the proposed diff contains zero deleted lines in any pre-existing doc file (`git diff`
    shows no `-` lines outside new-file headers). Pass = zero deletions.
 
-7. **MUST account for the whole candidate set.**
-   CHECK: `written + informational-listed == N`. Pass = the two counts sum to N; the long tail below
-   the cut is listed, never silently dropped.
+7. **MUST bound and account for the write set.**
+   CHECK: `K` is stated before drafting and `0 ≤ K ≤ 3`; `documented + seed + not-worthy +
+   budget-deferred == N`; `written == seed ≤ K`; zero pre-diff documented candidates are written.
+   Pass = all counts hold.
+
+8. **MUST seed useful, small, repeat-visible documentation.**
+   CHECK: every written candidate has at least one `reader-use` ledger row citing code outside its
+   declaration/signature; `git diff --numstat` shows added lines `A ≤ 60 × written` and `A ≤ 180`;
+   changed doc paths and `seed:gap` markers are each `≤ written`; post-diff fixed-string grep over
+   `D` returns a non-marker hit for every written symbol. Pass = all checks hold; `written == 0`
+   implies no documentation diff.
 
 ## Why this works without a second AI at runtime
 

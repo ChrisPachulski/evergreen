@@ -11,9 +11,9 @@ Argument: `{{args}}`. Default scope: the whole repo; an optional path narrows it
 
 **Acceptance bar (non-negotiable).** Before you report, satisfy *every* MUST in
 [`skills/evergreen/hard-goals/seed.md`](../skills/evergreen/hard-goals/seed.md). A run that fails
-one — the candidate set isn't enumerated from a shown impact command, a prose claim lacks its
-ledger row, the seeded output wasn't winnowed, the diff deletes an existing doc line — is **not
-done**, however good it reads. Those checks are re-runnable by anyone; they are the bar, not your
+one — the inventory isn't surface-shaped, a prose claim lacks its ledger row, the seeded output
+wasn't winnowed, the write set exceeds its budget, the diff deletes an existing doc line — is
+**not done**, however good it reads. Those checks are re-runnable by anyone; they are the bar, not your
 judgment.
 
 ## Forbidden shortcuts (take any one and you have NOT run seed)
@@ -35,28 +35,35 @@ judgment.
 grain you find. Bare repo fallback: README sections for a small surface, `docs/` pages for a large
 one.
 
-**B · Surface inventory.** Rank the reachable public surface with the existing provider:
-```sh
-python3 <plugin-root>/bin/evergreen impact --json <scope>
-```
-Candidates ordered as returned; `warnings` presented separately. Candidates are nominations, never
-verdicts — the provider proves reachability, not doc-worthiness.
+**B · Surface inventory.** Seed proceeds only from a complete, surface-shaped provider result. Each
+candidate must include `symbol · kind · declaration code path:line · impact rank`, and the provider
+must report the number of source files scanned. A path-only result, missing scan count, or any
+truncation warning is `not done — surface inventory unavailable`; write nothing. (Today's `impact`
+subcommand emits path candidates only — until the deterministic `gaps` subcommand ships beside it,
+seed fails closed here. Candidates are nominations, never verdicts.)
 
-**C · Gap cross-reference.** For each ranked candidate, grep the doc set for the symbol:
+**C · Gap, worthiness, and budget.** Before inspection, set `K`: default `1`; the owner may
+explicitly choose `0..3`. Enumerate the exact tracked living-document path set `D`; in-code
+docstrings remain informational until a syntax-aware gap check exists. Walk candidates in provider
+order and run:
 ```sh
-git grep -n "<symbol>" -- '*.md' 'docs/'
+git grep -F -n -e "<symbol>" -- <D...>
 ```
-Zero mentions → undocumented candidate. Aliased or prose-only mentions won't grep — where the hits
-look wrong, read the doc before deciding. This in-prompt cross-reference is a deliberate ceiling;
-the upgrade path is a deterministic `gaps` subcommand beside `impact`, when seed earns CI
-integration. Write the top slice (impact-ordered); list the long tail as **informational**, never
-silently dropped.
+A hit means `documented`; never write it. Zero hits nominate a gap but do not make it worthy. An
+inspected gap is `seed` only when it supports a concrete reader use backed by at least one
+behavior, result, error, side effect, default, constraint, or invocation sequence that is not
+recoverable from the declaration/signature alone. Otherwise mark it `informational — not worthy`.
+`seed:gap` never satisfies this floor. Stop after `K` candidates qualify; label the remaining tail
+`informational — budget deferred`. `K=0` is valid.
 
 **D · Write, claim-disciplined.** Prose where the code backs it; each declarative sentence logged in
 a **claim ledger** with the code `file:line` that makes it true. What the code can't settle —
 intent, rationale, roadmap — becomes an explicit grep-able marker:
 `<!-- seed:gap — author: why does X exist -->`. A marker is a finding for the author, not a failure;
-an invented rationale is the failure.
+an invented rationale is the failure. Names, signatures, parameter or field lists, and return types
+may support a useful explanation, but restating them is not itself documentation worth seeding.
+Keep each written candidate to at most 60 added lines and one `seed:gap`; the complete batch may
+not exceed 180 added lines.
 
 **E · Certify — winnow at birth.** Run the winnow ladder (all four rungs) over the seeded docs
 before proposing them, exactly as `/evergreen:winnow` would on changed docs — newly created docs
@@ -70,9 +77,13 @@ never auto-commit. Nothing lands until the owner approves the batch.
 
 ## Output
 
-1. The impact command and its N ranked candidates (pass B, verbatim).
-2. The gap table — `candidate · impact rank · documented? (grep shown) · written | informational`.
+1. The provider command and its N surface-shaped candidates (pass B, verbatim), with the scanned
+   source-file count.
+2. The gap table —
+   `candidate · rank · pre-diff grep · documented | seed | not-worthy | budget-deferred · reader-use claim · code file:line`.
 3. Per seeded doc: the proposed content, its claim ledger (`claim · code file:line`), and the
    winnow verdict counts (`certified == ledger rows, drift 0, unverified 0`).
-4. The `seed:gap` markers, listed — the author's to-do, stated plainly.
-5. Coverage: `written + informational == N`, stated with the numbers.
+4. The `seed:gap` markers, listed — the author's to-do, stated plainly (at most one per written
+   candidate).
+5. Coverage: `documented + seed + not-worthy + budget-deferred == N`, `written == seed ≤ K`, and
+   added lines within the 60-per-candidate / 180-per-batch bounds — stated with the numbers.

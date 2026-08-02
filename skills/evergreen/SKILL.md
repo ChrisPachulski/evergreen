@@ -321,11 +321,14 @@ The reflex is the *truth* axis. Three on-demand commands, same prove-or-drop cre
   rejected; use a separately staged plain commit. `EVERGREEN_GUARD=off` bypasses the guard for a
   run — deliberately, on the human's call.
 - **`/evergreen:seed [path]` — creation.** The sanctioned doc-creation exception (explicit request
-  only): inventory the undocumented public surface via the impact provider, rank it, and write
-  claim-disciplined docs — every sentence ledgered to a code `file:line` or markered
-  `<!-- seed:gap — author: … -->`, the whole output winnowed at birth (all four rungs, winnow's
-  trial verbatim) before it is proposed. Purely additive: never rewrites existing prose (flourish's
-  lane), never auto-commits; the long tail below the impact cut is listed as informational, never
+  only), built as a bounded, fail-closed proposer: it proceeds only from a complete surface-shaped
+  inventory (`symbol · kind · declaration path:line · rank` — today's path-only `impact` output is
+  not enough, so seed fails closed until the deterministic `gaps` provider ships), writes at most
+  `K ≤ 3` docs per run (default 1), and each must earn its place with a concrete reader use the
+  declaration/signature alone can't recover. Every sentence is ledgered to a code `file:line` or
+  markered `<!-- seed:gap — author: … -->`, and the whole output is winnowed at birth (all four
+  rungs, winnow's trial verbatim) before it is proposed. Purely additive: never rewrites existing
+  prose (flourish's lane), never auto-commits; the uninspected tail is `budget-deferred`, never
   silently dropped (`hard-goals/seed.md` makes each of those binary).
 
 One creed, one trial: each command runs its judgment-call verdicts through "Put the verdict on
