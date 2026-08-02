@@ -889,6 +889,97 @@ class ContractSymbolScopeTests(unittest.TestCase):
 
         self.assertEqual(self.contracts("store.rs", source, quoted), {"Config", "open"})
 
+    def test_public_declarations_returns_exactly_the_reachable_public_names(self):
+        from evergreen.impact import _public_declarations
+
+        source = (
+            b"class Client:\n"
+            b"    def resolve(self):\n"
+            b"        def cached():\n"
+            b"            pass\n"
+            b"\n"
+            b"def _bootstrap():\n"
+            b"    pass\n"
+            b"\n"
+            b"def load():\n"
+            b"    pass\n"
+        )
+
+        # Pinned literal expectation: recomputing the production expression here would be
+        # tautologically green no matter what the scan returned.
+        self.assertEqual(_public_declarations(source, ".py"), {"Client", "resolve", "load"})
+
+
+class DeclarationScanTests(unittest.TestCase):
+    def names(self, source, suffix):
+        from evergreen.impact import _public_declarations
+
+        return _public_declarations(source, suffix)
+
+    def test_triple_quotes_inside_ordinary_strings_do_not_open_a_mask(self):
+        # A '''-bearing single-line string once paired with a later one and blanked every
+        # real declaration between them.
+        source = (
+            b"PATTERN = \"'''\"\n"
+            b"def real():\n"
+            b"    pass\n"
+            b"GUARD = \"'''\"\n"
+            b"def also_real():\n"
+            b"    pass\n"
+        )
+
+        self.assertEqual(self.names(source, ".py"), {"real", "also_real"})
+
+    def test_impact_module_scans_its_own_source_faithfully(self):
+        payload = (Path(__file__).resolve().parents[1] / "evergreen" / "impact.py").read_bytes()
+
+        names = self.names(payload, ".py")
+
+        self.assertIn("impact", names)
+        self.assertIn("load_map", names)
+        # Helpers nested inside impact() must never surface as public declarations.
+        self.assertNotIn("candidate_limit", names)
+        self.assertNotIn("selection_key", names)
+        self.assertNotIn("spend_work", names)
+
+    def test_require_and_import_aliases_are_not_declarations(self):
+        # Backtracking once revived the alias match one character short (fs -> f, path -> pat).
+        source = (
+            b"const fs = require('fs');\n"
+            b"const os = require('os');\n"
+            b"const path = import('path');\n"
+            b"function real() {}\n"
+        )
+
+        self.assertEqual(self.names(source, ".js"), {"real"})
+
+    def test_export_default_and_export_lists_are_public(self):
+        self.assertEqual(self.names(b"export default function build() {}\n", ".js"), {"build"})
+        self.assertEqual(
+            self.names(b"function helper() {}\nexport { helper };\n", ".js"), {"helper"}
+        )
+
+    def test_block_comments_and_template_literals_are_not_declarations(self):
+        source = (
+            b"/*\nexport function phantom() {}\n*/\n"
+            b"const text = `\nexport function phantom2() {}\n`;\n"
+            b"export function real() {}\n"
+        )
+
+        self.assertEqual(self.names(source, ".js"), {"real"})
+
+    def test_commonjs_files_only_export_module_exports_names(self):
+        source = (
+            b"function internalHelper() {}\n"
+            b"function publicApi() {}\n"
+            b"module.exports = { publicApi };\n"
+        )
+
+        self.assertEqual(self.names(source, ".cjs"), {"publicApi"})
+        self.assertEqual(
+            self.names(b"function internalHelper() {}\nmodule.exports = {};\n", ".cjs"), set()
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

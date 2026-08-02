@@ -62,18 +62,106 @@ FENCE_RE = re.compile(rb"(?m)^[ \t]{0,3}(`{3,}|~{3,})[^\r\n]*\r?$")
 INLINE_CODE_RE = re.compile(rb"(`+)([^\r\n]+?)\1")
 
 DECLARATION_RE = re.compile(
-    rb"(?m)^([ \t]*)((?:export[ \t]+)?"
-    rb"(?:public[ \t]+|pub(?:\([^\r\n)]*\))?[ \t]+)?)(?:async[ \t]+)?"
-    rb"(class|struct|enum|protocol|interface|type|def|func|fn|function)[ \t]+"
-    rb"([A-Za-z_][A-Za-z0-9_]*)"
+    rb"(?m)^([ \t]*)((?:export[ \t]+(?:default[ \t]+)?)?"
+    rb"(?:public[ \t]+|pub(?:\([^\r\n)]*\))?[ \t]+)?)(?:declare[ \t]+)?(?:async[ \t]+)?"
+    # `static` is Rust-only (kept per-suffix below): elsewhere it is a member modifier whose
+    # following word would be captured as a phantom name. The mut lookahead pins the same trap.
+    rb"(class|struct|enum|protocol|interface|trait|actor|type|def|func|fn|function|const|let|var"
+    rb"|static(?![ \t]+mut(?![A-Za-z0-9_])))[ \t]+"
+    rb"(?:\(([^\r\n)]*)\)[ \t]*)?"
+    # A binding whose value is require()/import() is an import alias, not a declaration. The
+    # word-boundary lookahead pins the captured name at full length: without it the engine
+    # backtracks inside the identifier and revives the match one character short (`fs` -> `f`).
+    rb"([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])(?![ \t]*=[ \t]*(?:require|import)[ \t]*\()"
 )
+# TypeScript/JavaScript class and interface members carry no declaration keyword; a name
+# followed by `(` at member indentation is the only lexical signal available. Reachability is
+# still gated below on the enclosing scope being a public type, so call statements inside
+# function bodies never surface. ponytail: methods of exported const object literals stay
+# unlisted -- tracking value scopes needs a real parser.
+TS_MEMBER_RE = re.compile(
+    rb"(?m)^([ \t]+)"
+    rb"((?:(?:public|protected|private|static|readonly|abstract|override|async|get|set)[ \t]+)*)"
+    rb"([A-Za-z_$][A-Za-z0-9_$]*)[ \t]*\("
+)
+TS_MEMBER_STOPWORDS = frozenset((
+    b"if", b"for", b"while", b"switch", b"catch", b"do", b"else", b"return",
+    b"function", b"new", b"typeof", b"delete", b"void", b"throw", b"await",
+    b"yield", b"in", b"of", b"case", b"super", b"this", b"import", b"require",
+))
+TS_FAMILY_SUFFIXES = frozenset((".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"))
+# ESM import/export syntax is what gives one of these files a module boundary at all; a file
+# without it is a script whose top-level names are globally reachable. CommonJS files draw the
+# same boundary with `module.exports` / `exports.name` assignments instead.
+ES_MODULE_MARKER_RE = re.compile(rb"(?m)^[ \t]*(?:export|import)(?=[ \t{*'\"])")
+# `export { name, other as alias }` publishes declarations carrying no inline marker; the local
+# name vouches the declaration and the alias is the name a reader (and a doc) actually sees.
+# ponytail: `export {x} from './y'` re-exports can vouch for a same-named local -- separating
+# them needs a real parser.
+ES_EXPORT_LIST_RE = re.compile(rb"(?m)^[ \t]*export[ \t]*(?:type[ \t]+)?{((?s:[^}]*))}")
+# CommonJS export shapes: `exports.name =` (optionally aliasing a local identifier),
+# `module.exports = {...}`, `module.exports = name`.
+CJS_EXPORT_RE = re.compile(
+    rb"(?m)^[ \t]*(?:module[ \t]*\.[ \t]*)?exports[ \t]*"
+    rb"(?:\.[ \t]*(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)[ \t]*="
+    rb"[ \t]*(?P<value>[A-Za-z_$][A-Za-z0-9_$]*)?"
+    rb"|=[ \t]*(?:{(?P<body>(?s:[^}]*))}|(?P<whole>[A-Za-z_$][A-Za-z0-9_$]*)))"
+)
+# RHS words that are expression syntax, not the local identifier an export alias vouches for.
+CJS_VALUE_STOPWORDS = frozenset((
+    b"function", b"async", b"class", b"new", b"require", b"import", b"await", b"void",
+    b"null", b"undefined", b"true", b"false", b"typeof",
+))
+# Grouped Go declarations: `const (` / `var (` / `type (` followed by one entry per line
+# until a `)` back at column 0. Entries carry no keyword of their own.
+GO_GROUP_HEADER_RE = re.compile(rb"(?m)^(const|var|type)[ \t]*\([ \t]*\r?$")
+GO_GROUP_CLOSE_RE = re.compile(rb"(?m)^\)")
+GO_GROUP_ENTRY_RE = re.compile(rb"[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+RECEIVER_IDENTIFIER_RE = re.compile(rb"[A-Za-z_][A-Za-z0-9_]*")
+# String and comment bodies are where quoted code sits at line start and reads as a declaration
+# -- and where a stray delimiter can otherwise pair with a later one and swallow real code (this
+# file's own regex literals did exactly that to its self-scan). Each masker therefore consumes
+# single-line strings and comments too, so a delimiter inside them can never open a span; matched
+# spans are blanked with newlines kept so line numbers hold. Python string prefixes are consumed
+# with the literal so an f-string's `f` never counts as an identifier. ponytail: lexer-free;
+# literals in the remaining languages are a known ceiling pending a per-language lexer.
+PY_LITERAL_RE = re.compile(
+    rb"[rRbBuUfF]{0,2}(?P<q>'''|\"\"\")(?s:.*?)(?P=q)"
+    rb"|[rRbBuUfF]{0,2}'[^'\r\n\\]*(?:\\[\s\S][^'\r\n\\]*)*'"
+    rb"|[rRbBuUfF]{0,2}\"[^\"\r\n\\]*(?:\\[\s\S][^\"\r\n\\]*)*\""
+    rb"|#[^\r\n]*"
+)
+TS_LITERAL_RE = re.compile(
+    rb"/\*(?s:.*?)\*/"
+    rb"|//[^\r\n]*"
+    rb"|`[^`\\]*(?:\\[\s\S][^`\\]*)*`"
+    rb"|'[^'\r\n\\]*(?:\\[\s\S][^'\r\n\\]*)*'"
+    rb"|\"[^\"\r\n\\]*(?:\\[\s\S][^\"\r\n\\]*)*\""
+)
+# Rust: no single-quoted strings -- a lone quote is a lifetime (`'a`), so only the
+# exactly-one-character char literal form is consumed. Raw strings pair their hash runs.
+# ponytail: nested block comments stop at the first `*/`; a real lexer is the upgrade path.
+RUST_LITERAL_RE = re.compile(
+    rb"/\*(?s:.*?)\*/"
+    rb"|//[^\r\n]*"
+    rb"|b?r(?P<hash>#*)\"(?s:.*?)\"(?P=hash)"
+    rb"|b?\"[^\"\r\n\\]*(?:\\[\s\S][^\"\r\n\\]*)*\""
+    rb"|'(?:\\[\s\S]|[^'\r\n\\])'"
+)
+SWIFT_LITERAL_RE = re.compile(
+    rb"/\*(?s:.*?)\*/"
+    rb"|//[^\r\n]*"
+    rb"|\"\"\"(?s:.*?)\"\"\""
+    rb"|\"[^\"\r\n\\]*(?:\\[\s\S][^\"\r\n\\]*)*\""
+)
+_LITERAL_BLANK = bytes(byte if byte in (10, 13) else 32 for byte in range(256))
 # Only a declaration a reader can reach from outside the file is a documentation contract, and
 # nesting decides that before any naming convention does: a method inside a class is API, a
 # closure inside a function never is. Indentation is the nesting signal because it is the only
 # structure available without one parser per language, and it costs nothing to be wrong about --
 # an unindented file reads as all module scope, which is exactly what this replaced.
 TYPE_DECLARATION_KEYWORDS = frozenset(
-    (b"class", b"struct", b"enum", b"protocol", b"interface", b"type")
+    (b"class", b"struct", b"enum", b"protocol", b"interface", b"trait", b"actor", b"type")
 )
 # Visibility itself is only decided outright where a compiler decides it. Go exports on an
 # uppercase initial and Rust on `pub`, with no exceptions to be wrong about. TypeScript's `export`
@@ -549,32 +637,184 @@ def _bounded_regular_bytes(path, limit):
         return None
 
 
-def _declares_public(suffix, markers, name):
+def _declares_public(suffix, markers, name, receiver=None, module=False):
     """Decide one declaration's visibility by the rule its own language enforces."""
     if suffix in UPPERCASE_EXPORT_SUFFIXES:
+        if receiver:
+            # A Go method rides its receiver type: `func (r *config) Load()` is unreachable
+            # however loudly the method name is exported.
+            tokens = RECEIVER_IDENTIFIER_RE.findall(receiver)
+            base = tokens[1] if len(tokens) > 1 else tokens[0] if tokens else b""
+            if not base[:1].isupper():
+                return False
         return name[:1].isupper()
     if suffix in MARKED_EXPORT_SUFFIXES:
+        return bool(markers)
+    if module:
+        # Inside a real ESM module only the export marker crosses the file boundary.
         return bool(markers)
     return bool(markers) or not name.startswith(b"_")
 
 
-def _public_declarations(payload, suffix):
-    """Names in one source file that could be a public documentation contract."""
-    names = set()
+def _blank_span(match):
+    return match.group(0).translate(_LITERAL_BLANK)
+
+
+def _masked_literals(payload, suffix):
+    """Blank string/comment bodies so quoted code is neither a declaration nor a reference."""
+    if suffix == ".py":
+        return PY_LITERAL_RE.sub(_blank_span, payload)
+    # ponytail: Go's literal shapes are the TS set (raw strings ride the template branch).
+    if suffix in TS_FAMILY_SUFFIXES or suffix == ".go":
+        return TS_LITERAL_RE.sub(_blank_span, payload)
+    if suffix == ".rs":
+        return RUST_LITERAL_RE.sub(_blank_span, payload)
+    if suffix == ".swift":
+        return SWIFT_LITERAL_RE.sub(_blank_span, payload)
+    return payload
+
+
+def _go_group_declarations(payload):
+    """Yield (offset, keyword, name) for each entry of a grouped const/var/type declaration."""
+    for header in GO_GROUP_HEADER_RE.finditer(payload):
+        close = GO_GROUP_CLOSE_RE.search(payload, header.end())
+        if close is None:
+            continue
+        keyword = header.group(1)
+        depth = 0
+        offset = payload.find(b"\n", header.end()) + 1
+        while 0 < offset < close.start():
+            newline = payload.find(b"\n", offset, close.start())
+            stop = close.start() if newline == -1 else newline
+            line = payload[offset:stop]
+            if depth == 0:
+                entry = GO_GROUP_ENTRY_RE.match(line)
+                if entry:
+                    yield offset, keyword, entry.group(1)
+            depth += line.count(b"{") - line.count(b"}")
+            offset = stop + 1
+
+
+def _es_exports(payload):
+    """Exported local names and the local -> published-name alias map for one ESM/CJS file."""
+    exported = set()
+    aliases = {}
+    for match in ES_EXPORT_LIST_RE.finditer(payload):
+        for entry in match.group(1).split(b","):
+            words = RECEIVER_IDENTIFIER_RE.findall(entry)
+            if words and words[0] == b"type" and len(words) > 1:
+                words = words[1:]
+            if not words:
+                continue
+            exported.add(words[0])
+            if len(words) >= 3 and words[1] == b"as":
+                aliases[words[0]] = words[2]
+    module = False
+    for match in CJS_EXPORT_RE.finditer(payload):
+        module = True
+        name, value, body, whole = match.group("name", "value", "body", "whole")
+        if name and value and value not in CJS_VALUE_STOPWORDS:
+            # `exports.publicApi = internal` reaches the declaration named `internal`
+            # and publishes it as `publicApi`.
+            exported.add(value)
+            aliases[value] = name
+        elif name:
+            exported.add(name)
+        for group in (body, whole):
+            if group:
+                exported.update(RECEIVER_IDENTIFIER_RE.findall(group))
+    exported.discard(b"as")
+    exported.discard(b"default")
+    return exported, aliases, module
+
+
+def _reachable_declarations(payload, suffix):
+    """Yield (line, depth, kind, name) for each declaration reachable from outside the file.
+
+    The payload must already be literal-masked (`_masked_literals`); callers that hold raw
+    source go through `_public_declarations`, which masks once.
+    """
+    matches = [
+        (match.start(), "decl", match)
+        for match in DECLARATION_RE.finditer(payload)
+        # Outside Rust, `static` is a member modifier; the member scan below owns that form.
+        if match.group(3) != b"static" or suffix in MARKED_EXPORT_SUFFIXES
+    ]
+    module = False
+    exported = set()
+    aliases = {}
+    if suffix in TS_FAMILY_SUFFIXES:
+        exported, aliases, cjs = _es_exports(payload)
+        module = cjs or ES_MODULE_MARKER_RE.search(payload) is not None
+    if suffix in TS_FAMILY_SUFFIXES or suffix in UPPERCASE_EXPORT_SUFFIXES:
+        # Members carry no keyword in TS/JS classes and Go interfaces alike.
+        starts = {start for start, _flavor, _match in matches}
+        matches.extend(
+            (match.start(), "member", match)
+            for match in TS_MEMBER_RE.finditer(payload)
+            if match.start() not in starts and match.group(3) not in TS_MEMBER_STOPWORDS
+        )
+    if suffix == ".go":
+        matches.extend(
+            (offset, "group", (keyword, name))
+            for offset, keyword, name in _go_group_declarations(payload)
+        )
+    matches.sort(key=lambda item: item[0])
+    # Indentation is the nesting signal, but it cannot see a scope whose braces open and close
+    # on one line; brace depth closes that hole everywhere braces delimit scopes (not Python,
+    # where a brace is data).
+    braces = suffix != ".py"
+    brace_depth = 0
     scopes = []
-    for match in DECLARATION_RE.finditer(payload):
-        indent, markers, keyword, name = match.groups()
-        while scopes and scopes[-1][0] >= len(indent):
+    line, consumed = 1, 0
+    for start, flavor, item in matches:
+        line += payload.count(b"\n", consumed, start)
+        if braces:
+            brace_depth += (payload.count(b"{", consumed, start) -
+                            payload.count(b"}", consumed, start))
+        consumed = start
+        if flavor == "group":
+            keyword, name = item
+            if _declares_public(suffix, b"", name):
+                yield line, 0, keyword.decode("ascii"), name.decode("ascii")
+            continue
+        is_member = flavor == "member"
+        if is_member:
+            indent, markers, name = item.groups()
+            keyword = b"method"
+            if suffix in UPPERCASE_EXPORT_SUFFIXES:
+                public = name[:1].isupper()
+            else:
+                public = b"private" not in markers.split() and not name.startswith(b"_")
+        else:
+            indent, markers, keyword, receiver, name = item.groups()
+            public = (_declares_public(suffix, markers, name, receiver, module) or
+                      name in exported)
+        while scopes and (scopes[-1][0] >= len(indent) or scopes[-1][3] >= brace_depth):
             scopes.pop()
-        public = _declares_public(suffix, markers, name)
         # Reachability outranks whatever a declaration calls itself: a closure cannot be imported
         # however loudly it is exported, and a member of a private type is private with it.
-        if scopes and not (scopes[-1][1] and scopes[-1][2]):
+        if is_member:
+            # A member is API only through a public type; anywhere else the same shape is a
+            # call statement or a closure body.
+            if not (scopes and scopes[-1][1] and scopes[-1][2]):
+                public = False
+        elif scopes and not (scopes[-1][1] and scopes[-1][2]):
             public = False
-        scopes.append((len(indent), keyword in TYPE_DECLARATION_KEYWORDS, public))
+        depth = len(scopes)
+        scopes.append((
+            len(indent), not is_member and keyword in TYPE_DECLARATION_KEYWORDS, public,
+            brace_depth if braces else -1,
+        ))
         if public:
-            names.add(name.decode("ascii"))
-    return names
+            name = aliases.get(name, name)
+            yield line, depth, keyword.decode("ascii"), name.decode("ascii")
+
+
+def _public_declarations(payload, suffix):
+    """Names in one source file that could be a public documentation contract."""
+    masked = _masked_literals(payload, suffix)
+    return {name for _line, _depth, _kind, name in _reachable_declarations(masked, suffix)}
 
 
 def _contract_symbols(repo, paths):

@@ -50,6 +50,16 @@ def parser():
     query.add_argument("--json", action="store_true", help="emit one JSON object")
     query.add_argument("paths", metavar="PATH", nargs="*", help="changed repository-relative path")
     query.set_defaults(run=run_impact)
+    gaps = commands.add_parser(
+        "gaps", help="inventory the public declaration surface reachable from outside each file"
+    )
+    gaps.add_argument("--repo", default=".", help="repository root (default: current directory)")
+    gaps.add_argument("--json", action="store_true", help="emit one JSON object")
+    gaps.add_argument(
+        "paths", metavar="PATH", nargs="*",
+        help="optional repository-relative scope prefix (default: whole repository)",
+    )
+    gaps.set_defaults(run=run_gaps)
     receipt = commands.add_parser("receipt", help="emit evidence-backed repository state")
     receipt.add_argument("--repo", default=".", help="path inside a Git repository")
     receipt.add_argument("--benchmark-manifest", help="Evergreen public benchmark manifest")
@@ -147,6 +157,34 @@ def run_impact(args):
         print(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
     else:
         print_human(payload)
+    return 0
+
+
+def run_gaps(args):
+    from evergreen.gaps import gaps
+    repo = Path(args.repo).expanduser()
+    if not repo.is_dir():
+        print(f"evergreen: repository must be a directory: {error_display(repo)}", file=sys.stderr)
+        return 2
+    try:
+        report = gaps(repo.resolve(), tuple(args.paths))
+    except ValueError as error:
+        print(f"evergreen: {error_display(error)}", file=sys.stderr)
+        return 2
+    payload = {
+        "schema_version": 1,
+        "candidates": [
+            {"symbol": c.symbol, "kind": c.kind, "path": c.path, "line": c.line, "rank": c.rank}
+            for c in report.candidates
+        ],
+        "source_files_in_scope": report.source_files_in_scope,
+        "source_files_scanned": report.source_files_scanned,
+        "warnings": list(report.warnings),
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+    else:
+        print_gaps(payload)
     return 0
 
 
@@ -295,6 +333,28 @@ def print_human(payload):
         print(f"- [{candidate['rank']}] {terminal_display(candidate['path'])}")
         for reason in candidate["reasons"]:
             print(f"  reason: {terminal_display(reason)}")
+    warnings = payload["warnings"]
+    if warnings:
+        print(f"Warnings ({len(warnings)}):")
+        for warning in warnings:
+            print(f"- {terminal_display(warning)}")
+
+
+def print_gaps(payload):
+    candidates = payload["candidates"]
+    print(f"Candidates ({len(candidates)}):")
+    if not candidates:
+        print("- none")
+    for candidate in candidates:
+        print(
+            f"- [{candidate['rank']}] {terminal_display(candidate['symbol'])} "
+            f"({terminal_display(candidate['kind'])}) "
+            f"{terminal_display(candidate['path'])}:{candidate['line']}"
+        )
+    print(
+        f"Source files: scanned {payload['source_files_scanned']} "
+        f"of {payload['source_files_in_scope']} in scope"
+    )
     warnings = payload["warnings"]
     if warnings:
         print(f"Warnings ({len(warnings)}):")

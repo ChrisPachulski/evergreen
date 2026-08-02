@@ -51,7 +51,8 @@ class HostEvidenceTests(unittest.TestCase):
             },
             {
                 "evergreen/__init__.py", "evergreen/evidence.py",
-                "evergreen/execution_policy.py", "evergreen/grade.py",
+                "evergreen/execution_policy.py", "evergreen/gaps.py",
+                "evergreen/grade.py",
                 "evergreen/host_commit.py", "evergreen/host_evidence.py",
                 "evergreen/host_journal.py", "evergreen/host_lock.py",
                 "evergreen/host_metadata.py", "evergreen/host_snapshot.py",
