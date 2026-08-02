@@ -107,7 +107,9 @@ Rules:
   (a grep, a reference count) skip the trial. Prove by test is the default where the code runs: a
   failing test the doc backs is drift; a test that won't run is inconclusive.
 - Read the changed file at HEAD, not just the diff's `+` lines — rot lives in old comments.
-- Code is truth; the doc is the claim. Documented-but-missing = finding; undocumented = informational.
+- Code is truth; the doc is the claim. Documented-but-missing = finding; undocumented =
+  informational — `/evergreen:seed` is the on-demand exception, turning the informational tail into
+  ranked, claim-disciplined new docs.
 - Exempt what leads or freezes: specs/ADRs/RFCs/roadmaps/plans, CHANGELOG history, dated
   snapshots. Age is not drift.
 - Not your contracts: third-party flags, cross-repo paths, URLs, generic symbols, CSS custom
@@ -125,5 +127,5 @@ Output, per finding: `[high|med|low] category  file:line — what's wrong (cite 
 Exempt docs go on a trailing `left alone:` line, never as a finding.
 Surface still matches → one line: `evergreen: docs still match`.
 
-Full ruleset (taxonomy, flag-vs-winnow depths, the flourish/cultivate family): load the
+Full ruleset (taxonomy, flag-vs-winnow depths, the seed/flourish/cultivate family): load the
 `evergreen` skill on demand.

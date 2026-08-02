@@ -296,9 +296,9 @@ docs otherwise match the code.
 
 Surface still matches → one line: `evergreen: docs still match`.
 
-## The family — truth, craft, hygiene
+## The family — truth, craft, hygiene, creation
 
-The reflex is the *truth* axis. Two on-demand commands, same prove-or-drop creed:
+The reflex is the *truth* axis. Three on-demand commands, same prove-or-drop creed:
 
 - **`/evergreen:flourish <file>` — craft.** The sanctioned prose-rewrite exception (explicit request
   only): restructure an accurate-but-ugly doc toward `skills/evergreen/references/readme-style.md`,
@@ -320,6 +320,13 @@ The reflex is the *truth* axis. Two on-demand commands, same prove-or-drop creed
   that can source unstaged content (`-a`/`--all`, include/only, and pathspec forms) are likewise
   rejected; use a separately staged plain commit. `EVERGREEN_GUARD=off` bypasses the guard for a
   run — deliberately, on the human's call.
+- **`/evergreen:seed [path]` — creation.** The sanctioned doc-creation exception (explicit request
+  only): inventory the undocumented public surface via the impact provider, rank it, and write
+  claim-disciplined docs — every sentence ledgered to a code `file:line` or markered
+  `<!-- seed:gap — author: … -->`, the whole output winnowed at birth (all four rungs, winnow's
+  trial verbatim) before it is proposed. Purely additive: never rewrites existing prose (flourish's
+  lane), never auto-commits; the long tail below the impact cut is listed as informational, never
+  silently dropped (`hard-goals/seed.md` makes each of those binary).
 
 One creed, one trial: each command runs its judgment-call verdicts through "Put the verdict on
 trial" above. Truth and craft only flag or propose; hygiene alone may block a commit (a leaked
