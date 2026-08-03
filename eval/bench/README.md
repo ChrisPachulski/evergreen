@@ -371,7 +371,9 @@ only as quoted by the CASCADE paper (arXiv:2604.19400): precision 0.10, F1 0.17 
 `dataset.jsonl` here is **evergreen's own hand-labeled sanity fixture in their exact schema** —
 14 pairs, honestly small, author-written, every label double-checked (the CCISolver paper found
 45.67% of a popular benchmark's positive labels were wrong; a noisy label is worse than no
-label). It proves the harness and catches regressions; it is not a comparable result.
+label). It proves the harness and catches regressions; it is not a comparable result. Like every
+code-bearing `eval/bench/*.jsonl` corpus it is generated and kept locally, untracked; the tracked
+manifests and run artifacts bind each corpus by SHA-256.
 
 ## Protocol
 
@@ -391,7 +393,8 @@ locked holdout split once the label audit produces one. Every listed id must exi
 unknown ids fail the command rather than shrinking the subset silently.
 
 Resolver v2 lanes run on `cascade-java-v2-dev.jsonl` / `cascade-java-v2-holdout.jsonl`: the same
-885 checked-in CASCADE rows plus regenerable git-window context where the method can be located
+885 digest-pinned CASCADE rows (regenerated locally, untracked) plus regenerable git-window
+context where the method can be located
 (a declared unavailability reason otherwise). The multi-megabyte augmented files live outside the
 repository; the committed
 [`cascade-java-v2-split-manifest.json`](cascade-java-v2-split-manifest.json) binds their exact
@@ -402,7 +405,7 @@ exact run declaration and the regeneration mechanics are in the fold below.
 <summary>Regeneration mechanics — mirror derivation, HMAC split ordering, blob bounds, and the protocol ladder</summary>
 
 Resolver v2 lanes run on `cascade-java-v2-dev.jsonl` / `cascade-java-v2-holdout.jsonl`: the same
-885 checked-in CASCADE rows, each augmented with `java-git-window-v1` context derived from local
+885 digest-pinned CASCADE rows, each augmented with `java-git-window-v1` context derived from local
 bare mirrors (`cascade_to_jsonl.py --context-protocol java-git-window-v1 --mirror-root …`; rows
 whose method can't be located exactly carry a declared unavailability reason instead). A
 successor protocol `java-git-window-v2` (strict-first ladder: the exact v1 match, then a
@@ -423,7 +426,7 @@ so they live outside the repository; only
 binds both files' exact SHA-256s, as does every run artifact. The files are regenerable from the
 upstream zip (hash below) plus mirrors at the pair ids' fixed commits. `make_split.py` generates
 the repository-grouped 60/40 dev/holdout split and its schema-v1 manifest, ordered by HMAC-SHA256
-keyed on the checked-in `cascade-java.jsonl` SHA-256 — a digest committed before any v2 run
+keyed on the recorded `cascade-java.jsonl` SHA-256 (pinned below) — a digest committed before any v2 run
 existed, so the grouping was never tunable against v2 outcomes. This run split is not the human
 label audit's split: audit splits additionally balance human-label cells and stay private. A v2
 run declares `--resolver v2 --split-manifest eval/bench/cascade-java-v2-split-manifest.json
@@ -484,7 +487,8 @@ silently retried until they disappear. Generic or single-language reports use th
 with their own explicit `--require-language` set; missing, duplicate, empty, or undeclared
 languages fail publication.
 
-The checked-in CASCADE conversion is derived from upstream commit
+The CASCADE conversion — regenerated locally and untracked, since it carries verbatim upstream
+source rows; its digest is pinned here — is derived from upstream commit
 `4dc5a8d525c8967ea8dd11ae46cfe5834dbda156` under its MIT license. The upstream
 `PaperEvaluation/dataset.zip` SHA-256 is
 `dbf023fbe10869879680a33edf196f286c042789d85272523752602ce39b403c`; the resulting
@@ -567,9 +571,7 @@ that root by purpose, e.g. `benchmark-data`, `benchmark-archive`. An existing le
 precedence over the derived path until it's migrated away, so anything already on disk keeps
 resolving with no action required. `frozen_run.py --archive-dir` may now be omitted entirely; when
 omitted it defaults to the derived `benchmark-archive` path above, validated exactly as an explicit
-value is, and an explicit `--archive-dir` always wins over the default. `evergreen-java-mirrors`
-(the `--mirror-root` bare-clone cache used by the Java context protocols) currently lives in
-`~/.Trash` — restore or re-clone it before a Java-context run.
+value is, and an explicit `--archive-dir` always wins over the default.
 
 ## Run
 
