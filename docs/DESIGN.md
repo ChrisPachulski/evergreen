@@ -67,6 +67,13 @@ no tools or project customizations and receives only its provider credential. Th
 citations from Git at the audited head; model prose cannot certify itself. The layer prepares and
 validates evidence but does not decide whether prose is semantically true.
 
+Every repository path in a manifest entry or result citation passes one shared gate before the
+trust layer will carry it: `is_protocol_path` (`ci/path_policy.py`). A citable path is a non-empty
+string of at most 1024 characters, relative (neither POSIX- nor Windows-absolute), forward-slash
+only, already in normalized POSIX form, with no `.` or `..` segments and no newlines, carriage
+returns, NULs, or Unicode surrogates. A path failing any rule is rejected as "not citable by the
+result protocol"; the change manifest and review-context citations enforce the same policy.
+
 POSIX timeouts terminate the pinned CLI's inherited process group. Portable standard-library code
 cannot contain a deliberately detached descendant; runner-level OS isolation owns that boundary.
 The Action's bare, safe, no-tools, and no-session modes prevent repository or model content from
