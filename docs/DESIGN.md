@@ -79,6 +79,14 @@ cannot contain a deliberately detached descendant; runner-level OS isolation own
 The Action's bare, safe, no-tools, and no-session modes prevent repository or model content from
 creating such a descendant.
 
+Command execution passes through a shared gate as well: `run_bounded` (`ci/bounded_process.py`),
+which runs one command under wall-clock, output, process-group, and environment bounds. With
+`clean_env` the child's environment is rebuilt from an allowlist — `PATH`, `HOME`, `TMPDIR`,
+`LANG`, `LC_ALL`, plus caller-named keeps — rather than inherited, and stderr is discarded.
+Failure never raises: a timeout returns exit 124, an output overflow 125, a command that cannot
+start 126, and captured output is dropped on failure unless `preserve_partial` keeps the truncated
+prefix. The process-group termination described above is enforced here.
+
 CI outcomes are deliberately distinct: **complete and clean**, **complete with findings**, and
 **complete with unverified** all mean the validated review finished; only the first is a clean
 certification. **inconclusive** means the audit itself failed or could not be trusted. Findings
