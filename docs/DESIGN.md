@@ -203,6 +203,15 @@ execution-policy hardening. These are backward-compatible pre-1.0 features, so t
 SemVer policy justifies minor `0.4.0`, not patch `0.3.3` or stable `1.0.0`. This plugin stream has
 no binary build-number field, and the release invents none.
 
+### 0.5.0 release decision
+
+Since `0.4.0`, the coupled plugin stream gained the creation axis: the `seed` command with its
+frozen hard-goal contract and owner-decided write batches, the deterministic `gaps` surface
+inventory CLI it fails closed on, and the declaration-grammar extensions that back both. These are
+backward-compatible pre-1.0 features — no existing command, output shape, or hook contract
+changed — so the same SemVer policy justifies minor `0.5.0`, not patch `0.4.1` or stable `1.0.0`.
+The stream still carries no build-number field.
+
 ### Measurement-first quality and release boundary
 
 The audit, replay, resolver-v2, Java-context, and public-verification infrastructure is additive,
