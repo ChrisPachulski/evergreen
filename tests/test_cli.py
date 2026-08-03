@@ -47,8 +47,15 @@ class EvergreenCLITests(unittest.TestCase):
 
     @staticmethod
     def run_git(directory, *args):
+        # Background auto-gc/maintenance spawned by add/commit/clone keeps
+        # rewriting .git/objects after the command returns, racing the
+        # snapshot helpers below; keep test repositories fully deterministic.
         return subprocess.run(
-            ["git", "-C", str(directory), *args],
+            ["git", "-C", str(directory),
+             "-c", "gc.auto=0",
+             "-c", "gc.autoDetach=false",
+             "-c", "maintenance.auto=false",
+             *args],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -141,11 +148,18 @@ class EvergreenCLITests(unittest.TestCase):
 
     @staticmethod
     def file_snapshot(root):
-        return {
-            path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in root.rglob("*")
-            if path.is_file() and ".git" not in path.parts
-        }
+        # Walk with .git pruned instead of filtering afterwards: descending
+        # into .git races any concurrent object-store rewrite (deleted loose
+        # object directories raise FileNotFoundError mid-scan).
+        snapshot = {}
+        for directory, folders, files in os.walk(root):
+            folders[:] = [name for name in folders if name != ".git"]
+            for name in files:
+                path = Path(directory) / name
+                snapshot[path.relative_to(root).as_posix()] = (
+                    hashlib.sha256(path.read_bytes()).hexdigest()
+                )
+        return snapshot
 
     def write_map(self):
         (self.repo / ".evergreen-map.json").write_text(json.dumps({
