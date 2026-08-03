@@ -26,10 +26,11 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
    counts match, every row has the required fields, and every `outside inventory` warning is
    quoted. Path-only or incomplete output is not done.
 
-2. **MUST inspect a bounded impact prefix without cherry-picking.**
-   CHECK: let `P` be the candidates inspected before `K` seeds qualify, or all `N` if fewer
-   qualify. Pre-diff fixed-string grep rows == `P`, in provider order, with no skipped rank.
-   Candidates after `P` are `budget-deferred`, never falsely classified as documented or unworthy.
+2. **MUST triage the ranking without cherry-picking, stopping only when it goes cold.**
+   CHECK: let `R` be the last inspected rank. Gap rows == `R`, in provider order, with no skipped
+   rank; the walk stops only at rank `N` or after 10 consecutive `documented`/`not worthy`
+   verdicts, and the stopping streak is visible in the table's last 10 rows. Candidates after `R`
+   are `deferred — ranking cold at rank R`, never falsely classified as documented or unworthy.
 
 3. **MUST ledger every prose claim in the seeded docs with a code `file:line`.**
    CHECK: the report contains a claim ledger; every row cites a code `path:line` (the code that
@@ -48,16 +49,18 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
    CHECK: the proposed diff contains zero deleted lines in any pre-existing doc file (`git diff`
    shows no `-` lines outside new-file headers). Pass = zero deletions.
 
-7. **MUST bound and account for the write set.**
-   CHECK: `K` is stated before drafting and `0 ≤ K ≤ 3`; `documented + seed + not-worthy +
-   budget-deferred == N`; `written == seed ≤ K`; zero pre-diff documented candidates are written.
-   Pass = all counts hold.
+7. **MUST put the write count in the owner's hands.**
+   CHECK: the report shows the full worthy list with a stated recommendation BEFORE any doc is
+   drafted, then the owner's chosen count `C`; `documented + worthy + not-worthy + deferred == N`;
+   `written ≤ C ≤ worthy`; with no owner answer, `written == 0`; zero pre-diff documented
+   candidates are written. Pass = all counts hold and the list-then-choice ordering is visible in
+   the report.
 
 8. **MUST seed useful, small, repeat-visible documentation.**
    CHECK: every written candidate has at least one `reader-use` ledger row citing code outside its
    declaration/signature; `git add -N` every newly created doc file first (untracked files produce
    no `git diff --numstat` row, so an unregistered new doc would evade the bounds entirely), then
-   `git diff --numstat` shows added lines `A ≤ 60 × written` and `A ≤ 180`; changed doc paths and
+   `git diff --numstat` shows added lines `A ≤ 60 × written`; changed doc paths and
    `seed:gap` markers are each `≤ written`; post-diff fixed-string grep over `D` **plus every
    newly created doc path** returns a non-marker hit for every written symbol. Pass = all checks
    hold; `written == 0` implies no documentation diff.

@@ -42,12 +42,11 @@ truncation warning is `not done — surface inventory unavailable`; write nothin
 `python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" gaps --json --repo <repo> [path…]` — deterministic
 and read-only; a scope path narrows the inventory. Candidates are nominations, never verdicts.)
 
-**C · Gap, worthiness, and budget.** Before inspection, set `K`: default `1`; the owner may
-explicitly choose `0..3`. Enumerate the exact tracked living-document path set `D`; in-code
-docstrings remain informational until a syntax-aware gap check exists. If `D` is empty, skip the
-grep entirely — `git grep … --` with no pathspec searches the whole tracked tree and would mark
-every symbol "documented" by its own declaration; with no living docs, every candidate is
-undocumented by definition. Otherwise walk candidates in provider order and run:
+**C · Gap triage — walk until the ranking goes cold.** Enumerate the exact tracked living-document
+path set `D`; in-code docstrings remain informational until a syntax-aware gap check exists. If `D`
+is empty, skip the grep entirely — `git grep … --` with no pathspec searches the whole tracked tree
+and would mark every symbol "documented" by its own declaration; with no living docs, every
+candidate is undocumented by definition. Otherwise walk candidates in provider order and run:
 ```sh
 git grep -F -w -n -e "<symbol>" -- <D...>
 ```
@@ -55,12 +54,21 @@ git grep -F -w -n -e "<symbol>" -- <D...>
 containing `remains` or `domain`.) A hit means `documented` only when at least one matched line
 names the symbol **as code** — inline backticks, inside a fenced block, or with a `path:line`
 citation. A bare prose reuse of the word ("the main branch", "a cache key") documents nothing;
-if every hit is prose-only, the candidate stays a gap. Zero hits nominate a gap but do not make it worthy. An
-inspected gap is `seed` only when it supports a concrete reader use backed by at least one
-behavior, result, error, side effect, default, constraint, or invocation sequence that is not
-recoverable from the declaration/signature alone. Otherwise mark it `informational — not worthy`.
-`seed:gap` never satisfies this floor. Stop after `K` candidates qualify; label the remaining tail
-`informational — budget deferred`. `K=0` is valid.
+if every hit is prose-only, the candidate stays a gap. Zero hits nominate a gap; read the
+declaration and judge it. A gap is `worthy` only when a doc for it would carry at least one fact a
+reader could not guess from the name and signature — a hidden rule, an error case, a default, a
+side effect, an ordering requirement. Otherwise `not worthy`; `seed:gap` never satisfies this
+floor. There is no fixed write budget: the worthy list is as long as the evidence makes it. Keep
+walking until the ranking goes cold — 10 consecutive `documented`/`not worthy` verdicts — then
+mark the remainder `deferred — ranking cold at rank R` and stop; the deferral is stated, never
+silent.
+
+**C2 · The owner picks the batch.** Before writing anything, present the full worthy list —
+symbol, rank, one line on what its doc would say — plus a plain recommendation: which to write
+first and why ("14 worth documenting; I'd start with these 6 — the CI contract surfaces — and
+leave the eval internals for a later pass"). The owner chooses the count; the run never writes
+past that choice, and no answer means write nothing. Writing zero is a valid outcome of a correct
+run.
 
 **D · Write, claim-disciplined.** Prose where the code backs it; each declarative sentence logged in
 a **claim ledger** with the code `file:line` that makes it true. What the code can't settle —
@@ -68,8 +76,8 @@ intent, rationale, roadmap — becomes an explicit grep-able marker:
 `<!-- seed:gap — author: why does X exist -->`. A marker is a finding for the author, not a failure;
 an invented rationale is the failure. Names, signatures, parameter or field lists, and return types
 may support a useful explanation, but restating them is not itself documentation worth seeding.
-Keep each written candidate to at most 60 added lines and one `seed:gap`; the complete batch may
-not exceed 180 added lines.
+Keep each written candidate to at most 60 added lines and one `seed:gap` — the wall-of-text guard
+is per-doc; the batch is bounded by the owner's chosen count, not by a fixed line total.
 
 **E · Certify — winnow at birth.** Run the winnow ladder (all four rungs) over the seeded docs
 before proposing them, exactly as `/evergreen:winnow` would on changed docs — newly created docs
@@ -81,20 +89,20 @@ doc bends to the code, never the reverse.
 **F · Propose.** Emit new files / purely additive diffs for approval. Never rewrite existing prose,
 never auto-commit. Nothing lands until the owner approves the batch.
 
-## Put the worthiness verdict on trial (before any candidate consumes budget)
+## Put the worthiness verdict on trial (before any approved candidate is written)
 
 The mechanical evidence never stands trial — the provider inventory, the pre-diff grep, the line
 counts are facts. The **conclusion drawn from them** does: "this gap is worth a doc — write it" is
 seed's judgment call, and a wrong YES is the over-population failure this command exists to avoid.
-Run every would-be `seed` verdict (at most `K ≤ 3` per run — never the informational tail) through
-the skill's shared harness, "Put the verdict on trial", with seed's parameters:
+The pass-C walk judges cheaply; the trial runs on each **owner-approved** write (never the
+deferred tail) before pass D touches it, through the skill's shared harness, "Put the verdict on
+trial", with seed's parameters:
 
 - **claim / snap:** "this undocumented gap supports a concrete reader use the declaration/signature
   alone can't recover — write it."
 - **challenge (must survive):** "no — everything this doc would say is recoverable from the
   declaration alone, or the reader use is speculative, not concrete." A "write it" that can't beat
-  its challenge is `informational — not worthy`; the budget slot passes to the next candidate in
-  provider order.
+  its challenge is demoted to `not worthy` and reported back to the owner with the reason.
 - **three blind reads:** *defend* the write (the reader use and the behavior-bearing fact, at its
   code `file:line`, that earns it — concede if the strongest case is signature-restatement) /
   *prove-unworthy* (show that each fact the doc would carry is recoverable from the
@@ -114,10 +122,11 @@ the budget is spent, truth before the proposal ships — while the mechanical go
 1. The provider command and its N surface-shaped candidates (pass B, verbatim), with the scanned
    source-file count.
 2. The gap table —
-   `candidate · rank · pre-diff grep · documented | seed | not-worthy | budget-deferred · reader-use claim · code file:line`.
+   `candidate · rank · pre-diff grep · documented | worthy | not-worthy | deferred · reader-use claim · code file:line`
+   — followed by the worthy list, the recommendation, and the owner's chosen count.
 3. Per seeded doc: the proposed content, its claim ledger (`claim · code file:line`), and the
    winnow verdict counts (`certified == ledger rows, drift 0, unverified 0`).
 4. The `seed:gap` markers, listed — the author's to-do, stated plainly (at most one per written
    candidate).
-5. Coverage: `documented + seed + not-worthy + budget-deferred == N`, `written == seed ≤ K`, and
-   added lines within the 60-per-candidate / 180-per-batch bounds — stated with the numbers.
+5. Coverage: `documented + worthy + not-worthy + deferred == N`, `written == owner-approved ≤
+   worthy`, and every doc within the 60-line per-doc bound — stated with the numbers.

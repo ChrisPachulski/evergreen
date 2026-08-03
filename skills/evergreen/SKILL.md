@@ -323,13 +323,14 @@ The reflex is the *truth* axis. Three on-demand commands, same prove-or-drop cre
 - **`/evergreen:seed [path]` — creation.** The sanctioned doc-creation exception (explicit request
   only), built as a bounded, fail-closed proposer: it proceeds only from a complete surface-shaped
   inventory (`symbol · kind · declaration path:line · rank`, from the deterministic `gaps`
-  subcommand — path-only `impact` output is not enough and fails closed), writes at most
-  `K ≤ 3` docs per run (default 1), and each must earn its place with a concrete reader use the
-  declaration/signature alone can't recover. Every sentence is ledgered to a code `file:line` or
-  markered `<!-- seed:gap — author: … -->`, and the whole output is winnowed at birth (all four
-  rungs, winnow's trial verbatim) before it is proposed. Purely additive: never rewrites existing
-  prose (flourish's lane), never auto-commits; the uninspected tail is `budget-deferred`, never
-  silently dropped (`hard-goals/seed.md` makes each of those binary).
+  subcommand — path-only `impact` output is not enough and fails closed), triages the ranking
+  until it goes cold, then presents the full worthy list with a recommendation and lets the owner
+  choose how many get written — each must earn its place with a concrete reader use the
+  declaration/signature alone can't recover, and no doc exceeds 60 lines. Every sentence is
+  ledgered to a code `file:line` or markered `<!-- seed:gap — author: … -->`, and the whole output
+  is winnowed at birth (all four rungs, winnow's trial verbatim) before it is proposed. Purely
+  additive: never rewrites existing prose (flourish's lane), never auto-commits; the uninspected
+  tail is `deferred`, never silently dropped (`hard-goals/seed.md` makes each of those binary).
 
 One creed, one trial: each command runs its judgment-call verdicts through "Put the verdict on
 trial" above — winnow's drift flags, flourish's "done", cultivate's delete/block, seed's "worth a
