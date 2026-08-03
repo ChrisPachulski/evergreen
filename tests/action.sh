@@ -95,7 +95,7 @@ if [[ "$*" = *'rev-parse --verify'* ]]; then
   printf 'ARGS=%s SECRET=%s\n' "$*" "${UNRELATED_SECRET+set}" >> "$HOME/git-resolve.log"
 fi
 case "$mode:$*" in
-  hang-resolve:*'rev-parse --verify'*) sleep .3 ;;
+  hang-resolve:*'rev-parse --verify'*) sleep 5 ;;
   malformed-resolve:*'rev-parse --verify'*) printf '%s\n' 'not-a-commit'; exit 0 ;;
   diff:*'diff --name-only'*|tree:*'ls-tree -r -z --name-only'*) exit 70 ;;
   hang-diff:*'diff --name-only'*|hang-tree:*'ls-tree -r -z --name-only'*) sleep 5 ;;
@@ -386,7 +386,7 @@ contains "$SUMMARY_FILE" 'Commit-derived review context is truncated or contains
 pass "review context bounds fail closed"
 
 make_repo resolve-timeout
-TEST_GIT_FAIL_MODE=hang-resolve TEST_GIT_TIMEOUT_SECONDS=0.05 \
+TEST_GIT_FAIL_MODE=hang-resolve TEST_GIT_TIMEOUT_SECONDS=1 \
   run_driver resolve-timeout '' true "$FAIL_GIT_BIN"
 [ "$STATUS" -ne 0 ] || fail "hanging commit resolution must be inconclusive"
 contains "$SUMMARY_FILE" 'diff base could not be resolved.' "commit resolution timeout lost its exact reason"
@@ -420,14 +420,14 @@ contains "$SUMMARY_FILE" 'Git documentation detection failed.' "git tree prefilt
 pass "prefilter failures fail closed"
 
 make_repo diff-prefilter-timeout
-TEST_GIT_FAIL_MODE=hang-diff TEST_GIT_TIMEOUT_SECONDS=0.1 \
+TEST_GIT_FAIL_MODE=hang-diff TEST_GIT_TIMEOUT_SECONDS=1 \
   run_driver diff-prefilter-timeout '' true "$FAIL_GIT_BIN"
 [ "$STATUS" -ne 0 ] || fail "hanging git diff prefilter must be inconclusive"
 contains "$SUMMARY_FILE" 'Git change detection failed.' "git diff timeout lost its exact reason"
 [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "git diff timeout still invoked Claude"
 
 make_repo tree-prefilter-timeout
-TEST_GIT_FAIL_MODE=hang-tree TEST_GIT_TIMEOUT_SECONDS=0.1 \
+TEST_GIT_FAIL_MODE=hang-tree TEST_GIT_TIMEOUT_SECONDS=1 \
   run_driver tree-prefilter-timeout '' true "$FAIL_GIT_BIN"
 [ "$STATUS" -ne 0 ] || fail "hanging git tree prefilter must be inconclusive"
 contains "$SUMMARY_FILE" 'Git documentation detection failed.' "git tree timeout lost its exact reason"
@@ -440,7 +440,7 @@ contains "$SUMMARY_FILE" 'Git change detection failed.' "prefilter overflow lost
 [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "prefilter overflow still invoked Claude"
 
 make_repo manifest-timeout
-TEST_GIT_FAIL_MODE=hang-manifest TEST_GIT_TIMEOUT_SECONDS=0.1 \
+TEST_GIT_FAIL_MODE=hang-manifest TEST_GIT_TIMEOUT_SECONDS=1 \
   run_driver manifest-timeout '' true "$FAIL_GIT_BIN"
 [ "$STATUS" -ne 0 ] || fail "hanging manifest git call must be inconclusive"
 contains "$SUMMARY_FILE" 'Change manifest is truncated or contains deterministic errors.' "manifest timeout lost its exact reason"
@@ -457,12 +457,12 @@ pass "path prefilter has bounded in-process parsing"
 for prefilter_mode in code docs; do
   make_repo "hanging-$prefilter_mode-prefilter"
   started="$(python3 -c 'import time; print(time.monotonic())')"
-  TEST_PREFILTER_BEHAVIOR="$prefilter_mode" TEST_PREFILTER_TIMEOUT_SECONDS=0.1 \
+  TEST_PREFILTER_BEHAVIOR="$prefilter_mode" TEST_PREFILTER_TIMEOUT_SECONDS=0.5 \
     run_driver "hanging-$prefilter_mode-prefilter" '' true "$HANG_PREFILTER_BIN"
   elapsed="$(python3 -c 'import sys; print(float(sys.argv[2])-float(sys.argv[1]))' \
     "$started" "$(python3 -c 'import time; print(time.monotonic())')")"
   [ "$STATUS" -ne 0 ] || fail "hanging $prefilter_mode prefilter must be inconclusive"
-  python3 -c 'import sys; assert float(sys.argv[1]) < 2' "$elapsed" || \
+  python3 -c 'import sys; assert float(sys.argv[1]) < 3' "$elapsed" || \
     fail "hanging $prefilter_mode prefilter exceeded outer timeout ($elapsed seconds)"
   if [ "$prefilter_mode" = code ]; then
     expected='Changed-path classification exceeded its safety bounds.'

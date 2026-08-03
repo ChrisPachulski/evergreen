@@ -494,7 +494,7 @@ class EvergreenCLITests(unittest.TestCase):
             ".gitignore",
             "eval/manifest.tsv",
             "eval/fixture/README.md",
-            "eval/bench/dataset.jsonl",
+            "eval/bench/codocbench-validated.votes.json",
             "tools/unknown-config",
             "tools/semantic-runner",
         }.issubset(declared))

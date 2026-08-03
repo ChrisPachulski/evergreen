@@ -11,6 +11,17 @@ from pathlib import Path
 
 from eval.bench import label_audit_core as core
 
+_ROOT = Path(__file__).resolve().parents[1]
+_SOURCE_POOLS = json.loads((_ROOT / core.SOURCE_MANIFEST_RELATIVE).read_text())
+_CORPORA_PRESENT = all(
+    (_ROOT / pool["path"]).exists()
+    for pool in _SOURCE_POOLS["pools"] if pool["status"] == "available"
+)
+_CORPORA_ABSENT_REASON = (
+    "declared source pool corpora are local-only untracked files "
+    "and are absent from this checkout"
+)
+
 
 def result_row(identifier, language="Python", label="consistent", status="complete",
                verdict="consistent"):
@@ -576,6 +587,7 @@ class LabelAuditIdentityTests(unittest.TestCase):
 
 
 class LabelAuditSourceTests(unittest.TestCase):
+    @unittest.skipUnless(_CORPORA_PRESENT, _CORPORA_ABSENT_REASON)
     def test_source_manifest_verifies_tracked_pool_hashes_and_counts(self):
         manifest = core.load_source_manifest(
             Path("eval/bench/human-audit/source-pools.json"), Path.cwd())
@@ -663,6 +675,7 @@ class LabelAuditCliTests(unittest.TestCase):
         self.assertEqual(sample.returncode, 0, sample.stderr)
         self.assertNotIn("--source-manifest", sample.stdout)
 
+    @unittest.skipUnless(_CORPORA_PRESENT, _CORPORA_ABSENT_REASON)
     def test_sample_stops_at_human_boundary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

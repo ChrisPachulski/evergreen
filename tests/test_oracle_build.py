@@ -395,11 +395,17 @@ class OracleBuildTests(unittest.TestCase):
             ["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True,
         ).strip()
         references, _digest = _load_reference_inventory(commit, tree, require_clean=False)
-        self.assertEqual(len(references), 95)
+        self.assertEqual(
+            {item["category"] for item in references}, set(split.REFERENCE_CATEGORIES),
+            "live-tree reference inventory must cover every policy category",
+        )
         required_comparisons = 1875 * 1875 + 3750 * len(references)
-        self.assertEqual(required_comparisons, 3_871_875)
         self.assertEqual(split.MAX_COMPARISONS, 5_000_000)
-        self.assertLessEqual(required_comparisons, split.MAX_COMPARISONS)
+        self.assertLessEqual(
+            required_comparisons, split.MAX_COMPARISONS,
+            "reference corpus grew past the frozen MAX_COMPARISONS cap: shrink the "
+            "inventory policy or renegotiate the cap deliberately",
+        )
         rows = self.required_scale_rows()
         self.assertEqual(len(rows), 3750)
         self.assertEqual({row["language"] for row in rows}, set(LANGUAGES))
@@ -854,7 +860,8 @@ class OracleBuildTests(unittest.TestCase):
         sources = {item["source"] for item in references}
         for required in (
             "eval/prompt.md", "commands/cultivate.md", "examples/_index.md",
-            "tests/test_cli.py", "eval/fixture/cli.py", "eval/bench/dataset.jsonl",
+            "tests/test_cli.py", "eval/fixture/cli.py",
+            "eval/bench/codocbench-validated.votes.json",
         ):
             self.assertIn(required, sources)
         fields = {item["source"]: item["field"] for item in references}

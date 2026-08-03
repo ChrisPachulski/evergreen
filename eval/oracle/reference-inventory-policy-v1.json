@@ -6,10 +6,7 @@
     "test": ["tests/*.py", "tests/*.sh"],
     "fixture": ["eval/fixture/**"],
     "prior-corpus": [
-      "eval/bench/*.jsonl",
-      "eval/bench/**/*.jsonl",
       "eval/bench/*.votes.json",
-      "eval/bench/**/*.votes.json",
       "eval/bench/human-audit/**",
       "eval/bench/public/**"
     ]

@@ -111,7 +111,7 @@ MAX_PUBLIC_SOURCE_BLOB_BYTES = 1024 * 1024
 MAX_PACKAGE_ROWS = 100_000
 MAX_SOURCE_SEEDS = 100_000
 REFERENCE_POLICY_PATH = Path(__file__).with_name("reference-inventory-policy-v1.json")
-REFERENCE_POLICY_SHA256 = "d6110358004d7a951e12b287e62731e06e4f82e7b00cea35d8771a164190b874"
+REFERENCE_POLICY_SHA256 = "b90ea980109b1429920dcfd5fa7aedda5290cc7c9bb030423f2afd7a8c25a6cf"
 _REFERENCE_POLICY = {
     "schema_version": 1,
     "categories": {
@@ -120,8 +120,8 @@ _REFERENCE_POLICY = {
         "test": ["tests/*.py", "tests/*.sh"],
         "fixture": ["eval/fixture/**"],
         "prior-corpus": [
-            "eval/bench/*.jsonl", "eval/bench/**/*.jsonl",
-            "eval/bench/*.votes.json", "eval/bench/**/*.votes.json",
+            # fnmatch "*" crosses "/", so this single pattern covers subdirectories too.
+            "eval/bench/*.votes.json",
             "eval/bench/human-audit/**", "eval/bench/public/**",
         ],
     },

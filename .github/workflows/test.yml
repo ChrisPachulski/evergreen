@@ -75,7 +75,10 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: ${{ env.ORACLE_PYTHON_VERSION }}
+          # setup-python ships no darwin build of the exact regeneration pin
+          # (3.11.13 is linux-only); the contract-only check needs no exact
+          # interpreter, so this job tracks the minor release instead.
+          python-version: "3.11"
       - name: Offline public source-pack contract
         env:
           HTTP_PROXY: http://127.0.0.1:9

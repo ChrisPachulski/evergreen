@@ -350,6 +350,12 @@ def _json_snapshot(path, max_bytes, label):
 
 def _dataset_snapshot(path):
     raw = artifact.read_bytes(path, runner.MAX_DATASET_BYTES, label="dataset")
+    return _dataset_rows(raw)
+
+
+def _dataset_rows(raw):
+    if len(raw) > runner.MAX_DATASET_BYTES:
+        raise ValueError("dataset exceeds byte limit")
     rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
     if len(rows) > runner.MAX_DATASET_ROWS:
         raise ValueError("dataset has too many rows")
@@ -808,7 +814,15 @@ def verify_publication(manifest_path, repo, report_path):
         dataset_path = _manifest_file(entry["dataset"]["path"], repo)
         dataset_key = dataset_path.resolve()
         if dataset_key not in dataset_snapshots:
-            dataset_snapshots[dataset_key] = _dataset_snapshot(dataset_path)
+            if dataset_path.exists():
+                dataset_snapshots[dataset_key] = _dataset_snapshot(dataset_path)
+            else:
+                # Source corpora are untracked local files; a fresh checkout has
+                # only history. Verify against the provenance commit's blob, which
+                # the manifest hash below still binds byte-for-byte.
+                dataset_snapshots[dataset_key] = _dataset_rows(_historical_blob(
+                    repo, metadata["git"]["commit"], entry["dataset"]["path"],
+                ))
         dataset_raw, dataset_rows = dataset_snapshots[dataset_key]
         if hashlib.sha256(dataset_raw).hexdigest() != entry["dataset"]["sha256"]:
             raise ValueError("dataset SHA-256 does not match manifest")
