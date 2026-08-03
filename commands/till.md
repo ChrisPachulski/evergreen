@@ -8,7 +8,7 @@ allowed-tools: Bash(python3:*)
 Run the plugin's surface-inventory query and preserve its contract:
 
 ```sh
-python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" gaps --json $ARGUMENTS
+python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" till --json $ARGUMENTS
 ```
 
 Present `candidates` (symbol, kind, path:line, rank) exactly as returned, then

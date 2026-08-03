@@ -322,7 +322,7 @@ The reflex is the *truth* axis. Three on-demand commands, same prove-or-drop cre
   run — deliberately, on the human's call.
 - **`/evergreen:seed [path]` — creation.** The sanctioned doc-creation exception (explicit request
   only), built as a bounded, fail-closed proposer: it proceeds only from a complete surface-shaped
-  inventory (`symbol · kind · declaration path:line · rank`, from the deterministic `gaps`
+  inventory (`symbol · kind · declaration path:line · rank`, from the deterministic `till`
   subcommand — path-only `impact` output is not enough and fails closed), triages the ranking
   until it goes cold, then presents the full worthy list with a recommendation and lets the owner
   choose how many get written — each must earn its place with a concrete reader use the

@@ -12,7 +12,7 @@ MAX_COMMAND_BYTES = _hosts.MAX_COMMAND_BYTES
 MAX_EVIDENCE_FILES = 256
 MAX_EVIDENCE_BYTES = 4 * 1024 * 1024
 PACKAGE_SOURCES = (
-    "__init__.py", "evidence.py", "execution_policy.py", "gaps.py", "grade.py",
+    "__init__.py", "evidence.py", "execution_policy.py", "till.py", "grade.py",
     "host_commit.py", "host_evidence.py", "host_journal.py", "host_lock.py",
     "host_metadata.py", "host_snapshot.py", "host_transaction.py", "host_types.py",
     "hosts.py", "impact.py", "receipt.py",

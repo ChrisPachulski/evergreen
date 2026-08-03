@@ -103,9 +103,9 @@ bypass. Semantic truth findings and CI drift findings do not use this blocking p
 
 ## Shipped local and host surface
 
-`bin/evergreen impact` and `bin/evergreen gaps` are the dependency-free, read-only query entry
+`bin/evergreen impact` and `bin/evergreen till` are the dependency-free, read-only query entry
 points. `impact` takes changed paths, optional evidence JSON, and repository-local
-`.evergreen-map.json` mappings; `gaps` inventories the tracked public declaration surface for seed
+`.evergreen-map.json` mappings; `till` inventories the tracked public declaration surface for seed
 and fails closed with a `truncated` warning whenever the inventory it builds could be incomplete;
 files outside the parseable surface (unparsed languages, extensionless scripts, untracked source)
 are surfaced with `outside inventory` warnings rather than silently skipped. Their
@@ -211,6 +211,14 @@ inventory CLI it fails closed on, and the declaration-grammar extensions that ba
 backward-compatible pre-1.0 features — no existing command, output shape, or hook contract
 changed — so the same SemVer policy justifies minor `0.5.0`, not patch `0.4.1` or stable `1.0.0`.
 The stream still carries no build-number field.
+
+### 0.6.0 release decision
+
+`0.6.0` renames the surface-inventory subcommand `gaps` → `till`, completing the family metaphor
+(till the ground, then seed it). A renamed public CLI subcommand is a surface change, so the same
+pre-1.0 SemVer policy takes minor `0.6.0`; the rename shipped immediately after `0.5.0`, before
+any external adoption of the old name, so no compatibility alias is carried. Frozen `0.4.0`/`0.5.0`
+records keep the names they shipped with.
 
 ### Measurement-first quality and release boundary
 

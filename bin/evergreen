@@ -50,16 +50,16 @@ def parser():
     query.add_argument("--json", action="store_true", help="emit one JSON object")
     query.add_argument("paths", metavar="PATH", nargs="*", help="changed repository-relative path")
     query.set_defaults(run=run_impact)
-    gaps = commands.add_parser(
-        "gaps", help="inventory the public declaration surface reachable from outside each file"
+    till = commands.add_parser(
+        "till", help="inventory the public declaration surface reachable from outside each file"
     )
-    gaps.add_argument("--repo", default=".", help="repository root (default: current directory)")
-    gaps.add_argument("--json", action="store_true", help="emit one JSON object")
-    gaps.add_argument(
+    till.add_argument("--repo", default=".", help="repository root (default: current directory)")
+    till.add_argument("--json", action="store_true", help="emit one JSON object")
+    till.add_argument(
         "paths", metavar="PATH", nargs="*",
         help="optional repository-relative scope prefix (default: whole repository)",
     )
-    gaps.set_defaults(run=run_gaps)
+    till.set_defaults(run=run_till)
     receipt = commands.add_parser("receipt", help="emit evidence-backed repository state")
     receipt.add_argument("--repo", default=".", help="path inside a Git repository")
     receipt.add_argument("--benchmark-manifest", help="Evergreen public benchmark manifest")
@@ -160,14 +160,14 @@ def run_impact(args):
     return 0
 
 
-def run_gaps(args):
-    from evergreen.gaps import gaps
+def run_till(args):
+    from evergreen.till import till
     repo = Path(args.repo).expanduser()
     if not repo.is_dir():
         print(f"evergreen: repository must be a directory: {error_display(repo)}", file=sys.stderr)
         return 2
     try:
-        report = gaps(repo.resolve(), tuple(args.paths))
+        report = till(repo.resolve(), tuple(args.paths))
     except ValueError as error:
         print(f"evergreen: {error_display(error)}", file=sys.stderr)
         return 2
@@ -184,7 +184,7 @@ def run_gaps(args):
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
     else:
-        print_gaps(payload)
+        print_till(payload)
     return 0
 
 
@@ -336,7 +336,7 @@ def print_human(payload):
     print_warnings(payload)
 
 
-def print_gaps(payload):
+def print_till(payload):
     candidates = payload["candidates"]
     print(f"Candidates ({len(candidates)}):")
     if not candidates:

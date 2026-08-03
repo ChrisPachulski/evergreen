@@ -76,7 +76,7 @@ class GapCandidate:
 
 
 @dataclass(frozen=True)
-class GapsReport:
+class TillReport:
     candidates: tuple[GapCandidate, ...]
     source_files_in_scope: int
     source_files_scanned: int
@@ -152,7 +152,7 @@ def _scope_hits(path, scope_set):
     return hits
 
 
-def gaps(repo: Path, scope: tuple[str, ...] = ()) -> GapsReport:
+def till(repo: Path, scope: tuple[str, ...] = ()) -> TillReport:
     """Inventory every declaration reachable from outside its file, ranked and gapless."""
     repo = Path(repo)
     if len(scope) > MAX_GAP_SCOPE_PATHS:
@@ -188,7 +188,7 @@ def gaps(repo: Path, scope: tuple[str, ...] = ()) -> GapsReport:
             f"{MAX_DOC_LIST_BYTES} bytes / {DOC_SEARCH_TIMEOUT_SECONDS} seconds)"
         )
     if payload is None:
-        return GapsReport((), 0, 0, collector.result())
+        return TillReport((), 0, 0, collector.result())
 
     files = []
     unparsed = []
@@ -347,4 +347,4 @@ def gaps(repo: Path, scope: tuple[str, ...] = ()) -> GapsReport:
         GapCandidate(symbol=name, kind=kind, path=path, line=line, rank=rank)
         for rank, (_depth, _tier, _lower, path, line, name, kind) in enumerate(rows, 1)
     )
-    return GapsReport(candidates, source_files_in_scope, scanned, collector.result())
+    return TillReport(candidates, source_files_in_scope, scanned, collector.result())

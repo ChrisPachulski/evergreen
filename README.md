@@ -148,7 +148,7 @@ Re-read every candidate against current code before deciding drift.
 query. It accepts records described by [`evidence-provider-v1.schema.json`](schemas/evidence-provider-v1.schema.json)
 and repository-local source maps, ranks likely documentation, and reports malformed inputs as
 warnings. Deterministic confidence means the provider proved its mechanical fact; it does not prove
-a documentation claim false. `bin/evergreen gaps [--repo PATH] [--json] [PATH...]` is its read-only
+a documentation claim false. `bin/evergreen till [--repo PATH] [--json] [PATH...]` is its read-only
 sibling: a deterministic, ranked inventory of the tracked public declaration surface that seed
 consumes, failing closed with a `truncated` warning whenever the inventory it builds could be
 incomplete. Tracked files in languages it cannot parse, extensionless scripts, and untracked
@@ -355,7 +355,7 @@ Three axes — **truth · craft · hygiene** — one creed: prove it or drop it,
 | `/evergreen:cultivate [path]` | **Hygiene.** Local-only files leaking into git, gitignore gaps, AI-slop that shouldn't be tracked or public. Proposes untrack/ignore/delete — never auto. A commit-time guard backstops it (the one thing that *blocks*). |
 | `/evergreen:seed [path]` | **Creation.** From a symbol-level surface inventory (fail-closed without one), triage everything worth documenting, recommend a batch, and write only what the owner approves — each doc ≤ 60 lines, earning its place with a behavior the signature alone can't show, every sentence code-backed and winnow-certified at birth; what the code can't settle is markered for the author, never invented. Purely additive and approval-gated. |
 | `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` | **Truth, candidate query.** Rank documentation related to changed paths and optional provider evidence. Read-only; never emits findings or verdicts. |
-| `bin/evergreen gaps [--repo PATH] [--json] [PATH...]` | **Creation, surface inventory.** Deterministic ranked inventory of every public declaration reachable from outside its file — the fail-closed provider behind `/evergreen:seed`. Read-only; scan incompleteness fails closed with a `truncated` warning, and files excluded from the parsed surface are named in `outside inventory` warnings. |
+| `bin/evergreen till [--repo PATH] [--json] [PATH...]` | **Creation, surface inventory.** Deterministic ranked inventory of every public declaration reachable from outside its file — the fail-closed provider behind `/evergreen:seed`. Read-only; scan incompleteness fails closed with a `truncated` warning, and files excluded from the parsed surface are named in `outside inventory` warnings. |
 | `bin/evergreen receipt [--repo PATH] [--benchmark-manifest PATH] [--json]` | **Operational evidence.** Emit deterministic local repository, release-boundary, and optional declared benchmark identity without network access or mutation. |
 
 ## Non-goals

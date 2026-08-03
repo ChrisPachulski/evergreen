@@ -1,7 +1,7 @@
 {
   "name": "evergreen",
-  "version": "0.5.0",
-  "description": "Ships read-only impact and gaps surface discovery, seed's claim-disciplined doc creation, passive evidence and source maps, reversible Claude/Codex install, doctor, and uninstall, trusted CI semantics, and generalized release identity checks.",
+  "version": "0.6.0",
+  "description": "Ships read-only impact and till surface discovery, seed's claim-disciplined doc creation, passive evidence and source maps, reversible Claude/Codex install, doctor, and uninstall, trusted CI semantics, and generalized release identity checks.",
   "author": {
     "name": "Chris Pachulski",
     "url": "https://github.com/ChrisPachulski"

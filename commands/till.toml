@@ -5,7 +5,7 @@ Arguments: `{{args}}`.
 Resolve this command file's plugin root, then run:
 
 ```sh
-python3 <plugin-root>/bin/evergreen gaps --json {{args}}
+python3 <plugin-root>/bin/evergreen till --json {{args}}
 ```
 
 Present `candidates` (symbol, kind, path:line, rank) exactly as returned, then

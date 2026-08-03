@@ -39,7 +39,7 @@ one.
 candidate must include `symbol · kind · declaration code path:line · impact rank`, and the provider
 must report the number of source files scanned. A path-only result, missing scan count, or any
 truncation warning is `not done — surface inventory unavailable`; write nothing. (The provider is
-`python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" gaps --json --repo <repo> [path…]` — deterministic
+`python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" till --json --repo <repo> [path…]` — deterministic
 and read-only; a scope path narrows the inventory. Candidates are nominations, never verdicts.)
 
 **C · Gap triage — walk until the ranking goes cold.** Enumerate the exact tracked living-document
