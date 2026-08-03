@@ -7,6 +7,10 @@ PLAN-REVIEW-LOG.md
 eval/out/
 eval/bench/out/
 eval/bench/*.log
+# Third-party source rows (code+doc pairs) stay local; manifests, votes, schemas, and
+# sanitized eval/bench/public/ publications are tracked.
+eval/bench/*.jsonl
+/goal.md
 # Sanitized, content-addressed publications live in eval/bench/public/ and are tracked.
 __pycache__/
 # >>> autoloop managed (ephemeral runtime dirs) >>>
