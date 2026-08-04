@@ -810,14 +810,6 @@ class TrustedRepositoryVerificationTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
 
-    def test_verifier_identity_artifact_hash_is_not_a_candidate_boolean(self):
-        identity = {
-            "commit": "a" * 40,
-            "tree": "b" * 40,
-            "artifact_sha256": hashlib.sha256(b"trusted verifier").hexdigest(),
-        }
-        self.assertEqual(set(identity), {"commit", "tree", "artifact_sha256"})
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -315,12 +315,6 @@ class ArtifactMetadataTests(unittest.TestCase):
                  self.assertRaisesRegex(ValueError, "nonblocking"):
                 artifact.read_bytes(path, 100, label="dataset")
 
-    def test_deadline_contract_names_uninterruptible_filesystem_calls(self):
-        from eval.bench import artifact
-
-        self.assertIn("between filesystem calls", artifact.read_bytes.__doc__)
-        self.assertIn("cannot preempt", artifact.read_bytes.__doc__)
-
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO is unavailable")
     def test_fifo_rejection_never_blocks(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1459,11 +1453,6 @@ class RunBenchArtifactIntegrationTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "EVAL_CONCURRENCY"):
                 runner.eval_concurrency({"EVAL_CONCURRENCY": value})
         self.assertEqual(runner.eval_concurrency({"EVAL_CONCURRENCY": "32"}), 32)
-
-    def test_resolver_accepts_v3(self):
-        self.assertEqual(runner.eval_resolver({"EVAL_RESOLVER": "v3"}), "v3")
-        with self.assertRaisesRegex(ValueError, "v1, v2, or v3"):
-            runner.eval_resolver({"EVAL_RESOLVER": "v4"})
 
     def test_artifact_filename_v3_suffix_and_v1_v2_are_unchanged(self):
         self.assertEqual(

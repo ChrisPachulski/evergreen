@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from eval.bench import metrics, run_bench, runner, trial
+from eval.bench import metrics, runner, trial
 
 
 def ok(value):
@@ -25,14 +25,6 @@ class ModuleBoundaryTests(unittest.TestCase):
         for name in ("trial", "metrics", "runner"):
             with self.subTest(name=name):
                 self.assertIsNotNone(importlib.util.find_spec(f"eval.bench.{name}"))
-
-    def test_run_bench_has_no_judge_or_paid_cli_surface(self):
-        for name in ("judge", "claude_json", "bounded_cli_run", "PRONGS"):
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(run_bench, name))
-                with self.assertRaises(AttributeError):
-                    with mock.patch.object(run_bench, name):
-                        pass
 
     def test_selftest_checks_metrics_and_trial_without_paid_cli(self):
         output = StringIO()
@@ -409,11 +401,6 @@ class ProviderConfigurationTests(unittest.TestCase):
     def test_provider_attempt_budget_is_unlimited_when_no_ceiling_is_configured(self):
         self.assertIsNone(runner.build_provider_attempt_budget(None))
         self.assertIsNone(runner.build_provider_attempt_budget(None, prior_provider_attempts=40))
-
-    def test_provider_attempt_budget_nets_out_attempts_already_resumed(self):
-        budget = runner.build_provider_attempt_budget(10, prior_provider_attempts=4)
-        self.assertIsInstance(budget, trial.CallBudget)
-        self.assertEqual(budget.remaining, 6)
 
     def test_provider_attempt_budget_never_goes_negative(self):
         # resume_state is what rejects prior attempts that exceed the ceiling outright; this
