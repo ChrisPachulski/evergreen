@@ -265,11 +265,11 @@ winnows the docs those changes touched, writes the step summary, and upserts its
 comment. An uncertain update failure is logged without creating a duplicate. When a PR has no
 code change or no living documentation to check, the Action writes a short summary and exits
 green without ever reaching the review or comment-upsert step.
-Drift never fails the build. Under the default fail-closed policy, a green check on a PR that
-was actually reviewed means the result passed protocol validation — commit-bound, shape-checked,
-citations resolved at head; advisory `fail_on_inconclusive: false` runs can be green while still
+Drift never fails the build. Under the default fail-closed policy, a green check means the result
+passed protocol validation — commit-bound, shape-checked, citations resolved at head — on any PR
+that actually reached review; advisory `fail_on_inconclusive: false` runs can be green while still
 reporting an inconclusive audit. The nothing-to-check early exit is also green, but it never
-produced or validated a result envelope.
+reached review and never produced or validated a result envelope.
 
 ```yaml
 # .github/workflows/evergreen.yml
