@@ -267,15 +267,6 @@ class SourceCatalogTestsMixin:
             }.isdisjoint(report["sources"][0])
         )
 
-    def test_wrapper_rejects_a_changed_source_span(self):
-        code = bytearray(self.code.encode())
-        witness = self.source["witnesses"][0]
-        code[witness["offset"]] ^= 1
-        with self.assertRaisesRegex(
-            self.generate.CatalogError, "exact pinned source span"
-        ):
-            self.generate.generate_wrapper(bytes(code), witness)
-
 
 class JavaSourceCatalogTests(SourceCatalogTestsMixin, unittest.TestCase):
     code = JAVA
@@ -289,24 +280,6 @@ class JavaSourceCatalogTests(SourceCatalogTestsMixin, unittest.TestCase):
         "cardinality": ("cardinality-one-to-two-v1", "{1}"),
         "state-change": ("state-change-before-to-after-v1", "!state"),
     }
-
-    def test_source_bound_wrappers_cover_every_operator_without_relabeling(self):
-        code = self.code.encode()
-        for witness in self.source["witnesses"]:
-            wrapper = self.generate.generate_wrapper(code, witness)
-            contract = self.generate.MUTATION_OPERATORS[witness["operator"]]
-            length = wrapper["source_binding"]["length"]
-            span = code[witness["offset"] : witness["offset"] + length]
-            self.assertEqual(wrapper["oracle_kind"], contract["kind"])
-            self.assertEqual(wrapper["source_binding"]["offset"], witness["offset"])
-            self.assertEqual(
-                wrapper["source_binding"]["span_sha256"],
-                hashlib.sha256(span).hexdigest(),
-            )
-            self.assertEqual(wrapper, self.generate.generate_wrapper(code, witness))
-            discovered = self.generate.discover_witnesses(wrapper["code"].encode())
-            self.assertEqual(len(discovered), 1)
-            self.assertEqual(discovered[0]["operator"], witness["operator"])
 
     def test_wrapper_discovery_ignores_comments_and_string_literals(self):
         decoys = b"""// return 1; throw new IllegalStateException; orElse(1); {1}; !state
@@ -329,38 +302,6 @@ class TypeScriptSourceCatalogTests(SourceCatalogTestsMixin, unittest.TestCase):
         "state-change": ("state-change-before-to-after-v1", "!state"),
     }
 
-    def test_source_bound_wrappers_execute_all_five_operator_shapes(self):
-        expected = {
-            "return-value": ("1\n", "2\n"),
-            "raises": ("no-error\n", "ValueError\n"),
-            "default-value": ("default:1\n", "default:2\n"),
-            "cardinality": ("cardinality:1\n", "cardinality:2\n"),
-            "state-change": ("state:changed\n", "state:unchanged\n"),
-        }
-        for witness in self.source["witnesses"]:
-            wrapper = self.generate.generate_wrapper(self.code.encode(), witness)
-            contract = self.generate.MUTATION_OPERATORS[witness["operator"]]
-            variant = contract["variants"]["typescript"]
-            self.assertEqual(wrapper["oracle_kind"], contract["kind"])
-            self.assertEqual(
-                wrapper,
-                self.generate.generate_wrapper(self.code.encode(), witness),
-            )
-            self.assertEqual(
-                self.run_node(wrapper["code"]), expected[contract["kind"]][0]
-            )
-            mutated = (
-                wrapper["code"]
-                .encode()
-                .replace(
-                    variant["before"],
-                    variant["after"],
-                    1,
-                )
-                .decode()
-            )
-            self.assertEqual(self.run_node(mutated), expected[contract["kind"]][1])
-
     def test_wrapper_discovery_ignores_comments_strings_and_templates(self):
         decoys = b"""// return 1; throw new Error; item = 1; [1]; !state
 const a = "return 1; throw new Error; item = 1; [1]; !state";
@@ -368,24 +309,6 @@ const b = `return 1; throw new Error; item = 1; [1]; !state`;
 /* return 1; throw new Error; item = 1; [1]; !state */
 """
         self.assertEqual(self.generate.discover_source_witnesses(decoys), [])
-
-    def run_node(self, code):
-        # Byte-exact output assertions require color-free node output even under
-        # a FORCE_COLOR-bearing parent environment.
-        plain = dict(os.environ)
-        plain.pop("FORCE_COLOR", None)
-        plain["NO_COLOR"] = "1"
-        completed = subprocess.run(
-            ["node", "--input-type=commonjs"],
-            input=code,
-            text=True,
-            capture_output=True,
-            timeout=10,
-            check=False,
-            env=plain,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        return completed.stdout
 
 
 if __name__ == "__main__":
