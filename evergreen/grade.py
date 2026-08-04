@@ -197,7 +197,7 @@ def load_policy(payload):
     if not isinstance(policy["category_gates"], dict) or set(policy["category_gates"]) != set(CATEGORIES):
         raise GradeError("policy category gates are invalid")
     for category in CATEGORIES:
-        if tuple(policy["category_gates"][category]) != GATES[category]:
+        if _string_list(policy["category_gates"][category], "policy category gates") != GATES[category]:
             raise GradeError("policy category gates are invalid")
 
     detector = policy["detector"]
