@@ -310,6 +310,21 @@ class PolicyTests(unittest.TestCase):
                         self.fail(f"{field} leaked raw TypeError")
                     self.fail(f"{field} accepted malformed list")
 
+    def test_policy_category_gates_reject_null_non_lists_and_non_strings(self):
+        for category in CATEGORIES:
+            valid = json.loads(policy_bytes())["category_gates"][category]
+            for malformed in (None, 7, valid[0], {gate: True for gate in valid}, [7]):
+                with self.subTest(category=category, malformed=malformed):
+                    source = json.loads(policy_bytes())
+                    source["category_gates"][category] = malformed
+                    try:
+                        load_policy(encode(source))
+                    except GradeError:
+                        continue
+                    except TypeError:
+                        self.fail(f"{category} gates leaked raw TypeError")
+                    self.fail(f"{category} gates accepted malformed list")
+
 
 class EvidenceValidationTests(unittest.TestCase):
     def setUp(self):
