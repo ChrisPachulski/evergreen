@@ -132,6 +132,19 @@ Use `--json` when another tool needs the same fields:
 An optional checked-in public benchmark manifest identifies declared evidence; it does not prove a
 fresh provider execution, artifact reverification, or detector-quality result.
 
+`./bin/evergreen grade verify --repo PATH --manifest PATH [--json]` is the mechanical half of that
+boundary. It reads a committed manifest at `eval/grade/public/<version>/evidence.json` and derives
+the grade itself: the manifest may carry observations only, so a `grade`, `pass`, or `success` key,
+a threshold override, or a runtime `evidence_head` is rejected before evaluation. It scores against
+`eval/grade-policy-v1.json` exactly as frozen in the subject commit, and the eight required
+categories and their gates are pinned in code, so a rewritten policy is refused rather than honored.
+It also refuses to grade itself: the verifying checkout must be clean with `bin/evergreen`,
+`evergreen/grade.py`, `evergreen/receipt.py`, and `eval/grade-policy-v1.json` matching its own HEAD,
+and its commit must appear in the candidate's history strictly before the subject. Read-only; exit 0
+only on a derived `A`, 1 when `inconclusive`, 2 otherwise. The verifier ships; an earned grade does
+not — this tree publishes no `eval/grade/public/` manifest, and the A-grade certification is not an
+active release gate.
+
 The semantic pass may gather optional local evidence with read, grep, diff, or a scratch test. In CI,
 the deterministic trust layer does the mechanical work: it binds a bounded change manifest and
 matched documentation excerpts to the exact base/head commits, validates counts and citations
@@ -370,6 +383,7 @@ Four axes — **truth · craft · hygiene · creation** — one creed: prove it 
 | `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` | **Truth, candidate query.** Rank documentation related to changed paths and optional provider evidence. Read-only; never emits findings or verdicts. |
 | `bin/evergreen till [--repo PATH] [--json] [PATH...]` | **Creation, surface inventory.** Deterministic ranked inventory of every declaration in its parsed surface (Python, Go, Rust, Swift, JS/TS) reachable from outside its file — the fail-closed provider behind `/evergreen:seed`. Read-only; scan incompleteness fails closed with a `truncated` warning, and files outside the parsed surface are named in `outside inventory` warnings. |
 | `bin/evergreen receipt [--repo PATH] [--benchmark-manifest PATH] [--json]` | **Operational evidence.** Emit deterministic local repository, release-boundary, and optional declared benchmark identity without network access or mutation. |
+| `bin/evergreen grade verify --repo PATH --manifest PATH [--json]` | **Operational evidence, gate.** Re-derive an A grade from a committed evidence manifest against the policy frozen in the subject commit. The manifest supplies observations only — a self-asserted `grade`, a threshold override, or bytes that differ from the captured HEAD are refused. Read-only; exit 0 only on a derived `A`, 1 when `inconclusive`, 2 otherwise. |
 
 ## Non-goals
 
