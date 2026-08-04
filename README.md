@@ -20,9 +20,9 @@
 
 Your README was true the day you wrote it. Then a flag got renamed, a file moved, a function started returning something else — and the docs stayed exactly where they were. That's how documentation lies: not by being wrong when written, by being *left behind*. The gap opens quietly and nobody sees it until someone pastes a command that no longer exists.
 
-Evergreen is a local semantic skill backed in CI by a deterministic trust layer. The moment your
-agent touches code, it reads the affected docs back against the source and surfaces only what it
-can prove has gone false — pointing at the exact line. On release work it also treats the shipped
+Evergreen is a local semantic skill backed in CI by a deterministic trust layer. After a change
+lands, it reads the affected docs back against the source and surfaces only what it can cite as
+gone false — pointing at the exact line. On release work it also treats the shipped
 marketing version as a living public claim, distinct from the monotonically increasing binary
 build number. It rewrites nothing on its own. It just refuses to let the docs, release identity,
 and code disagree in silence.
@@ -164,9 +164,9 @@ schema, but provider-supplied findings and verdicts are rejected at the boundary
 That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with catalogued lies, true claims that must not be flagged, and exempt docs, then lets a headless agent winnow it blind. The per-pair harness ([`eval/bench/`](eval/bench/)) runs the judge over labeled code/doc pairs. The [flourish eval](eval/flourish/) turns the craft command's own monstrosity test into machine-checkable gates: trapped fixtures where a beautiful gutting, a fabricated feature, or a flattened hook each trip a deterministic scorer that survived its own adversarial review.
 
 Current five-language benchmark metrics are published only from one compatible run that clears every declared coverage gate.
-The frozen Evergreen 0.4.0 run is a historical execution record, not valid performance evidence.
 It completed 2,103 of 2,104 pairs and remains replayable from its redacted artifacts, but the judge
-received canonical IDs that reveal label-construction proxies; its pre-fix label screen did too.
+received canonical IDs that reveal label-construction proxies; its pre-fix label screen did too. The
+proxy leak invalidates the accuracy numbers, not the completion coverage.
 The full historical matrices and provenance remain in
 [`eval/bench/results-0.4.0.md`](eval/bench/results-0.4.0.md). Current clean runs hide canonical IDs,
 fail closed on incomplete screening batches, and require exact dataset-byte binding before launch.
@@ -252,7 +252,7 @@ ownership state is changed.
 /plugin install evergreen@evergreen
 ```
 
-It rides along every session: flags drift the moment a change leaves a doc lying, adds `/evergreen:winnow`, and leaves a quiet nudge if you changed code and forgot to look. Intensity is `off | light | strict` (default **light**). The truth reflex never blocks your commit — it flags, you decide. (The hygiene guard is the one exception, and it's the kind you want — see [Commands](#commands).)
+It rides along every session: adds `/evergreen:winnow`, and — after a turn that changed code in a repo with tracked docs — leaves a quiet nudge to go check for drift; the hook itself does no doc analysis, it only asks the agent to run the freshness pass. Intensity is `off | light | strict` (default **light**). The truth reflex never blocks your commit — it flags, you decide. (The hygiene guard is the one exception, and it's the kind you want — see [Commands](#commands).)
 
 What it costs, since you count tokens: session start injects a compact digest—currently about two-fifths of the full skill by words—not the full ruleset. The [digest](skills/evergreen/DIGEST.md)
 loads at startup, the full skill loads on demand, and the post-turn nudge fires once per new change,
@@ -260,12 +260,16 @@ not on every turn while the tree sits dirty.
 
 ### On every pull request
 
-Want the check in CI too? Add the Action — it winnows the docs the PR's code touched, writes the
-step summary, and upserts its bot-owned report comment. An uncertain update failure is logged
-without creating a duplicate.
-Drift never fails the build. Under the default fail-closed policy, a green check means the requested
-review actually completed; advisory `fail_on_inconclusive: false` runs can be green while still
-reporting an inconclusive audit.
+Want the check in CI too? Add the Action — when the PR has code changes alongside tracked docs, it
+winnows the docs those changes touched, writes the step summary, and upserts its bot-owned report
+comment. An uncertain update failure is logged without creating a duplicate. When a PR has no
+code change or no living documentation to check, the Action writes a short summary and exits
+green without ever reaching the review or comment-upsert step.
+Drift never fails the build. Under the default fail-closed policy, a green check on a PR that
+was actually reviewed means the result passed protocol validation — commit-bound, shape-checked,
+citations resolved at head; advisory `fail_on_inconclusive: false` runs can be green while still
+reporting an inconclusive audit. The nothing-to-check early exit is also green, but it never
+produced or validated a result envelope.
 
 ```yaml
 # .github/workflows/evergreen.yml
@@ -283,10 +287,17 @@ jobs:
           fail_on_inconclusive: true
 ```
 
+Fork PRs get no repository secrets, so `anthropic_api_key` is empty and the Action reports
+inconclusive — with `fail_on_inconclusive: true` as shown, that fails every external fork PR
+that has code changes alongside tracked docs to check; a fork PR that trips the no-code/no-docs
+early exit above passes green regardless, since that check runs before the empty-key check.
+
 (This repo's own `.github/workflows/evergreen-pr.yml` looks different on purpose: dogfooding
-means reviewing untrusted fork PRs, so it uses `pull_request_target` with a trusted/untrusted
-double checkout. A consumer repo doesn't share that threat model — the snippet above is the
-right shape for you, and `action.yml` accepts both.)
+means handling untrusted fork PRs safely, so it uses `pull_request_target` with a
+trusted/untrusted double checkout. In practice every fork PR is still marked inconclusive
+before provider review, secret or no secret — the double checkout buys safety, not fork review.
+A consumer repo doesn't share that threat model — the snippet above is the right shape for you,
+and `action.yml` accepts both.)
 
 The outcomes are explicit:
 
@@ -313,7 +324,9 @@ runner-level OS isolation. Here, bare/safe/no-tools/no-session flags prevent rep
 content from spawning them; the hosted runner remains the outer isolation boundary.
 
 This CI boundary is separate from the local hygiene guard. Truth findings never block a commit.
-The guard blocks staged secrets/slop and conservatively rejects a Bash tool call that combines
+The guard inspects staged filenames against a narrow, high-signal block list (credential
+filenames like `.env`/`*.pem`, OS cruft, AI-slop report names) — a secret or slop file outside
+that list, such as `config.yaml`, isn't inspected or blocked. It also conservatively rejects a Bash tool call that combines
 `git add` and `git commit`, because it cannot inspect the finalized index between them. It also
 rejects commit modes such as `-a`/`--all`, `--include`, `--only`, and pathspec commits because they
 can source unstaged working-tree content after inspection. Use a **separately staged plain commit**;
@@ -355,7 +368,7 @@ Four axes — **truth · craft · hygiene · creation** — one creed: prove it 
 | `/evergreen:cultivate [path]` | **Hygiene.** Local-only files leaking into git, gitignore gaps, AI-slop that shouldn't be tracked or public. Proposes untrack/ignore/delete — never auto. A commit-time guard backstops it (the one thing that *blocks*). |
 | `/evergreen:seed [path]` | **Creation.** From a symbol-level surface inventory (fail-closed without one), triage everything worth documenting, recommend a batch, and write only what the owner approves — each doc ≤ 60 lines, earning its place with a behavior the signature alone can't show, every sentence code-backed and winnow-certified at birth; what the code can't settle is markered for the author, never invented. Purely additive and approval-gated. |
 | `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` | **Truth, candidate query.** Rank documentation related to changed paths and optional provider evidence. Read-only; never emits findings or verdicts. |
-| `bin/evergreen till [--repo PATH] [--json] [PATH...]` | **Creation, surface inventory.** Deterministic ranked inventory of every public declaration reachable from outside its file — the fail-closed provider behind `/evergreen:seed`. Read-only; scan incompleteness fails closed with a `truncated` warning, and files excluded from the parsed surface are named in `outside inventory` warnings. |
+| `bin/evergreen till [--repo PATH] [--json] [PATH...]` | **Creation, surface inventory.** Deterministic ranked inventory of every declaration in its parsed surface (Python, Go, Rust, Swift, JS/TS) reachable from outside its file — the fail-closed provider behind `/evergreen:seed`. Read-only; scan incompleteness fails closed with a `truncated` warning, and files outside the parsed surface are named in `outside inventory` warnings. |
 | `bin/evergreen receipt [--repo PATH] [--benchmark-manifest PATH] [--json]` | **Operational evidence.** Emit deterministic local repository, release-boundary, and optional declared benchmark identity without network access or mutation. |
 
 ## Non-goals
@@ -366,17 +379,17 @@ Evergreen is not a hosted index, AST engine, dashboard, or automatic truth-path 
 - It does not turn checksums, changed constants, provider confidence, or source maps into semantic
   verdicts.
 - It does not run commands supplied by provider files or untrusted pull requests.
-- It does not publish partial benchmark matrices or claim category leadership before the declared
-  five-language gate passes.
+- It does not claim category leadership, or present a matrix as certified evidence, before the
+  declared five-language gate passes.
 - It does not publish, deploy, upload, or mutate registries and portals without explicit authority.
 
 ## FAQ
 
 **Will it rewrite my prose?**
-Not unless you ask. The reflex points; you write — a dead flag or moved path it hands you a diff for, the *why* behind a design it won't touch. The exceptions are invoked deliberately: `/evergreen:flourish` crafts an existing doc to the gold standard, and `/evergreen:seed` writes docs where none exist — both verify their own output against the code so they can't introduce a lie. Fact-checker by default; ghostwriter only on request — and one that cites its sources.
+Not unless you ask. The reflex points; you write — a dead flag or moved path it hands you a diff for, the *why* behind a design it won't touch. The exceptions are invoked deliberately: `/evergreen:flourish` crafts an existing doc to the gold standard, and `/evergreen:seed` writes docs where none exist — both instruct the agent to run a verification pass against the code before handing back output, though no hook or deterministic gate enforces that the pass actually ran. Fact-checker by default; ghostwriter only on request — and one that cites its sources.
 
 **Won't it cry wolf?**
-It flags only what it can prove against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it offers the `.evergreen-ignore` line that keeps it dropped in every session after. The historical [0.4.0 run](eval/bench/results-0.4.0.md) remains available for replay, but its label-proxy leak means it cannot honestly quantify the error rate; the clean opaque-ID benchmark is pending. The asymmetry is still the product choice: a false flag costs you the ten seconds it takes to read the cited line and say no, while missed drift costs whoever trusts the doc next — which is why every flag must carry evidence you can dismiss at a glance.
+It flags only what it can cite against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it offers the `.evergreen-ignore` line that keeps it dropped in every session after. The historical [0.4.0 run](eval/bench/results-0.4.0.md) remains available for replay, but its label-proxy leak means it cannot honestly quantify the error rate; the clean opaque-ID benchmark is pending. The asymmetry is still the product choice: a false flag costs you the ten seconds it takes to read the cited line and say no, while missed drift costs whoever trusts the doc next — which is why every flag must carry evidence you can dismiss at a glance.
 
 **Does it scale?**
 It reads paths, contracts, and prose — not your AST. Any language, any repo, nothing to compile.

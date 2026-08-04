@@ -280,7 +280,7 @@ The frozen Evergreen 0.4.0 five-language run is a replayable historical executio
 performance evidence. Its artifacts share one implementation, judge, dataset hashes, model/CLI
 identity, protocol, and settings, and all five languages cleared the declared 99% provider-completion
 gate. However, canonical IDs exposed label-construction proxies to both the judge and pre-fix label
-screen, so the recorded metrics are contaminated and unverified. The current protocol masks
+screen, so the recorded accuracy metrics are contaminated and unverified — the completion coverage itself is not in question. The current protocol masks
 canonical IDs, fails closed on incomplete screens, and binds launch input to exact dataset bytes.
 For screened v2 lanes it also recomputes the two-of-three retained set from the complete vote
 ledger, requires the split/parent manifests and selection receipt to match tracked `HEAD` bytes,
@@ -351,4 +351,4 @@ doc is claim" asymmetry *(MarekWadinger/doc-checks)*; sticky staleness *(ddpoe/a
 coverage-as-a-score thinking *(econchick/interrogate, epassaro/docstr-cov-workflow)*;
 embed-from-source and SHA-pinning as the *concepts* a human can apply by hand
 *(ifiokjr/mdt, os-tack/docfresh)*; staleness-by-age was evaluated and **rejected** — age
-is a weak proxy; evergreen flags only what it can prove against the code *(e4we/doc-staleness)*.
+is a weak proxy; evergreen flags only what it can cite against the code *(e4we/doc-staleness)*.
