@@ -264,6 +264,41 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertFalse((ROOT / "eval" / "grade" / "public").exists())
         self.assertIn("this tree publishes no `eval/grade/public/` manifest", prose)
 
+    def test_every_subcommand_is_mentioned_in_the_readme(self):
+        import argparse
+        import re
+
+        namespace = runpy.run_path(str(SCRIPT), run_name="evergreen_cli_readme_test")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        def leaf_commands(sub_action, prefix=()):
+            for name, subparser in sub_action.choices.items():
+                path = prefix + (name,)
+                nested = [
+                    a for a in subparser._actions
+                    if isinstance(a, argparse._SubParsersAction)
+                ]
+                if nested:
+                    for action in nested:
+                        yield from leaf_commands(action, path)
+                else:
+                    yield " ".join(path)
+
+        root_sub_action = next(
+            a for a in namespace["parser"]()._actions
+            if isinstance(a, argparse._SubParsersAction)
+        )
+        commands = sorted(leaf_commands(root_sub_action))
+        self.assertTrue(commands, "expected at least one CLI subcommand")
+
+        for command in commands:
+            pattern = re.compile(
+                "bin/evergreen " + re.escape(command) + "(?=[^a-zA-Z0-9-]|$)"
+            )
+            self.assertRegex(
+                readme, pattern, "README.md never mentions bin/evergreen " + command
+            )
+
     def test_grade_verify_is_deterministic_read_only_and_human_json_agree(self):
         verifier, candidate, _commit, manifest = self.make_grade_repositories()
         script = verifier / "bin" / "evergreen"
