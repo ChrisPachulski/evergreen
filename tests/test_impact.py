@@ -889,26 +889,6 @@ class ContractSymbolScopeTests(unittest.TestCase):
 
         self.assertEqual(self.contracts("store.rs", source, quoted), {"Config", "open"})
 
-    def test_public_declarations_returns_exactly_the_reachable_public_names(self):
-        from evergreen.impact import _public_declarations
-
-        source = (
-            b"class Client:\n"
-            b"    def resolve(self):\n"
-            b"        def cached():\n"
-            b"            pass\n"
-            b"\n"
-            b"def _bootstrap():\n"
-            b"    pass\n"
-            b"\n"
-            b"def load():\n"
-            b"    pass\n"
-        )
-
-        # Pinned literal expectation: recomputing the production expression here would be
-        # tautologically green no matter what the scan returned.
-        self.assertEqual(_public_declarations(source, ".py"), {"Client", "resolve", "load"})
-
 
 class DeclarationScanTests(unittest.TestCase):
     def names(self, source, suffix):

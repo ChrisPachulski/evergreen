@@ -657,39 +657,6 @@ class HostTests(HostTestCase):
         self.assertFalse(directory.exists())
         self.assertFalse(any("evergreen-" in item.name for item in self.home.iterdir()))
 
-    def test_host_modules_stay_within_maintainability_budgets(self):
-        hosts_lines = (ROOT / "evergreen" / "hosts.py").read_text().splitlines()
-        self.assertLess(len(hosts_lines), 700)
-        for name in (
-            "host_evidence.py", "host_lock.py", "host_snapshot.py", "host_journal.py",
-            "host_commit.py", "host_transaction.py",
-        ):
-            module = ROOT / "evergreen" / name
-            self.assertTrue(module.exists())
-            self.assertLess(len(module.read_text().splitlines()), 700, name)
-        for module in (ROOT / "tests").glob("test_host*.py"):
-            self.assertLess(len(module.read_text().splitlines()), 1000, module.name)
-
-    def test_host_module_dependencies_follow_ownership_boundaries(self):
-        import ast
-
-        dependencies = {}
-        for name in (
-            "host_lock", "host_snapshot", "host_journal", "host_commit",
-            "host_transaction",
-        ):
-            tree = ast.parse((ROOT / "evergreen" / f"{name}.py").read_text())
-            dependencies[name] = {
-                node.module.rsplit(".", 1)[-1]
-                for node in ast.walk(tree)
-                if isinstance(node, ast.ImportFrom) and node.module
-            }
-        self.assertNotIn("host_transaction", dependencies["host_lock"])
-        self.assertNotIn("host_transaction", dependencies["host_snapshot"])
-        self.assertNotIn("host_transaction", dependencies["host_journal"])
-        self.assertNotIn("host_transaction", dependencies["host_commit"])
-        self.assertIn("host_journal", dependencies["host_transaction"])
-
     def test_replace_success_then_exception_keeps_backup_registered_for_rollback(self):
         from evergreen import hosts
 

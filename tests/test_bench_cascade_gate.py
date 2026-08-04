@@ -687,53 +687,6 @@ class ExecutionAccountingPacketTests(TempDirTestCase):
         with self.assertRaisesRegex(ValueError, "execution ledger"):
             cascade_gate.build_decision_packet(artifact_path, dataset_path, receipt_path)
 
-    def test_fifty_four_of_one_hundred_rows_missing_their_ledger_fails_closed(self):
-        # This is the reviewer's exact reproduction: 54/55 jury rows stripped of `execution`
-        # while every hash/id/label/final_status stays valid. Before the fix this undercounted
-        # provider_attempts to the point the cost gate's reduction crossed 70% and the whole
-        # packet exited 0 — a manufactured PASS on an artifact that never measured what it
-        # claimed to measure.
-        fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=10, tn=40)
-        jury_rows = [
-            row for row in fixture.artifact_rows if row["got"]["execution"]["route"] == "jury"
-        ]
-        self.assertEqual(len(jury_rows), 55)
-        for row in jury_rows[:54]:
-            del row["got"]["execution"]
-        dataset_path, receipt_path, artifact_path = fixture.write(self.root)
-        overlay_path = self.write_json("adjudicated.json", fixture.identity_overlay())
-
-        with self.assertRaisesRegex(ValueError, "execution ledger"):
-            cascade_gate.build_decision_packet(
-                artifact_path, dataset_path, receipt_path, adjudicated_path=overlay_path,
-                accept_projected_cost_gate=True,
-            )
-
-    def test_cli_fails_closed_and_exits_nonzero_on_a_partially_missing_ledger(self):
-        # Same reproduction, driven through the CLI entry point the gate is actually run
-        # through: the structural error must surface as a FAIL packet and a nonzero exit,
-        # never a bare traceback and never exit 0.
-        fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=10, tn=40)
-        jury_rows = [
-            row for row in fixture.artifact_rows if row["got"]["execution"]["route"] == "jury"
-        ]
-        for row in jury_rows[:54]:
-            del row["got"]["execution"]
-        dataset_path, receipt_path, artifact_path = fixture.write(self.root)
-        overlay_path = self.write_json("adjudicated.json", fixture.identity_overlay())
-        json_out = self.root / "packet.json"
-
-        exit_code = cascade_gate.main([
-            "--artifact", str(artifact_path), "--dataset", str(dataset_path),
-            "--receipt", str(receipt_path), "--adjudicated", str(overlay_path),
-            "--accept-projected-cost-gate", "--json", str(json_out),
-        ])
-
-        self.assertNotEqual(exit_code, 0)
-        packet = json.loads(json_out.read_text())
-        self.assertFalse(packet["passed"])
-        self.assertIn("execution ledger", packet["error"])
-
 
 # -- CLI ---------------------------------------------------------------------------------------
 

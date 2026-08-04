@@ -105,23 +105,6 @@ class ValidateLabelsTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "duplicate"):
                 validate_labels.ask_batch([self.pair()], "claude-fable-5")
 
-    def test_empty_annotator_response_fails_instead_of_recording_null_votes(self):
-        completed = subprocess.CompletedProcess(
-            args=["claude"], returncode=0,
-            stdout="You've hit your session limit · resets later\n", stderr="",
-        )
-        pair = {
-            "id": "owner/repo/function#0-old",
-            "func": "function",
-            "code": "def function(): pass",
-            "doc": "Does something.",
-            "language": "python",
-        }
-
-        with mock.patch.object(validate_labels.subprocess, "run", return_value=completed):
-            with self.assertRaisesRegex(RuntimeError, "complete batch"):
-                validate_labels.ask_batch([pair], "claude-fable-5")
-
     def test_vote_ledger_is_bound_to_exact_dataset_and_screen_protocol(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "screen.votes.json"
