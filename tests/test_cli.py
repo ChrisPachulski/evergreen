@@ -232,6 +232,38 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertIn("\\n", hostile.stderr)
         self.assertIn("\\x7f", hostile.stderr)
 
+    def test_readme_documents_the_grade_verify_contract_it_actually_ships(self):
+        from evergreen.grade import CATEGORIES, VERIFIER_ARTIFACTS, verification_exit_code
+
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        prose = " ".join(readme.split())
+        usage = self.run_cli("grade", "verify", "--help").stdout.splitlines()[0]
+        invocation = usage.removeprefix("usage: evergreen ").replace("[-h] ", "", 1)
+        self.assertEqual(invocation, "grade verify --repo PATH --manifest PATH [--json]")
+
+        rows = [
+            line for line in readme.splitlines()
+            if line.startswith(f"| `bin/evergreen {invocation}` |")
+        ]
+        self.assertEqual(len(rows), 1, "Commands table needs one exact grade verify row")
+        self.assertIn(f"`./bin/evergreen {invocation}`", prose)
+
+        # Every count, path, and exit code the README states is bound to the code.
+        self.assertEqual(len(CATEGORIES), 8)
+        self.assertIn("eight required categories", prose)
+        self.assertIn("`eval/grade/public/<version>/evidence.json`", prose)
+        for artifact in VERIFIER_ARTIFACTS:
+            self.assertIn(f"`{artifact}`", prose)
+        self.assertEqual(verification_exit_code({"status": "earned", "grade": "A"}), 0)
+        self.assertEqual(verification_exit_code({"status": "inconclusive", "grade": None}), 1)
+        for refused in ("not-earned", "invalid", "earned"):
+            self.assertEqual(verification_exit_code({"status": refused, "grade": None}), 2)
+        self.assertEqual(
+            prose.count("exit 0 only on a derived `A`, 1 when `inconclusive`, 2 otherwise"), 2
+        )
+        self.assertFalse((ROOT / "eval" / "grade" / "public").exists())
+        self.assertIn("this tree publishes no `eval/grade/public/` manifest", prose)
+
     def test_grade_verify_is_deterministic_read_only_and_human_json_agree(self):
         verifier, candidate, _commit, manifest = self.make_grade_repositories()
         script = verifier / "bin" / "evergreen"
@@ -574,6 +606,8 @@ class EvergreenCLITests(unittest.TestCase):
             )
 
         traversal = run(candidate, "../evidence.json")
+        # Normalized but outside eval/grade/public/<version>/evidence.json.
+        noncanonical = run(candidate, "eval/grade-policy-v1.json")
         (candidate / "dirty-file").write_text("dirty\n")
         dirty = run(candidate)
         (candidate / "dirty-file").unlink()
@@ -606,6 +640,7 @@ class EvergreenCLITests(unittest.TestCase):
 
         expected_codes = (
             (traversal, "manifest-path-invalid"),
+            (noncanonical, "manifest-path-invalid"),
             (dirty, "repository-dirty"),
             (symlink, "evidence-file-unsafe"),
             (nonregular, "repository-dirty"),
@@ -619,6 +654,10 @@ class EvergreenCLITests(unittest.TestCase):
                 self.assertEqual(payload["status"], "invalid")
                 self.assertIsNone(payload["grade"])
                 self.assertEqual(payload["failures"][0]["code"], code)
+        self.assertIn(
+            "canonical release evidence path",
+            json.loads(noncanonical.stdout)["failures"][0]["detail"],
+        )
 
     def test_grade_verify_refuses_oversized_committed_manifest(self):
         verifier, candidate, _commit, manifest = self.make_grade_repositories()
