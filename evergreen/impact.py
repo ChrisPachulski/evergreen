@@ -583,7 +583,10 @@ def _tracked_living_docs(repo):
         repo, ["ls-files", "-z", "--", "*.md", "*.mdx", "*.rst"],
     )
     if payload is None:
-        return [], truncated
+        # truncated is True only when the deadline/byte cap killed git mid-read;
+        # a missing git binary or a non-zero exit (not a repository) is an
+        # outright failure, not a partial answer.
+        return [], ("truncated" if truncated else "failed")
     paths = []
     for encoded in payload.split(b"\0"):
         if not encoded:
@@ -606,7 +609,7 @@ def _tracked_living_docs(repo):
     if len(paths) > MAX_DOC_SEARCH_FILES:
         truncated = True
         paths = paths[:max(MAX_DOC_SEARCH_FILES, 0)]
-    return paths, truncated
+    return paths, ("truncated" if truncated else "ok")
 
 
 def _bounded_regular_bytes(path, limit):
@@ -1018,11 +1021,16 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
     if work_truncated:
         warnings.add(f"matching work truncated (maximum {MAX_MATCH_WORK} operations)")
 
-    living_docs, docs_truncated = _tracked_living_docs(repo)
-    if docs_truncated:
+    living_docs, docs_status = _tracked_living_docs(repo)
+    if docs_status == "truncated":
         warnings.add(
             f"living docs truncated (maximum {MAX_DOC_SEARCH_FILES} files and "
             f"{MAX_DOC_LIST_BYTES} path bytes)"
+        )
+    elif docs_status == "failed":
+        warnings.add(
+            "living doc search failed (git unavailable, not a git repository, or a git "
+            "error) — treating as zero living docs"
         )
     symbols, source_scan_truncated = _contract_symbols(repo, changed_paths)
     if source_scan_truncated:
