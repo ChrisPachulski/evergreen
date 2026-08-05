@@ -79,12 +79,23 @@ may support a useful explanation, but restating them is not itself documentation
 Keep each written candidate to at most 60 added lines and one `seed:gap` — the wall-of-text guard
 is per-doc; the batch is bounded by the owner's chosen count, not by a fixed line total.
 
-**E · Certify — winnow at birth.** Run the winnow ladder (all four rungs) over the seeded docs
-before proposing them, exactly as `/evergreen:winnow` would on changed docs — newly created docs
-*are* changed docs. Judgment-call verdicts go through winnow's trial verbatim (same claim space,
-same prongs); `seed:gap` slots are exempt as marked. Required result: every ledgered claim
-`certified`, zero `drift`, zero `unverified`. A claim that won't certify is cut or markered — the
-doc bends to the code, never the reverse.
+**E · Certify — winnow at birth, by a judge that didn't write it.** Run the winnow ladder (all
+four rungs) over the seeded docs before proposing them, exactly as `/evergreen:winnow` would on
+changed docs — newly created docs *are* changed docs. Judgment-call verdicts go through winnow's
+trial verbatim (same claim space, same prongs); `seed:gap` slots are exempt as marked. Required
+result: every ledgered claim `certified`, zero `drift`, zero `unverified`. A claim that won't
+certify is cut or markered — the doc bends to the code, never the reverse.
+
+**This pass runs on a different provider than the one that wrote the docs.** Certifying your own
+prose in the session that authored it is not a check: the reader has already seen the reasoning
+for every sentence, so the blindness the trial depends on is gone before it starts. Hand the
+judge the *proposed doc and the repository* and nothing else — never the authoring transcript,
+never the claim ledger's reasoning, never pass C's worthiness argument. Use
+`evergreen.judge.judge_json`; the model follows the host's own codex configuration, so there is
+no version to keep current here. If codex is unavailable or the call abstains, say so on its own
+line — `seed: external judge unavailable (<reason>) — certified in-session` — and fall back.
+A silent fallback is worse than no judge, because it reports a cross-provider certification that
+never happened.
 
 **F · Propose.** Emit new files / purely additive diffs for approval. Never rewrite existing prose,
 never auto-commit. Nothing lands until the owner approves the batch.
@@ -113,9 +124,13 @@ trial", with seed's parameters:
   routes the candidate back to `documented`; it is never written.
 
 The certification side needs no second harness: pass E already runs the seeded claims through
-winnow's trial verbatim. Between the two, every judgment in seed stands trial — worthiness before
-the budget is spent, truth before the proposal ships — while the mechanical goals in
-`hard-goals/seed.md` skip it, as facts always do.
+winnow's trial verbatim, on a different provider. Between the two, every judgment in seed stands
+trial — worthiness before the budget is spent, truth before the proposal ships — while the
+mechanical goals in `hard-goals/seed.md` skip it, as facts always do.
+
+The worthiness trial above deliberately stays **in-session**. It rules before anything is
+written, so it is not grading its own output; the externalization applies only where seed would
+otherwise certify prose it just authored.
 
 ## Output
 

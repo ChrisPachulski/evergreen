@@ -32,6 +32,22 @@ snap fails its challenge, which escalates the three reads to the strong model. W
 contested, the agreed verdict stands without a synthesis pass. Never let a cheap model make the
 load-bearing snap call — that's where precision is won or lost.
 
+**A pass that certifies output this session produced runs on a different provider.** Blindness
+between reads is not enough when the reader wrote the text: it has already seen the reasoning for
+every sentence, so the trial inspects its own work and finds it good. This binds seed's
+certification (`commands/seed.md` pass E) and flourish's verify pass — the two places a model
+grades prose it just authored. It does *not* bind judgments made before anything is written
+(seed's worthiness) or judgments with no external arbiter (flourish's craft floors, already graded
+mechanically by a frozen fixture). Use `evergreen.judge.judge_json`, which resolves the model from
+the host's own codex configuration — never hardcode a model name in this repository, it goes stale
+the week the next tier ships. No codex, or an abstention: fall back and **say so in the output**,
+because a silent fallback claims a cross-provider check that did not happen.
+
+**When a judge misfires, fix the rubric before the model tier.** The first move is the ambiguous
+criterion and a counter-example added to the prong prompt — reaching for a stronger model first
+buys cost and hides the actual defect. Change one variable per iteration: fix the model and vary
+the prompt, then fix the prompt and vary the model.
+
 ## The freshness ladder
 
 Candidate set = what changed: grep the docs for the touched file paths and edited symbol names, not
@@ -302,7 +318,8 @@ The reflex is the *truth* axis. Three on-demand commands, same prove-or-drop cre
 
 - **`/evergreen:flourish <file>` — craft.** The sanctioned prose-rewrite exception (explicit request
   only): restructure an accurate-but-ugly doc toward `skills/evergreen/references/readme-style.md`,
-  then run the freshness ladder on the rewrite so nothing ships the code can't back. "Why" derived
+  then run the freshness ladder on the rewrite — on a different provider — so nothing ships the
+  code can't back. "Why" derived
   from code by default; `--manual` markers it; a rationale with no code trace is markered, never
   invented. Flourish is **content-conserving**: it rearranges and rehomes, it never shrinks the
   truth — demote means move verbatim into `<details>` or a linked file, every cut is named on a
@@ -328,7 +345,8 @@ The reflex is the *truth* axis. Three on-demand commands, same prove-or-drop cre
   choose how many get written — each must earn its place with a concrete reader use the
   declaration/signature alone can't recover, and no doc exceeds 60 lines. Every sentence is
   ledgered to a code `file:line` or markered `<!-- seed:gap — author: … -->`, and the whole output
-  is winnowed at birth (all four rungs, winnow's trial verbatim) before it is proposed. Purely
+  is winnowed at birth by a different provider (all four rungs, winnow's trial verbatim) before it
+  is proposed. Purely
   additive: never rewrites existing prose (flourish's lane), never auto-commits; the uninspected
   tail is `deferred`, never silently dropped (`hard-goals/seed.md` makes each of those binary).
 
