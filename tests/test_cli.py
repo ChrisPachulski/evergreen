@@ -348,6 +348,21 @@ class EvergreenCLITests(unittest.TestCase):
                 readme, pattern, "README.md never mentions bin/evergreen " + command
             )
 
+    def test_every_slash_command_is_mentioned_in_the_readme(self):
+        import re
+
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        stems = sorted(path.stem for path in (ROOT / "commands").glob("*.md"))
+        self.assertTrue(stems, "expected at least one shipped slash command")
+
+        for stem in stems:
+            pattern = re.compile(
+                "/evergreen:" + re.escape(stem) + "(?=[^a-zA-Z0-9-]|$)"
+            )
+            self.assertRegex(
+                readme, pattern, "README.md never mentions /evergreen:" + stem
+            )
+
     def test_grade_verify_is_deterministic_read_only_and_human_json_agree(self):
         verifier, candidate, _commit, manifest = self.make_grade_repositories()
         script = verifier / "bin" / "evergreen"
