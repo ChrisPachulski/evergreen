@@ -264,6 +264,55 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertFalse((ROOT / "eval" / "grade" / "public").exists())
         self.assertIn("this tree publishes no `eval/grade/public/` manifest", prose)
 
+    def test_readme_and_winnow_command_agree_on_prove_by_test_being_default(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        command = (ROOT / "commands" / "winnow.md").read_text(encoding="utf-8")
+
+        rows = [
+            line for line in readme.splitlines()
+            if line.startswith("| `/evergreen:winnow")
+        ]
+        self.assertEqual(len(rows), 1, "Commands table needs one winnow row")
+        row = rows[0]
+
+        # The invocation the README advertises must be the one the command takes:
+        # winnow.md reads a single positional base-ref and declares no flags.
+        self.assertTrue(
+            row.startswith("| `/evergreen:winnow [base-ref]` |"),
+            "winnow row must document exactly `/evergreen:winnow [base-ref]`: " + row,
+        )
+        self.assertIn("${1:-origin/main}", command)
+
+        # Parity, both directions: the README may only advertise --prove-by-test
+        # as a flag if commands/winnow.md actually declares one.
+        self.assertEqual(
+            "--prove-by-test" in readme,
+            "--prove-by-test" in command,
+            "README and commands/winnow.md disagree on a --prove-by-test flag",
+        )
+
+        # Both files must state the same contract: prove-by-test is unconditional.
+        self.assertIn("prove by test is the default", " ".join(command.split()))
+        self.assertRegex(
+            " ".join(row.split()).lower(),
+            r"prove[- ]by[- ]test is the default",
+            "README's winnow row must state prove-by-test is the default, not an opt-in",
+        )
+
+        trust = " ".join(
+            readme.split("## Trust and safe execution", 1)[1]
+            .split("## Commands", 1)[0]
+            .split()
+        )
+        self.assertRegex(
+            trust.lower(),
+            r"default prove[- ]by[- ]test",
+            "Trust section must describe prove-by-test as winnow's default path",
+        )
+        for boundary in ("repository-declared test command", "bounded timeout"):
+            self.assertIn(boundary, trust)
+            self.assertIn(boundary, " ".join(command.split()))
+
     def test_every_subcommand_is_mentioned_in_the_readme(self):
         import argparse
         import re
