@@ -660,7 +660,7 @@ class ReceiptTests(unittest.TestCase):
             "else:\n"
             f"    sys.stdout.buffer.write(b'x' * ({module.MAX_GIT_OUTPUT_BYTES} + 1))\n"
             "    sys.stdout.buffer.flush()\n"
-            "    time.sleep(1)\n"
+            "    time.sleep(10)\n"
         )
         timeout_stub = self.repo.parent / "git-stub-timeout"
         output_stub = self.repo.parent / "git-stub-output"
@@ -678,7 +678,37 @@ class ReceiptTests(unittest.TestCase):
                 mock.patch.object(module, "GIT_TIMEOUT_SECONDS", 2), \
                 self.assertRaisesRegex(module.ReceiptOperationalError, "too much output"):
             build_receipt(self.repo)
-        self.assertLess(time.monotonic() - started, 0.75)
+        # Both fallbacks are pushed clear of this bound on purpose: the mocked
+        # timeout is 2s and the stub only exits on its own after 10s, so nothing
+        # but the output cap can land under 1.5s.  Draining 1 MiB through the
+        # pipe measures 0.22-0.57s, leaving >2.5x headroom for a loaded machine.
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 1.5, f"output cap took {elapsed:.2f}s to trip")
+
+    def test_output_limit_trips_before_timeout_or_child_exit(self):
+        """Prove the discrimination the wall clock can only hint at.
+
+        A stopwatch cannot distinguish "output cap fired" from "the machine was
+        idle" under load, so remove the clock from the proof: give the read a
+        timeout far beyond its measured cost and a stub that outlives that
+        timeout, which leaves the byte cap as the only branch able to raise.
+        """
+        from evergreen import receipt as module
+
+        stub = self.repo.parent / "git-stub-outlives-timeout"
+        stub.write_text(
+            f"#!{sys.executable}\n"
+            "import sys, time\n"
+            f"sys.stdout.buffer.write(b'x' * ({module.MAX_GIT_OUTPUT_BYTES} + 1))\n"
+            "sys.stdout.buffer.flush()\n"
+            "time.sleep(30)\n"
+        )
+        stub.chmod(0o755)
+
+        with mock.patch.object(module, "_GIT_EXECUTABLE", str(stub)), \
+                mock.patch.object(module, "GIT_TIMEOUT_SECONDS", 10), \
+                self.assertRaisesRegex(module.ReceiptOperationalError, "too much output"):
+            build_receipt(self.repo)
 
     def test_unexpected_output_read_failure_is_bounded_and_operational(self):
         from evergreen import receipt as module
