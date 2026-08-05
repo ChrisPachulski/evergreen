@@ -1272,7 +1272,12 @@ runpy.run_path({str(SCRIPT)!r}, run_name='__main__')
         self.assertEqual([(item["path"], item["rank"]) for item in payload["candidates"]], [
             ("src/client.py", 50),
         ])
-        self.assertEqual(payload["warnings"], [])
+        # A missing map and valid evidence are not complaints; the only warning
+        # here is the un-searchable (non-git) fixture repository.
+        self.assertEqual(payload["warnings"], [
+            "living doc search failed (git unavailable, not a git repository, or a git "
+            "error) — treating as zero living docs",
+        ])
 
     def test_evidence_warnings_do_not_turn_candidate_query_into_failure(self):
         evidence_path = self.repo / "bad-evidence.json"
