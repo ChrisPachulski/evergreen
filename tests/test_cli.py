@@ -949,6 +949,27 @@ class EvergreenCLITests(unittest.TestCase):
                 self.assertLessEqual(len(result.stderr), 530)
                 self.assertTrue(result.stderr.startswith("evergreen: "))
 
+    def test_receipt_deeply_nested_manifest_is_invalid_input_not_a_traceback(self):
+        git_repo = self.make_git_repo()
+        (git_repo / "manifest.json").write_bytes(
+            (b"[" * 200_000) + b"0" + (b"]" * 200_000)
+        )
+
+        result = self.run_cli(
+            "receipt",
+            "--repo",
+            str(git_repo),
+            "--benchmark-manifest",
+            "manifest.json",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(
+            result.stderr, "evergreen: 'benchmark manifest is not valid JSON'\n"
+        )
+
     def test_receipt_unresolved_repo_user_is_a_bounded_input_error(self):
         result = self.run_cli(
             "receipt", "--repo", "~evergreen_missing_user_7f8f1"
