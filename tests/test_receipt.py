@@ -904,6 +904,18 @@ class ReceiptTests(unittest.TestCase):
                     with self.assertRaisesRegex(ReceiptError, field):
                         build_receipt(self.repo, Path("bench/manifest.json"))
 
+        for field in ("resolver", "protocol"):
+            with self.subTest(field=field, value=None):
+                explicit_null = self.benchmark_manifest()
+                explicit_null["provenance"][field] = None
+                self.write_benchmark_manifest(explicit_null)
+
+                declared = build_receipt(
+                    self.repo, Path("bench/manifest.json")
+                )["benchmark"]
+
+                self.assertEqual(declared[field], "unverified")
+
     def test_manifest_bytes_and_json_are_bounded_and_well_formed(self):
         from evergreen import receipt as module
 

@@ -723,9 +723,10 @@ def _nonempty_text(value, name):
 
 
 def _optional_identity(container, field):
-    if field not in container:
+    value = container.get(field)
+    if value is None:
         return "unverified"
-    return _nonempty_text(container[field], f"benchmark {field}")
+    return _nonempty_text(value, f"benchmark {field}")
 
 
 def _normalized_path(supplied):
