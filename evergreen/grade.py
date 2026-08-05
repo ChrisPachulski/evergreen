@@ -432,7 +432,10 @@ def load_evidence(payload, policy):
     external = evidence["external_states"]
     if not isinstance(external, dict) or set(external) != set(policy["external_state_names"]):
         raise GradeError("external states are invalid")
-    if any(state not in EXTERNAL_STATES for state in external.values()):
+    if any(
+        not isinstance(state, str) or state not in EXTERNAL_STATES
+        for state in external.values()
+    ):
         raise GradeError("external state is invalid")
     return _freeze(evidence)
 
