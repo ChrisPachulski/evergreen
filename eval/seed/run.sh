@@ -18,7 +18,16 @@ PROMPT="$(
   cat eval/seed/prompt.md
 )"
 
-claude -p "$PROMPT" --allowedTools "Read,Grep,Glob" \
+# Pass E certifies on an external provider, which needs to shell out. The default grant is
+# read-only, so the judged run takes seed's documented fallback and the exam measures triage and
+# claim discipline alone. SEED_EXAM_JUDGE=external widens the grant to exactly the judge entry
+# point, so a run can exercise the real certification path — and costs one codex call.
+TOOLS="Read,Grep,Glob"
+if [ "${SEED_EXAM_JUDGE:-fallback}" = "external" ]; then
+  TOOLS="$TOOLS,Bash(python3 -c \"from evergreen.judge import*\":*)"
+fi
+
+claude -p "$PROMPT" --allowedTools "$TOOLS" \
   ${EVAL_MODEL:+--model "$EVAL_MODEL"} | tee "$OUT"
 echo
 echo "--- score ($OUT) ---"
