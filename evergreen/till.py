@@ -284,6 +284,13 @@ def till(repo: Path, scope: tuple[str, ...] = ()) -> TillReport:
             )
 
     files = sorted(set(files))
+    if scope and not files:
+        # A scope that matched only exempt/unparsed content is not a clean 0/0 -- it is zero
+        # files that were ever eligible, and must say so instead of reading as "no gaps".
+        collector.add(
+            "scope matched no inventoriable source (only test/exempt paths, "
+            "unparsed languages, or unresolvable entries)"
+        )
     source_files_in_scope = len(files)
     if len(files) > MAX_GAP_SOURCE_FILES:
         collector.add(f"source files truncated (maximum {MAX_GAP_SOURCE_FILES})")

@@ -375,6 +375,20 @@ class GapsTests(unittest.TestCase):
             list(range(1, len(report.candidates) + 1)),
         )
 
+    def test_scope_matching_only_exempt_paths_warns_instead_of_reporting_clean(self):
+        from evergreen.till import till
+
+        self.track({
+            "api.py": "def real():\n    pass\n",
+            "tests/test_x.py": "def test_real():\n    pass\n",
+        })
+
+        report = till(self.repo, ("tests",))
+
+        self.assertEqual(report.candidates, ())
+        self.assertEqual(report.source_files_in_scope, 0)
+        self.assertTrue(any("scope matched" in item for item in report.warnings))
+
     def test_scope_matching_no_tracked_file_raises_value_error_and_cli_exits_2(self):
         from evergreen.till import till
 
