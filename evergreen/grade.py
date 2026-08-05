@@ -119,7 +119,7 @@ def _load(payload):
         raise
     except RecursionError:
         raise GradeError("JSON structure exceeds trusted limits") from None
-    except (UnicodeError, json.JSONDecodeError, TypeError):
+    except (UnicodeError, ValueError, TypeError):
         raise GradeError("invalid JSON") from None
     stack = [(value, 0)]
     nodes = 0

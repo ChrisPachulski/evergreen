@@ -503,7 +503,7 @@ def load_map(repo: Path) -> tuple[list[ImpactMap], list[str]]:
         root = json.loads(payload, object_pairs_hook=_decoded_object)
     except (OSError, UnicodeError) as error:
         return [], [f"could not read map config: {error}"]
-    except (json.JSONDecodeError, RecursionError):
+    except (ValueError, RecursionError):
         return [], ["map config contains invalid JSON"]
     if isinstance(root, _DecodedObject) and root.duplicate_keys:
         return [], [f"map config contains duplicate JSON key: {root.duplicate_keys[0]}"]

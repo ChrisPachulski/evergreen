@@ -91,6 +91,18 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(len(evidence), 1)
         self.assertTrue(any("record 1" in warning for warning in warnings))
 
+    def test_oversized_integer_literal_warns_instead_of_raising(self):
+        from evergreen.evidence import load_evidence
+
+        path = Path(self.temporary.name) / "evidence.json"
+        path.write_text(
+            json.dumps([self.record()]).replace('"line": 1', '"line": ' + "1" * 5000, 1)
+        )
+        evidence, warnings = load_evidence(path, self.repo)
+
+        self.assertEqual(evidence, [])
+        self.assertTrue(any("invalid JSON" in warning for warning in warnings))
+
     def test_rejects_duplicate_json_keys_at_record_and_metadata_depths(self):
         from evergreen.evidence import load_evidence
 

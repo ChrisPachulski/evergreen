@@ -579,6 +579,17 @@ class ImpactTests(unittest.TestCase):
         self.assertTrue(all(len(candidate.reasons) == 1 for candidate in report.candidates))
         self.assertTrue(any("reasons truncated" in warning for warning in report.warnings))
 
+    def test_oversized_integer_literal_warns_instead_of_raising(self):
+        from evergreen.impact import load_map
+
+        (self.repo / ".evergreen-map.json").write_text(
+            '{"version":' + "1" * 5000 + ',"maps":[]}'
+        )
+        maps, warnings = load_map(self.repo)
+
+        self.assertEqual(maps, [])
+        self.assertTrue(any("invalid JSON" in warning for warning in warnings))
+
     def test_duplicate_keys_reject_only_the_containing_map(self):
         from evergreen.impact import load_map
 
