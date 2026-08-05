@@ -361,6 +361,20 @@ class EvidenceValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(GradeError, "self-asserted field"):
                     self.load(evidence)
 
+    def test_external_states_reject_unhashable_and_non_string_values(self):
+        for malformed in ([], {}, ["verified"], {"state": "verified"}, 7, 1.5, None, True):
+            with self.subTest(malformed=malformed):
+                evidence = valid_evidence()
+                evidence["external_states"]["adoption"] = malformed
+                try:
+                    self.load(evidence)
+                except GradeError as error:
+                    self.assertRegex(str(error), "external state is invalid")
+                    continue
+                except TypeError:
+                    self.fail(f"external state {malformed!r} leaked raw TypeError")
+                self.fail(f"external state accepted malformed value: {malformed!r}")
+
     def test_host_evidence_requires_separate_raw_hosts_and_rejects_shared_boolean(self):
         self.load(valid_evidence())
 
