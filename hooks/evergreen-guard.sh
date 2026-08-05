@@ -132,7 +132,10 @@ keep_match() {
 is_slop() {
   local f="$1" b="${1##*/}"
   case "$b" in
-    .env|.env.*|*.pem|*.key|id_rsa|id_ed25519|*.p12|*.keystore) echo "secret/credential"; return 0 ;;
+    # `*.env` catches bare `backend.env`/`staging.env`; `.env`/`.env.*` stay for the dotfile forms.
+    # SSH keys are listed as exact basenames (ssh-keygen(1) FILES), never `id_*`, so the `.pub`
+    # public half — legitimately committable — is not swept up.
+    .env|.env.*|*.env|*.pem|*.key|id_rsa|id_dsa|id_ecdsa|id_ecdsa_sk|id_ed25519|id_ed25519_sk|*.p12|*.keystore) echo "secret/credential"; return 0 ;;
     .DS_Store|Thumbs.db) echo "OS cruft"; return 0 ;;
     # Bare SUMMARY.md is NOT here: mdBook mandates src/SUMMARY.md and GitBook uses a root
     # SUMMARY.md as its TOC — a legit, sometimes mandatory file fails the high-signal bar.
