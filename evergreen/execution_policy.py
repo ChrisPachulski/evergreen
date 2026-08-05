@@ -133,13 +133,6 @@ def _word(token):
     return token.casefold().lstrip("-")
 
 
-def _operation(token):
-    word = _word(token).rsplit(".", 1)[0]
-    for separator in (":", "=", "/", "_"):
-        word = word.split(separator, 1)[0]
-    return word
-
-
 def _has_forbidden_component(token):
     components = re.findall(r"[a-z0-9]+", token.casefold())
     return any(component in EXACT_COMPONENTS for component in components) or any(
