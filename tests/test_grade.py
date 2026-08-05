@@ -419,6 +419,18 @@ class EvidenceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(GradeError, "JSON structure exceeds trusted limits"):
             load_evidence(nested, self.policy)
 
+    def test_oversized_integer_literal_is_a_grade_error_not_a_bare_value_error(self):
+        from evergreen import grade
+
+        with self.assertRaisesRegex(GradeError, "invalid JSON"):
+            grade._load(b'{"x":' + b"1" * 5000 + b"}")
+
+        oversized = encode(valid_evidence()).decode().replace(
+            '"attempted": 350', '"attempted": ' + "1" * 5000, 1
+        )
+        with self.assertRaisesRegex(GradeError, "invalid JSON"):
+            load_evidence(oversized.encode(), self.policy)
+
     def test_boolean_evidence_schema_version_is_rejected(self):
         evidence = valid_evidence()
         evidence["schema_version"] = True
