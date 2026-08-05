@@ -25,10 +25,25 @@ PROMPT="$(
 TOOLS="Read,Grep,Glob"
 if [ "${SEED_EXAM_JUDGE:-fallback}" = "external" ]; then
   TOOLS="$TOOLS,Bash(python3 -c \"from evergreen.judge import*\":*)"
+  # The judged run executes in a bare sandbox that holds only the fixture, so the package the
+  # judge lives in is not on the path there. Export the repo root for import resolution only —
+  # cwd stays the sandbox, which is what keeps the CLI from adopting this project's context.
+  export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 fi
 
-claude -p "$PROMPT" --allowedTools "$TOOLS" \
-  ${EVAL_MODEL:+--model "$EVAL_MODEL"} | tee "$OUT"
+# The judged run happens OUTSIDE this repository, in a bare copy of the fixture. Running it in
+# place lets the CLI walk up to evergreen's own CLAUDE.md, .claude/, and hooks, and a session
+# under an autonomous loop then answers as that loop instead of doing the exam — observed
+# 2026-08-05: the run returned a loop status report, no jsonl, and the scorer read every counter
+# as zero, which is indistinguishable from a total ruleset regression. The fixture path structure
+# is preserved so the pre-computed till inventory's `eval/fixture/...` paths still resolve.
+SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/seed-exam.XXXXXX")"
+trap 'rm -rf "$SANDBOX"' EXIT
+git -C "$ROOT" archive HEAD eval/fixture | tar -x -C "$SANDBOX"
+[ -d "$SANDBOX/eval/fixture" ] || { echo "fixture did not materialise" >&2; exit 1; }
+
+( cd "$SANDBOX" && claude -p "$PROMPT" --allowedTools "$TOOLS" \
+    ${EVAL_MODEL:+--model "$EVAL_MODEL"} ) | tee "$OUT"
 echo
 echo "--- score ($OUT) ---"
 python3 eval/seed/score.py "$OUT"
