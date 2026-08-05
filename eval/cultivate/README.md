@@ -35,10 +35,29 @@ ignore-gap | misplaced | untested`.
 | C10 | `config/local_demo_credential.txt` | a committed credential, deliberately unmistakable (`FAKE_NOT_A_REAL_KEY_CULTIVATE_EXAM_ONLY`) so nobody mistakes the fixture for a real leak |
 | C3 | `.gitignore` | covers bytecode and caches but not the credential in C10 — the gap |
 | C11 | `ios/AppPrivacyInfo.xcprivacy` | an Apple privacy manifest in a Python CLI; a misplaced cross-repo artifact |
+| C16 | `toolbox/handlers/legacy_export.py` | **the unresolvable case** — a basename grep returns zero, and `dispatch.py` builds the handler name from `TOOLBELT_HANDLER`, which nothing here sets. Expected verdict: **`unsettled`** |
 | C12 | `tests/test_runner.py` | exercises `normalize_title` and asserts nothing, so it cannot prove tested-ness |
 
 Six more rows are ordinary files that must be left alone. An exam of nothing but traps measures
 recall and tells you nothing about false positives, which here are the expensive error.
+
+## The decoy and the unresolvable case are different failures
+
+They look alike and they are not, which is why the fixture carries both.
+
+**C8 is resolvable and you have to do the work.** `plugin_registry.py` holds `PLUGIN_CONFIG` in
+committed code, so `adapter_runtime` *can* be derived — read the config and the reference is there.
+A run that greps the basename, sees zero, and proposes deletion was lazy. Verdict: **keep**.
+
+**C16 is not resolvable at all.** `dispatch.py` builds the handler name from `TOOLBELT_HANDLER`, and
+nothing in the repository sets or defaults it. No amount of reading settles whether
+`legacy_export.py` is live. Verdict: **`unsettled`**.
+
+Zero grep hits is a fact; "unreachable" is a claim drawn from it. Goal 2 forces the grep to exist.
+Goal 7 stops it being over-read: an unresolvable file may not be forced into `keep` (which asserts
+it is wanted) or into a deletion proposal (which is how a hygiene tool removes something
+load-bearing), and an `unsettled` row must name *what would settle it* — otherwise the verdict
+degrades into a shrug that hides the same omission a silent `keep` does.
 
 ## Goal 4 is only half-covered, deliberately
 
@@ -72,5 +91,7 @@ Same contract as [`../seed/`](../seed/): `--gate` compares against `baseline.jso
 when a number goes **down**; `--write-baseline` records a new accepted baseline as a deliberate
 act. Exit codes: 0 pass, 2 gate fail, 1 operational error.
 
-Proven able to fail, not just able to run — a synthetic run proposing the decoy for deletion exits
-2 with `DECOY FALSE POSITIVES: 1`, and one concluding `Verdict: clean` exits 2 on goal 3.
+Proven able to fail, not just able to run. Synthetic runs exit 2 for: proposing the decoy for
+deletion (`DECOY FALSE POSITIVES: 1`), concluding `Verdict: clean` (goal 3), forcing the
+unresolvable file into `keep`, forcing it into `delete-proposed`, and returning `unsettled` without
+naming what would settle it (all goal 7).

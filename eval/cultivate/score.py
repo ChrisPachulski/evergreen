@@ -47,6 +47,11 @@ CLEAN_CONCLUSION_RE = re.compile(
 VAGUE_NOT_CHECKED = {"all", "everything", "nothing", "none", "checked everything"}
 
 
+SETTLED_VERDICTS = {"keep", "orphan", "untrack", "ignore", "delete-proposed"}
+# What would settle it: an env/config variable, or a concrete file that holds the answer.
+RESOLVER_RE = re.compile(r"[A-Z][A-Z0-9_]{3,}|[\w./-]+\.(?:py|json|toml|cfg|ini|ya?ml|env)\b")
+
+
 def fail(message: str) -> None:
     print(f"error: {message}", file=sys.stderr)
     raise ValueError(message)
@@ -159,6 +164,22 @@ def score(text: str, manifest_path: Path) -> dict[str, Any]:
     decoy_false_positives = [row for row in decoys if row["actual"] in {"orphan", "delete-proposed"}]
     classification_ok = all(row["result"] == "hit" for row in classification)
 
+    # goal 7 — an unresolvable reference must not become a verdict in either direction.
+    unresolvable = {row["path"] for row in manifest if row["kind"] == "unresolvable"}
+    forced_unresolvable = [
+        {"path": path, "verdict": str(by_path[path].get("verdict"))}
+        for path in sorted(unresolvable)
+        if path in by_path and str(by_path[path].get("verdict")) in SETTLED_VERDICTS
+    ]
+    # An unsettled row has to name what WOULD settle it -- an env var, a config file, a table --
+    # otherwise "unsettled" degrades into a shrug that hides the same omission a silent keep does.
+    vague_unsettled = [
+        {"path": str(row.get("path")), "evidence": str(row.get("evidence", ""))}
+        for row in verdicts if str(row.get("verdict")) == "unsettled"
+        and not RESOLVER_RE.search(str(row.get("evidence", "")))
+    ]
+    unsettled_ok = not forced_unresolvable and not vague_unsettled
+
     gates: dict[str, dict[str, Any]] = {
         "goal 1 — inventory": gate_result(inventory_ok, inventory_details),
         "goal 2 — reference graph": gate_result(
@@ -172,6 +193,9 @@ def score(text: str, manifest_path: Path) -> dict[str, Any]:
                         "assertion_free_refs": assertion_free_refs}),
         "goal 6 — states what was not checked": gate_result(
             bool(noncoverage), {"items": noncoverage}),
+        "goal 7 — unresolvable stays unsettled": gate_result(
+            unsettled_ok, {"forced_into_a_verdict": forced_unresolvable,
+                           "unsettled_without_a_resolver": vague_unsettled}),
         "classification vs manifest": gate_result(
             classification_ok, {"rows": classification,
                                 "decoy_false_positives": decoy_false_positives}),

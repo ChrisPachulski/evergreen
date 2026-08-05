@@ -329,7 +329,9 @@ The reflex is the *truth* axis. Three on-demand commands, same prove-or-drop cre
   gitignore gaps, misplaced cross-repo artifacts, and the repo's own exposure (public when something
   in it assumes private — checked against `gh`, never the prose). Reference graph first (on disk, not
   the index; an empty grep is not "clean"). Every verdict from **executed** evidence — index, prose,
-  and recall are not proof. Proposes untrack/ignore/delete, never auto, never "clean". A commit-time
+  and recall are not proof. Proposes untrack/ignore/delete, never auto, never "clean"; a file whose
+  reachability this repo can't settle is `unsettled — <what would settle it>`, reported and never
+  acted on, because zero grep hits is a fact and "unreachable" is a claim drawn from it. A commit-time
   guard hook backstops it. The guard inspects the finalized staged index on commit-only calls and
   blocks known secret/slop paths, while deletion-only cleanup remains allowed. If one Bash tool
   call contains both `git add` and `git commit`, use **separate tool calls**: PreToolUse cannot

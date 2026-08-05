@@ -1,5 +1,5 @@
 ---
-description: "Cultivate repo hygiene — find what's committed or on disk that shouldn't be: files nothing references, leaked-local files, gitignore gaps, misplaced cross-repo artifacts, the repo's own exposure. Reference-graph first. Proposes untrack/ignore/delete — never auto, never \"clean\"."
+description: "Cultivate repo hygiene — find what's committed or on disk that shouldn't be: files nothing references, leaked-local files, gitignore gaps, misplaced cross-repo artifacts, the repo's own exposure. Reference-graph first. Proposes untrack/ignore/delete — never auto, never \"clean\", and what the repo can't settle stays unsettled."
 ---
 
 Run **cultivate** using the **evergreen skill** — the hygiene axis. Hygiene = what's in the repo
@@ -49,6 +49,15 @@ git grep -l "<basename>" -- ':!<the file itself>'
 ```
 Zero references → orphan candidate. Reference checks miss lazy/dynamic/aliased imports — confirm
 against the code before flagging *source*; don't trust the grep alone.
+
+**Zero hits is a fact; "unreachable" is a claim, and they are not the same.** When the grep comes
+back empty but the code can build a reference you cannot resolve — an `importlib` name assembled at
+runtime, an entry-point table, a plugin registry keyed by string, a path read from config or an env
+var this repository does not contain — the honest verdict is **`unsettled — <what would settle
+it>`**. It is reported, never acted on: it does not become a deletion proposal, and it does not
+quietly become a `keep` either. A `keep` asserts the file is wanted; `unsettled` asserts only that
+this repository cannot answer. Forcing that case into `keep` hides it, and forcing it into `delete`
+is how a hygiene tool removes something load-bearing.
 
 **C · Pattern hints (a checklist, not the test).** Scan for secrets (`.env*`, `*.pem`, keys), build
 artifacts, OS cruft, AI-slop names (`AUDIT-*`, `*_SUMMARY.md`/`*-SUMMARY.md`, `SYNTHESIS.md`,
@@ -113,9 +122,12 @@ the escape hatch. The blocking path keeps its human override regardless.
 ## Output
 
 1. Inventory numbers (tracked vs on-disk) and what the bulk is.
-2. A table — `file · verdict (keep/untrack/delete/flag) · evidence (executed command + result)`.
+2. A table — `file · verdict (keep/untrack/delete/flag/unsettled) · evidence (executed command +
+   result)`. An `unsettled` row states what would settle it, not a guess at the answer.
 3. **Coverage, stated plainly** — what you checked and what you did NOT. Never imply completeness you
-   didn't reach.
+   didn't reach. `unsettled` rows are part of coverage, not omissions from it: a run with three of
+   them reviewed the whole tree and could not resolve three files, which is a different and more
+   useful report than one that silently kept them.
 
 Nothing runs until the owner approves the batch. Keep internal artifacts (specs, plans, research) in
 a gitignored `.planning/` so they never become tracked; the commit-time guard hook backstops it.

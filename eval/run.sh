@@ -16,7 +16,17 @@ PROMPT="$(
   cat prompt.md
 )"
 
-( cd fixture && claude -p "$PROMPT" --allowedTools "Read,Grep,Glob" \
+# The judged run happens OUTSIDE this repository. Running it in place lets the CLI walk up from
+# fixture/ to evergreen's own CLAUDE.md, .claude/, and hooks; under an autonomous loop the session
+# then answers as that loop instead of winnowing — observed 2026-08-05: a status report, no jsonl
+# block, and score.py read every counter as zero. That is indistinguishable from a total ruleset
+# regression, which is the worst way for an exam to fail.
+SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/winnow-exam.XXXXXX")"
+trap 'rm -rf "$SANDBOX"' EXIT
+git -C .. archive HEAD eval/fixture | tar -x -C "$SANDBOX" --strip-components=2
+[ -f "$SANDBOX/README.md" ] || { echo "fixture did not materialise" >&2; exit 1; }
+
+( cd "$SANDBOX" && claude -p "$PROMPT" --allowedTools "Read,Grep,Glob" \
     ${EVAL_MODEL:+--model "$EVAL_MODEL"} ) | tee "$OUT"
 echo
 echo "--- score ($OUT) ---"
