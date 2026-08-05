@@ -595,7 +595,7 @@ def _benchmark_identity(root, benchmark_manifest, head):
         )
     except UnicodeDecodeError:
         raise ReceiptError("benchmark manifest is not valid UTF-8") from None
-    except ValueError:
+    except (RecursionError, ValueError):
         raise ReceiptError("benchmark manifest is not valid JSON") from None
     if not isinstance(document, dict):
         raise ReceiptError("benchmark manifest must be an object")

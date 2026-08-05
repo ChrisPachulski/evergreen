@@ -975,6 +975,24 @@ class ReceiptTests(unittest.TestCase):
                 self.assertRaisesRegex(ReceiptError, "too large"):
             build_receipt(self.repo, Path("bench/manifest.json"))
 
+    def test_benchmark_identity_rejects_deeply_nested_json(self):
+        from evergreen import receipt as module
+
+        payload = (b"[" * 200_000) + b"0" + (b"]" * 200_000)
+        with mock.patch.object(
+            module, "_read_repo_file", return_value=payload
+        ), self.assertRaisesRegex(ReceiptError, "not valid JSON"):
+            module._benchmark_identity(Path("."), Path("m.json"), "a" * 40)
+
+    def test_deeply_nested_manifest_file_is_refused_as_invalid_json(self):
+        self.write_benchmark_manifest(self.benchmark_manifest())
+        (self.repo / "bench" / "manifest.json").write_bytes(
+            (b"[" * 200_000) + b"0" + (b"]" * 200_000)
+        )
+
+        with self.assertRaisesRegex(ReceiptError, "not valid JSON"):
+            build_receipt(self.repo, Path("bench/manifest.json"))
+
     def test_manifest_path_must_be_normalized_safe_regular_file(self):
         manifest = self.benchmark_manifest()
         self.write_benchmark_manifest(manifest)
