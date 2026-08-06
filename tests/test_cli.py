@@ -554,6 +554,30 @@ class EvergreenCLITests(unittest.TestCase):
                 payload["failures"][0]["code"], "executable-inventory-mismatch"
             )
 
+    def test_grade_verify_hashes_binary_executable_inventory_as_bytes(self):
+        content = b"\x00\xff\xfeevergreen\x80\n"
+        verifier, candidate, _commit, manifest = self.make_grade_repositories(
+            subject_executable_files={"tools/binary-runner": content}
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+             "--repo", str(candidate), "--manifest", manifest, "--json"],
+            cwd=candidate, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+
+        self.assertEqual(result.returncode, 2, (result.stdout, result.stderr))
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "not-earned")
+        evidence = json.loads((candidate / manifest).read_text())
+        binary = next(
+            item for item in evidence["subject_executables"]
+            if item["path"] == "tools/binary-runner"
+        )
+        expected = hashlib.sha256(content).hexdigest()
+        self.assertEqual(binary["subject_sha256"], expected)
+        self.assertEqual(binary["evidence_sha256"], expected)
+
     def test_grade_verify_rejects_inventory_over_trusted_depth_limit(self):
         deep = "eval/oracle/" + "/".join(["nested"] * 14) + "/adapter.py"
         verifier, candidate, _commit, manifest = self.make_grade_repositories(

@@ -900,6 +900,21 @@ class ReceiptTests(unittest.TestCase):
         ):
             module._head_regular_blob(self.repo, "a" * 40, "bench/manifest.json")
 
+    def test_head_regular_blob_returns_binary_bytes_without_text_decoding(self):
+        from evergreen import receipt as module
+
+        content = b"\x00\xff\xfeevergreen\x80\n"
+        path = self.repo / "binary-blob"
+        path.write_bytes(content)
+        self.git("add", path.name)
+        self.git("commit", "-qm", "add binary blob")
+        head = self.git("rev-parse", "HEAD")
+
+        self.assertEqual(
+            module._head_regular_blob(self.repo, head, path.name),
+            content,
+        )
+
     def test_benchmark_judge_resolver_and_protocol_identity_are_validated(self):
         manifest = self.benchmark_manifest()
         manifest["provenance"]["resolver"] = "v2"
