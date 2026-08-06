@@ -742,17 +742,17 @@ def _subject_executable_inventory(root, subject_commit, policy):
             )
         try:
             receipt._normalized_path(path)
-            content = receipt._head_regular_blob(root, subject_commit, path)
+            content_bytes = receipt._head_regular_blob(root, subject_commit, path)
         except receipt.ReceiptOperationalError:
             raise
         except receipt.ReceiptError as error:
             raise VerificationFailure("executable-file-unsafe", str(error)) from None
-        total_bytes += len(content)
+        total_bytes += len(content_bytes)
         if total_bytes > limits["maximum_bytes"]:
             raise VerificationFailure(
                 "executable-inventory-limit", "subject executable inventory is too large"
             )
-        inventory[path] = content
+        inventory[path] = content_bytes
     return inventory
 
 
