@@ -1,0 +1,11 @@
+id	symbol	module	expected	note
+S1	with_backoff	helpers.py	worthy	retries only ConnectionError/TimeoutError, re-raises the rest, exponential backoff — none of it in any doc
+S2	resolve_setting	config.py	worthy	precedence cli>env>file>default AND the empty-value asymmetry: empty env is skipped, empty file value wins
+S3	get_release_name	helpers.py	not-worthy	returns release["name"] with a "" default — pure signature restatement
+S4	ordered_releases	helpers.py	not-worthy	forwards to sort_releases unchanged
+S5	render_release	helpers.py	documented	alias trap: a grep for the symbol finds nothing, but README.md:17-18 "Output defaults to table" already describes the behavior
+U1	load_config	config.py	unscored	pre-existing fixture symbol; complete inventory only
+U2	sort_releases	helpers.py	unscored	pre-existing fixture symbol; complete inventory only
+U3	format_row	helpers.py	unscored	pre-existing fixture symbol; complete inventory only
+U4	build_parser	cli.py	unscored	pre-existing fixture symbol; complete inventory only
+U5	main	cli.py	unscored	pre-existing fixture symbol; complete inventory only

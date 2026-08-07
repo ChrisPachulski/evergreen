@@ -15,7 +15,7 @@ PACKAGE_SOURCES = (
     "__init__.py", "evidence.py", "execution_policy.py", "till.py", "grade.py",
     "host_commit.py", "host_evidence.py", "host_journal.py", "host_lock.py",
     "host_metadata.py", "host_snapshot.py", "host_transaction.py", "host_types.py",
-    "hosts.py", "impact.py", "receipt.py",
+    "hosts.py", "impact.py", "judge.py", "receipt.py",
 )
 HOST_EVIDENCE_FIELDS = {
     "lexical_root", "resolved_root", "resolution_chain", "ownership",

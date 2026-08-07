@@ -119,7 +119,7 @@ def _load(payload):
         raise
     except RecursionError:
         raise GradeError("JSON structure exceeds trusted limits") from None
-    except (UnicodeError, json.JSONDecodeError, TypeError):
+    except (UnicodeError, ValueError, TypeError):
         raise GradeError("invalid JSON") from None
     stack = [(value, 0)]
     nodes = 0
@@ -197,7 +197,7 @@ def load_policy(payload):
     if not isinstance(policy["category_gates"], dict) or set(policy["category_gates"]) != set(CATEGORIES):
         raise GradeError("policy category gates are invalid")
     for category in CATEGORIES:
-        if tuple(policy["category_gates"][category]) != GATES[category]:
+        if _string_list(policy["category_gates"][category], "policy category gates") != GATES[category]:
             raise GradeError("policy category gates are invalid")
 
     detector = policy["detector"]
@@ -432,7 +432,10 @@ def load_evidence(payload, policy):
     external = evidence["external_states"]
     if not isinstance(external, dict) or set(external) != set(policy["external_state_names"]):
         raise GradeError("external states are invalid")
-    if any(state not in EXTERNAL_STATES for state in external.values()):
+    if any(
+        not isinstance(state, str) or state not in EXTERNAL_STATES
+        for state in external.values()
+    ):
         raise GradeError("external state is invalid")
     return _freeze(evidence)
 

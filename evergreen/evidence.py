@@ -200,7 +200,7 @@ def load_evidence(path: Path, repo: Path) -> tuple[list[Evidence], list[str]]:
         values = json.loads(payload, object_pairs_hook=_decoded_object)
     except (OSError, UnicodeError) as error:
         return [], [f"could not read evidence file: {error}"]
-    except (json.JSONDecodeError, RecursionError):
+    except (ValueError, RecursionError):
         return [], ["evidence file contains invalid JSON"]
     if isinstance(values, _DecodedObject) and values.duplicate_keys:
         return [], [f"evidence file contains duplicate JSON key: {values.duplicate_keys[0]}"]

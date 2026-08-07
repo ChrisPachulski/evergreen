@@ -132,6 +132,19 @@ Use `--json` when another tool needs the same fields:
 An optional checked-in public benchmark manifest identifies declared evidence; it does not prove a
 fresh provider execution, artifact reverification, or detector-quality result.
 
+`./bin/evergreen grade verify --repo PATH --manifest PATH [--json]` is the mechanical half of that
+boundary. It reads a committed manifest at `eval/grade/public/<version>/evidence.json` and derives
+the grade itself: the manifest may carry observations only, so a `grade`, `pass`, or `success` key,
+a threshold override, or a runtime `evidence_head` is rejected before evaluation. It scores against
+`eval/grade-policy-v1.json` exactly as frozen in the subject commit, and the eight required
+categories and their gates are pinned in code, so a rewritten policy is refused rather than honored.
+It also refuses to grade itself: the verifying checkout must be clean with `bin/evergreen`,
+`evergreen/grade.py`, `evergreen/receipt.py`, and `eval/grade-policy-v1.json` matching its own HEAD,
+and its commit must appear in the candidate's history strictly before the subject. Read-only; exit 0
+only on a derived `A`, 1 when `inconclusive`, 2 otherwise. The verifier ships; an earned grade does
+not — this tree publishes no `eval/grade/public/` manifest, and the A-grade certification is not an
+active release gate.
+
 The semantic pass may gather optional local evidence with read, grep, diff, or a scratch test. In CI,
 the deterministic trust layer does the mechanical work: it binds a bounded change manifest and
 matched documentation excerpts to the exact base/head commits, validates counts and citations
@@ -344,12 +357,12 @@ That's it. From the next change on, the docs answer to the code.
 Evidence providers and source maps are passive candidate inputs; Evergreen never executes provider commands or accepts their verdicts.
 Executable proof is local and explicit; CI never executes pull-request code, and unsafe or unavailable isolation is inconclusive.
 
-Local `--prove-by-test` work uses a repository-declared test command, a bounded timeout, and a
-disposable scratch location. It does not forward new secrets, refuses privileged, destructive,
-deployment, upload, publication, and portal-mutation commands, and disables network access when
-the host can do so safely. The classifier is only a conservative first filter: “allowed” does not
-replace isolation, timeout, dependency, and permission checks. Setup failures and timeouts are
-inconclusive, not proof of drift.
+Winnow's default prove-by-test path is local: it uses a repository-declared test command, a
+bounded timeout, and a disposable scratch location. It does not forward new secrets, refuses
+privileged, destructive, deployment, upload, publication, and portal-mutation commands, and
+disables network access when the host can do so safely. The classifier is only a conservative
+first filter: “allowed” does not replace isolation, timeout, dependency, and permission checks.
+Setup failures and timeouts are inconclusive, not proof of drift.
 
 CI has a different boundary: it supplies delimited, bounded, exact-commit evidence to a semantic
 reviewer with no tools, then independently validates schema, commit binding, counts, citations,
@@ -363,13 +376,16 @@ Four axes — **truth · craft · hygiene · creation** — one creed: prove it 
 | Command | What it does |
 |---------|--------------|
 | `/evergreen [off \| light \| strict]` | Set the intensity for this repo. No argument reports the current one. |
-| `/evergreen:winnow [base-ref] [--prove-by-test]` | **Truth, deep.** Walk every claim that changed since a ref and *certify it true or surface it* — silence means certified, not just "no lie found." Always strict. With `--prove-by-test`, behavioral claims that reading can't settle are settled by execution (write the test the doc implies, run it): fails → drift proven, passes → certified by test. |
+| `/evergreen:winnow [base-ref]` | **Truth, deep.** Walk every claim that changed since a ref and *certify it true or surface it* — silence means certified, not just "no lie found." Always strict. Prove-by-test is the default, not a flag: where the code runs and the safety boundary holds, a behavioral claim reading can't settle is settled by execution (write the test the doc implies, run it) — fails → drift proven, passes → certified by test; a refused or inconclusive run falls back to `behavior-asserted — verify manually`. |
 | `/evergreen:flourish <file> [--all] [--manual]` | **Craft.** Rewrite an accurate-but-ugly doc to a gold standard (mined from 28 top READMEs), then prove every claim against the code. Emits a diff — never a silent overwrite. The only sanctioned prose-rewrite. |
 | `/evergreen:cultivate [path]` | **Hygiene.** Local-only files leaking into git, gitignore gaps, AI-slop that shouldn't be tracked or public. Proposes untrack/ignore/delete — never auto. A commit-time guard backstops it (the one thing that *blocks*). |
 | `/evergreen:seed [path]` | **Creation.** From a symbol-level surface inventory (fail-closed without one), triage everything worth documenting, recommend a batch, and write only what the owner approves — each doc ≤ 60 lines, earning its place with a behavior the signature alone can't show, every sentence code-backed and winnow-certified at birth; what the code can't settle is markered for the author, never invented. Purely additive and approval-gated. |
+| `/evergreen:impact [--repo PATH] [--evidence FILE] PATH...` | **Truth, candidate query.** Find additive documentation candidates before editing changed paths. Read-only; never emits findings or verdicts. |
+| `/evergreen:till [--repo PATH] [PATH...]` | **Creation, surface inventory.** Inventory the undocumented-surface candidates — every public declaration reachable from outside its file. Read-only. |
 | `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` | **Truth, candidate query.** Rank documentation related to changed paths and optional provider evidence. Read-only; never emits findings or verdicts. |
 | `bin/evergreen till [--repo PATH] [--json] [PATH...]` | **Creation, surface inventory.** Deterministic ranked inventory of every declaration in its parsed surface (Python, Go, Rust, Swift, JS/TS) reachable from outside its file — the fail-closed provider behind `/evergreen:seed`. Read-only; scan incompleteness fails closed with a `truncated` warning, and files outside the parsed surface are named in `outside inventory` warnings. |
 | `bin/evergreen receipt [--repo PATH] [--benchmark-manifest PATH] [--json]` | **Operational evidence.** Emit deterministic local repository, release-boundary, and optional declared benchmark identity without network access or mutation. |
+| `bin/evergreen grade verify --repo PATH --manifest PATH [--json]` | **Operational evidence, gate.** Re-derive an A grade from a committed evidence manifest against the policy frozen in the subject commit. The manifest supplies observations only — a self-asserted `grade`, a threshold override, or bytes that differ from the captured HEAD are refused. Read-only; exit 0 only on a derived `A`, 1 when `inconclusive`, 2 otherwise. |
 
 ## Non-goals
 

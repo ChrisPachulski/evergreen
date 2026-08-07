@@ -1,0 +1,17 @@
+id	path	kind	tracked	expected	note
+C1	README.md	ordinary	yes	keep	Project overview is normal repository documentation.
+C2	pyproject.toml	ordinary	yes	keep	Python packaging and CLI entry point metadata.
+C3	.gitignore	ignore-gap	yes	ignore	Ignores bytecode and cache data but omits the committed local credential pattern.
+C4	toolbox/__init__.py	ordinary	yes	keep	Package marker for the tiny CLI.
+C5	toolbox/cli.py	ordinary	yes	keep	The declared console entry point.
+C6	toolbox/runner.py	ordinary	yes	keep	Imported by the CLI and its smoke test.
+C7	toolbox/plugin_registry.py	ordinary	yes	keep	Builds the dynamic plugin import target.
+C8	toolbox/plugins/adapter_runtime.py	decoy	yes	keep	Dynamically imported from a name assembled in plugin_registry.py; a basename grep returns zero.
+C9	toolbox/unused_metrics.py	orphan	yes	delete-proposed	Genuine orphan module: no consumer names or imports it.
+C10	config/local_demo_credential.txt	leak	yes	untrack	Unmistakably fake local credential committed by mistake.
+C11	ios/AppPrivacyInfo.xcprivacy	misplaced	yes	delete-proposed	Apple privacy manifest that belongs in an iOS project, not this Python CLI.
+C12	tests/test_runner.py	untested	yes	keep	Exercises normalize_title without an assertion, so it cannot prove tested-ness.
+C13	scratch/local-state.txt	ordinary	no	keep	Untracked local scratch state accounted for by the filesystem inventory.
+C14	toolbox/dispatch.py	ordinary	yes	keep	Imported by cli.py; selects a handler by a name from the environment.
+C15	toolbox/handlers/__init__.py	ordinary	yes	keep	Package marker for the handler modules.
+C16	toolbox/handlers/legacy_export.py	unresolvable	yes	unsettled	A basename grep returns zero, and dispatch.py can build this name from TOOLBELT_HANDLER, which nothing in the repository sets. Unlike the C8 decoy the name cannot be derived from committed code, so the repository genuinely cannot settle it: neither keep nor delete-proposed is honest.
