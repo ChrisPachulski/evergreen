@@ -79,13 +79,21 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
    Voice is not fabrication: every line it adds still faces step 4. This is prose-shaping of claims the
    code backs, plus a marker for any rationale it can't.
 
-4. **Verify pass — the truth trial** — run the freshness ladder (winnow depth) on the *rewritten*
-   doc. Every factual claim and auto-written "why" must cite the code (rungs 1–4); new badges and
-   feature bullets are claims too. Judgment-call verdicts here go through the winnow trial
-   **verbatim** — same claim, verdict space, and prongs as `/evergreen:winnow`, per the skill's
-   "Put the verdict on trial". A claim the code can't back is **cut**; an ungrounded rationale is
-   reduced to a marker. A "why" with no trace in code (pure business/regulatory/external intent)
-   is markered, never invented.
+4. **Verify pass — the truth trial, judged by someone else** — run the freshness ladder (winnow
+   depth) on the *rewritten* doc. Every factual claim and auto-written "why" must cite the code
+   (rungs 1–4); new badges and feature bullets are claims too. Judgment-call verdicts here go
+   through the winnow trial **verbatim** — same claim, verdict space, and prongs as
+   `/evergreen:winnow`, per the skill's "Put the verdict on trial". A claim the code can't back is
+   **cut**; an ungrounded rationale is reduced to a marker. A "why" with no trace in code (pure
+   business/regulatory/external intent) is markered, never invented.
+
+   **Run this pass on a different provider than the one that rewrote the doc.** You just wrote
+   every badge and bullet on the page; checking them in the same context is self-assessment
+   wearing a trial's clothes. Hand the judge the *rewritten doc and the repository* — never the
+   craft reasoning, never the source doc's ledger. Use `evergreen.judge.judge_json`; the model
+   follows the host's own codex configuration. If codex is unavailable or the call abstains, say
+   so on its own line — `flourish: external judge unavailable (<reason>) — verified in-session` —
+   and fall back. Never let the fallback pass silently as a cross-provider verification.
 
 5. **Emit the rewrite for approval.** Show it; never write silently. With `--all`, one per doc.
 
@@ -151,6 +159,11 @@ sailed through before.
 
 The craft verdict is fuzzier than the truth one — "survives the attack that it's ugly" is a
 discipline against an over-confident "done", not a precision metric. Don't dress it up as one.
+
+The craft trial stays **in-session**, deliberately, where the truth pass (step 4) does not. Taste
+is the author's call and has no external arbiter; a factual claim has one, and it is the code.
+`eval/flourish/score.py` already grades the craft floors mechanically against a frozen fixture —
+that, not a second provider, is the outside check on this verdict.
 
 Open with a one-line read of what you restructured *and how you sharpened the voice*, the verify
 verdict (certified / cut / markered), the conservation ledger (sections kept / demoted / rehomed /

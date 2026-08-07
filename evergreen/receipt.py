@@ -84,6 +84,7 @@ def _git(
     input_error=False,
     pinned_index=None,
     environment_overrides=None,
+    decode_output=True,
 ):
     environment = {
         "GIT_CONFIG_NOSYSTEM": "1",
@@ -153,6 +154,8 @@ def _git(
             return None
         error = ReceiptError if input_error else ReceiptOperationalError
         raise error("Git command failed")
+    if not decode_output:
+        return output
     try:
         return output.decode("utf-8")
     except UnicodeDecodeError:
@@ -595,7 +598,7 @@ def _benchmark_identity(root, benchmark_manifest, head):
         )
     except UnicodeDecodeError:
         raise ReceiptError("benchmark manifest is not valid UTF-8") from None
-    except ValueError:
+    except (RecursionError, ValueError):
         raise ReceiptError("benchmark manifest is not valid JSON") from None
     if not isinstance(document, dict):
         raise ReceiptError("benchmark manifest must be an object")
@@ -702,7 +705,7 @@ def _head_regular_blob(root, head, path):
         or not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", object_id)
     ):
         raise ReceiptError("benchmark manifest must be a regular file at captured HEAD")
-    return _git(root, "cat-file", "blob", object_id).encode("utf-8")
+    return _git(root, "cat-file", "blob", object_id, decode_output=False)
 
 
 def _manifest_path(container, field):
@@ -723,9 +726,10 @@ def _nonempty_text(value, name):
 
 
 def _optional_identity(container, field):
-    if field not in container:
+    value = container.get(field)
+    if value is None:
         return "unverified"
-    return _nonempty_text(container[field], f"benchmark {field}")
+    return _nonempty_text(value, f"benchmark {field}")
 
 
 def _normalized_path(supplied):

@@ -11,3 +11,13 @@ def load_config(path):
     cfg["project"]  # KeyError on missing — callers rely on the exception
     cfg.setdefault("timeout", DEFAULT_TIMEOUT)
     return cfg
+
+
+def resolve_setting(cli_value, env_value, file_value, default=None):
+    if cli_value is not None:
+        return cli_value
+    if env_value:
+        return env_value
+    if file_value is not None:
+        return file_value
+    return default

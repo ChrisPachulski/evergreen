@@ -57,7 +57,8 @@ class HostEvidenceTests(unittest.TestCase):
                 "evergreen/host_journal.py", "evergreen/host_lock.py",
                 "evergreen/host_metadata.py", "evergreen/host_snapshot.py",
                 "evergreen/host_transaction.py", "evergreen/host_types.py",
-                "evergreen/hosts.py", "evergreen/impact.py", "evergreen/receipt.py",
+                "evergreen/hosts.py", "evergreen/impact.py", "evergreen/judge.py",
+                "evergreen/receipt.py",
             },
         )
 

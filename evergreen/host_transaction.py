@@ -45,9 +45,11 @@ class TransactionEngine:
             cls(selected, locks, roots, authorization), None
         )
 
-    def recover(self):
+    def recover(self, dry_run=False):
         self.verify_roots()
-        result = _recover_transactions(self.selected, self.open_parent)
+        result = _recover_transactions(
+            self.selected, self.open_parent, dry_run=dry_run,
+        )
         self.verify_roots()
         return result
 

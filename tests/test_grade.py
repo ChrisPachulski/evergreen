@@ -310,6 +310,21 @@ class PolicyTests(unittest.TestCase):
                         self.fail(f"{field} leaked raw TypeError")
                     self.fail(f"{field} accepted malformed list")
 
+    def test_policy_category_gates_reject_null_non_lists_and_non_strings(self):
+        for category in CATEGORIES:
+            valid = json.loads(policy_bytes())["category_gates"][category]
+            for malformed in (None, 7, valid[0], {gate: True for gate in valid}, [7]):
+                with self.subTest(category=category, malformed=malformed):
+                    source = json.loads(policy_bytes())
+                    source["category_gates"][category] = malformed
+                    try:
+                        load_policy(encode(source))
+                    except GradeError:
+                        continue
+                    except TypeError:
+                        self.fail(f"{category} gates leaked raw TypeError")
+                    self.fail(f"{category} gates accepted malformed list")
+
 
 class EvidenceValidationTests(unittest.TestCase):
     def setUp(self):
@@ -345,6 +360,20 @@ class EvidenceValidationTests(unittest.TestCase):
                 evidence["external_states"][field] = True
                 with self.assertRaisesRegex(GradeError, "self-asserted field"):
                     self.load(evidence)
+
+    def test_external_states_reject_unhashable_and_non_string_values(self):
+        for malformed in ([], {}, ["verified"], {"state": "verified"}, 7, 1.5, None, True):
+            with self.subTest(malformed=malformed):
+                evidence = valid_evidence()
+                evidence["external_states"]["adoption"] = malformed
+                try:
+                    self.load(evidence)
+                except GradeError as error:
+                    self.assertRegex(str(error), "external state is invalid")
+                    continue
+                except TypeError:
+                    self.fail(f"external state {malformed!r} leaked raw TypeError")
+                self.fail(f"external state accepted malformed value: {malformed!r}")
 
     def test_host_evidence_requires_separate_raw_hosts_and_rejects_shared_boolean(self):
         self.load(valid_evidence())
@@ -389,6 +418,18 @@ class EvidenceValidationTests(unittest.TestCase):
 
         with self.assertRaisesRegex(GradeError, "JSON structure exceeds trusted limits"):
             load_evidence(nested, self.policy)
+
+    def test_oversized_integer_literal_is_a_grade_error_not_a_bare_value_error(self):
+        from evergreen import grade
+
+        with self.assertRaisesRegex(GradeError, "invalid JSON"):
+            grade._load(b'{"x":' + b"1" * 5000 + b"}")
+
+        oversized = encode(valid_evidence()).decode().replace(
+            '"attempted": 350', '"attempted": ' + "1" * 5000, 1
+        )
+        with self.assertRaisesRegex(GradeError, "invalid JSON"):
+            load_evidence(oversized.encode(), self.policy)
 
     def test_boolean_evidence_schema_version_is_rejected(self):
         evidence = valid_evidence()

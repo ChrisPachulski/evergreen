@@ -379,6 +379,7 @@ assert [item["path"] for item in provider_payload["candidates"]] == [
     "eval/flourish/fixtures/monolith/golden/gutted.md",
     "eval/flourish/fixtures/monolith/golden/skeleton.md",
     "eval/flourish/fixtures/monolith/README.md",
+    "eval/seed/README.md",
     "examples/provider-boundary.md", "README.md",
     "eval/fixture/config.py",
 ]
@@ -388,6 +389,7 @@ assert any("changed path" in reason for reason in config_candidate["reasons"])
 
 with tempfile.TemporaryDirectory() as temporary:
     repo = Path(temporary)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     (repo / "src/public-api").mkdir(parents=True)
     (repo / "docs").mkdir()
     (repo / "src/public-api/client.py").write_text("value = 1\n")
@@ -505,6 +507,16 @@ empty "$(guard_cmd "git -C $TMP commit -m x")" "guard: .evergreen-keep suppresse
 rm -f "$TMP/.evergreen-keep"
 empty "$(EVERGREEN_GUARD=off guard)" "guard: EVERGREEN_GUARD=off bypasses"
 git -C "$TMP" rm -q --cached .env; rm -f "$TMP/.env"
+# Bare `*.env` (no leading dot) plus the OpenSSH private-key basenames beyond id_rsa/id_ed25519.
+for secret in backend.env id_dsa id_ecdsa id_ecdsa_sk id_ed25519_sk; do
+  printf 'k\n' > "$TMP/$secret"; git -C "$TMP" add -f "$secret"
+  has "$(guard)" "secret/credential" "guard: staged $secret -> blocked"
+  git -C "$TMP" rm -q --cached "$secret"; rm -f "$TMP/$secret"
+done
+# Keys match as exact basenames, never `id_*` — the public half stays committable.
+printf 'ssh-ed25519 AAAA\n' > "$TMP/id_ed25519.pub"; git -C "$TMP" add -f id_ed25519.pub
+empty "$(guard)" "guard: id_ed25519.pub public half -> allowed"
+git -C "$TMP" rm -q --cached id_ed25519.pub; rm -f "$TMP/id_ed25519.pub"
 printf 's\n' > "$TMP/SESSION_SUMMARY.md"; git -C "$TMP" add SESSION_SUMMARY.md
 has "$(guard)" "AI-slop report" "guard: staged SESSION_SUMMARY.md -> blocked"
 git -C "$TMP" rm -q --cached SESSION_SUMMARY.md; rm -f "$TMP/SESSION_SUMMARY.md"

@@ -42,6 +42,55 @@ class HostTests(HostTestCase):
             )
         )
 
+    def _exact_tree(self):
+        # Deliberately metadata-only: reading a pending transaction's bytes
+        # bumps atime, which journal identity treats as a preimage change.
+        values = {}
+        for path in self.home.rglob("*"):
+            metadata = path.lstat()
+            values[path.relative_to(self.home).as_posix()] = (
+                metadata.st_mode, metadata.st_ino, metadata.st_nlink,
+                metadata.st_size, metadata.st_mtime_ns,
+            )
+        return values
+
+    def _crash_during_codex_install(self, sabotage, code):
+        codex = self.home / ".codex"
+        codex.mkdir()
+        (codex / "AGENTS.md").write_bytes(b"original")
+        script = f"""
+import os
+from pathlib import Path
+from evergreen import host_transaction, hosts
+{sabotage}
+hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
+"""
+        crashed = subprocess.run(
+            [sys.executable, "-c", script], cwd=ROOT,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        self.assertEqual(crashed.returncode, code, crashed.stderr)
+        self.assertTrue(self._transaction_artifacts())
+        return codex
+
+    def _crash_leaving_pending_artifacts(self):
+        return self._crash_during_codex_install("""
+real_link = host_transaction.os.link
+def crash_after_backup_link(source, destination, *args, **kwargs):
+    result = real_link(source, destination, *args, **kwargs)
+    if destination.startswith('.AGENTS.md.evergreen-backup-'):
+        os._exit(93)
+    return result
+host_transaction.os.link = crash_after_backup_link
+""", 93)
+
+    def _crash_leaving_commit_marker(self):
+        return self._crash_during_codex_install(
+            "host_transaction._cleanup_committed_entry = "
+            "lambda *args, **kwargs: os._exit(94)",
+            94,
+        )
+
     def test_crash_before_durable_transaction_commit_rolls_back_every_path(self):
         codex = self.home / ".codex"
         codex.mkdir()
@@ -327,6 +376,63 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
         self.assertFalse(any(
             path.name.startswith(".AGENTS.md.evergreen-") for path in codex.iterdir()
         ))
+
+    def test_dry_run_does_not_recover_a_pending_transaction(self):
+        from evergreen import hosts
+
+        codex = self._crash_leaving_pending_artifacts()
+        instructions = codex / "AGENTS.md"
+        artifacts = self._transaction_artifacts()
+        before = self._exact_tree()
+
+        preview = hosts.install(self.home, ROOT, "codex", dry_run=True)
+
+        self.assertEqual(self._exact_tree(), before)
+        self.assertEqual(self._transaction_artifacts(), artifacts)
+        self.assertEqual(instructions.stat().st_nlink, 2)
+        self.assertFalse(preview.ok, preview.messages)
+        rendered = " ".join(preview.messages)
+        self.assertIn("recovery is pending", rendered.lower())
+        self.assertIn("dry run", rendered.lower())
+        self.assertFalse(any("would " in message for message in preview.messages))
+        for artifact in artifacts:
+            self.assertIn(str(self.home / artifact), rendered)
+        recovered = hosts.install(self.home, ROOT, "codex")
+        self.assertTrue(recovered.ok, recovered.messages)
+        self.assertIn(hosts.BEGIN_MARKER.encode(), instructions.read_bytes())
+        self.assertEqual(self._transaction_artifacts(), [])
+
+    def test_uninstall_dry_run_does_not_recover_a_pending_transaction(self):
+        from evergreen import hosts
+
+        codex = self._crash_leaving_pending_artifacts()
+        artifacts = self._transaction_artifacts()
+        before = self._exact_tree()
+
+        preview = hosts.uninstall(self.home, "codex", dry_run=True)
+
+        self.assertEqual(self._exact_tree(), before)
+        self.assertEqual(self._transaction_artifacts(), artifacts)
+        self.assertFalse(preview.ok, preview.messages)
+        self.assertIn("recovery is pending", " ".join(preview.messages).lower())
+        self.assertEqual((codex / "AGENTS.md").read_bytes(), b"original")
+
+    def test_dry_run_preview_survives_a_commit_marker_for_an_unselected_host(self):
+        from evergreen import hosts
+
+        (self.home / ".claude").mkdir()
+        self._crash_leaving_commit_marker()
+        self.assertTrue(any(
+            item.name.startswith(".evergreen-transaction-")
+            for item in self.home.iterdir()
+        ))
+        before = self._exact_tree()
+
+        preview = hosts.install(self.home, ROOT, "claude", dry_run=True)
+
+        self.assertEqual(self._exact_tree(), before)
+        self.assertTrue(preview.ok, preview.messages)
+        self.assertTrue(any("would " in message for message in preview.messages))
 
     def test_crash_after_initial_regular_create_is_journaled_and_recovered(self):
         from evergreen import hosts

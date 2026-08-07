@@ -35,6 +35,16 @@ the AI · pre-committed · covers the hard part.** If a check needs the AI's opi
    CHECK: a coverage section exists and names specifics (paths, passes, or elements skipped).
    Pass = present and specific, not "checked everything".
 
+7. **MUST NOT convert an unresolvable reference into a verdict either way.**
+   A file whose reachability this repository cannot settle — a runtime-assembled import name, an
+   entry-point table, a plugin registry keyed by string, a path from absent config — is
+   `unsettled — <what would settle it>`, never `keep` and never a deletion proposal.
+   CHECK: every `unsettled` row names a concrete resolver (the file, table, or variable that would
+   answer it); and no row carries a deletion proposal whose evidence is a bare zero-hit grep against
+   a file the run also recorded as dynamically referenced. Pass = both hold.
+   Rationale: zero grep hits is a fact, "unreachable" is a claim drawn from it. Goal 2 forces the
+   grep to exist; this goal stops the grep from being over-read into a delete.
+
 ## Why this works without a second AI at runtime
 
 Every CHECK is a command or count a third party — or the same model on a later pass — re-runs to the

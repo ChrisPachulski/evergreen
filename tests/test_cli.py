@@ -232,6 +232,137 @@ class EvergreenCLITests(unittest.TestCase):
         self.assertIn("\\n", hostile.stderr)
         self.assertIn("\\x7f", hostile.stderr)
 
+    def test_readme_documents_the_grade_verify_contract_it_actually_ships(self):
+        from evergreen.grade import CATEGORIES, VERIFIER_ARTIFACTS, verification_exit_code
+
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        prose = " ".join(readme.split())
+        usage = self.run_cli("grade", "verify", "--help").stdout.splitlines()[0]
+        invocation = usage.removeprefix("usage: evergreen ").replace("[-h] ", "", 1)
+        self.assertEqual(invocation, "grade verify --repo PATH --manifest PATH [--json]")
+
+        rows = [
+            line for line in readme.splitlines()
+            if line.startswith(f"| `bin/evergreen {invocation}` |")
+        ]
+        self.assertEqual(len(rows), 1, "Commands table needs one exact grade verify row")
+        self.assertIn(f"`./bin/evergreen {invocation}`", prose)
+
+        # Every count, path, and exit code the README states is bound to the code.
+        self.assertEqual(len(CATEGORIES), 8)
+        self.assertIn("eight required categories", prose)
+        self.assertIn("`eval/grade/public/<version>/evidence.json`", prose)
+        for artifact in VERIFIER_ARTIFACTS:
+            self.assertIn(f"`{artifact}`", prose)
+        self.assertEqual(verification_exit_code({"status": "earned", "grade": "A"}), 0)
+        self.assertEqual(verification_exit_code({"status": "inconclusive", "grade": None}), 1)
+        for refused in ("not-earned", "invalid", "earned"):
+            self.assertEqual(verification_exit_code({"status": refused, "grade": None}), 2)
+        self.assertEqual(
+            prose.count("exit 0 only on a derived `A`, 1 when `inconclusive`, 2 otherwise"), 2
+        )
+        self.assertFalse((ROOT / "eval" / "grade" / "public").exists())
+        self.assertIn("this tree publishes no `eval/grade/public/` manifest", prose)
+
+    def test_readme_and_winnow_command_agree_on_prove_by_test_being_default(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        command = (ROOT / "commands" / "winnow.md").read_text(encoding="utf-8")
+
+        rows = [
+            line for line in readme.splitlines()
+            if line.startswith("| `/evergreen:winnow")
+        ]
+        self.assertEqual(len(rows), 1, "Commands table needs one winnow row")
+        row = rows[0]
+
+        # The invocation the README advertises must be the one the command takes:
+        # winnow.md reads a single positional base-ref and declares no flags.
+        self.assertTrue(
+            row.startswith("| `/evergreen:winnow [base-ref]` |"),
+            "winnow row must document exactly `/evergreen:winnow [base-ref]`: " + row,
+        )
+        self.assertIn("${1:-origin/main}", command)
+
+        # Parity, both directions: the README may only advertise --prove-by-test
+        # as a flag if commands/winnow.md actually declares one.
+        self.assertEqual(
+            "--prove-by-test" in readme,
+            "--prove-by-test" in command,
+            "README and commands/winnow.md disagree on a --prove-by-test flag",
+        )
+
+        # Both files must state the same contract: prove-by-test is unconditional.
+        self.assertIn("prove by test is the default", " ".join(command.split()))
+        self.assertRegex(
+            " ".join(row.split()).lower(),
+            r"prove[- ]by[- ]test is the default",
+            "README's winnow row must state prove-by-test is the default, not an opt-in",
+        )
+
+        trust = " ".join(
+            readme.split("## Trust and safe execution", 1)[1]
+            .split("## Commands", 1)[0]
+            .split()
+        )
+        self.assertRegex(
+            trust.lower(),
+            r"default prove[- ]by[- ]test",
+            "Trust section must describe prove-by-test as winnow's default path",
+        )
+        for boundary in ("repository-declared test command", "bounded timeout"):
+            self.assertIn(boundary, trust)
+            self.assertIn(boundary, " ".join(command.split()))
+
+    def test_every_subcommand_is_mentioned_in_the_readme(self):
+        import argparse
+        import re
+
+        namespace = runpy.run_path(str(SCRIPT), run_name="evergreen_cli_readme_test")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        def leaf_commands(sub_action, prefix=()):
+            for name, subparser in sub_action.choices.items():
+                path = prefix + (name,)
+                nested = [
+                    a for a in subparser._actions
+                    if isinstance(a, argparse._SubParsersAction)
+                ]
+                if nested:
+                    for action in nested:
+                        yield from leaf_commands(action, path)
+                else:
+                    yield " ".join(path)
+
+        root_sub_action = next(
+            a for a in namespace["parser"]()._actions
+            if isinstance(a, argparse._SubParsersAction)
+        )
+        commands = sorted(leaf_commands(root_sub_action))
+        self.assertTrue(commands, "expected at least one CLI subcommand")
+
+        for command in commands:
+            pattern = re.compile(
+                "bin/evergreen " + re.escape(command) + "(?=[^a-zA-Z0-9-]|$)"
+            )
+            self.assertRegex(
+                readme, pattern, "README.md never mentions bin/evergreen " + command
+            )
+
+    def test_every_slash_command_is_mentioned_in_the_readme(self):
+        import re
+
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        stems = sorted(path.stem for path in (ROOT / "commands").glob("*.md"))
+        self.assertTrue(stems, "expected at least one shipped slash command")
+
+        for stem in stems:
+            pattern = re.compile(
+                "/evergreen:" + re.escape(stem) + "(?=[^a-zA-Z0-9-]|$)"
+            )
+            self.assertRegex(
+                readme, pattern, "README.md never mentions /evergreen:" + stem
+            )
+
     def test_grade_verify_is_deterministic_read_only_and_human_json_agree(self):
         verifier, candidate, _commit, manifest = self.make_grade_repositories()
         script = verifier / "bin" / "evergreen"
@@ -423,6 +554,30 @@ class EvergreenCLITests(unittest.TestCase):
                 payload["failures"][0]["code"], "executable-inventory-mismatch"
             )
 
+    def test_grade_verify_hashes_binary_executable_inventory_as_bytes(self):
+        content = b"\x00\xff\xfeevergreen\x80\n"
+        verifier, candidate, _commit, manifest = self.make_grade_repositories(
+            subject_executable_files={"tools/binary-runner": content}
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(verifier / "bin" / "evergreen"), "grade", "verify",
+             "--repo", str(candidate), "--manifest", manifest, "--json"],
+            cwd=candidate, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+
+        self.assertEqual(result.returncode, 2, (result.stdout, result.stderr))
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["status"], "not-earned")
+        evidence = json.loads((candidate / manifest).read_text())
+        binary = next(
+            item for item in evidence["subject_executables"]
+            if item["path"] == "tools/binary-runner"
+        )
+        expected = hashlib.sha256(content).hexdigest()
+        self.assertEqual(binary["subject_sha256"], expected)
+        self.assertEqual(binary["evidence_sha256"], expected)
+
     def test_grade_verify_rejects_inventory_over_trusted_depth_limit(self):
         deep = "eval/oracle/" + "/".join(["nested"] * 14) + "/adapter.py"
         verifier, candidate, _commit, manifest = self.make_grade_repositories(
@@ -574,6 +729,8 @@ class EvergreenCLITests(unittest.TestCase):
             )
 
         traversal = run(candidate, "../evidence.json")
+        # Normalized but outside eval/grade/public/<version>/evidence.json.
+        noncanonical = run(candidate, "eval/grade-policy-v1.json")
         (candidate / "dirty-file").write_text("dirty\n")
         dirty = run(candidate)
         (candidate / "dirty-file").unlink()
@@ -606,6 +763,7 @@ class EvergreenCLITests(unittest.TestCase):
 
         expected_codes = (
             (traversal, "manifest-path-invalid"),
+            (noncanonical, "manifest-path-invalid"),
             (dirty, "repository-dirty"),
             (symlink, "evidence-file-unsafe"),
             (nonregular, "repository-dirty"),
@@ -619,6 +777,10 @@ class EvergreenCLITests(unittest.TestCase):
                 self.assertEqual(payload["status"], "invalid")
                 self.assertIsNone(payload["grade"])
                 self.assertEqual(payload["failures"][0]["code"], code)
+        self.assertIn(
+            "canonical release evidence path",
+            json.loads(noncanonical.stdout)["failures"][0]["detail"],
+        )
 
     def test_grade_verify_refuses_oversized_committed_manifest(self):
         verifier, candidate, _commit, manifest = self.make_grade_repositories()
@@ -825,6 +987,27 @@ class EvergreenCLITests(unittest.TestCase):
                 self.assertNotIn("\x7f", result.stderr)
                 self.assertLessEqual(len(result.stderr), 530)
                 self.assertTrue(result.stderr.startswith("evergreen: "))
+
+    def test_receipt_deeply_nested_manifest_is_invalid_input_not_a_traceback(self):
+        git_repo = self.make_git_repo()
+        (git_repo / "manifest.json").write_bytes(
+            (b"[" * 200_000) + b"0" + (b"]" * 200_000)
+        )
+
+        result = self.run_cli(
+            "receipt",
+            "--repo",
+            str(git_repo),
+            "--benchmark-manifest",
+            "manifest.json",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(
+            result.stderr, "evergreen: 'benchmark manifest is not valid JSON'\n"
+        )
 
     def test_receipt_unresolved_repo_user_is_a_bounded_input_error(self):
         result = self.run_cli(
@@ -1128,7 +1311,12 @@ runpy.run_path({str(SCRIPT)!r}, run_name='__main__')
         self.assertEqual([(item["path"], item["rank"]) for item in payload["candidates"]], [
             ("src/client.py", 50),
         ])
-        self.assertEqual(payload["warnings"], [])
+        # A missing map and valid evidence are not complaints; the only warning
+        # here is the un-searchable (non-git) fixture repository.
+        self.assertEqual(payload["warnings"], [
+            "living doc search failed (git unavailable, not a git repository, or a git "
+            "error) — treating as zero living docs",
+        ])
 
     def test_evidence_warnings_do_not_turn_candidate_query_into_failure(self):
         evidence_path = self.repo / "bad-evidence.json"

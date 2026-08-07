@@ -45,7 +45,11 @@ class ImpactTests(unittest.TestCase):
         self.write_map([self.mapping()])
         report = impact(self.repo, ["other.py", "src/public-api/client.py"], [])
 
-        self.assertEqual(report.warnings, ())
+        # The fixture is not a git repository, so the living-doc listing fails.
+        self.assertEqual(report.warnings, (
+            "living doc search failed (git unavailable, not a git repository, or a git "
+            "error) — treating as zero living docs",
+        ))
         self.assertEqual(
             [(candidate.path, candidate.rank) for candidate in report.candidates],
             [("docs/api.md", 100), ("other.py", 10), ("src/public-api/client.py", 10)],
@@ -109,6 +113,44 @@ class ImpactTests(unittest.TestCase):
             "docs/a.md", "src/client.py",
         ])
         self.assertTrue(any("living docs truncated" in item for item in report.warnings))
+        self.assertFalse(any("living doc search failed" in item for item in report.warnings))
+
+    def test_doc_listing_killed_by_the_deadline_warns_truncated_not_failed(self):
+        from evergreen import impact as module
+
+        (self.repo / "src").mkdir()
+        (self.repo / "src/client.py").write_text("class Client:\n    pass\n")
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs/api.md").write_text("Client\n")
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+
+        # A deadline already in the past kills git on the first loop check, so
+        # the payload is None while truncation is genuine.
+        with mock.patch.object(module, "DOC_SEARCH_TIMEOUT_SECONDS", -1):
+            paths, status = module._tracked_living_docs(self.repo)
+            report = module.impact(self.repo, ["src/client.py"], [])
+
+        self.assertEqual((paths, status), ([], "truncated"))
+        self.assertEqual([item.path for item in report.candidates], ["src/client.py"])
+        self.assertTrue(any("living docs truncated" in item for item in report.warnings))
+        self.assertFalse(any("living doc search failed" in item for item in report.warnings))
+
+    def test_failed_doc_listing_warns_instead_of_reporting_zero_living_docs(self):
+        from evergreen import impact as module
+
+        # No `git init`: `git ls-files` exits non-zero, so the search failed
+        # outright rather than returning an empty but trustworthy listing.
+        (self.repo / "src").mkdir()
+        (self.repo / "src/client.py").write_text("class Client:\n    pass\n")
+
+        paths, status = module._tracked_living_docs(self.repo)
+        report = module.impact(self.repo, ["src/client.py"], [])
+
+        self.assertEqual((paths, status), ([], "failed"))
+        self.assertEqual([item.path for item in report.candidates], ["src/client.py"])
+        self.assertTrue(any("living doc search failed" in item for item in report.warnings))
+        self.assertFalse(any("truncated" in item for item in report.warnings))
 
     def test_zero_config_doc_search_has_a_deterministic_byte_bound(self):
         from evergreen import impact as module
@@ -365,8 +407,9 @@ class ImpactTests(unittest.TestCase):
         report = impact(self.repo, [], hostile)
 
         self.assertEqual([candidate.path for candidate in report.candidates], ["valid.py"])
-        self.assertEqual(len(report.warnings), 5)
-        self.assertTrue(all("evidence" in warning for warning in report.warnings))
+        self.assertEqual(
+            len([warning for warning in report.warnings if "evidence" in warning]), 5
+        )
 
     def test_input_and_evidence_order_do_not_change_report_order(self):
         from evergreen.impact import impact
@@ -386,7 +429,7 @@ class ImpactTests(unittest.TestCase):
 
         missing = module.impact(self.repo, ["src/a.py"], [])
         self.assertEqual([candidate.path for candidate in missing.candidates], ["src/a.py"])
-        self.assertEqual(missing.warnings, ())
+        self.assertFalse(any("config" in warning for warning in missing.warnings))
 
         config = self.repo / ".evergreen-map.json"
         config.write_text("not json")
@@ -535,6 +578,17 @@ class ImpactTests(unittest.TestCase):
         self.assertEqual(len(report.candidates), 3)
         self.assertTrue(all(len(candidate.reasons) == 1 for candidate in report.candidates))
         self.assertTrue(any("reasons truncated" in warning for warning in report.warnings))
+
+    def test_oversized_integer_literal_warns_instead_of_raising(self):
+        from evergreen.impact import load_map
+
+        (self.repo / ".evergreen-map.json").write_text(
+            '{"version":' + "1" * 5000 + ',"maps":[]}'
+        )
+        maps, warnings = load_map(self.repo)
+
+        self.assertEqual(maps, [])
+        self.assertTrue(any("invalid JSON" in warning for warning in warnings))
 
     def test_duplicate_keys_reject_only_the_containing_map(self):
         from evergreen.impact import load_map
