@@ -379,6 +379,7 @@ assert [item["path"] for item in provider_payload["candidates"]] == [
     "eval/flourish/fixtures/monolith/golden/gutted.md",
     "eval/flourish/fixtures/monolith/golden/skeleton.md",
     "eval/flourish/fixtures/monolith/README.md",
+    "eval/seed/README.md",
     "examples/provider-boundary.md", "README.md",
     "eval/fixture/config.py",
 ]
@@ -388,6 +389,7 @@ assert any("changed path" in reason for reason in config_candidate["reasons"])
 
 with tempfile.TemporaryDirectory() as temporary:
     repo = Path(temporary)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
     (repo / "src/public-api").mkdir(parents=True)
     (repo / "docs").mkdir()
     (repo / "src/public-api/client.py").write_text("value = 1\n")
