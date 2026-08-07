@@ -65,7 +65,7 @@ def install(home: Path, plugin_root: Path, host: str, dry_run: bool = False) -> 
 def _install_acquired(engine, selected, root, target, dry_run):
     try:
         try:
-            recovery_errors = engine.recover()
+            recovery_errors = engine.recover(dry_run)
         except Exception as error:
             return OperationResult(False, (f"error: transaction recovery failed: {error}",))
         if recovery_errors:
@@ -130,7 +130,7 @@ def uninstall(home: Path, host: str, dry_run: bool = False) -> OperationResult:
 def _uninstall_acquired(engine, selected, dry_run):
     try:
         try:
-            recovery_errors = engine.recover()
+            recovery_errors = engine.recover(dry_run)
         except Exception as error:
             return OperationResult(False, (f"error: transaction recovery failed: {error}",))
         if recovery_errors:

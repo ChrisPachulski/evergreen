@@ -241,7 +241,9 @@ The local CLI can wire the canonical skill into either host while preserving exi
 ./bin/evergreen uninstall --host all
 ```
 
-Use `install --dry-run` or `uninstall --dry-run` to preview. Setup records an owned instruction
+Use `install --dry-run` or `uninstall --dry-run` to preview. A dry run only reads: when a pending
+transaction is on disk it names the artifacts and refuses rather than recovering them, because
+recovery is a write. Setup records an owned instruction
 block and skill link; uninstall removes only that owned state. It refuses ambiguous, unowned, or
 unsafe paths and rolls back ordinary operation failures across the selected hosts. Host mutation
 requires exclusive access: preflight and postimage checks refuse detected conflicts, preserve

@@ -22,9 +22,11 @@ class CommitPublishedError(OSError):
     """The commit marker is visible but its directory fsync was inconclusive."""
 
 
-def recover_transactions(selected, open_parent=None):
+def recover_transactions(selected, open_parent=None, *, dry_run=False):
     errors = []
+    pending = []
     failed_participants = set()
+    selected_names = {status.name for status in selected}
     coordinator = min((status.root.parent for status in selected), key=str)
     commit_parent = (
         open_parent(coordinator) if open_parent else
@@ -67,6 +69,13 @@ def recover_transactions(selected, open_parent=None):
                     errors.append(f"artifact scan failed in {parent_path}: {error}")
                     continue
                 for status, target in items:
+                    if dry_run:
+                        pending.extend(
+                            str(target.parent / name)
+                            for group in discovered[target].values()
+                            for name in group.values()
+                        )
+                        continue
                     status_committed = frozenset(
                         transaction_id
                         for transaction_id, record in committed.items()
@@ -80,18 +89,25 @@ def recover_transactions(selected, open_parent=None):
                         failed_participants.add(status.name)
             finally:
                 os.close(parent)
+        if dry_run:
+            pending.extend(str(coordinator / name) for name in updates)
+            pending.extend(
+                str(coordinator / transaction_commit_name(transaction_id))
+                for transaction_id, record in committed.items()
+                if _resolved_pending(record, selected_names) != record.pending
+            )
+            if pending:
+                errors.append(pending_recovery_error(pending))
+            return errors
         if not errors:
             remove_transaction_updates(commit_parent, updates)
-        selected_names = {status.name for status in selected}
         for transaction_id, record in committed.items():
-            completed = selected_names - failed_participants
-            pending = tuple(
-                participant for participant in record.pending
-                if participant not in completed
+            remaining = _resolved_pending(
+                record, selected_names - failed_participants,
             )
-            if pending == record.pending:
+            if remaining == record.pending:
                 continue
-            if not pending:
+            if not remaining:
                 try:
                     remove_transaction_commit(commit_parent, transaction_id)
                 except OSError as error:
@@ -100,7 +116,7 @@ def recover_transactions(selected, open_parent=None):
                 try:
                     write_transaction_commit(
                         commit_parent, transaction_id, record.participants,
-                        pending, create=False,
+                        remaining, create=False,
                     )
                 except OSError as error:
                     errors.append(f"transaction commit update failed: {error}")
@@ -446,6 +462,18 @@ def _recovery_finished(live, backup, record, creates, replaces):
 
 def _artifact_snapshot(parent_fd, target, name):
     return PathSnapshot(target, "absent") if name is None else snapshot_at(target.with_name(name), parent_fd)
+
+
+def _resolved_pending(record, completed):
+    return tuple(
+        participant for participant in record.pending
+        if participant not in completed
+    )
+
+
+def pending_recovery_error(paths):
+    return ("error: transaction recovery is pending; rerun without dry run to "
+            "recover: " + ", ".join(sorted(paths)[:16]))
 
 
 def manual_artifact_error(paths):
