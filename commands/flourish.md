@@ -99,8 +99,8 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
 
 ## The monstrosity test (before you call it done)
 
-Hold the result against `readme-style.md`. Four floors — **structure, conservation, voice, and the
-stranger** — and failing any of them means you're not done.
+Hold the result against `readme-style.md`. Five floors — **structure, conservation, voice, the
+stranger, and the visitor** — and failing any of them means you're not done.
 
 Only conclude "already at gold standard, no changes" after showing the face scorecard (the five
 elements from the craft pass, each present/absent) **and** the spine check — both must pass. "Spine
@@ -137,7 +137,28 @@ section high on the page — never a glossary dump. This floor is a judgment, no
 why it has no entry in `hard-goals/flourish.md`): the deliverable is the named list, and an empty
 list is a claim like any other — it goes through the craft trial with the rest.
 
-**Put "done" on trial — the craft trial.** The four floors are the evidence; the verdict that you've
+**Visitor floor** (the floor that counts, because judgments drift). The other four ask whether the
+doc is *right*; this one asks whether a stranger with thirty seconds ever gets to the point. It is
+the only floor with numbers, and the numbers are `readme-style.md`'s own. Run both, print both:
+
+```sh
+# 1. words before the quick start — hard goal 7, must be <= 400
+awk '/^#{2,3} *(Install|Quick ?start|Getting started|Usage)/{exit} {c+=NF} END{print c}' RESULT.md
+# 2. open-page words, <details> excluded — hard goal 8, must be <= 2500
+python3 -c "import re,sys;t=open('RESULT.md').read();print(len(re.sub(r'<details>.*?</details>','',t,flags=re.S).split()))"
+```
+
+Then name, in the report, every **caveat repeated outside `<details>`** — a benchmark limitation, an
+unverified-state disclaimer, a not-yet-supported note. Honesty is a placement problem, not a
+repetition problem: said once with a link it is retained, said three times it reads as a project
+apologizing for itself and the reader retains nothing. Repetition is not extra rigor; it is the same
+rigor, spent worse. Collapse each caveat to one home and link the rest.
+
+A doc failing this floor is the *fourth* monstrosity — **the true, conserved, voiced, correctly
+ordered document nobody finishes**. Every other floor passes it, which is precisely why it needs
+counting. The fix is never deletion: it is goals 1–3's demotion path, `<details>` or a linked file.
+
+**Put "done" on trial — the craft trial.** The five floors are the evidence; the verdict that you've
 cleared them is a judgment, and it runs the skill's shared harness, "Put the verdict on trial",
 with flourish's craft parameters. A scorecard read once is a checklist; a scorecard that survives
 an attack is a verdict — this is what stops the structurally-correct-but-voiceless doc that has
@@ -156,6 +177,9 @@ sailed through before.
 - **blind-spot:** "did everyone miss that a badge or feature bullet claims something the code
   can't back?" — a hit here routes back to the truth trial (step 4), because a beautiful lie is
   still a lie. A beautiful gutting is too — a loss hit routes back to the conservation floor.
+- **attack the patience** — "a stranger with thirty seconds bounces before the install line."
+  Answered only by the two visitor-floor counts, printed. Prose cannot beat a number here; if
+  either count is over, the verdict flips regardless of how good the writing is.
 
 The craft verdict is fuzzier than the truth one — "survives the attack that it's ugly" is a
 discipline against an over-confident "done", not a precision metric. Don't dress it up as one.
@@ -169,4 +193,5 @@ Open with a one-line read of what you restructured *and how you sharpened the vo
 verdict (certified / cut / markered), the conservation ledger (sections kept / demoted / rehomed /
 cut-with-reason — the hard goals in `skills/evergreen/hard-goals/flourish.md` make this binary),
 the stranger ledger (concepts a first-time reader must bring — each either introduced in place or
-named as assumed-with-reason), then the diff.
+named as assumed-with-reason), the **visitor counts** (words-to-quick-start and open-page words, both
+printed from the commands above, with the repeated-caveat list), then the diff.
