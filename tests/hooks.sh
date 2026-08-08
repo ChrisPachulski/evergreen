@@ -404,7 +404,10 @@ with tempfile.TemporaryDirectory() as temporary:
         check=True, capture_output=True, text=True,
     )
     map_payload = json.loads(mapped.stdout)
-    assert map_payload["warnings"] == []
+    assert map_payload["warnings"] == [
+        "living doc search failed (git unavailable, not a git repository, or a git error) "
+        "— treating as zero living docs"
+    ]
     assert [item["path"] for item in map_payload["candidates"][:2]] == [
         "docs/api.md", "README.md",
     ]

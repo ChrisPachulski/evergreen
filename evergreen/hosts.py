@@ -635,7 +635,7 @@ def _normalized_lexical_path(path):
 
 def _normalized_link_target(path):
     target = Path(os.readlink(path))
-    return _normalized_lexical_path(target if target.is_absolute() else path.parent / target)
+    return _normalized_lexical_path(target if target.is_absolute() else path.parent.resolve() / target)
 
 
 def _normalized_snapshot_target(snapshot):
@@ -643,7 +643,7 @@ def _normalized_snapshot_target(snapshot):
         return None
     target = Path(snapshot.target)
     return _normalized_lexical_path(
-        target if target.is_absolute() else snapshot.path.parent / target
+        target if target.is_absolute() else snapshot.path.parent.resolve() / target
     )
 
 
