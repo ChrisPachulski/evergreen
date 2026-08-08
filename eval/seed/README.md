@@ -44,7 +44,7 @@ and a noisy golden label is worse than no label.
 
 ## What it grades
 
-The six goals in [`../../skills/evergreen/hard-goals/seed.md`](../../skills/evergreen/hard-goals/seed.md),
+The eight goals in [`../../skills/evergreen/hard-goals/seed.md`](../../skills/evergreen/hard-goals/seed.md),
 plus classification against the manifest. `score.py`'s docstring states what each gate can and
 cannot catch — read it before trusting a number. The honest ceiling: the ledger gate proves a
 citation is *present*, never that it is *true*, and the speculation gate matches normalized
@@ -68,7 +68,7 @@ the repository root and refuses a fixture-relative root.
 ### What this exam does *not* measure
 
 A read-only grant cannot shell out, so seed's pass-E certification takes its documented fallback
-and **the external judge is never exercised** by a default run. That is deliberate — the six hard
+and **the external judge is never exercised** by a default run. That is deliberate — the eight hard
 goals are about triage, ledger discipline, and coverage, none of which involve the judge — but it
 means a green exam says nothing about whether cross-provider certification works.
 

@@ -83,5 +83,7 @@ box, never a dead link. And the flat definitional line grew a **tagline with a p
 library. Your hardware. Nobody else's server to shut it down.") and concrete stakes — the difference
 between a README a visitor skims and one they remember. flourish is the one sanctioned prose-rewrite,
 and **"already accurate" is never "already done"** — nor is "already structured." Run it until the
-result passes both floors of the monstrosity test: structure (hero → value → features → quick start,
-not internals) **and voice** (does the opening make you feel the problem, or just define the tool?).
+result passes all four floors of the monstrosity test — structure (hero → value → features → quick
+start, not internals), conservation (the same accurate detail survives, demoted not deleted),
+**voice** (does the opening make you feel the problem, or just define the tool?), and the stranger
+read.

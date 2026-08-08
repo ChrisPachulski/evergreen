@@ -164,7 +164,8 @@ warnings. Deterministic confidence means the provider proved its mechanical fact
 a documentation claim false. `bin/evergreen till [--repo PATH] [--json] [PATH...]` is its read-only
 sibling: a deterministic, ranked inventory of the tracked public declaration surface that seed
 consumes, failing closed with a `truncated` warning whenever the inventory it builds could be
-incomplete. Tracked files in languages it cannot parse, extensionless scripts, and untracked
+incomplete. Tracked files in languages it cannot parse, extensionless scripts without a Python
+shebang (a Python-shebang script such as `bin/evergreen` joins the parsed inventory), and untracked
 source stay outside that inventory and are named in an `outside inventory` warning instead of
 vanishing silently.
 Drift-shaped adapters may translate mechanical facts into this
