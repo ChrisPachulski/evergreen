@@ -139,6 +139,24 @@ could not settle named claims, so it is not clean. **inconclusive** means the au
 could not validate; it fails by default. Only exact `fail_on_inconclusive: false` makes that
 infrastructure failure advisory, and the report must remain inconclusive.
 
+## Verifying a change to this repository
+
+`bash tests/all.sh` is the definition of green. Run it before reporting any change to this
+repository as done, working, passing, or ready.
+
+A Python runner alone is **not** green. CI runs four suites and only one of them is Python:
+`tests/hooks.sh` enforces that policy text is identical across README.md, AGENTS.md, SKILL.md, and
+DIGEST.md, and `tests/action.sh` exercises the result envelope end to end. Neither is collected by
+`unittest` or `pytest`, so a docs restructure or a schema change can pass the Python tests and still
+break CI — which is exactly how a README split shipped 36 broken assertions to main on 2026-08-08.
+
+Read the verdict line, not the exit code of a grep over the output. `tests/hooks.sh` prints `FAIL`
+and `tests/action.sh` prints `not ok`; a pattern that matches one silently passes the other.
+
+In this repository README.md is an agent-facing instruction surface, not a landing page. Policy text
+may be reorganized or collapsed into `<details>`, but it may never leave the file, and a second copy
+in another document is drift rather than a demotion.
+
 ## Safe prove by test
 
 Run only a repository-declared test command with a bounded timeout.
