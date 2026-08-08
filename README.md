@@ -48,7 +48,7 @@ Your agent already has an *update the docs if applicable* step. [That's an inten
 /plugin install evergreen@evergreen
 ```
 
-It rides along every session: adds `/evergreen:winnow`, and — after a turn that changed code in a repo with tracked docs — leaves a quiet nudge to go check for drift. Intensity is `off | light | strict` (default **light**). The truth reflex never blocks your commit; it flags, you decide.
+It rides along every session: adds `/evergreen:winnow`, and — after a turn that changed code in a repo with tracked docs — leaves a quiet nudge to go check for drift. Intensity is `off | light | strict` (default **light**), and it steers the automatic pass only — a command you type runs at full depth in any mode, including `off`. The truth reflex never blocks your commit; it flags, you decide.
 
 ### Any other agent
 
@@ -434,6 +434,8 @@ The separate [executable-oracle source-pack contract](eval/oracle/README.md) is 
 
 Evergreen is not a hosted index, AST engine, dashboard, or automatic truth-path prose rewriter.
 
+An AST — abstract syntax tree — is what a parser builds when it turns source text into a structured tree. It buys precision, and it costs a real parser per language. Evergreen greps and reads instead.
+
 - It does not ship language-specific parser suites, embeddings, a SaaS backend, or chat integrations.
 - It does not turn checksums, changed constants, provider confidence, or source maps into semantic
   verdicts.
@@ -451,10 +453,13 @@ Not unless you ask. The reflex points; you write — a dead flag or moved path i
 It flags only what it can cite against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it offers the `.evergreen-ignore` line that keeps it dropped in every session after. The asymmetry is the product choice: a false flag costs you the ten seconds it takes to read the cited line and say no, while missed drift costs whoever trusts the doc next — which is why every flag must carry evidence you can dismiss at a glance.
 
 **Does it scale?**
-It reads paths, contracts, and prose — not your AST. Any language, any repo, nothing to compile.
+It reads paths, contracts, and prose — not your abstract syntax tree. Nothing to parse means no per-language parser to maintain and nothing that breaks on syntax it has never seen: any language, any repo, nothing to compile.
 
 **What about releases?**
 It treats a shipped marketing version as a living public claim, distinct from the build number, and reconciles the surfaces that repeat that identity. Rules in the operations reference above.
+
+**Does `light` mode make the commands less thorough?**
+No. Intensity steers the ride-along reflex only. `light` tells it to walk the mechanical rungs and defer the semantic read; `strict` adds that read; `off` silences the session preamble and the post-turn nudge. A command you type — `winnow`, `flourish`, `seed`, `cultivate` — pins its own depth and runs at full strictness in every mode, `off` included. `off` means "stop nudging me," not "stop working."
 
 **Why "evergreen"?**
 A doc that stays true as the code grows is evergreen. Yours aren't. Yet.

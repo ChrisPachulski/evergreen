@@ -739,3 +739,36 @@ hosts.install(Path({str(self.home)!r}), Path({str(ROOT)!r}), 'codex')
         self.assertIn("removal succeeded", rendered)
         self.assertNotIn("backup retained", rendered)
         self.assertFalse(any("evergreen-backup" in item.name for item in codex.iterdir()))
+
+
+class JournalIdentityTests(HostTestCase):
+    """Access time is not a property a transaction controls or can preserve.
+
+    Reading a file mutates its atime -- including the read that recovery itself performs
+    to snapshot the live path. Including atime in the committed-postimage comparison made
+    the integrity check depend on the host filesystem's atime policy: Linux CI mounts
+    relatime, which suppresses the update and let the check pass by accident, while macOS
+    APFS updates it and every committed-transaction recovery was declared corrupt.
+    """
+
+    def test_journal_identity_excludes_access_time(self):
+        from evergreen.host_types import PathSnapshot
+
+        identity = PathSnapshot(Path("x"), "regular", data=b"x", atime_ns=1, mtime_ns=2).journal_identity()
+        self.assertNotIn("atime_ns", identity)
+        self.assertIn("mtime_ns", identity, "mtime is a real change signal and must stay")
+        for field in ("kind", "dev", "ino", "mode", "nlink", "uid", "gid", "size", "sha256"):
+            self.assertIn(field, identity, field)
+
+    def test_reading_a_file_does_not_change_its_journal_identity(self):
+        path = Path(self.temporary.name) / "probe"
+        path.write_bytes(b"payload")
+        fd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            before = host_journal.snapshot_at(path, fd).journal_identity()
+            path.read_bytes()          # a plain read is not a mutation
+            os.stat(str(path))
+            after = host_journal.snapshot_at(path, fd).journal_identity()
+        finally:
+            os.close(fd)
+        self.assertEqual(before, after)

@@ -91,7 +91,12 @@ class PathSnapshot:
         return {
             "kind": self.kind, "dev": self.dev, "ino": self.ino,
             "mode": self.mode, "nlink": self.nlink, "uid": self.uid,
-            "gid": self.gid, "atime_ns": self.atime_ns,
+            "gid": self.gid,
+            # Access time is deliberately absent. It is not a property the transaction
+            # controls: any read mutates it, including recovery's own snapshot of the
+            # live path. Including it made the committed-postimage check depend on the
+            # host's atime policy -- passing under Linux relatime, failing on macOS APFS.
+            # mtime, size, and sha256 remain: those are genuine change signals.
             "mtime_ns": self.mtime_ns,
             "size": len(self.data) if self.data is not None else 0,
             "sha256": hashlib.sha256(self.data or b"").hexdigest(),
