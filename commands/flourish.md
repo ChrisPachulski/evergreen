@@ -137,7 +137,7 @@ section high on the page — never a glossary dump. This floor is a judgment, no
 why it has no entry in `hard-goals/flourish.md`): the deliverable is the named list, and an empty
 list is a claim like any other — it goes through the craft trial with the rest.
 
-**Put "done" on trial — the craft trial.** The two floors are the evidence; the verdict that you've
+**Put "done" on trial — the craft trial.** The four floors are the evidence; the verdict that you've
 cleared them is a judgment, and it runs the skill's shared harness, "Put the verdict on trial",
 with flourish's craft parameters. A scorecard read once is a checklist; a scorecard that survives
 an attack is a verdict — this is what stops the structurally-correct-but-voiceless doc that has
