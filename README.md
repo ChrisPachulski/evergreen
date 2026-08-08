@@ -44,6 +44,36 @@ It cites the line or it says nothing. And it leaves the docs that are *meant* to
 
 More of what it catches, one per rung, in [examples/](examples/).
 
+## "I already tell my agent to update the docs"
+
+Most people do. One line in a workflow file — *update documentation if applicable* — and it feels
+like it covers this. It doesn't, because it's an intention, not a procedure. Four gaps:
+
+- **"If applicable" is a scope decision, and scope is the whole problem.** The step fires against
+  whatever files are already open. The renamed flag sits in three files the agent never touched
+  this turn. Evergreen runs the other direction: start at the change, walk *outward* to the docs
+  that name what you touched — what [`bin/evergreen impact`](#one-command-local-use) ranks before a
+  word of prose gets read.
+- **No proof rule, so you get both failure modes.** With nothing to prove, an agent either shrugs
+  (nothing looked obviously wrong) or helpfully rewrites prose it never verified — inventing
+  accuracy, which reads more confident than the stale line it replaced. Evergreen's rule is the
+  product: cite the code that makes the doc false, or it isn't a finding. And it rewrites nothing
+  unasked.
+- **"Update the docs" has no idea which docs are *supposed* to be out of date.** ADRs, specs, dated
+  snapshots, changelog history — those describe the past on purpose. A generic instruction will
+  cheerfully correct a decision record into a lie about what you decided, and nobody catches it,
+  because it looks like housekeeping. Evergreen leaves them alone and says so on a `left alone:`
+  line.
+- **Nothing fires it, and nothing checks it.** A workflow line runs when the agent remembers it.
+  Evergreen's Stop hook fires when code changed in a repo that has docs, once per distinct change
+  state. In CI the validator reads every citation back out of Git at the audited commit, so model
+  prose can't certify itself — and findings stay advisory, so only a broken audit fails your build.
+
+The honest version: solo on one repo with one README you wrote last week, your one-liner is fine.
+This earns its keep when the docs are plural, when strangers paste your commands, and mostly when
+*agents* write the code — an agent never feels the embarrassment of shipping a broken quickstart,
+so the reflex has to be wired in rather than requested.
+
 ## How it works
 
 When code changes, it stops at the first rung that catches:
