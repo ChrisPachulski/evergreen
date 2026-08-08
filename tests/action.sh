@@ -174,7 +174,7 @@ clean_result() {
 Analysis complete.
 
 \`\`\`evergreen-result
-{"schema_version":1,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.197 (Claude Code)"}}
+{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.197 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -182,7 +182,7 @@ EOF
 finding_result() {
   cat <<EOF
 \`\`\`evergreen-result
-{"schema_version":1,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":0,"drift":1,"unverified":0},"findings":[{"severity":"high","category":"name_mismatch","doc_path":"README.md","doc_line":2,"claim":"Run \u0060demo --workers 4\u0060.","code_path":"app.py","code_line":1,"why":"The implementation now exposes concurrency instead of workers.","fix_or_flag":"fix"}],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.197 (Claude Code)"}}
+{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":0,"drift":1,"unverified":0},"findings":[{"severity":"high","category":"name_mismatch","rung":"contract","doc_path":"README.md","doc_line":2,"claim":"Run \u0060demo --workers 4\u0060.","code_path":"app.py","code_line":1,"why":"The implementation now exposes concurrency instead of workers.","fix_or_flag":"fix"}],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.197 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -190,7 +190,7 @@ EOF
 wrong_commit_result() {
   cat <<EOF
 \`\`\`evergreen-result
-{"schema_version":1,"status":"complete","base":"$BASE_SHA","head":"0000000000000000000000000000000000000000","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.197 (Claude Code)"}}
+{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"0000000000000000000000000000000000000000","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.197 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -198,7 +198,7 @@ EOF
 wrong_runtime_result() {
   cat <<EOF
 \`\`\`evergreen-result
-{"schema_version":1,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"attacker","model":"forged-model","cli_version":"0.0.0"}}
+{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"attacker","model":"forged-model","cli_version":"0.0.0"}}
 \`\`\`
 EOF
 }
