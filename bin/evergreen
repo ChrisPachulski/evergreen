@@ -88,12 +88,45 @@ def parser():
         command.add_argument("--host", choices=("claude", "codex", "all"), default="all")
         command.add_argument("--dry-run", action="store_true", help="describe changes only")
         command.set_defaults(run=runner)
+    conform = commands.add_parser(
+        "conform", help="check a reflex transcript against the intensity it declared"
+    )
+    conform.add_argument(
+        "path", nargs="?", default="-",
+        help="file holding evergreen output, or - for standard input (default: -)",
+    )
+    conform.add_argument(
+        "--mode", choices=("off", "light", "strict"),
+        help="intensity to hold the output to (default: the one the output declares)",
+    )
+    conform.add_argument("--json", action="store_true", help="emit one JSON object")
+    conform.set_defaults(run=run_conform)
     check = commands.add_parser("doctor", help="check canonical files and host ownership")
     check.add_argument("--host", choices=("claude", "codex", "all"), default="all")
     check.add_argument("--repo", default=str(PLUGIN_ROOT), help="canonical Evergreen root")
     check.add_argument("--json", action="store_true", help="emit raw host evidence")
     check.set_defaults(run=run_doctor)
     return root
+
+
+def run_conform(args):
+    import json
+    from evergreen.mode_policy import declared_mode, violations
+
+    text = sys.stdin.read() if args.path == "-" else Path(args.path).read_text(encoding="utf-8")
+    found = violations(text, args.mode)
+    mode = args.mode or declared_mode(text)
+    if args.json:
+        print(json.dumps(
+            {"schema_version": 1, "mode": mode, "violations": found,
+             "conforms": not found}, sort_keys=True, separators=(",", ":")))
+    elif found:
+        print(f"evergreen: output does not conform to intensity {mode}:")
+        for line in found:
+            print(f"  {line}")
+    else:
+        print(f"evergreen: output conforms to intensity {mode}")
+    return 1 if found else 0
 
 
 def run_install(args):

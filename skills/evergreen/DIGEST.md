@@ -124,6 +124,8 @@ Rules:
   commit; `EVERGREEN_GUARD=off` is the bypass.
 
 Output, per finding: `[high|med|low] category rung  file:line — what's wrong (cite the code) → fix | flag`
+Open with the mode: `evergreen [light]:`. light must never emit a `prose` finding, and
+`bin/evergreen conform` checks a transcript against the mode it declares.
 Rung is which ladder rung proved it: `path · contract · snippet · prose`. Name the one that
 actually proved it; `prose` is the only one resting on judgment.
 Exempt docs go on a trailing `left alone:` line, never as a finding.

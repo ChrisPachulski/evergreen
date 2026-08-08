@@ -301,20 +301,24 @@ Each finding carries a severity, a rung, and a fix-or-flag call.
 
 ## Output
 
+Open with the intensity you ran under: `evergreen [light]:`, `[strict]`, `[off]`. It makes the
+run falsifiable -- `bin/evergreen conform` holds the transcript to the mode it names, and
+**light must never emit a `prose` finding**. Declaring nothing is itself a violation.
+
 Point at the line; don't scold, pad, or rewrite. One-line read of what changed, one line per
 finding, one-line verdict. Exempt docs go on a trailing `left alone:` line, never as a finding.
 
 Per finding: `[high|med|low] category rung  file:line — what's wrong (cite the code) → fix | flag`
 
 ```
-evergreen: you renamed `--workers` to `--concurrency`.
+evergreen [light]: you renamed `--workers` to `--concurrency`.
   [high] in_docs_not_code contract  README.md:42 — documents `--workers`; gone from cli.py:30 → fix
   [med]  in_docs_not_code contract  docs/cli.md:8 — same dead flag → fix
   left alone: docs/adr/0003.md names `--workers` — an ADR, frozen in time.
 docs otherwise match the code.
 ```
 
-Surface still matches → one line: `evergreen: docs still match`.
+Surface still matches → one line: `evergreen [light]: docs still match`.
 
 ## The family — truth, craft, hygiene, creation
 
