@@ -2,6 +2,8 @@
 # Evergreen hygiene guard — PreToolUse(Bash) backstop for the cultivate axis.
 # Before a `git commit`/`git add` runs, inspect the STAGED set and block if it carries files
 # that have no business in version control: secrets, build artifacts, or AI-slop internal docs.
+# Before a `git tag evergreen--v*` creation runs, require committed winnow + cultivate
+# certification records verified clean at HEAD (hooks/evergreen-release-gate.py), fail-closed.
 # High-signal patterns only (cultivate ladder rung 2) — never the heuristic rungs, so it can't
 # nag. The truth/craft axes never block; the hygiene axis may, because a leaked secret or slop
 # dump is irreversible once pushed. Escape hatches provided. Never blocks on its own errors.
@@ -54,6 +56,17 @@ fallback_intent() {
     echo none
     return
   fi
+  # Coarse release-tag check on the RAW command text: a wrapped or quoted evergreen--v* tag
+  # creation must not slip through the degraded path, so quoted spans are NOT stripped first.
+  # Residual false positive (this degraded path only, fail-closed): prose carrying the words
+  # git, tag, and an evergreen--v ref in one command. The release gate itself needs python3,
+  # so everything this classifies is refused with the standing certification message.
+  if printf '%s' "$FALLBACK_CMD" | grep -q 'evergreen--v' \
+     && printf '%s' "$FALLBACK_CMD" | grep -Eq '(^|[^[:alnum:]_-])git([^[:alnum:]_-]|$)' \
+     && printf '%s' "$FALLBACK_CMD" | grep -Eq '(^|[^[:alnum:]_-])tag([^[:alnum:]_-]|$)'; then
+    echo release-tag
+    return
+  fi
   local add=false commit=false
   fallback_has_git_intent add && add=true
   fallback_has_git_intent commit && commit=true
@@ -87,7 +100,7 @@ if command -v python3 >/dev/null 2>&1; then
   intent="$(printf '%s' "$STDIN" | python3 "$SCRIPT_DIR/evergreen-guard-command.py" 2>/dev/null)" || intent=""
 fi
 case "$intent" in
-  compound|unsafe|git|none) ;;
+  compound|unsafe|git|none|release-tag|release-elsewhere|release-compound) ;;
   *) intent="$(fallback_intent)" ;;
 esac
 
@@ -100,6 +113,29 @@ fi
 
 if [ "$intent" = "unsafe" ]; then
   echo "evergreen guard: commit modes that can read unstaged working-tree content are blocked; use a separately staged plain commit, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
+  exit 2
+fi
+
+# An evergreen--v* release tag is a certification claim. Creation is allowed only when the
+# fail-closed gate verifies committed winnow + cultivate records at HEAD; tag deletion,
+# listing, and verification were classified none and passed through above.
+if [ "$intent" = "release-compound" ]; then
+  echo "evergreen guard: create an evergreen--v* release tag in its own Bash call, separate from git add/commit, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
+  exit 2
+fi
+
+if [ "$intent" = "release-elsewhere" ]; then
+  echo "evergreen guard: an evergreen--v* release tag certifies the checked-out HEAD only; check out the certified commit and tag it without an explicit committish, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
+  exit 2
+fi
+
+if [ "$intent" = "release-tag" ]; then
+  ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  if command -v python3 >/dev/null 2>&1 \
+     && python3 "$SCRIPT_DIR/evergreen-release-gate.py" --repo "$ROOT"; then
+    exit 0
+  fi
+  echo "evergreen guard: refusing the evergreen--v* release tag — it requires winnow and cultivate certification records committed at HEAD and verified clean (the release gate names the failing check above; without python3 the records cannot be verified at all). Run the winnow and cultivate passes, commit their records, and retag, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
   exit 2
 fi
 

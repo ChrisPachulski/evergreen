@@ -867,6 +867,75 @@ empty "$(guard_cmd "git -C $TMP commit -m cleanup")" \
   "guard: deletion-only option-prefixed commit of slop -> allowed (cleanup enforced, not blocked)"
 git -C "$TMP" commit -qm "remove slop"
 
+# --- release-tag certification gate (winnow-before-tag + cultivate cadence) ---
+# An evergreen--v* tag creation is refused unless winnow + cultivate certification records
+# are committed at HEAD: winnow clean (zero drift, zero unverified, counts summing to total)
+# and each record bound to a commit from which only eval/certifications/ has since changed.
+release_tag_cmd="git tag evergreen--v9.9.9"
+has "$(guard_cmd "$release_tag_cmd")" "no winnow certification record" \
+  "release gate: tag without records is refused naming the winnow record"
+eq "$(guard_rc "$release_tag_cmd")" "2" "release gate: refusal exits 2"
+has "$(guard_cmd "sh -c 'git tag evergreen--v9.9.9'")" "no winnow certification record" \
+  "release gate: a wrapped tag creation is classified and gated"
+empty "$(guard_cmd "git tag v1.0.0")" "release gate: non-evergreen tag passes through"
+empty "$(guard_cmd "git tag -l 'evergreen--v*'")" "release gate: listing evergreen tags passes through"
+empty "$(guard_cmd "git tag -d evergreen--v9.9.9")" "release gate: deleting an evergreen tag passes through"
+empty "$(guard_cmd "git commit -m 'notes on evergreen--v9.9.9'")" \
+  "release gate: quoted mention in a commit message is not a tag creation"
+release_subject="$(git -C "$TMP" rev-parse HEAD)"
+mkdir -p "$TMP/eval/certifications"
+release_records(){ # $1=subject sha, $2=certified, $3=drift, $4=unverified, $5=total
+  printf '{"pass":"winnow","date":"2026-08-07","commit":"%s","claims":{"total":%s,"certified":%s,"drift":%s,"unverified":%s}}\n' \
+    "$1" "$5" "$2" "$3" "$4" > "$TMP/eval/certifications/winnow.json"
+  printf '{"pass":"cultivate","date":"2026-08-07","commit":"%s"}\n' \
+    "$1" > "$TMP/eval/certifications/cultivate.json"
+}
+release_records "$release_subject" 4 0 0 4
+has "$(guard_cmd "$release_tag_cmd")" "no winnow certification record" \
+  "release gate: records on disk but not committed do not count"
+git -C "$TMP" add eval/certifications/winnow.json
+git -C "$TMP" commit -qm "winnow certification record"
+has "$(guard_cmd "$release_tag_cmd")" "no cultivate certification record" \
+  "release gate: winnow alone is refused naming the cultivate record"
+git -C "$TMP" add eval/certifications/cultivate.json
+git -C "$TMP" commit -qm "cultivate certification record"
+empty "$(guard_cmd "$release_tag_cmd")" \
+  "release gate: clean records committed at HEAD allow the tag"
+eq "$(guard_rc "$release_tag_cmd")" "0" "release gate: allowed tag exits 0"
+empty "$(guard_cmd "git tag -a evergreen--v9.9.9 -m 'release notes'")" \
+  "release gate: annotated creation passes the same gate"
+empty "$(guard_cmd "git tag evergreen--v9.9.9 HEAD")" \
+  "release gate: an explicit literal HEAD is the checked-out HEAD"
+has "$(guard_cmd "git tag evergreen--v9.9.9 HEAD~1")" "checked-out HEAD" \
+  "release gate: tagging any other explicit commit is refused"
+has "$(guard_cmd "git add . && git tag evergreen--v9.9.9")" "own Bash call" \
+  "release gate: tag creation combined with staging is refused"
+printf 'later\n' >> "$TMP/app.py"
+git -C "$TMP" add app.py; git -C "$TMP" commit -qm "code after certification"
+has "$(guard_cmd "$release_tag_cmd")" "is stale" \
+  "release gate: code committed after the certified commit is refused as stale"
+release_subject="$(git -C "$TMP" rev-parse HEAD)"
+release_records "$release_subject" 3 1 0 4
+git -C "$TMP" add eval/certifications; git -C "$TMP" commit -qm "records reporting drift"
+has "$(guard_cmd "$release_tag_cmd")" "requires zero of both" \
+  "release gate: a winnow record reporting drift is refused"
+release_records "$release_subject" 3 0 1 4
+git -C "$TMP" add eval/certifications; git -C "$TMP" commit -qm "records reporting unverified"
+has "$(guard_cmd "$release_tag_cmd")" "requires zero of both" \
+  "release gate: a winnow record reporting unverified claims is refused"
+release_records "$release_subject" 3 0 0 5
+git -C "$TMP" add eval/certifications; git -C "$TMP" commit -qm "records that do not sum"
+has "$(guard_cmd "$release_tag_cmd")" "do not sum to total" \
+  "release gate: claim counts that do not sum to N are refused"
+empty "$(EVERGREEN_GUARD=off guard_cmd "$release_tag_cmd")" \
+  "release gate: EVERGREEN_GUARD=off bypasses deliberately"
+degraded_tag_out="$(printf '%s' "$(guard_payload "$release_tag_cmd")" | PATH="$NOPY:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)"
+has "$degraded_tag_out" "certification records committed at HEAD" \
+  "release gate: unavailable python3 refuses rather than tags unverified"
+has "$(printf '%s' "$(guard_payload "sh -c 'git tag evergreen--v9.9.9'")" | PATH="$NOPY:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "certification records committed at HEAD" \
+  "release gate: degraded path catches a wrapped tag creation"
+
 # Release CI must gate the complete trust and host surface on both supported OS families.
 workflow="$(cat "$ROOT/.github/workflows/test.yml")"
 for token in \

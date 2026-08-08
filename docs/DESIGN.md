@@ -220,6 +220,30 @@ pre-1.0 SemVer policy takes minor `0.6.0`; the rename shipped immediately after 
 any external adoption of the old name, so no compatibility alias is carried. Frozen `0.4.0`/`0.5.0`
 records keep the names they shipped with.
 
+### Winnow-before-tag certification gate
+
+A local `evergreen--v*` tag is a certification claim about the commit it names, so the PreToolUse
+Bash guard refuses to create one until `hooks/evergreen-release-gate.py` verifies two checked-in
+receipts, both read from the HEAD tree and never from the working directory:
+`eval/certifications/winnow.json` — a JSON object carrying `pass: "winnow"`, a `date`, the full
+40-hex `commit` the pass ran at, and integer `claims` counts that must report zero `drift`, zero
+`unverified`, and `certified + drift + unverified == total` — and
+`eval/certifications/cultivate.json`, the same shape without counts (`pass: "cultivate"`, `date`,
+`commit`), because cultivate never reports "clean"; its record asserts cadence, not cleanliness.
+Each record's commit must be HEAD itself or an ancestor of HEAD from which nothing outside
+`eval/certifications/` has since changed, so committing the records is the only history permitted
+between running a pass and tagging. The ritual is therefore: commit the release work, run the
+winnow and cultivate passes at that commit, write each record naming it, commit the records, then
+tag. Tag deletion, listing, and verification pass through unclassified; a creation naming an
+explicit committish other than `HEAD`, a creation combined with `git add`/`git commit` in one
+call, and a run where python3 cannot verify the records are each refused rather than guessed at,
+while `EVERGREEN_GUARD=off` remains the deliberate operator bypass. The gate verifies record
+arithmetic and commit binding only — that a record honestly reflects a pass that ran is the
+runner's responsibility, and a tag created outside a hook-carrying session is not intercepted.
+This is a freshness-and-cadence gate on the documentation and hygiene axes, not a
+detector-quality gate: it neither claims nor requires the measured-detector evidence that the
+measurement-first boundary below reserves for quality thresholds.
+
 ### Measurement-first quality and release boundary
 
 The audit, replay, resolver-v2, Java-context, and public-verification infrastructure is additive,

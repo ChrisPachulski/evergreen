@@ -5,7 +5,9 @@ The threat boundary is recognizable Git intent in shlex-tokenized subcommand pos
 first non-option token after a `git` word — not arbitrary commands computed through variables,
 substitutions, aliases, or shell evaluation. Words inside quoted arguments (commit messages,
 pathspecs) are single tokens and never create intent. Unparseable input (unbalanced quotes)
-degrades to coarse quote-stripped splitting, which may fail closed.
+degrades to coarse quote-stripped splitting, which may fail closed. Beyond add/commit, a
+`git tag` creation whose refname begins `evergreen--v` is classified for the release
+certification gate; tag deletion, listing, and verification stay unclassified.
 
 shlex knows nothing of shell grammar beyond quoting, so three constructs must be separated from
 the argument list before a commit's options are read, or their words are misread as positional
@@ -40,6 +42,13 @@ GIT_VALUE_GLOBALS = {
     "-C", "-c", "--git-dir", "--work-tree", "--namespace",
     "--config-env", "--attr-source", "--super-prefix", "--list-cmds",
 }
+# `git tag` forms that never certify anything: deletion, listing, and verification pass
+# through. For `git tag`, `-v` means verify, not verbose.
+TAG_NONCREATION = {"-d", "--delete", "-l", "--list", "-v", "--verify"}
+# Tag-creation options that consume the following token as their value when not written
+# `--option=value`, so the value is never read as the refname or committish.
+TAG_VALUE_OPTIONS = {"-m", "--message", "-F", "--file", "-u", "--local-user", "--cleanup", "--trailer"}
+RELEASE_TAG_PREFIX = "evergreen--v"
 UNSAFE_LONG = {
     "--all", "--include", "--only", "--interactive", "--patch",
     "--pathspec-from-file", "--pathspec-file-nul",
@@ -344,8 +353,8 @@ def shell_tokens(command: str) -> list[str]:
         return normalize_shell_word_joins(command).split()
 
 
-def git_subcommand(segment: list[str], git_index: int) -> "str | None":
-    """First non-option token after segment[git_index] (a `git` word), skipping global options."""
+def _subcommand_index(segment: list[str], git_index: int) -> "int | None":
+    """Index of the first non-option token after segment[git_index], skipping global options."""
     index = git_index + 1
     while index < len(segment):
         token = segment[index]
@@ -355,8 +364,47 @@ def git_subcommand(segment: list[str], git_index: int) -> "str | None":
             option, equals, _value = token.partition("=")
             index += 2 if option in GIT_VALUE_GLOBALS and not equals else 1
             continue
-        return token
+        return index
     return None
+
+
+def git_subcommand(segment: list[str], git_index: int) -> "str | None":
+    """First non-option token after segment[git_index] (a `git` word), skipping global options."""
+    index = _subcommand_index(segment, git_index)
+    return None if index is None else segment[index]
+
+
+def _release_tag_intent(segment: list[str], tag_index: int) -> "str | None":
+    """Classify one `git tag` argument list; only evergreen--v* creations carry intent.
+
+    A creation whose first positional starts with `evergreen--v` is `release-tag` when it
+    tags the checked-out HEAD (no explicit committish, or the literal `HEAD`), and
+    `release-tag-elsewhere` when it names any other explicit committish — the certification
+    gate verifies records against HEAD only, so tagging elsewhere is refused, not guessed at.
+    Deletion, listing, and verification forms return None and pass through.
+    """
+    positionals: list[str] = []
+    consume = False
+    for token in segment[tag_index + 1:]:
+        if consume:
+            consume = False
+            continue
+        if token in TAG_NONCREATION:
+            return None
+        if token == "--":
+            continue
+        option, equals, _value = token.partition("=")
+        if option in TAG_VALUE_OPTIONS:
+            consume = not equals
+            continue
+        if token.startswith("-") and token != "-":
+            continue
+        positionals.append(token)
+    if not positionals or not positionals[0].startswith(RELEASE_TAG_PREFIX):
+        return None
+    if positionals[1:] in ([], ["HEAD"]):
+        return "release-tag"
+    return "release-tag-elsewhere"
 
 
 def collect_intents(command: str) -> set:
@@ -378,9 +426,16 @@ def collect_intents(command: str) -> set:
         # Basename matching keeps path-qualified /usr/bin/git covered as well.
         for index, word in enumerate(segment):
             if _basename(word) == "git":
-                subcommand = git_subcommand(segment, index)
+                found = _subcommand_index(segment, index)
+                if found is None:
+                    continue
+                subcommand = segment[found]
                 if subcommand in {"add", "commit"}:
                     intents.add(subcommand)
+                elif subcommand == "tag":
+                    tag_intent = _release_tag_intent(segment, found)
+                    if tag_intent:
+                        intents.add(tag_intent)
         segment = []
     return intents
 
@@ -489,7 +544,17 @@ def main() -> int:
     intents = collect_intents(command)
     has_add = "add" in intents
     has_commit = "commit" in intents
-    if has_add and has_commit:
+    release = intents & {"release-tag", "release-tag-elsewhere"}
+    if release and (has_add or has_commit):
+        # An evergreen--v* tag creation must be the only git operation in its call: the
+        # certification gate exits before the staged-index inspection, so a combined add or
+        # commit would otherwise ride past the hygiene backstop.
+        print("release-compound")
+    elif "release-tag-elsewhere" in intents:
+        print("release-elsewhere")
+    elif "release-tag" in intents:
+        print("release-tag")
+    elif has_add and has_commit:
         print("compound")
     elif has_commit and has_unsafe_commit_mode(command):
         print("unsafe")
