@@ -398,16 +398,22 @@ with tempfile.TemporaryDirectory() as temporary:
     (repo / ".evergreen-map.json").write_text(
         (root / "examples/evergreen-map.json").read_text()
     )
+    identity = dict(
+        os.environ,
+        GIT_AUTHOR_NAME="hooks", GIT_AUTHOR_EMAIL="hooks@test",
+        GIT_COMMITTER_NAME="hooks", GIT_COMMITTER_EMAIL="hooks@test",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, env=identity)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-q", "-m", "seed"], check=True, env=identity
+    )
     mapped = subprocess.run(
         [sys.executable, str(command), "impact", "--json", "--repo", str(repo),
          "src/public-api/client.py"],
         check=True, capture_output=True, text=True,
     )
     map_payload = json.loads(mapped.stdout)
-    assert map_payload["warnings"] == [
-        "living doc search failed (git unavailable, not a git repository, or a git error) "
-        "— treating as zero living docs"
-    ]
+    assert map_payload["warnings"] == []
     assert [item["path"] for item in map_payload["candidates"][:2]] == [
         "docs/api.md", "README.md",
     ]
