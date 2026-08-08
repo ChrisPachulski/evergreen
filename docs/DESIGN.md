@@ -107,8 +107,9 @@ bypass. Semantic truth findings and CI drift findings do not use this blocking p
 points. `impact` takes changed paths, optional evidence JSON, and repository-local
 `.evergreen-map.json` mappings; `till` inventories the tracked public declaration surface for seed
 and fails closed with a `truncated` warning whenever the inventory it builds could be incomplete;
-files outside the parseable surface (unparsed languages, extensionless scripts, untracked source)
-are surfaced with `outside inventory` warnings rather than silently skipped. Their
+files outside the parseable surface (unparsed languages, extensionless scripts without a Python
+shebang, untracked source) are surfaced with `outside inventory` warnings rather than silently
+skipped; a Python-shebang script such as `bin/evergreen` joins the parsed inventory. Their
 human and JSON forms expose ranked candidates, reasons or scan counts, and warnings; they do not
 expose semantic findings or verdicts.
 
