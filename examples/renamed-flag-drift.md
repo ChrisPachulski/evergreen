@@ -14,7 +14,7 @@ cli.py:156     parser.add_argument("--concurrency", ...)   # was --workers
 ## What evergreen says
 
 ```
-[high] in_docs_not_code  README.md:42 — documents `--workers`, gone from cli.py:156 → fix
+[high] in_docs_not_code contract  README.md:42 — documents `--workers`, gone from cli.py:156 → fix
 ```
 
 ## Proposed fix (derivable → diff)

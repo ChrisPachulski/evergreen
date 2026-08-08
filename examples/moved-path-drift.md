@@ -12,7 +12,7 @@ config/legacy.json   deleted; moved to config/templates/legacy-preset.json
 ## What evergreen says
 
 ```
-[high] in_docs_not_code  docs/cli.md:8 — cites config/legacy.json (no longer on disk) → fix path
+[high] in_docs_not_code path  docs/cli.md:8 — cites config/legacy.json (no longer on disk) → fix path
 ```
 
 ## Proposed fix (derivable → diff)

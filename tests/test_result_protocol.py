@@ -45,7 +45,7 @@ class ResultProtocolTests(unittest.TestCase):
 
     def result(self, **updates):
         result = {
-            "schema_version": 1,
+            "schema_version": 2,
             "status": "complete",
             "base": self.base,
             "head": self.head,
@@ -68,6 +68,7 @@ class ResultProtocolTests(unittest.TestCase):
             "code_path": "src/cli.py",
             "code_line": 2,
             "why": "The implementation no longer exposes the documented flag.",
+            "rung": "contract",
             "fix_or_flag": "fix",
         }
         finding.update(updates)
@@ -97,7 +98,7 @@ class ResultProtocolTests(unittest.TestCase):
         bad_inputs = [
             "not json",
             '{"schema_version":',
-            '{"schema_version": 1}\n{"schema_version": 1}',
+            '{"schema_version": 2}\n{"schema_version": 2}',
             "```evergreen-result\n{}\n```\n```evergreen-result\n{}\n```",
         ]
         for text in bad_inputs:
@@ -205,7 +206,7 @@ class ResultProtocolTests(unittest.TestCase):
 
     def test_rejects_wrong_schema_status_base_and_head(self):
         cases = [
-            ({"schema_version": 2}, "schema_version"),
+            ({"schema_version": 3}, "schema_version"),
             ({"status": "clean"}, "status"),
             ({"base": "wrong"}, "base"),
             ({"head": "wrong"}, "head"),
@@ -216,7 +217,7 @@ class ResultProtocolTests(unittest.TestCase):
 
     def test_rejects_boolean_schema_and_non_string_status_without_raising(self):
         self.assert_invalid(self.result(schema_version=True), "schema_version")
-        self.assert_invalid(self.result(schema_version=1.0), "schema_version")
+        self.assert_invalid(self.result(schema_version=2.0), "schema_version")
         self.assert_invalid(self.result(status=["complete"]), "status")
 
     def test_rejects_missing_or_extra_envelope_fields(self):
@@ -393,6 +394,7 @@ class ResultProtocolTests(unittest.TestCase):
             ({"severity": "critical"}, "severity"),
             ({"category": "UNVERIFIABLE"}, "category"),
             ({"fix_or_flag": "rewrite"}, "fix_or_flag"),
+            ({"rung": "vibes"}, "rung"),
         ]
         for updates, phrase in cases:
             with self.subTest(updates=updates):
@@ -404,7 +406,7 @@ class ResultProtocolTests(unittest.TestCase):
                 self.assert_invalid(result, phrase)
 
     def test_rejects_non_string_finding_enums_without_raising(self):
-        for field in ["severity", "category", "fix_or_flag"]:
+        for field in ["severity", "category", "rung", "fix_or_flag"]:
             with self.subTest(field=field):
                 finding = self.finding(**{field: ["high"]})
                 result = self.result(

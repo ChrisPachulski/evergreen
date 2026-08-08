@@ -15,7 +15,7 @@ Two flags are now optional. The prose is no longer true.
 ## What evergreen says
 
 ```
-[med] in_docs_not_code  README.md:15 — claims "all flags required"; cli.py:42-67 now has optional
+[med] in_docs_not_code prose  README.md:15 — claims "all flags required"; cli.py:42-67 now has optional
                         --log-level and --dry-run → flag for review
 ```
 

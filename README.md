@@ -30,8 +30,8 @@ With evergreen, in the same turn:
 
 ```
 evergreen: you renamed --workers to --concurrency.
-  README.md:42   documents --workers — gone from cli.py → fix
-  docs/cli.md:8  same flag, same fix
+  [contract] README.md:42   documents --workers — gone from cli.py → fix
+  [contract] docs/cli.md:8  same flag, same fix
 left alone: docs/adr/0003.md mentions --workers — an ADR, frozen in time.
 ```
 

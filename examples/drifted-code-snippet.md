@@ -20,7 +20,7 @@ src/index.ts:89 now declares:
 ## What evergreen says
 
 ```
-[med] name_mismatch  README.md:28 — snippet passes `timeout` (removed) and omits `retries`
+[med] name_mismatch snippet  README.md:28 — snippet passes `timeout` (removed) and omits `retries`
                      (added) vs src/index.ts:89 → flag for review
 ```
 
