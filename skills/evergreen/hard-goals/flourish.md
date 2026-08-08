@@ -48,6 +48,38 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
    at write time. Silent overwrite fails.
    CHECK: the report contains the diff (or full text) and the ledger. Pass = both present.
 
+7. **MUST reach the quick start within 400 words.**
+   CHECK:
+   ```sh
+   awk '/^#{2,3} *(Install|Quick ?start|Getting started|Usage)/{exit} {c+=NF} END{print c}' RESULT.md
+   ```
+   Pass = the printed number is ≤ 400, or the doc has no install path at all (a pure explainer —
+   say which in the report). The bound is derived, not invented: `readme-style.md` caps the whole
+   gateway archetype at 450 words, so a doc that hasn't reached install by 400 cannot be one.
+   A visitor who must read an essay before learning how to try the thing will not try the thing.
+
+8. **MUST keep the open page inside the length band.**
+   CHECK:
+   ```sh
+   python3 - <<'EOF'
+   import re,sys
+   t=open('RESULT.md').read()
+   open_page=re.sub(r'<details>.*?</details>','',t,flags=re.S)
+   print(len(open_page.split()))
+   EOF
+   ```
+   Pass = ≤ 2,500 words, `readme-style.md`'s own onboarding ceiling. `<details>` content is
+   rent-free and excluded, per `readme-style.md`'s "the budgets measure the open page, not the
+   collapsed reference beneath it." Over the bound, the fix is goals 1–3's demotion path —
+   `<details>` or a linked file — never deletion.
+
+**Goals 7 and 8 exist because the structure floor was a judgment and judgments drift.** On
+2026-08-08 this repo's own README passed every floor at 4,571 words with the install instruction at
+word 2,031, behind a machine-readable policy blob and three separate repetitions of a benchmark
+caveat. Every line of it was true, conserved, voiced, and correctly structured *in order* — the
+spine was right and the document was still unusable to a stranger. No goal above 6 could catch that,
+because none of them counted anything.
+
 ## Why this works without a second AI at runtime
 
 Every CHECK is a grep or a count that anyone — a human, or the same model on a later pass — re-runs
