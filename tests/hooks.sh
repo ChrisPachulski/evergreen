@@ -379,6 +379,7 @@ assert [item["path"] for item in provider_payload["candidates"]] == [
     "eval/flourish/fixtures/monolith/golden/gutted.md",
     "eval/flourish/fixtures/monolith/golden/skeleton.md",
     "eval/flourish/fixtures/monolith/README.md",
+    "eval/seed/README.md",
     "examples/provider-boundary.md", "README.md",
     "eval/fixture/config.py",
 ]
@@ -402,7 +403,10 @@ with tempfile.TemporaryDirectory() as temporary:
         check=True, capture_output=True, text=True,
     )
     map_payload = json.loads(mapped.stdout)
-    assert map_payload["warnings"] == []
+    assert map_payload["warnings"] == [
+        "living doc search failed (git unavailable, not a git repository, or a git error) "
+        "— treating as zero living docs"
+    ]
     assert [item["path"] for item in map_payload["candidates"][:2]] == [
         "docs/api.md", "README.md",
     ]
