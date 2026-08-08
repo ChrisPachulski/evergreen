@@ -148,7 +148,7 @@ finish_review() {
 finish_inconclusive() {
   local reason="$1" raw
   raw="$(python3 -c 'import json,sys; print(json.dumps({
-    "schema_version": 1, "status": "inconclusive", "base": sys.argv[1], "head": sys.argv[2],
+    "schema_version": 2, "status": "inconclusive", "base": sys.argv[1], "head": sys.argv[2],
     "claims": {"total": 0, "certified": 0, "drift": 0, "unverified": 0},
     "findings": [], "unverified": [], "errors": [sys.argv[3]],
     "runtime": {"provider": sys.argv[4], "model": sys.argv[5], "cli_version": sys.argv[6]},
@@ -313,10 +313,14 @@ Return exactly one fenced block tagged evergreen-result. The block must contain 
 must be the only result envelope. Bind it to base $BASE_SHA and head $HEAD_SHA.
 
 Use this exact top-level shape:
-{"schema_version":1,"status":"complete|inconclusive","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":0,"certified":0,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"$MODEL","cli_version":"$CLI_VERSION"}}
+{"schema_version":2,"status":"complete|inconclusive","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":0,"certified":0,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"$MODEL","cli_version":"$CLI_VERSION"}}
 
-Each finding must contain exactly: severity, category, doc_path, doc_line, claim, code_path,
-code_line, why, fix_or_flag. Each unverified item must contain exactly: doc_path, doc_line, claim,
+Each finding must contain exactly: severity, category, rung, doc_path, doc_line, claim,
+code_path, code_line, why, fix_or_flag. rung records which ladder rung proved the finding and
+must be one of path, contract, snippet, prose — path for a doc naming a file that is gone,
+contract for a documented flag/env/route/function/type that no longer exists, snippet for a
+shown block or signature that no longer matches its source, prose for a claim only a semantic
+read can settle. Report the rung that actually proved it, never the cheapest-sounding one. Each unverified item must contain exactly: doc_path, doc_line, claim,
 reason. Use status inconclusive and explain the problem in errors whenever the evidence is
 truncated, inaccessible, ambiguous, or insufficient. The runtime object must retain exactly these
 resolved values: {"provider":"anthropic","model":"$MODEL","cli_version":"$CLI_VERSION"}.

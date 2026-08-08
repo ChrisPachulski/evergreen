@@ -14,7 +14,7 @@ except ImportError:  # Direct script execution.
     from path_policy import MAX_PATH, is_protocol_path
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_ITEMS = 100
 MAX_TEXT = 4096
 MAX_RUNTIME_TEXT = 256
@@ -28,7 +28,7 @@ RESULT_FIELDS = {
 }
 CLAIM_FIELDS = {"total", "certified", "drift", "unverified"}
 FINDING_FIELDS = {
-    "severity", "category", "doc_path", "doc_line", "claim",
+    "severity", "category", "rung", "doc_path", "doc_line", "claim",
     "code_path", "code_line", "why", "fix_or_flag",
 }
 UNVERIFIED_FIELDS = {"doc_path", "doc_line", "claim", "reason"}
@@ -38,6 +38,12 @@ SEVERITIES = {"high", "med", "low"}
 CATEGORIES = {
     "in_docs_not_code", "name_mismatch", "in_code_not_docs", "release_identity_drift",
 }
+# Which ladder rung proved the finding, in ladder order. Category says what kind of
+# disagreement it is; rung says how it was found, and the two are independent — an
+# in_docs_not_code finding can come from a vanished path, a dead flag, or a prose read.
+# `prose` is the only rung that rests on judgment rather than a mechanical check, which
+# is what makes the distribution worth recording.
+RUNGS = {"path", "contract", "snippet", "prose"}
 FIX_OR_FLAG = {"fix", "flag"}
 FENCE_RE = re.compile(r"```evergreen-result[ \t]*\r?\n(.*?)\r?\n```", re.DOTALL)
 
@@ -261,6 +267,7 @@ def _validate_finding(
     assert isinstance(item, dict)
     _enum(item["severity"], SEVERITIES, f"{label}.severity", errors)
     _enum(item["category"], CATEGORIES, f"{label}.category", errors)
+    _enum(item["rung"], RUNGS, f"{label}.rung", errors)
     _enum(item["fix_or_flag"], FIX_OR_FLAG, f"{label}.fix_or_flag", errors)
     _text(item["claim"], f"{label}.claim", errors, single_line=True)
     _text(item["why"], f"{label}.why", errors)

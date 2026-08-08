@@ -102,8 +102,8 @@ def render_result(
                 "",
                 "### Findings",
                 "",
-                "| severity | citations | claim | why | action |",
-                "|---|---|---|---|---|",
+                "| severity | rung | citations | claim | why | action |",
+                "|---|---|---|---|---|---|",
             ]
         )
         for finding in result["findings"]:
@@ -116,6 +116,7 @@ def render_result(
                 + " | ".join(
                     [
                         _safe(finding["severity"]),
+                        _safe(finding["rung"]),
                         _safe(citations),
                         _safe(finding["claim"]),
                         _safe(finding["why"]),

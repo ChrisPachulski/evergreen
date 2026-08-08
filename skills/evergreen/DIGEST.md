@@ -123,7 +123,9 @@ Rules:
   content (`-a`/`--all`, include/only, and pathspec forms) require a separately staged plain
   commit; `EVERGREEN_GUARD=off` is the bypass.
 
-Output, per finding: `[high|med|low] category  file:line — what's wrong (cite the code) → fix | flag`
+Output, per finding: `[high|med|low] category rung  file:line — what's wrong (cite the code) → fix | flag`
+Rung is which ladder rung proved it: `path · contract · snippet · prose`. Name the one that
+actually proved it; `prose` is the only one resting on judgment.
 Exempt docs go on a trailing `left alone:` line, never as a finding.
 Surface still matches → one line: `evergreen: docs still match`.
 

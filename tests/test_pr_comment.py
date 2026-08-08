@@ -45,7 +45,7 @@ class PRCommentTests(unittest.TestCase):
 
     def result(self, **updates):
         result = {
-            "schema_version": 1,
+            "schema_version": 2,
             "status": "complete",
             "base": self.base,
             "head": self.head,
@@ -68,6 +68,7 @@ class PRCommentTests(unittest.TestCase):
             "code_path": "src/cli.py",
             "code_line": 2,
             "why": "The implementation no longer exposes the documented flag.",
+            "rung": "contract",
             "fix_or_flag": "fix",
         }
         finding.update(updates)
