@@ -73,6 +73,22 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
    collapsed reference beneath it." Over the bound, the fix is goals 1–3's demotion path —
    `<details>` or a linked file — never deletion.
 
+9. **MUST run the repository's own checks before reporting the rewrite as done.**
+   CHECK: the report shows the verification command it ran and that command's verdict line — in
+   this repository, `bash tests/all.sh` and its `GREEN` / `NOT GREEN` line. Pass = command and
+   verdict both shown, or the report states that the repository declares no verification entry
+   point. A partial run does not count: naming one suite when the repository runs four is a fail.
+   Never substitute a grep over the output for the verdict line; suites disagree on whether failure
+   prints `FAIL` or `not ok`, and a pattern matching one silently passes the other.
+
+**Goal 9 exists because documentation is load-bearing.** A doc is not inert text a rewrite can
+reshape freely: prose gets asserted on. Repositories bind doc content to code — a policy block that
+must appear identically across surfaces, a platform bound a test greps for, an exit-code sentence
+that must appear exactly twice. On 2026-08-08 a flourish run on this repository passed every craft
+floor, every conservation check, and the entire Python test suite, then broke 36 assertions in a
+shell suite no Python runner collects. Structure, voice, and truth were all fine. The rewrite was
+still wrong, and nothing in goals 1–8 could see it.
+
 **Goals 7 and 8 exist because the structure floor was a judgment and judgments drift.** On
 2026-08-08 this repo's own README passed every floor at 4,571 words with the install instruction at
 word 2,031, behind a machine-readable policy blob and three separate repetitions of a benchmark
