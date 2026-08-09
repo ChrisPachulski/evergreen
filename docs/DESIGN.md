@@ -101,6 +101,17 @@ pathspec forms) are rejected for the same reason: use a **separately staged plai
 Run staging and commit in **separate tool calls**. `EVERGREEN_GUARD=off` remains the explicit
 bypass. Semantic truth findings and CI drift findings do not use this blocking path.
 
+## Intensity, and why it is checkable
+
+Intensity was an instruction and nothing more until findings recorded their provenance. Every
+finding now names the rung that proved it: `path · contract · snippet · prose`. `prose` is the only rung
+resting on judgment rather than a mechanical check, so it is the only one an intensity has reason
+to withhold — light must never emit a `prose` finding, and an undeclared mode is itself a
+violation. `bin/evergreen conform` reads a transcript and holds it to the intensity it declares,
+which turns a mode that was previously unfalsifiable into one anybody can check after the fact.
+Nothing stops a model mid-turn; the hooks deliberately never read output. That boundary is the
+honest limit of the claim.
+
 ## Shipped local and host surface
 
 `bin/evergreen impact` and `bin/evergreen till` are the dependency-free, read-only query entry

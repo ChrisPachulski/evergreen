@@ -168,6 +168,25 @@ for tok in \
   fi
 done
 
+# Intensity and finding provenance must read the same on every surface an agent loads.
+# Added 2026-08-08: the rung field, the mode header, and conform shipped while AGENTS.md and
+# DESIGN.md still described the old contract. Prose parity was enforced for release identity and
+# the receipt policy but not for these, so the drift was invisible to CI.
+for tok in \
+  "path · contract · snippet · prose" \
+  "light must never emit a \`prose\` finding" \
+  "bin/evergreen conform"; do
+  if grep -Fq "$tok" "$ROOT/README.md" \
+     && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
+     && grep -Fq "$tok" "$ROOT/AGENTS.md"; then
+    ok "intensity and rung provenance agree across product/Claude/Codex: $tok"
+  else
+    no "intensity and rung provenance agree across product/Claude/Codex: $tok"
+  fi
+done
+
 # Completion and status claims must use one evidence contract on every host surface.
 if python3 - "$ROOT" <<'PY'
 from pathlib import Path

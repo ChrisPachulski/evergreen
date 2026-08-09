@@ -263,8 +263,7 @@ own, once.)
 Category: `in_code_not_docs · in_docs_not_code · name_mismatch · release_identity_drift ·
 UNVERIFIABLE` (another system — drop, don't guess). Prose/comment rot lenses: `contradiction ·
 stale-reference · signature-mismatch · outdated-example · resolved-marker · orphaned-comment`.
-Rung (which ladder rung *proved* it, independent of category): `path · contract · snippet ·
-prose`. Report the rung that actually proved the finding, never the cheapest-sounding one.
+Rung (which ladder rung *proved* it, independent of category): `path · contract · snippet · prose`. Report the rung that actually proved the finding, never the cheapest-sounding one.
 `prose` is the only rung resting on judgment rather than a mechanical check, so a run heavy
 in `prose` findings is a fact about the semantic pass worth knowing.
 Each finding carries a severity, a rung, and a fix-or-flag call.

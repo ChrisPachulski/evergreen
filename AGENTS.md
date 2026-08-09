@@ -117,6 +117,14 @@ A benchmark manifest is accepted only when its exact bytes match the captured HE
 Use `evergreen receipt --repo PATH` for the local snapshot. Local Git state cannot verify external
 publication; without direct authority, external release state remains unverified.
 
+## Intensity
+
+Per repo: `off | light | strict`, default light. It steers the ride-along reflex only — a command
+you type pins its own depth and runs at full strictness in every mode, `off` included. Rung is
+which ladder rung proved a finding: `path · contract · snippet · prose`. light must never emit a `prose` finding, and an
+undeclared mode is itself a violation. `bin/evergreen conform` holds a transcript to the intensity
+it declares.
+
 ## Two depths
 
 - **flag** (default) — report the drift you can cite, every turn.
@@ -144,7 +152,8 @@ infrastructure failure advisory, and the report must remain inconclusive.
 `bash tests/all.sh` is the definition of green. Run it before reporting any change to this
 repository as done, working, passing, or ready.
 
-A Python runner alone is **not** green. CI runs four suites and only one of them is Python:
+A Python runner alone is **not** green. `tests/all.sh` runs four suites and two of them are
+shell integration suites no Python runner collects:
 `tests/hooks.sh` enforces that policy text is identical across README.md, AGENTS.md, SKILL.md, and
 DIGEST.md, and `tests/action.sh` exercises the result envelope end to end. Neither is collected by
 `unittest` or `pytest`, so a docs restructure or a schema change can pass the Python tests and still
@@ -195,12 +204,13 @@ behavior proves drift; timeout, setup, dependency, or safety failure remains
 Point at the line. One-line read of what changed, one line per finding, one-line verdict. Exempt
 docs on a trailing `left alone:` line, never as a finding.
 
-Per finding: `[high|med|low] category  file:line — what's wrong (cite the code) → fix | flag`
+Per finding: `[high|med|low] category rung  file:line — what's wrong (cite the code) → fix | flag`
+Rung is which ladder rung proved it: `path · contract · snippet · prose`.
 Categories: `in_code_not_docs · in_docs_not_code · name_mismatch · release_identity_drift ·
 UNVERIFIABLE` (drop the last). In a deep pass also report `unverified` (this code, couldn't settle)
 — surface, don't drop.
 
-Surface still matches → one line: `evergreen: docs still match`.
+Surface still matches → one line: `evergreen [light]: docs still match`.
 
 ## Family
 

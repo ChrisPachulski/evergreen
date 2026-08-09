@@ -29,7 +29,7 @@ You rename a flag and move on. Three files still document the old name. Nobody n
 With evergreen, in the same turn:
 
 ```
-evergreen: you renamed --workers to --concurrency.
+evergreen [light]: you renamed --workers to --concurrency.
   [contract] README.md:42   documents --workers — gone from cli.py → fix
   [contract] docs/cli.md:8  same flag, same fix
 left alone: docs/adr/0003.md mentions --workers — an ADR, frozen in time.
@@ -81,7 +81,7 @@ jobs:
           fail_on_inconclusive: true
 ```
 
-Drift never fails the build. The full CI contract — what a green check certifies, the four outcomes, fork-PR behavior, and every process bound — is in the operations reference above.
+Drift never fails the build. The full CI contract — what a green check certifies, the four outcomes, fork-PR behavior, and every process bound — is in the operations reference below.
 
 <details>
 <summary>Host setup, platform support, and the reversible CLI install</summary>
@@ -109,7 +109,7 @@ Add trusted, passive provider facts to a candidate query when available:
 Instruction files and their rollback snapshots are limited to 1 MiB, ownership records to 4 KiB, and
 each plugin manifest to 64 KiB; sparse files are checked by logical size. Full transaction
 semantics, lock and journal behavior, and what `doctor` will and won't touch are in
-the operations reference above.
+the operations reference below.
 
 </details>
 
@@ -145,7 +145,7 @@ Evidence providers and source maps are passive candidate inputs; Evergreen never
 
 Winnow's default prove-by-test path is local: it uses a repository-declared test command, a bounded timeout, and a disposable scratch location. It does not forward new secrets, refuses privileged, destructive, deployment, upload, publication, and portal-mutation commands, and disables network access when the host can do so safely. The classifier is only a conservative first filter: "allowed" does not replace isolation, timeout, dependency, and permission checks. Setup failures and timeouts are inconclusive, not proof of drift.
 
-CI has a different boundary, and the full contract is in the operations reference above.
+CI has a different boundary, and the full contract is in the operations reference below.
 
 <details>
 <summary><strong>Operations reference</strong> — release identity, receipt policy, evidence boundary, host-install transactions, and the full CI contract</summary>
@@ -460,7 +460,7 @@ It reads paths, contracts, and prose — not your abstract syntax tree. Nothing 
 It treats a shipped marketing version as a living public claim, distinct from the build number, and reconciles the surfaces that repeat that identity. Rules in the operations reference above.
 
 **Does `light` mode make the commands less thorough?**
-No. Intensity steers the ride-along reflex only. `light` tells it to walk the mechanical rungs and defer the semantic read; `strict` adds that read; `off` silences the session preamble and the post-turn nudge. A command you type — `winnow`, `flourish`, `seed`, `cultivate` — pins its own depth and runs at full strictness in every mode, `off` included. `off` means "stop nudging me," not "stop working."
+No. Intensity steers the ride-along reflex only. `light` tells it to walk the mechanical rungs and defer the semantic read; `strict` adds that read; `off` silences the session preamble and the post-turn nudge. A command you type — `winnow`, `flourish`, `seed`, `cultivate` — pins its own depth and runs at full strictness in every mode, `off` included. Findings name the rung that proved them (`path · contract · snippet · prose`); light must never emit a `prose` finding, and `bin/evergreen conform` checks a transcript against the mode it declared. `off` means "stop nudging me," not "stop working."
 
 **Why "evergreen"?**
 A doc that stays true as the code grows is evergreen. Yours aren't. Yet.
