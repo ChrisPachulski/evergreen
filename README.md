@@ -271,7 +271,11 @@ Without configuration, the command searches bounded, Git-tracked living docs for
 paths and declaration-shaped contract symbols. A symbol counts only where the declaration is
 reachable from outside its file: function-local declarations, members of a private type, and
 declarations a language marks private (a leading underscore, a lowercase Go initial, a Rust item
-without `pub`) are not contracts. It excludes docs inside directory components named
+without `pub`) are not contracts. It does not index CLI flag strings, environment keys, or other
+quoted literals, because the scan masks string bodies before extracting declarations. A renamed
+`--flag` is therefore invisible to this ranking unless a `.evergreen-map.json` entry names the doc;
+the ladder's dead-contract rung still reads the doc against the code and catches it, but `impact`
+will not nominate the doc for you. It excludes docs inside directory components named
 `plans`, `specs`, `adr`/`adrs`, `archive`/`archives`, `audit`/`audits`, `roadmaps`, or `readiness`, plus
 changelog and ISO-dated filenames. A repository-local
 `.evergreen-map.json`, if present, adds explicit relationships; use the
