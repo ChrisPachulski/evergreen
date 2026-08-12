@@ -40,6 +40,15 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
      (`docs/` is often gitignored; prefer `public/`/`assets/`/`.github/`). Never a visible
      placeholder box or "screenshot goes here" text. Raise a missing screenshot in your summary, not
      the doc.
+   - **The "how it works" diagram — mermaid, vertical, non-negotiable.** Every rewrite ships one
+     fenced ` ```mermaid ` block using `graph TD` / `flowchart TD` (`BT` only where the argument
+     flows upward). **Never `LR`/`RL`, never `direction LR` in a subgraph, never box-drawing ASCII
+     art** — that art dies on a font change and cannot be styled, linked, or diffed. Open the block
+     with the ELK directive, label nodes with real function and table names in plain language
+     first, and **render it before you ship it**
+     (`npx -y @mermaid-js/mermaid-cli -i <doc> -o /tmp/check.md`, output to scratch, never the
+     repo). Full contract: `skills/evergreen/references/mermaid-diagrams.md`. Enforced by
+     `hard-goals/flourish.md` goal 7 — a rewrite with no vertical mermaid block is not done.
    Then **demote** deep technical detail (full architecture, exhaustive dev setup, API surface) below
    the visitor-facing top — and demote means **move, verbatim, into `<details>` or a linked doc
    file**, never compress-to-summary. A 200-line API reference that comes back as a ten-line "module
@@ -55,9 +64,10 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
    - **Score the face, not just the spine.** Before any craft verdict, enumerate these
      gold-standard face elements as present/absent: (a) centered visual hero (`<h1 align="center">`
      or logo), (b) a one-line epigraph with voice under the title, (c) a badge row, (d) a
-     vivid/problem-first opener before the definitional line, (e) at least one earned visual
-     (ASCII "how it works", diagram, or screenshot). A doc with a correct spine but a dead face is
-     not at the gold standard — it is "accurate but ugly," which is exactly flourish's job.
+     vivid/problem-first opener before the definitional line, (e) a **vertical mermaid "how it
+     works" diagram** (ASCII art scores this element *absent* — it is the thing being replaced).
+     A doc with a correct spine but a dead face is not at the gold standard — it is "accurate but
+     ugly," which is exactly flourish's job.
    - **Diff against a shipped exemplar.** Open one concrete gold-standard README (this plugin's
      own, or one from the 28-repo survey) and compare the target's shape and voice to it — not
      only the abstract style doc. The exemplar catches what the checklist misses.
@@ -109,7 +119,8 @@ the craft pass.
 
 **Structure floor.** First screenful is hero → value prop → features → quick start (not
 architecture); a visual product shows a screenshot or an invisible comment marker (never a visible
-"screenshot goes here" box); features are bullets, not paragraphs; deep internals sit below the
+"screenshot goes here" box); **"how it works" is a vertical mermaid block — no ASCII art, no `LR`**;
+features are bullets, not paragraphs; deep internals sit below the
 visitor top; the never-present set (changelog/roadmap/aspirational) is cut, not prettied — and an
 inline API reference is *rehomed* (linked docs or `<details>`), never deleted.
 

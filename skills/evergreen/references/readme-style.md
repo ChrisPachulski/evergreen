@@ -109,8 +109,23 @@ Voice is never a license to fabricate: every claim the voice makes still faces t
 ## Visuals (earned, never decorative)
 
 Hero (identity) + at most one screenshot (proof, placed right after the feature list, only if
-the product has a visual surface) + optional one diagram (how it works). Never a gallery.
-Dev-tool READMEs often ship **zero** images — their demo is a code block, not a screenshot.
+the product has a visual surface) + **one "how it works" diagram**. Never a gallery.
+Dev-tool READMEs often ship **zero** *images* — their demo is a code block, not a screenshot. That
+is not licence to skip the diagram: a diagram is text.
+
+**The diagram is mermaid and it is vertical.** A fenced ` ```mermaid ` block, `graph TD` (or
+`flowchart TD`; `BT` only where the argument truly flows upward). Never `LR`/`RL`, never a
+`direction LR` subgraph, never box-drawing ASCII art.
+
+ASCII flow art loses its alignment the moment a font changes, cannot be styled, cannot be linked,
+and cannot be diffed meaningfully. Mermaid renders natively on GitHub and stays a text claim the
+verify pass can read. Horizontal layouts fight the page: a README is read in a narrow column, so an
+`LR` diagram grows along the axis the reader has least of. `TD` grows along the one the page
+already scrolls.
+
+Full contract — ELK directive, shape vocabulary, dark-first palette, syntax traps, and the render
+check — in [`mermaid-diagrams.md`](mermaid-diagrams.md). It is enforced by `hard-goals/flourish.md`
+goal 7.
 
 ## Badges
 
