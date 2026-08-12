@@ -40,9 +40,13 @@ The diagram argues; it does not inventory.
 
 - **Concrete names, always.** `aggregate_all builds 7 stacked grains` beats `Aggregation`. Real
   function, table, and column names are what make a diagram worth more than the paragraph above it.
-- **Plain language first, technical second.** Lead each label with what the step *does* for a
-  reader, then the identifier underneath via `<br>`. Someone skimming only the first lines should
-  still follow the flow.
+- **One line per node. Never `<br>`.** GitHub parses node labels as markdown strings and **strips
+  `<br>` silently** — the two halves of the label fuse into `one placeDS_* staging tables`. It
+  renders correctly under `mmdc` and wrong on the page, which is the worst kind of bug. Write a
+  single short label and let the renderer wrap it.
+- **Push detail onto the edges.** The identifier list that wanted a second line belongs on the
+  arrow into the node: `web -->|"GA4, organic search"| stage`. Edge labels render everywhere, keep
+  nodes narrow, and read as the reason the connection exists.
 - **The removal test.** Delete half the nodes. If the remaining structure still teaches something,
   it is a diagram. If not, it was a bulleted list wearing boxes — write the list instead.
 - **Ten to twenty nodes.** Past that, split it or collapse a branch into one node that names where
@@ -85,7 +89,8 @@ Every node gets a class. An unstyled node reads as an oversight.
   syntax.
 - **Node IDs are alphanumeric plus underscore.** Punctuation goes in the label only.
 - **No `N. ` line starts.** Mermaid parses `"1. Read"` as a markdown list and warns. Write `"1: Read"`.
-- **Two `<br>` breaks per node, maximum.** Three or more short phrases also parse as a list.
+- **No `<br>` at all** — see above. This is the trap that actually ships broken diagrams, because
+  local rendering does not reproduce it.
 
 ## Prove it renders
 
@@ -98,3 +103,9 @@ npx -y @mermaid-js/mermaid-cli -i README.md -o /tmp/check.md
 A syntax error fails loudly here and silently on GitHub, where it degrades to a raw code block.
 Render it, look at the output, then commit. `mmdc` writes its artifacts next to the output path —
 point that at a scratch directory, never into the repo.
+
+**`mmdc` passing is not proof the page is right.** GitHub runs its own mermaid build with HTML
+labels disabled, so it accepts markup `mmdc` renders and quietly drops it — `<br>` being the case
+that bites. A local render proves the syntax parses; only the rendered page proves the labels read.
+After pushing a doc with a new diagram, open it on the host and read the node text. If a label
+looks like two words jammed together, that is this bug.
