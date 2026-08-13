@@ -125,7 +125,7 @@ already scrolls.
 
 Full contract — ELK directive, shape vocabulary, dark-first palette, syntax traps, and the render
 check — in [`mermaid-diagrams.md`](mermaid-diagrams.md). It is enforced by `hard-goals/flourish.md`
-goal 7.
+goal 10.
 
 ## Badges
 

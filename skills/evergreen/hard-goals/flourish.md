@@ -48,29 +48,6 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
    at write time. Silent overwrite fails.
    CHECK: the report contains the diff (or full text) and the ledger. Pass = both present.
 
-7. **MUST ship a vertical mermaid diagram, and no horizontal or ASCII one.**
-   CHECK, all four on the written result:
-   (a) `grep -c '^```mermaid' <doc>` >= 1;
-   (b) `grep -cE '^\s*(graph|flowchart)\s+(TD|TB|BT)\b' <doc>` >= 1;
-   (c) `grep -cE '^\s*(graph|flowchart)\s+(LR|RL)\b|^\s*direction\s+(LR|RL)\b' <doc>` == 0;
-   (d) `grep -cE '[─│┌┐└┘├┤┬┴┼━┃╔╗╚╝║═]' <doc>` == 0.
-   Pass = all four hold. A rewrite whose "how it works" is box-drawing art, or whose mermaid runs
-   left-to-right, fails — however good it reads.
-
-   Rationale, so a later run does not relitigate it: ASCII flow art breaks on any font change and
-   cannot be styled, linked, or diffed; mermaid renders natively on GitHub and stays text the
-   verify pass can read. Horizontal diagrams grow along the axis a README column has least of.
-   The craft contract is `skills/evergreen/references/mermaid-diagrams.md`.
-
-   The render check (`npx -y @mermaid-js/mermaid-cli`) is **craft, not a hard goal** — it needs a
-   network fetch and a toolchain that may be absent, and a goal that can fail on a missing binary
-   is not binary. Render when you can; the four greps are the bar.
-
-   Validated against controls when written, so the gate is known to discriminate rather than
-   merely to pass: a vertical-mermaid doc PASSes; box-drawing art FAILs on (d); `graph LR` FAILs
-   on (b)+(c); a `direction LR` subgraph under `graph TD` FAILs on (c); no diagram at all FAILs on
-   (a)+(b). A gate never run against a known-bad input has proven nothing.
-
 7. **MUST reach the quick start within 400 words.**
    CHECK:
    ```sh
@@ -103,6 +80,29 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
    point. A partial run does not count: naming one suite when the repository runs four is a fail.
    Never substitute a grep over the output for the verdict line; suites disagree on whether failure
    prints `FAIL` or `not ok`, and a pattern matching one silently passes the other.
+
+10. **MUST ship a vertical mermaid diagram, and no horizontal or ASCII one.**
+    CHECK, all four on the written result:
+    (a) `grep -c '^```mermaid' <doc>` >= 1;
+    (b) `grep -cE '^\s*(graph|flowchart)\s+(TD|TB|BT)\b' <doc>` >= 1;
+    (c) `grep -cE '^\s*(graph|flowchart)\s+(LR|RL)\b|^\s*direction\s+(LR|RL)\b' <doc>` == 0;
+    (d) `grep -cE '[─│┌┐└┘├┤┬┴┼━┃╔╗╚╝║═]' <doc>` == 0.
+    Pass = all four hold. A rewrite whose "how it works" is box-drawing art, or whose mermaid runs
+    left-to-right, fails — however good it reads.
+
+    Rationale, so a later run does not relitigate it: ASCII flow art breaks on any font change and
+    cannot be styled, linked, or diffed; mermaid renders natively on GitHub and stays text the
+    verify pass can read. Horizontal diagrams grow along the axis a README column has least of.
+    The craft contract is `skills/evergreen/references/mermaid-diagrams.md`.
+
+    The render check (`npx -y @mermaid-js/mermaid-cli`) is **craft, not a hard goal** — it needs a
+    network fetch and a toolchain that may be absent, and a goal that can fail on a missing binary
+    is not binary. Render when you can; the four greps are the bar.
+
+    Validated against controls when written, so the gate is known to discriminate rather than
+    merely to pass: a vertical-mermaid doc PASSes; box-drawing art FAILs on (d); `graph LR` FAILs
+    on (b)+(c); a `direction LR` subgraph under `graph TD` FAILs on (c); no diagram at all FAILs on
+    (a)+(b). A gate never run against a known-bad input has proven nothing.
 
 **Goal 9 exists because documentation is load-bearing.** A doc is not inert text a rewrite can
 reshape freely: prose gets asserted on. Repositories bind doc content to code — a policy block that

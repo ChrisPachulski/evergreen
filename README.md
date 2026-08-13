@@ -115,13 +115,41 @@ the operations reference below.
 
 ## How it works
 
-When code changes, it stops at the first rung that catches:
+When code changes, it walks four rungs and stops at the first that catches:
 
-```
-1. A doc names a file that's gone?      → grep, confirm, flag
-2. A documented flag / env / route gone? → grep the code, flag
-3. A shown snippet drifted from source? → read both, compare
-4. Does the prose still tell the truth? → only then, reason
+```mermaid
+%%{init: {"flowchart": {"defaultRenderer": "elk"}} }%%
+graph TD
+    change[/"a turn changed code"/]:::source
+    outward{{"walk outward to the docs that name it"}}:::staging
+    exempt["ADRs, specs, dated snapshots: left alone"]:::region
+    r1{"rung 1: a documented file is gone?"}:::constraint
+    r2{"rung 2: a documented flag, env, or route is gone?"}:::constraint
+    r3{"rung 3: a shown snippet drifted?"}:::constraint
+    r4{"rung 4: does the prose still hold?"}:::constraint
+    proof{{"cite the code line that falsifies it"}}:::modelling
+    finding[\"finding, tagged with its rung"/]:::output
+    quiet[\"silence means certified"/]:::output
+
+    change --> outward
+    outward -.->|"describes the past"| exempt
+    outward --> r1
+    r1 -->|"grep, confirm"| proof
+    r1 -.-> r2
+    r2 -->|"grep the code"| proof
+    r2 -.-> r3
+    r3 -->|"read both"| proof
+    r3 -.-> r4
+    r4 -->|"reason, never grep"| proof
+    r4 -.->|"still true"| quiet
+    proof --> finding
+
+    classDef source fill:#2a4858,stroke:#00f0ff,color:#e0e0e0
+    classDef staging fill:#1a1a2a,stroke:#8888cc,color:#c0c0c0
+    classDef region fill:#3a2a4a,stroke:#ff00aa,color:#e0e0e0
+    classDef modelling fill:#3a3a1a,stroke:#ffcc00,color:#e0e0e0
+    classDef output fill:#1a3a2a,stroke:#00ff88,color:#e0e0e0
+    classDef constraint fill:#2a1a1a,stroke:#ff4444,color:#c0c0c0
 ```
 
 One rule above all: **prove it or drop it.** If it can't cite the code that makes the doc wrong, it isn't a finding. A checker that cries wolf gets muted — that rule is the muzzle.
@@ -143,9 +171,7 @@ More of what it catches, one per rung, in [examples/](examples/).
 
 Evidence providers and source maps are passive candidate inputs; Evergreen never executes provider commands or accepts their verdicts. Executable proof is local and explicit; CI never executes pull-request code, and unsafe or unavailable isolation is inconclusive.
 
-Winnow's default prove-by-test path is local: it uses a repository-declared test command, a bounded timeout, and a disposable scratch location. It does not forward new secrets, refuses privileged, destructive, deployment, upload, publication, and portal-mutation commands, and disables network access when the host can do so safely. The classifier is only a conservative first filter: "allowed" does not replace isolation, timeout, dependency, and permission checks. Setup failures and timeouts are inconclusive, not proof of drift.
-
-CI has a different boundary, and the full contract is in the operations reference below.
+Winnow's prove-by-test path runs locally under a declared test command, a bounded timeout, and a disposable scratch location; CI has a different boundary. Both contracts are in the operations reference below.
 
 <details>
 <summary><strong>Operations reference</strong> — release identity, receipt policy, evidence boundary, host-install transactions, and the full CI contract</summary>
@@ -431,9 +457,7 @@ Four axes — **truth · craft · hygiene · creation** — one creed: prove it 
 
 That rule applies to evergreen itself. The [eval](eval/) seeds a fixture repo with catalogued lies, true claims that must not be flagged, and exempt docs, then lets a headless agent winnow it blind. The per-pair harness ([`eval/bench/`](eval/bench/)) runs the judge over labeled code/doc pairs. The [flourish eval](eval/flourish/) turns the craft command's own monstrosity test into machine-checkable gates: trapped fixtures where a beautiful gutting, a fabricated feature, or a flattened hook each trip a deterministic scorer that survived its own adversarial review.
 
-**On the benchmark, once and plainly:** evergreen does not currently publish a trustworthy accuracy number. Current five-language benchmark metrics are published only from one compatible run that clears every declared coverage gate. That run completed 2,103 of 2,104 pairs and is replayable, but its judge received canonical IDs that leak label-construction proxies — that invalidates the accuracy metrics, though not the completion coverage. Clean runs now hide canonical IDs, fail closed on incomplete screening, and require exact dataset-byte binding before launch. Matrices, provenance, and the rerun plan: [`eval/bench/results-0.4.0.md`](eval/bench/results-0.4.0.md).
-
-The separate [executable-oracle source-pack contract](eval/oracle/README.md) is present but not yet corpus-ready: no curated public source identities or external private custody package is claimed in this tree.
+**On the benchmark, once and plainly:** evergreen does not currently publish a trustworthy accuracy number. Current five-language benchmark metrics are published only from one compatible run that clears every declared coverage gate. That run completed 2,103 of 2,104 pairs and is replayable, but its judge received canonical IDs that leak label-construction proxies — that invalidates the accuracy metrics, though not the completion coverage. Clean runs now hide canonical IDs, fail closed on incomplete screening, and require exact dataset-byte binding before launch. Matrices, provenance, and the rerun plan: [`eval/bench/results-0.4.0.md`](eval/bench/results-0.4.0.md). The [executable-oracle source pack](eval/oracle/README.md) is contracted but not yet corpus-ready.
 
 ## Non-goals
 

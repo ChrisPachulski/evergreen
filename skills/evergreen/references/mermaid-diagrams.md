@@ -4,7 +4,7 @@ A README's "how it works" is a claim about structure, and structure is the one c
 at carrying. Flourish requires that claim to be drawn, in mermaid, checked into the doc — not
 sketched in box-drawing characters that die on the first font change.
 
-**Two rules are hard** (see `hard-goals/flourish.md`, goal 7). Everything else here is craft.
+**Two rules are hard** (see `hard-goals/flourish.md`, goal 10). Everything else here is craft.
 
 1. **Mermaid, not ASCII.** A fenced ` ```mermaid ` block. Never box-drawing art, never a
    pre-rendered image where the source could live in the file.

@@ -48,7 +48,7 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
      first, and **render it before you ship it**
      (`npx -y @mermaid-js/mermaid-cli -i <doc> -o /tmp/check.md`, output to scratch, never the
      repo). Full contract: `skills/evergreen/references/mermaid-diagrams.md`. Enforced by
-     `hard-goals/flourish.md` goal 7 — a rewrite with no vertical mermaid block is not done.
+     `hard-goals/flourish.md` goal 10 — a rewrite with no vertical mermaid block is not done.
    Then **demote** deep technical detail (full architecture, exhaustive dev setup, API surface) below
    the visitor-facing top — and demote means **move, verbatim, into `<details>` or a linked doc
    file**, never compress-to-summary. A 200-line API reference that comes back as a ten-line "module
