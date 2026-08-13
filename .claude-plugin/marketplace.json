@@ -1,13 +1,13 @@
 {
   "name": "evergreen",
-  "description": "Evergreen 0.6.0 ships read-only impact and till discovery, seeded doc creation, reversible host install, and generalized release identity checks.",
+  "description": "Evergreen 0.6.1 ships read-only impact and till discovery, seeded doc creation, reversible host install, rung-tagged findings, the conform mode check, and generalized release identity checks.",
   "owner": { "name": "Chris Pachulski", "url": "https://github.com/ChrisPachulski" },
   "plugins": [
     {
       "name": "evergreen",
       "source": "./",
-      "version": "0.6.0",
-      "description": "Ships read-only impact and till surface discovery, seed's claim-disciplined doc creation, passive evidence and source maps, reversible Claude/Codex install, doctor, and uninstall, trusted CI semantics, and generalized release identity checks. Four axes — truth, craft, hygiene, and creation — remain language-agnostic and rewrite nothing unasked."
+      "version": "0.6.1",
+      "description": "Ships read-only impact and till surface discovery, seed's claim-disciplined doc creation, passive evidence and source maps, reversible Claude/Codex install, doctor, and uninstall, findings that name the ladder rung that proved them, the conform mode check, trusted CI semantics, and generalized release identity checks. Four axes — truth, craft, hygiene, and creation — remain language-agnostic and rewrite nothing unasked."
     }
   ]
 }

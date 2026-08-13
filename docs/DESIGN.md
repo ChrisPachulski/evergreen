@@ -232,6 +232,28 @@ pre-1.0 SemVer policy takes minor `0.6.0`; the rename shipped immediately after 
 any external adoption of the old name, so no compatibility alias is carried. Frozen `0.4.0`/`0.5.0`
 records keep the names they shipped with.
 
+### 0.6.1 release decision
+
+`0.6.1` is a patch, and it is the one release in this stream whose number does not follow from the
+rule above — so the reasoning is recorded here rather than left for a later reader to reconstruct.
+
+Since `0.6.0` the stream gained a new CLI subcommand, `conform`, which holds a reflex transcript to
+the intensity it declares; findings gained a `rung` field naming which ladder rung proved them; the
+`light` intensity became falsifiable rather than advisory; `flourish` gained two counted hard goals
+and a mermaid diagram requirement; and the Bash guard gained the release-tag certification gate
+below. By the precedent set at `0.5.0` — backward-compatible pre-1.0 feature additions justify a
+minor, not a patch — and reinforced at `0.6.0`, where a subcommand *rename* alone took a minor, this
+set would ordinarily take `0.7.0`.
+
+It ships as `0.6.1` by owner decision. The rule is not being amended: `conform` is an additive
+surface with no consumer, `rung` is an added field on an existing envelope rather than a changed
+shape, and no existing command, output shape, or hook contract changed — so nothing here is a
+compatibility event, and the number understates the release rather than misdescribing it. Treat
+`0.5.0`'s rationale as still governing the next release that adds surface; this entry is the
+exception with its reason attached, not a new precedent to cite.
+
+The stream still carries no build-number field.
+
 ### Winnow-before-tag certification gate
 
 A local `evergreen--v*` tag is a certification claim about the commit it names, so the PreToolUse
