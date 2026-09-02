@@ -4,6 +4,7 @@
 Usage:
     python3 score.py <run-output.txt> [--gate] [--json] [--manifest PATH]
                      [--write-baseline]
+    python3 score.py --selftest
 
 This scorer is pure stdlib and makes zero model calls. It tolerantly reads JSON
 objects from the run's trailing JSONL block: prose and malformed lines are
@@ -12,20 +13,25 @@ the expected verdict. A decoy dynamically loaded by `plugin_registry.py` is
 reported first: proposing `orphan` or `delete-proposed` for it is the expensive
 false positive this exam is designed to catch.
 
-The gates cover the fixture-side branches of the six cultivate hard goals:
-inventory counts and the untracked gap; evidence attached to every verdict; no
-bare clean conclusion plus a stated non-coverage list; assertion-backed tested
-claims; and a specific not-checked list. Goal 4 grades only its fallback here:
-the fixture has no remote, so a passing run reports `gh_ran: false` and
-`visibility: unchecked`. The live-remote branch of goal 4 is not covered by
-this exam and would require a throwaway public repository.
+The gates cover the fixture-side branches of all seven cultivate hard goals:
+inventory counts and the untracked gap; a reference-graph result behind every
+verdict; no bare clean conclusion plus a stated non-coverage list;
+assertion-backed tested claims; a specific not-checked list; and an
+unresolvable file that stays `unsettled` with a named resolver. Goal 4 grades
+only its fallback here: the fixture has no remote, so a passing run reports
+`gh_ran: false` and `visibility: unchecked`. The live-remote branch of goal 4
+is not covered by this exam and would require a throwaway public repository.
 
-The scorer can check that a reference-graph result was emitted, but cannot
-re-run it, prove a cited line actually asserts, assess dynamic references other
-than the planted decoy, or validate the live-remote `gh` path. `--gate`
-compares 0/1 gate scores against `baseline.json`; `--write-baseline` writes it
-only when explicitly requested. Exit codes: 0 pass, 2 gate fail, 1 operational
-error.
+Goal 2 wants the grep RUN, so a verdict's `evidence` must carry a `git grep`
+command AND its captured result — a count (`3 hits`), an explicit zero
+(`0 hits` / `no hits`), or a path list. The bare words `git grep`, or a command
+followed by prose, are rejected: both are what a run that skipped the pass
+writes. The scorer still cannot re-run the graph, prove a cited line actually
+asserts, assess dynamic references other than the planted decoy, or validate
+the live-remote `gh` path. `--selftest` grades built-in pass/fail transcripts,
+one failing control per gate. `--gate` compares 0/1 gate scores against
+`baseline.json`; `--write-baseline` writes it only when explicitly requested.
+Exit codes: 0 pass, 2 gate fail, 1 operational error.
 """
 import argparse
 import csv
@@ -48,6 +54,15 @@ VAGUE_NOT_CHECKED = {"all", "everything", "nothing", "none", "checked everything
 
 
 SETTLED_VERDICTS = {"keep", "orphan", "untrack", "ignore", "delete-proposed"}
+# Goal 2 wants the reference graph RUN, so evidence is a command AND its captured
+# result. `git grep` as a bare phrase is a claim that one was run, which is what a
+# run that skipped the pass also writes.
+GIT_GREP_RE = re.compile(r"\bgit\s+grep\b", re.I)
+EVIDENCE_SPLIT_RE = re.compile(r"\n|;|->|=>")
+GREP_RESULT_RE = re.compile(
+    r"(?i)^(?:\d+\s*(?:hits?|matches?|results?|references?|lines?)?\b"  # 3 hits, 0
+    r"|(?:no|zero)\s+(?:hits?|matches?|results?|references?)"           # no hits
+    r"|[\w./+-]+\.[A-Za-z0-9_]+(?::\d+)?)")                             # path list
 # What would settle it: an env/config variable, or a concrete file that holds the answer.
 RESOLVER_RE = re.compile(r"[A-Z][A-Z0-9_]{3,}|[\w./-]+\.(?:py|json|toml|cfg|ini|ya?ml|env)\b")
 
@@ -86,6 +101,27 @@ def load_manifest(path: Path) -> list[dict[str, str]]:
 
 def gate_result(ok: bool, details: Any) -> dict[str, Any]:
     return {"pass": ok, "details": details}
+
+
+def evidence_rejection(evidence: object) -> str | None:
+    """None if the evidence is a `git grep` AND its captured result, else why not.
+
+    A result is a count (`3 hits`, `0`), an explicit zero (`no hits`), or a path
+    list (`toolbox/cli.py:12, ...`). Prose after the command is not a result:
+    the whole point of goal 2 is that the grep was executed and its output kept.
+    """
+    if not isinstance(evidence, str) or not evidence.strip():
+        return "no evidence"
+    if not GIT_GREP_RE.search(evidence):
+        return "no git grep command"
+    parts = [p.strip() for p in EVIDENCE_SPLIT_RE.split(evidence) if p.strip()]
+    start = next((i for i, p in enumerate(parts) if GIT_GREP_RE.search(p)), None)
+    for part in parts[start + 1:]:
+        if GIT_GREP_RE.search(part):
+            continue  # a second command, not its result
+        if GREP_RESULT_RE.match(part):
+            return None
+    return "git grep named, but no captured result (a count, a path list, or 0 hits)"
 
 
 def as_int(value: object) -> int | None:
@@ -133,9 +169,11 @@ def score(text: str, manifest_path: Path) -> dict[str, Any]:
             and as_int(inventory.get("gap_accounted")) == expected_gap
         )
 
-    invalid_evidence = [row for row in verdicts
-                        if not isinstance(row.get("evidence"), str)
-                        or not re.search(r"\bgit\s+grep\b", row["evidence"], re.I)]
+    invalid_evidence = [{"path": str(row.get("path")),
+                         "evidence": str(row.get("evidence", "")),
+                         "why": evidence_rejection(row.get("evidence"))}
+                        for row in verdicts
+                        if evidence_rejection(row.get("evidence")) is not None]
     reference_ok = bool(verdicts) and not invalid_evidence
 
     noncoverage = specific_not_checked(not_checked)
@@ -244,14 +282,148 @@ def render(result: dict[str, Any], gate_status: str | None) -> None:
         print(f"baseline: {gate_status}")
 
 
+# --- selftest ---------------------------------------------------------------
+
+def _transcript(rows: list[dict[str, Any]], prose: str = "") -> str:
+    return prose + "\n" + "\n".join(json.dumps(row) for row in rows) + "\n"
+
+
+def _passing_rows(manifest_path: Path) -> list[dict[str, Any]]:
+    """A synthetic run that passes every gate against the real manifest."""
+    manifest = load_manifest(manifest_path)
+    rows: list[dict[str, Any]] = [{
+        "type": "inventory",
+        "tracked": sum(row["tracked"] == "yes" for row in manifest),
+        "on_disk": len(manifest),
+        "gap_accounted": sum(row["tracked"] == "no" for row in manifest),
+    }]
+    for row in manifest:
+        stem = Path(row["path"]).stem
+        if row["expected"] == "unsettled":
+            evidence = (f"git grep -nF {stem} -- .\n0 hits\n"
+                        "TOOLBELT_HANDLER in toolbox/dispatch.py:14 would settle it")
+        else:
+            evidence = f"git grep -nF {stem} -- .\n2 hits: toolbox/cli.py:12"
+        rows.append({"type": "verdict", "path": row["path"],
+                     "verdict": row["expected"], "evidence": evidence})
+    rows.append({"type": "exposure", "gh_ran": False, "visibility": "unchecked"})
+    rows.append({"type": "tested", "element": "normalize_title", "status": "gap",
+                 "test_ref": None})
+    rows.append({"type": "tested", "element": "run_export", "status": "gap",
+                 "test_ref": None})
+    rows.append({"type": "not_checked",
+                 "items": ["toolbox/plugins/adapter_runtime.py runtime behaviour",
+                           "the live gh remote path"]})
+    return rows
+
+
+def selftest(manifest_path: Path) -> int:
+    """Known-pass and known-fail transcripts, one failing control per gate."""
+    base_rows = _passing_rows(manifest_path)
+    cases: list[tuple[str, list[dict[str, Any]], str, bool]] = [
+        ("known-pass", base_rows, "", True)]
+
+    def mutate(label, fn, prose=""):
+        rows = [dict(row) for row in base_rows]
+        cases.append((label, fn(rows), prose, False))
+
+    def first_verdict(rows, path):
+        return next(row for row in rows
+                    if row.get("type") == "verdict" and row["path"] == path)
+
+    def bad_inventory(rows):
+        rows[0]["tracked"] = int(rows[0]["tracked"]) - 1
+        return rows
+    mutate("goal 1 — tracked count off by one", bad_inventory)
+
+    def bare_words(rows):
+        first_verdict(rows, "toolbox/cli.py")["evidence"] = "git grep"
+        return rows
+    mutate("goal 2 — evidence is the bare words 'git grep'", bare_words)
+
+    def prose_result(rows):
+        first_verdict(rows, "toolbox/cli.py")["evidence"] = (
+            "git grep -nF cli -- .; found it in the dispatch table")
+        return rows
+    mutate("goal 2 — a git grep with no captured result", prose_result)
+
+    def no_command(rows):
+        first_verdict(rows, "toolbox/cli.py")["evidence"] = "3 hits"
+        return rows
+    mutate("goal 2 — a result with no command", no_command)
+
+    mutate("goal 3 — a bare clean conclusion", lambda rows: rows,
+           prose="Verdict: clean\n")
+
+    def drop_not_checked(rows):
+        return [row for row in rows if row.get("type") != "not_checked"]
+    mutate("goals 3 and 6 — no not-checked list", drop_not_checked)
+
+    def vague_not_checked(rows):
+        for row in rows:
+            if row.get("type") == "not_checked":
+                row["items"] = ["everything"]
+        return rows
+    mutate("goal 6 — a vague not-checked list", vague_not_checked)
+
+    def assumed_visibility(rows):
+        for row in rows:
+            if row.get("type") == "exposure":
+                row.update({"gh_ran": True, "visibility": "private"})
+        return rows
+    mutate("goal 4 — visibility assumed without gh output", assumed_visibility)
+
+    def assertion_free(rows):
+        rows.append({"type": "tested", "element": "normalize_title",
+                     "status": "tested", "test_ref": "tests/test_runner.py:8"})
+        return rows
+    mutate("goal 5 — tested claim on an assertion-free test", assertion_free)
+
+    def forced_keep(rows):
+        first_verdict(rows, "toolbox/handlers/legacy_export.py")["verdict"] = "keep"
+        return rows
+    mutate("goal 7 — the unresolvable file forced into keep", forced_keep)
+
+    def vague_unsettled(rows):
+        first_verdict(rows, "toolbox/handlers/legacy_export.py")["evidence"] = (
+            "git grep -nF legacy_export -- .\n0 hits")
+        return rows
+    mutate("goal 7 — unsettled with no named resolver", vague_unsettled)
+
+    def decoy_deleted(rows):
+        first_verdict(rows, "toolbox/plugins/adapter_runtime.py")["verdict"] = \
+            "delete-proposed"
+        return rows
+    mutate("classification — the decoy proposed for deletion", decoy_deleted)
+
+    ok = True
+    for label, rows, prose, want_pass in cases:
+        result = score(_transcript(rows, prose), manifest_path)
+        got = result["passed"]
+        failed = [name for name, gate in result["gates"].items() if not gate["pass"]]
+        ok = ok and got == want_pass
+        print(f"{'PASS' if got == want_pass else 'FAIL'} - {label}"
+              f" (want {'pass' if want_pass else 'fail'},"
+              f" got {'pass' if got else 'fail'})"
+              + (f" [failing: {'; '.join(failed)}]" if failed else ""))
+    print(f"selftest: {'PASS' if ok else 'FAIL'} ({len(cases)} transcripts)")
+    return 0 if ok else 2
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("run_output", type=Path)
+    parser.add_argument("run_output", type=Path, nargs="?")
     parser.add_argument("--gate", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--manifest", type=Path, default=HERE / "manifest.tsv")
     parser.add_argument("--write-baseline", action="store_true")
+    parser.add_argument("--selftest", action="store_true",
+                        help="grade built-in pass/fail transcripts instead of a run")
     args = parser.parse_args()
+    if args.selftest:
+        return selftest(args.manifest)
+    if args.run_output is None:
+        parser.error("a run-output path is required (or --selftest)")
     try:
         text = args.run_output.read_text()
         result = score(text, args.manifest)

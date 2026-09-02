@@ -1,3 +1,4 @@
+# Gemini CLI command file ({{args}} syntax). Claude Code loads the sibling .md; Codex reads AGENTS.md.
 description = "Find additive documentation candidates before editing changed paths."
 prompt = """
 Arguments: `{{args}}`.

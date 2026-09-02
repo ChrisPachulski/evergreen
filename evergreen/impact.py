@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from .evidence import Evidence
+from .evidence import Evidence, _DecodedObject, _decoded_object, _duplicate_key
 
 MAX_FILE_BYTES = 1024 * 1024
 MAX_MAPS = 1000
@@ -56,6 +56,25 @@ COMMON_SYMBOL_MIN_DOCS = 4
 SYMBOL_RANK_TIERS = (SYMBOL_RANK_CODE_CONTEXT, SYMBOL_RANK_DISTINCT_WORD, SYMBOL_RANK_PLAIN_WORD)
 MAX_SYMBOL_MATCHES = 10_000
 
+# A module-level UPPER_SNAKE binding at column 0 is a Python constant, and a constant is a
+# documented contract as much as a function is -- `DEFAULT_TIMEOUT` is what a doc names, not the
+# function that reads it. Column 0 is the module-scope signal; an indented one is class or local.
+PY_CONST_RE = re.compile(rb"(?m)^(_*[A-Z][A-Z0-9_]*)[ \t]*(?::[^\r\n=]*)?=(?!=)")
+# POSIX `name() {` and the bash `function name` form. Shell has no visibility keyword, so the
+# leading-underscore convention is the only private marker available.
+SHELL_FUNCTION_RE = re.compile(
+    rb"(?m)^[ \t]*(?:function[ \t]+(?P<keyword>[A-Za-z_][A-Za-z0-9_.-]*)[ \t]*(?:\([ \t]*\))?"
+    rb"|(?P<posix>[A-Za-z_][A-Za-z0-9_.-]*)[ \t]*\([ \t]*\))"
+)
+# ponytail: `#` anywhere blanks to end of line, so a parameter expansion (`${x#y}`) masks the
+# tail of its line; a real shell lexer is the upgrade path.
+SHELL_LITERAL_RE = re.compile(
+    rb"#[^\r\n]*"
+    rb"|'[^'\r\n]*'"
+    rb"|\"[^\"\r\n\\]*(?:\\[\s\S][^\"\r\n\\]*)*\""
+)
+SHELL_SUFFIXES = frozenset((".sh", ".bash"))
+
 FENCE_RE = re.compile(rb"(?m)^[ \t]{0,3}(`{3,}|~{3,})[^\r\n]*\r?$")
 # An inline span closes on its own line. Allowing one to run across lines let a stray backtick
 # pair with the next one anywhere in the file and read every word between them as code.
@@ -63,7 +82,8 @@ INLINE_CODE_RE = re.compile(rb"(`+)([^\r\n]+?)\1")
 
 DECLARATION_RE = re.compile(
     rb"(?m)^([ \t]*)((?:export[ \t]+(?:default[ \t]+)?)?"
-    rb"(?:public[ \t]+|pub(?:\([^\r\n)]*\))?[ \t]+)?)(?:declare[ \t]+)?(?:async[ \t]+)?"
+    rb"(?:(?:public|open|internal|private|fileprivate)[ \t]+"
+    rb"|pub(?:\([^\r\n)]*\))?[ \t]+)?)(?:declare[ \t]+)?(?:async[ \t]+)?"
     # `static` is Rust-only (kept per-suffix below): elsewhere it is a member modifier whose
     # following word would be captured as a phantom name. The mut lookahead pins the same trap.
     rb"(class|struct|enum|protocol|interface|trait|actor|type|def|func|fn|function|const|let|var"
@@ -171,11 +191,19 @@ TYPE_DECLARATION_KEYWORDS = frozenset(
 # marker means public, a leading underscore means private, and anything else is assumed public.
 UPPERCASE_EXPORT_SUFFIXES = frozenset((".go",))
 MARKED_EXPORT_SUFFIXES = frozenset((".rs",))
+# Singular `fixture` is deliberately absent: a fixture tree can hold the README a change is
+# meant to update, and exempting it hid the repo's own worked example.
 EXEMPT_DOC_PARTS = {
-    "adr", "adrs", "archive", "archives", "audit", "audits", "plans", "readiness",
-    "roadmaps", "specs",
+    "adr", "adrs", "archive", "archives", "audit", "audits", "fixtures", "__fixtures__",
+    "golden", "plans", "readiness", "roadmaps", "specs", "testdata",
 }
 DATED_DOC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[-_.]|$)")
+# A path mention ends where a path can end. Without this, `src/thing.py` matched inside
+# `xsrc/thing.py` and any prose word matched a bare directory name.
+PATH_BOUNDARY_RE = re.compile(rb"[A-Za-z0-9_./-]")
+# An evidence `symbol` is a free-form provider string; only an identifier-shaped one can be
+# searched for as a declaration name.
+SYMBOL_SHAPE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 @dataclass(frozen=True)
@@ -195,35 +223,6 @@ class ImpactCandidate:
 class ImpactReport:
     candidates: tuple[ImpactCandidate, ...]
     warnings: tuple[str, ...]
-
-
-class _DecodedObject(dict):
-    __slots__ = ("duplicate_keys",)
-
-
-def _decoded_object(pairs):
-    value = _DecodedObject()
-    duplicates = []
-    for key, item in pairs:
-        if key in value:
-            duplicates.append(key)
-            continue
-        value[key] = item
-    value.duplicate_keys = tuple(duplicates)
-    return value
-
-
-def _duplicate_key(value):
-    stack = [value]
-    while stack:
-        current = stack.pop()
-        if isinstance(current, _DecodedObject) and current.duplicate_keys:
-            return current.duplicate_keys[0]
-        if isinstance(current, dict):
-            stack.extend(reversed(tuple(current.values())))
-        elif isinstance(current, list):
-            stack.extend(reversed(current))
-    return None
 
 
 def _text(value, name):
@@ -411,7 +410,7 @@ def _validated_evidence(item, repo):
     )
     reason = f"evidence {provider}@{version} {evidence_type} ({item.confidence})"
     rank = 50 if item.confidence == "deterministic" else 40
-    return key, path, rank, reason
+    return key, path, rank, reason, symbol
 
 
 def _safe_warning(value):
@@ -640,8 +639,14 @@ def _bounded_regular_bytes(path, limit):
         return None
 
 
+PRIVATE_MARKERS = frozenset((b"private", b"fileprivate"))
+
+
 def _declares_public(suffix, markers, name, receiver=None, module=False):
     """Decide one declaration's visibility by the rule its own language enforces."""
+    if PRIVATE_MARKERS & set(markers.split()):
+        # Swift `private`/`fileprivate` and every language that spells private the same way.
+        return False
     if suffix in UPPERCASE_EXPORT_SUFFIXES:
         if receiver:
             # A Go method rides its receiver type: `func (r *config) Load()` is unreachable
@@ -652,7 +657,9 @@ def _declares_public(suffix, markers, name, receiver=None, module=False):
                 return False
         return name[:1].isupper()
     if suffix in MARKED_EXPORT_SUFFIXES:
-        return bool(markers)
+        # `pub(crate)` and `pub(super)` publish inside the crate only; bare `pub` is the
+        # only form that crosses the crate boundary, so it is the only public one.
+        return markers.strip() == b"pub"
     if module:
         # Inside a real ESM module only the export marker crosses the file boundary.
         return bool(markers)
@@ -674,6 +681,8 @@ def _masked_literals(payload, suffix):
         return RUST_LITERAL_RE.sub(_blank_span, payload)
     if suffix == ".swift":
         return SWIFT_LITERAL_RE.sub(_blank_span, payload)
+    if suffix in SHELL_SUFFIXES:
+        return SHELL_LITERAL_RE.sub(_blank_span, payload)
     return payload
 
 
@@ -737,6 +746,14 @@ def _reachable_declarations(payload, suffix):
     The payload must already be literal-masked (`_masked_literals`); callers that hold raw
     source go through `_public_declarations`, which masks once.
     """
+    if suffix in SHELL_SUFFIXES:
+        # Shell has no keyword the main grammar can share: `let x=1` is arithmetic, not a
+        # declaration, so the function forms are the whole surface.
+        for match in SHELL_FUNCTION_RE.finditer(payload):
+            name = match.group("keyword") or match.group("posix")
+            if not name.startswith(b"_"):
+                yield payload.count(b"\n", 0, match.start()) + 1, 0, "func", name.decode("ascii")
+        return
     matches = [
         (match.start(), "decl", match)
         for match in DECLARATION_RE.finditer(payload)
@@ -762,6 +779,8 @@ def _reachable_declarations(payload, suffix):
             (offset, "group", (keyword, name))
             for offset, keyword, name in _go_group_declarations(payload)
         )
+    if suffix == ".py":
+        matches.extend((match.start(), "const", match) for match in PY_CONST_RE.finditer(payload))
     matches.sort(key=lambda item: item[0])
     # Indentation is the nesting signal, but it cannot see a scope whose braces open and close
     # on one line; brace depth closes that hole everywhere braces delimit scopes (not Python,
@@ -780,6 +799,12 @@ def _reachable_declarations(payload, suffix):
             keyword, name = item
             if _declares_public(suffix, b"", name):
                 yield line, 0, keyword.decode("ascii"), name.decode("ascii")
+            continue
+        if flavor == "const":
+            # Column 0 is the module scope, so a constant needs no enclosing-scope check.
+            name = item.group(1)
+            if not name.startswith(b"_"):
+                yield line, 0, "const", name.decode("ascii")
             continue
         is_member = flavor == "member"
         if is_member:
@@ -887,6 +912,29 @@ def _in_span(spans, offset):
     return False
 
 
+def _mentions_path(source, payload, spans):
+    """True when a doc names this path as a path, not as a substring of a longer one."""
+    # A source with no separator is an ordinary English word as often as a directory, so it
+    # counts only where the document is quoting code or where a slash makes it a path.
+    bare = "/" not in source and "." not in source
+    encoded = source.encode("utf-8")
+    start = payload.find(encoded)
+    while start >= 0:
+        end = start + len(encoded)
+        after = payload[end:end + 1]
+        slashed = after == b"/"
+        # A path at the end of a sentence carries prose punctuation, not a longer path:
+        # `src/thing.py.` is the file and `src/thing.py.bak` is not.
+        if after == b"." and not PATH_BOUNDARY_RE.match(payload[end + 1:end + 2]):
+            after = b""
+        if (not PATH_BOUNDARY_RE.match(payload[start - 1:start] if start else b"") and
+                (slashed or not PATH_BOUNDARY_RE.match(after)) and
+                (slashed or not bare or _in_span(spans, start))):
+            return True
+        start = payload.find(encoded, start + 1)
+    return False
+
+
 def _is_distinct_identifier(symbol):
     """True when the bare word could not plausibly be English prose."""
     return ("_" in symbol or any(character.isdigit() for character in symbol) or
@@ -967,23 +1015,28 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
     accepted_evidence = {}
     for item in bounded_evidence:
         try:
-            key, path, rank, reason = _validated_evidence(item, repo)
+            key, path, rank, reason, symbol = _validated_evidence(item, repo)
         except Exception as error:
             warnings.add(f"evidence: {error}")
             continue
-        accepted_evidence[key] = (path, rank, reason)
+        accepted_evidence[key] = (path, rank, reason, symbol)
     evidence_keys = sorted(accepted_evidence)
     if evidence_truncated:
         warnings.add(f"evidence items truncated (maximum {MAX_EVIDENCE_ITEMS})")
 
     sources = set(changed_paths)
+    changed_set = set(changed_paths)
+    evidence_symbols = set()
     baseline_paths.update(changed_paths)
     for path in changed_paths:
         add(path, 10, f"changed path {path}")
     for key in evidence_keys:
-        path, rank, reason = accepted_evidence[key]
+        path, rank, reason, symbol = accepted_evidence[key]
         sources.add(path)
         add(path, rank, reason)
+        if symbol and SYMBOL_SHAPE_RE.fullmatch(symbol):
+            evidence_symbols.add(symbol)
+    scan_paths = sorted(sources)
 
     work = 0
     work_truncated = False
@@ -1032,15 +1085,24 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
             "living doc search failed (git unavailable, not a git repository, or a git "
             "error) — treating as zero living docs"
         )
-    symbols, source_scan_truncated = _contract_symbols(repo, changed_paths)
+    symbols, source_scan_truncated = _contract_symbols(repo, scan_paths)
     if source_scan_truncated:
         warnings.add(
             "source contract scan truncated "
             f"(maximum {MAX_SOURCE_SCAN_WORK} files, {MAX_SOURCE_SCAN_BYTES} bytes, "
             f"or {SOURCE_SCAN_TIMEOUT_SECONDS} seconds)"
         )
+    # A symbol a provider names is a contract even when its file was not scanned; its reason
+    # says where it came from so a reader can tell a declaration scan from a provider claim.
+    symbol_reasons = {
+        symbol: f"living doc mentions contract symbol {symbol}" for symbol in symbols
+    }
+    for symbol in sorted(evidence_symbols):
+        symbol_reasons.setdefault(symbol, f"evidence symbol {symbol}")
+    scan_symbols = sorted(symbol_reasons)
     search_bytes = 0
     symbol_matches = []
+    symbol_matches_truncated = False
     symbol_document_frequency = {}
     scanned_docs = 0
     for doc in living_docs:
@@ -1060,15 +1122,16 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
             continue
         search_bytes += len(payload)
         scanned_docs += 1
-        for source in changed_paths:
+        spans = _code_context_spans(payload)
+        for source in scan_paths:
             if not spend_work():
                 break
-            if source.encode("utf-8") in payload:
-                add(doc, 80, f"living doc mentions changed path {source}")
+            if _mentions_path(source, payload, spans):
+                origin = "changed" if source in changed_set else "evidence"
+                add(doc, 80, f"living doc mentions {origin} path {source}")
         if work_truncated:
             break
-        spans = _code_context_spans(payload)
-        for symbol in symbols:
+        for symbol in scan_symbols:
             if not spend_work():
                 break
             encoded = symbol.encode("utf-8")
@@ -1082,13 +1145,19 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
                     break
             if best is None:
                 continue
+            if len(symbol_matches) >= MAX_SYMBOL_MATCHES:
+                # Frequency demotes a symbol by how many docs kept it; counting a dropped
+                # match would demote survivors on the strength of evidence nobody can see.
+                symbol_matches_truncated = True
+                continue
             symbol_document_frequency[symbol] = symbol_document_frequency.get(symbol, 0) + 1
-            if len(symbol_matches) < MAX_SYMBOL_MATCHES:
-                symbol_matches.append((doc, symbol, best))
+            symbol_matches.append((doc, symbol, best))
         if work_truncated:
             break
     if work_truncated:
         warnings.add(f"matching work truncated (maximum {MAX_MATCH_WORK} operations)")
+    if symbol_matches_truncated:
+        warnings.add(f"symbol matches truncated (maximum {MAX_SYMBOL_MATCHES})")
 
     common = max(COMMON_SYMBOL_MIN_DOCS, scanned_docs * COMMON_SYMBOL_DOC_RATIO)
     frequent = max(COMMON_SYMBOL_MIN_DOCS, scanned_docs * FREQUENT_SYMBOL_DOC_RATIO)
@@ -1096,7 +1165,7 @@ def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactRepo
         frequency = symbol_document_frequency.get(symbol, 0)
         steps = 2 if frequency >= common else 1 if frequency >= frequent else 0
         index = min(SYMBOL_RANK_TIERS.index(rank) + steps, len(SYMBOL_RANK_TIERS) - 1)
-        add(doc, SYMBOL_RANK_TIERS[index], f"living doc mentions contract symbol {symbol}")
+        add(doc, SYMBOL_RANK_TIERS[index], symbol_reasons[symbol])
 
     retained_paths = sorted(candidates, key=selection_key)
     limit = candidate_limit()

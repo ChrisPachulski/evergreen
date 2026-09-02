@@ -15,7 +15,9 @@ the AI · pre-committed · covers the hard part.** If a check needs the AI's opi
 
 2. **MUST run the reference graph for every committed non-entry-point file.**
    CHECK: each such file's verdict carries an executed `git grep` result (references found, or zero).
-   Pass = no `keep` / `orphan` verdict without its grep behind it.
+   Over about 500 committed files the graph covers every non-source file repo-wide and source
+   files inside the declared scope path; the coverage section states that split. Pass = no `keep`
+   / `orphan` verdict without its grep behind it, and no scope narrowing left unstated.
 
 3. **MUST NOT output "clean" / "no slop" as a verdict.**
    CHECK: grep the output for `clean` / `no slop` used as a conclusion → absent; an evidenced

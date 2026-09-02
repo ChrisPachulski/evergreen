@@ -101,6 +101,17 @@ def parser():
     )
     conform.add_argument("--json", action="store_true", help="emit one JSON object")
     conform.set_defaults(run=run_conform)
+    judge = commands.add_parser(
+        "judge",
+        help="certify a document against the code it describes with one isolated model call",
+    )
+    judge.add_argument("--repo", required=True, help="repository the document describes")
+    judge.add_argument("--doc", required=True, help="document to certify")
+    judge.add_argument(
+        "--timeout", type=int, default=300, help="seconds allowed for the call (default: 300)"
+    )
+    judge.add_argument("--json", action="store_true", help="emit the raw result object")
+    judge.set_defaults(run=run_judge)
     check = commands.add_parser("doctor", help="check canonical files and host ownership")
     check.add_argument("--host", choices=("claude", "codex", "all"), default="all")
     check.add_argument("--repo", default=str(PLUGIN_ROOT), help="canonical Evergreen root")
@@ -127,6 +138,50 @@ def run_conform(args):
     else:
         print(f"evergreen: output conforms to intensity {mode}")
     return 1 if found else 0
+
+
+def run_judge(args):
+    """Certify one document against the repository code, with no network and no repo write.
+
+    The prompt is built here rather than improvised by whatever agent typed the command: the
+    rubric, the untrusted-data boundary, and the read bounds are the parts a judge call cannot
+    be trusted to reinvent each time, and an abstain is a real answer (exit 3), not a failure
+    to be retried by hand into a softer prompt.
+    """
+    from evergreen.judge import collect_referenced_files, judge_json, judge_prompt
+
+    repo = Path(args.repo).expanduser()
+    if not repo.is_dir():
+        print(f"evergreen: repository must be a directory: {error_display(repo)}", file=sys.stderr)
+        return 2
+    if args.timeout <= 0:
+        print("evergreen: --timeout must be a positive number of seconds", file=sys.stderr)
+        return 2
+    document = Path(args.doc).expanduser()
+    try:
+        text = document.read_text(encoding="utf-8", errors="replace")
+    except (OSError, UnicodeError) as error:
+        print(f"evergreen: {error_display(error)}", file=sys.stderr)
+        return 2
+
+    files, warnings = collect_referenced_files(repo.resolve(), text)
+    for warning in warnings:
+        print(f"evergreen: {terminal_display(warning)}", file=sys.stderr)
+    result = judge_json(judge_prompt(document.name, text, files), timeout=args.timeout)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+    elif result["status"] == "ok":
+        for finding in result["value"]["findings"]:
+            print(
+                f"{terminal_display(finding['verdict'])}  {terminal_display(finding['claim'])} "
+                f"-- {terminal_display(finding['evidence'])}"
+            )
+        print(terminal_display(result["value"]["summary"]))
+    else:
+        print(
+            f"evergreen: judge abstained: {terminal_display(result['reason'])}", file=sys.stderr
+        )
+    return 0 if result["status"] == "ok" else 3
 
 
 def run_install(args):
@@ -349,6 +404,8 @@ def print_receipt(payload):
     print(f"- evidence state: {terminal_display(benchmark['evidence_state'])}")
     print(f"- judge SHA-256: {terminal_display(benchmark['judge_sha256'])}")
     print(f"- languages: {terminal_display(','.join(benchmark['languages']))}")
+    datasets = benchmark["local_datasets"]
+    print(f"- local datasets: present={datasets['present']} absent={datasets['absent']}")
     print(f"- manifest: {terminal_display(benchmark['manifest'])}")
     print(f"- protocol: {terminal_display(benchmark['protocol'])}")
     print(f"- provenance commit: {terminal_display(benchmark['provenance_commit'])}")

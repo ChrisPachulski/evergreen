@@ -643,6 +643,7 @@ def _benchmark_identity(root, benchmark_manifest, head):
     if not isinstance(artifacts, list) or not artifacts:
         raise ReceiptError("benchmark artifacts are invalid")
     artifact_languages = []
+    dataset_names = []
     for artifact in artifacts:
         if not isinstance(artifact, dict):
             raise ReceiptError("benchmark artifact is invalid")
@@ -653,7 +654,7 @@ def _benchmark_identity(root, benchmark_manifest, head):
         dataset = artifact.get("dataset")
         if not isinstance(dataset, dict):
             raise ReceiptError("benchmark artifact dataset is invalid")
-        _safe_repo_file(root, _manifest_path(dataset, "path"))
+        dataset_names.append(_manifest_path(dataset, "path"))
     if len(set(artifact_languages)) != len(artifact_languages):
         raise ReceiptError("benchmark artifact languages are duplicated")
     if set(artifact_languages) != set(required_languages):
@@ -664,6 +665,13 @@ def _benchmark_identity(root, benchmark_manifest, head):
         raise ReceiptError("benchmark report is invalid")
     report_name = _manifest_path(report, "path")
     _safe_repo_file(root, report_name)
+    present_datasets = 0
+    for dataset_name in dataset_names:
+        try:
+            _safe_repo_file(root, dataset_name)
+        except ReceiptError:
+            continue                               # datasets are local and gitignored; absence is data
+        present_datasets += 1
     committed = _head_regular_blob(root, head, manifest_name)
     if committed != raw:
         raise ReceiptError(
@@ -675,6 +683,10 @@ def _benchmark_identity(root, benchmark_manifest, head):
         "evidence_state": "declared_publication",
         "judge_sha256": judge_sha256,
         "languages": sorted(required_languages),
+        "local_datasets": {
+            "absent": len(dataset_names) - present_datasets,
+            "present": present_datasets,
+        },
         "manifest": manifest_name,
         "protocol": protocol,
         "provenance_commit": commit,

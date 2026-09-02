@@ -109,7 +109,10 @@ class PathSnapshot:
             actual.target == self.target and (actual.dev, actual.ino) == (self.dev, self.ino) and
             actual.mode == self.mode and actual.nlink == (self.nlink if nlink is None else nlink) and
             (actual.uid, actual.gid) == (self.uid, self.gid) and
-            (actual.atime_ns, actual.mtime_ns) == (self.atime_ns, self.mtime_ns) and
+            # Access time is excluded for the reason journal_identity() gives: any
+            # read bumps it, including the snapshot this comparison is fed, so it
+            # is not a change signal. mtime, bytes, and metadata digest remain.
+            actual.mtime_ns == self.mtime_ns and
             actual.metadata_digest == self.metadata_digest
         )
 

@@ -19,7 +19,7 @@ inputs:
   model:
     description: "Concrete Claude model identifier used for the audit and trusted runtime record."
     required: false
-    default: "claude-opus-4-8"
+    default: "claude-opus-5"
   post_comment:
     description: "Upsert the validated Evergreen report as a PR comment ('true'/'false'). The step summary is always written."
     required: false
@@ -74,7 +74,7 @@ runs:
         if ! env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN \
           python3 "$GITHUB_ACTION_PATH/ci/bounded_process.py" \
             --timeout-seconds 180 --max-output-bytes 131072 --clean-env -- \
-            npm install -g @anthropic-ai/claude-code@2.1.197; then
+            npm install -g @anthropic-ai/claude-code@2.1.257; then
           export EVERGREEN_SETUP_ERROR="Claude CLI installation failed."
         fi
         bash "$GITHUB_ACTION_PATH/ci/evergreen-pr.sh"

@@ -37,7 +37,10 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
 
 4. **MUST keep the face.**
    CHECK: the result's first line is a centered hero (`<h1 align="center">` or a centered logo
-   block) and a tagline `<em>` line follows it. Pass = both greps hit.
+   block) and a tagline `<em>` line follows it. Pass = both greps hit — or the report declares the
+   text-only exception `readme-style.md` allows (a bare CLI or dev-tool README whose demo is a code
+   block) with its reason. A config, product, library, or anything a human lands on gets no
+   exception.
 
 5. **MUST verify the rewrite's claims** (the truth trial is not optional garnish).
    CHECK: the report shows certified / cut / markered counts for the rewrite's factual claims, and
@@ -77,7 +80,7 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
    CHECK: the report shows the verification command it ran and that command's verdict line — in
    this repository, `bash tests/all.sh` and its `GREEN` / `NOT GREEN` line. Pass = command and
    verdict both shown, or the report states that the repository declares no verification entry
-   point. A partial run does not count: naming one suite when the repository runs four is a fail.
+   point. A partial run does not count: naming one suite when the repository runs five is a fail.
    Never substitute a grep over the output for the verdict line; suites disagree on whether failure
    prints `FAIL` or `not ok`, and a pattern matching one silently passes the other.
 
@@ -87,8 +90,11 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
     (b) `grep -cE '^\s*(graph|flowchart)\s+(TD|TB|BT)\b' <doc>` >= 1;
     (c) `grep -cE '^\s*(graph|flowchart)\s+(LR|RL)\b|^\s*direction\s+(LR|RL)\b' <doc>` == 0;
     (d) `grep -cE '[─│┌┐└┘├┤┬┴┼━┃╔╗╚╝║═]' <doc>` == 0.
-    Pass = all four hold. A rewrite whose "how it works" is box-drawing art, or whose mermaid runs
-    left-to-right, fails — however good it reads.
+    Pass = all four hold — or the doc carries no structure claim to draw and the report says so:
+    a result with no how-it-works, architecture, or pipeline section and an open page under 300
+    words may declare `no structure claim — diagram exempt`. The exemption is a claim and goes
+    through the craft trial. A rewrite whose "how it works" is box-drawing art, or whose mermaid
+    runs left-to-right, fails — however good it reads.
 
     Rationale, so a later run does not relitigate it: ASCII flow art breaks on any font change and
     cannot be styled, linked, or diffed; mermaid renders natively on GitHub and stays text the

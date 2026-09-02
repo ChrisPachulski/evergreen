@@ -34,6 +34,14 @@ hasnt "$out" "all four rungs" "activate: light defers full rung-4 (negative asse
 hasnt "$out" "name: evergreen" "activate: YAML frontmatter stripped from injection"
 has "$out" "session digest" "activate: injects the digest, not the full skill"
 hasnt "$out" "## Taxonomy" "activate: full SKILL body not injected (negative assertion)"
+# Losing the digest silently spends about two and a half times the session tokens it budgeted.
+NO_DIGEST="$TMP/no-digest"
+mkdir -p "$NO_DIGEST/skills/evergreen"
+cp "$ROOT/skills/evergreen/SKILL.md" "$NO_DIGEST/skills/evergreen/SKILL.md"
+fallback_out="$(CLAUDE_PLUGIN_ROOT="$NO_DIGEST" bash "$HOOKS/evergreen-activate.sh")"
+has "$fallback_out" "digest missing, injecting full skill" "activate: a missing digest is announced"
+has "$fallback_out" "## Taxonomy" "activate: the missing-digest fallback injects the full skill"
+rm -rf "$NO_DIGEST"
 # Digest must not drift from the skill it condenses — every load-bearing token in both.
 for tok in "Prove it or drop it" "Vanished path" "Dead contract" "left alone:" \
            "docs still match" "Age is not drift" "behavior-asserted"; do
@@ -392,12 +400,8 @@ provided = subprocess.run(
 provider_payload = json.loads(provided.stdout)
 assert provider_payload["warnings"] == []
 assert [item["path"] for item in provider_payload["candidates"]] == [
+    "eval/fixture/docs/usage.md",
     "eval/fixture/README.md",
-    "eval/flourish/fixtures/monolith/golden/fabricated.md",
-    "eval/flourish/fixtures/monolith/golden/good.md",
-    "eval/flourish/fixtures/monolith/golden/gutted.md",
-    "eval/flourish/fixtures/monolith/golden/skeleton.md",
-    "eval/flourish/fixtures/monolith/README.md",
     "eval/seed/README.md",
     "examples/provider-boundary.md", "README.md",
     "eval/fixture/config.py",
@@ -490,6 +494,72 @@ printf '{"prompt":"@evergreen: off"}' | bash "$HOOKS/evergreen-mode-tracker.sh" 
 eq "$(cat "$TMP/.evergreen-mode" 2>/dev/null)" "off" "tracker: sigiled @evergreen: off -> off"
 rm -f "$TMP/.evergreen-mode"
 
+# A sigil form must begin a line and an imperative form must open the prompt. A background
+# notification echoing a command, and the skill body naming the forms it documents, both carry
+# them mid-sentence; both rewrote this file before the rules existed.
+prompt_payload(){ python3 -c 'import json, sys; print(json.dumps({"prompt": sys.argv[1]}))' "$1"; }
+track(){ printf '%s' "$(prompt_payload "$1")" | bash "$HOOKS/evergreen-mode-tracker.sh"; }
+skill_prose="$(python3 -c 'print("Off with \"stop evergreen\" or /evergreen off. " * 12, end="")')"
+track "/evergreen strict
+$skill_prose" >/dev/null
+eq "$(cat "$TMP/.evergreen-mode" 2>/dev/null)" "strict" \
+  "tracker: the expanded command body obeys its own sigil, not the off phrases it documents"
+rm -f "$TMP/.evergreen-mode"
+track "$(python3 -c 'print("x"*200 + "/evergreen strict" + "y"*183, end="")')" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: a sigil quoted at character 200 does not flip state" \
+  || no "tracker: a quoted sigil wrote $(cat "$TMP/.evergreen-mode")"
+track "$(cat "$ROOT/skills/evergreen/SKILL.md")" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: the whole skill body as a prompt does not flip state" \
+  || no "tracker: the skill body wrote $(cat "$TMP/.evergreen-mode")"
+track "here is the notification that just arrived in the channel, quoted in full: please run /evergreen strict on that repo" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: a sigil quoted mid-line past the window does not flip state" \
+  || no "tracker: a mid-line sigil wrote $(cat "$TMP/.evergreen-mode")"
+# Frontmatter or a blank first line can push an expanded command body's sigil past any window,
+# so the sigil is anchored to the start of its own line instead.
+track "here is the command you asked for:
+/evergreen strict" >/dev/null
+eq "$(cat "$TMP/.evergreen-mode" 2>/dev/null)" "strict" \
+  "tracker: a sigil beginning the second line still writes"
+rm -f "$TMP/.evergreen-mode"
+# The shipped slash command carries its own name, raw or expanded, so both must be recognized.
+track "/evergreen:mode strict" >/dev/null
+eq "$(cat "$TMP/.evergreen-mode" 2>/dev/null)" "strict" "tracker: the raw /evergreen:mode form writes"
+rm -f "$TMP/.evergreen-mode"
+mode_body="$(sed -n '/^---$/,/^---$/!p' "$ROOT/commands/mode.md")"
+track "${mode_body/\$ARGUMENTS/strict}" >/dev/null
+eq "$(cat "$TMP/.evergreen-mode" 2>/dev/null)" "strict" \
+  "tracker: the expanded /evergreen:mode body writes the intensity it carries"
+rm -f "$TMP/.evergreen-mode"
+track "${mode_body/\$ARGUMENTS/}" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: the same body with no argument reports without writing" \
+  || no "tracker: the no-argument body wrote $(cat "$TMP/.evergreen-mode")"
+track "/evergreen:winnow off" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: another command's name is not the mode sigil" \
+  || no "tracker: /evergreen:winnow wrote $(cat "$TMP/.evergreen-mode")"
+
+# The flag is per-repo state, not content: consumer repositories must never see it as untracked.
+exclude_file="$TMP/.git/info/exclude"
+: > "$exclude_file"
+track "/evergreen light" >/dev/null
+has "$(cat "$exclude_file")" '^\.evergreen-mode$' "tracker: a write excludes the flag from git status"
+track "/evergreen strict" >/dev/null
+eq "$(grep -c '^\.evergreen-mode$' "$exclude_file")" "1" \
+  "tracker: the exclude entry is written once, not once per mode change"
+printf 'notes' > "$exclude_file"   # a final line with no newline must not swallow the pattern
+rm -f "$TMP/.evergreen-mode"
+track "/evergreen off" >/dev/null
+eq "$(grep -c '^\.evergreen-mode$' "$exclude_file")" "1" \
+  "tracker: an exclude file lacking a trailing newline still gets its own line"
+: > "$exclude_file"
+rm -f "$TMP/.evergreen-mode"
+
+UNWRITABLE="$TMP/unwritable"
+mkdir -p "$UNWRITABLE"; chmod 555 "$UNWRITABLE"
+tracker_error="$(printf '%s' "$(prompt_payload "/evergreen strict")" \
+  | CLAUDE_PROJECT_DIR="$UNWRITABLE" bash "$HOOKS/evergreen-mode-tracker.sh" 2>&1 >/dev/null)"
+has "$tracker_error" "could not write" "tracker: an unwritable project directory reports the failure"
+chmod 755 "$UNWRITABLE"; rm -rf "$UNWRITABLE"
+
 # --- stop hook (post-turn audit request; guards + mode gate) ---
 rm -f "$TMP/.evergreen-mode"
 empty "$(bash "$HOOKS/evergreen-stop.sh")" "stop: clean tree -> silent"
@@ -516,6 +586,13 @@ empty "$(bash "$HOOKS/evergreen-stop.sh")" "stop: same dirty tree next turn -> s
 printf 'w2\n' >> "$TMP/app.py"
 has "$(bash "$HOOKS/evergreen-stop.sh")" "freshness pass" "stop: further edit -> fires again"
 git -C "$TMP" checkout -q -- app.py
+
+# The mode flag is this plugin's own state. Counting it as a code change made the turn that only
+# switched modes ask for a freshness pass over nothing.
+printf 'light' > "$TMP/.evergreen-mode"
+git -C "$TMP" add -f .evergreen-mode
+empty "$(bash "$HOOKS/evergreen-stop.sh")" "stop: a staged .evergreen-mode is not a code change"
+git -C "$TMP" rm -q --cached .evergreen-mode; rm -f "$TMP/.evergreen-mode"
 
 # --- guard (PreToolUse commit backstop) ---
 PYTHON3="$(command -v python3)"
@@ -619,6 +696,35 @@ for case_row in \
 done
 empty "$(EVERGREEN_GUARD=off guard_cmd "git add -f .env && git commit -m x")" \
   "guard: EVERGREEN_GUARD=off bypasses compound rejection"
+
+# `add` is only the most common way to write the index. A rename, a cached patch, or a popped
+# stash stages content just as finally, and the index this hook reads is the one from BEFORE the
+# call — so any of them paired with a commit hides what the commit finalizes, exactly as add does.
+for case_row in \
+  "git mv secrets.txt .env && git commit -m x|mv" \
+  "git apply --cached patch.diff && git commit -m x|apply" \
+  "git stash pop && git commit -m x|stash" \
+  "git restore --staged app.py && git commit -m x|restore" \
+  "git reset app.py && git commit -m x|reset" \
+  "git rm --cached app.py && git commit -m x|rm"; do
+  cmd="${case_row%|*}"
+  label="${case_row##*|}"
+  has "$(guard_cmd "$cmd")" "separate" "guard: $label paired with a commit is compound"
+  eq "$(guard_rc "$cmd")" "2" "guard: $label paired with a commit exits 2"
+done
+# Each alone stages nothing this hook can judge yet; the commit that follows is what gets inspected.
+for case_row in \
+  "git mv secrets.txt .env|mv" \
+  "git apply --cached patch.diff|apply" \
+  "git stash pop|stash" \
+  "git restore --staged app.py|restore" \
+  "git reset app.py|reset" \
+  "git rm --cached app.py|rm"; do
+  cmd="${case_row%|*}"
+  label="${case_row##*|}"
+  empty "$(guard_cmd "$cmd")" "guard: $label alone is allowed"
+  eq "$(guard_rc "$cmd")" "0" "guard: $label alone exits 0"
+done
 
 mkdir -p "$TMP/no-python"
 printf '#!/bin/sh\nexit 127\n' > "$TMP/no-python/python3"
@@ -849,6 +955,9 @@ has "$(degraded "git commit -am x")" "separately staged plain commit" \
   "guard: degraded path still blocks unsafe commit modes"
 has "$(degraded "git commit --all -m x")" "separately staged plain commit" \
   "guard: degraded path still blocks --all"
+has "$(degraded "git stash pop && git commit -m x")" "separate" \
+  "guard: degraded path treats an index-writing subcommand plus commit as compound"
+empty "$(degraded "git stash pop")" "guard: degraded path allows a lone stash"
 
 # Intent lives in git-subcommand position only: words inside quoted arguments (commit messages,
 # pathspecs) must never reclassify a plain add/commit as compound stage-and-commit.

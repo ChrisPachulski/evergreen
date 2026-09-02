@@ -26,13 +26,16 @@ esac
 
 printf 'EVERGREEN REFLEX ACTIVE — mode: %s\n\n%s\n\n' "$MODE" "$PREAMBLE"
 
-# Emit the operative ruleset. The DIGEST (~⅓ the tokens of the full skill) is enough for the
-# ride-along reflex; the full SKILL.md stays loadable on demand via the Skill tool. Fall back to
-# the frontmatter-stripped SKILL body if the digest is missing. Best-effort.
+# Emit the operative ruleset. The DIGEST (about two-fifths of the full skill by words) is enough
+# for the ride-along reflex; the full SKILL.md stays loadable on demand via the Skill tool. Fall
+# back to the frontmatter-stripped SKILL body if the digest is missing, and say so: the fallback
+# injects roughly two and a half times the tokens the session budgeted for, which is a fact the
+# reader deserves rather than a silent overrun. Best-effort.
 BASE="${CLAUDE_PLUGIN_ROOT:-$EG_ROOT}/skills/evergreen"
 if [ -r "$BASE/DIGEST.md" ]; then
   cat "$BASE/DIGEST.md"
 elif [ -r "$BASE/SKILL.md" ]; then
+  printf 'EVERGREEN: digest missing, injecting full skill\n'
   awk 'NR==1 && /^---[[:space:]]*$/ {f=1; next} f && /^---[[:space:]]*$/ {f=0; next} !f' "$BASE/SKILL.md"
 fi
 exit 0

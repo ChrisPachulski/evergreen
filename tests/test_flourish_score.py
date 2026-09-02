@@ -44,10 +44,10 @@ QUICK_START = """## Quick start
 
 Set SHIPIT_TOKEN in the environment, then call `ship(pkg)`.
 
-```
-+-----+      +-------+
-| you | -->  | queue |
-+-----+      +-------+
+```mermaid
+flowchart TD
+    you[you] --> queue[queue]
+    queue --> worker[worker]
 ```
 """
 
@@ -114,11 +114,16 @@ def make_fixture(tmp_path, gt=None, source=SOURCE):
     return fixture
 
 
-def run_scorer(fixture, result_text, tmp_path, cuts=None, as_json=True):
+def run_scorer(fixture, result_text, tmp_path, cuts=None, as_json=True,
+               report=None):
     result = tmp_path / "RESULT.md"
     result.write_text(result_text)
     cmd = [sys.executable, str(SCORER),
            "--fixture", str(fixture), "--result", str(result)]
+    if report is not None:
+        report_path = tmp_path / "REPORT.md"
+        report_path.write_text(report)
+        cmd += ["--report", str(report_path)]
     if cuts is not None:
         cuts_path = tmp_path / "cuts.json"
         cuts_path.write_text(json.dumps(cuts))
@@ -174,7 +179,9 @@ class FlourishScoreTests(unittest.TestCase):
         fixture = make_fixture(tmp_path)
         code, doc, _ = run_scorer(fixture, GOOD, tmp_path)
         assert code == 0
-        assert doc["gates"] == {"conservation": True, "truth": True, "face": True}
+        assert doc["gates"] == {"conservation": True, "truth": True, "face": True,
+                                "quick_start": True, "length": True, "diagram": True}
+        assert doc["report"]["supplied"] is False
         assert doc["verdict"] == "PASS"
         assert doc["conservation"]["accounted"] == 4
         assert all(r["disposition"] == "present"
@@ -599,3 +606,210 @@ class FlourishScoreTests(unittest.TestCase):
             capture_output=True, text=True)
         assert proc.returncode == 1  # operational error, not a gate failure
         assert "ground-truth.json" in proc.stderr
+
+
+# --- the report gates: hard goals 5, 6 and 9 ----------------------------------
+
+REPORT = """# flourish report — shipit
+
+claims: 6 — certified: 4, cut: 1, markered: 1
+
+## Conservation ledger
+
+| section | disposition | now lives |
+| --- | --- | --- |
+| Roadmap | cut | the issue tracker |
+
+## The rewrite
+
+```diff
+--- README.md
++++ README.md
+-# shipit
++<h1 align="center">shipit</h1>
+```
+
+## Verification
+
+```sh
+bash tests/all.sh
+```
+
+GREEN - all four CI suites pass locally.
+"""
+
+FILLER = ("The queue drains steadily and the workers keep their own pace. " * 60)
+
+
+class FlourishReportGateTests(unittest.TestCase):
+    """Hard goals 5, 6 and 9 — graded off the run's report, not the rewrite."""
+
+    def setUp(self):
+        self.tmp_path = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp_path, True)
+
+    def test_report_gates_pass_on_a_complete_report(self):
+        fixture = make_fixture(self.tmp_path)
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=REPORT)
+        assert code == 0
+        assert doc["report"]["supplied"] is True
+        assert doc["gates"]["claim_counts"] is True
+        assert doc["gates"]["shown"] is True
+        assert doc["gates"]["verification"] is True
+
+    def test_report_gates_are_not_enforced_without_a_report(self):
+        fixture = make_fixture(self.tmp_path)
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path)
+        assert code == 0
+        assert doc["report"]["supplied"] is False
+        assert "claim_counts" not in doc["gates"]
+
+    def test_goal5_counts_must_sum_to_the_claim_set(self):
+        fixture = make_fixture(self.tmp_path)
+        bad = REPORT.replace("certified: 4", "certified: 3")
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=bad)
+        assert code == 2
+        assert doc["gates"]["claim_counts"] is False
+        assert doc["claim_counts"]["sum"] == 5
+        assert doc["claim_counts"]["claim_total"] == 6
+
+    def test_goal5_missing_a_count_fails(self):
+        fixture = make_fixture(self.tmp_path)
+        bad = REPORT.replace("claims: 6 — certified: 4, cut: 1, markered: 1",
+                             "claims: 6 — certified: 4, cut: 1")
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=bad)
+        assert code == 2
+        assert doc["gates"]["claim_counts"] is False
+        assert doc["claim_counts"]["counts"]["markered"] is None
+
+    def test_goal6_needs_the_diff_and_the_ledger(self):
+        fixture = make_fixture(self.tmp_path)
+        no_diff = REPORT.replace("```diff", "```text")
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=no_diff)
+        assert code == 2
+        assert doc["gates"]["shown"] is False
+        assert doc["shown"]["diff_fence"] is False
+
+        no_ledger = REPORT.replace("Conservation ledger", "Notes")
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=no_ledger)
+        assert code == 2
+        assert doc["gates"]["shown"] is False
+        assert doc["shown"]["ledger"] is False
+
+    def test_goal6_accepts_the_full_result_inlined(self):
+        fixture = make_fixture(self.tmp_path)
+        inlined = REPORT.replace("```diff", "```text") + "\n" + GOOD
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=inlined)
+        assert code == 0
+        assert doc["shown"]["full_result_inlined"] is True
+
+    def test_goal9_needs_a_command_and_a_verdict(self):
+        fixture = make_fixture(self.tmp_path)
+        no_verdict = REPORT.replace("GREEN - all four CI suites pass locally.", "")
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=no_verdict)
+        assert code == 2
+        assert doc["gates"]["verification"] is False
+        assert doc["verification"]["verdict_line"] is None
+
+        no_command = REPORT.replace("bash tests/all.sh", "the usual suite")
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=no_command)
+        assert code == 2
+        assert doc["gates"]["verification"] is False
+
+    def test_goal9_accepts_the_declared_escape(self):
+        fixture = make_fixture(self.tmp_path)
+        escaped = REPORT.replace(
+            "```sh\nbash tests/all.sh\n```\n\nGREEN - all four CI suites pass locally.",
+            "This repository declares no verification entry point.")
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=escaped)
+        assert code == 0
+        assert doc["verification"]["declared_no_entry_point"] is True
+
+
+# --- counted on the result: hard goals 7, 8 and 10 ----------------------------
+
+class FlourishResultCountTests(unittest.TestCase):
+    """Hard goals 7, 8 and 10 — greps and counts over the written result."""
+
+    def setUp(self):
+        self.tmp_path = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp_path, True)
+
+    def test_goal7_quick_start_within_400_words(self):
+        fixture = make_fixture(self.tmp_path)
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path)
+        assert code == 0
+        assert doc["gates"]["quick_start"] is True
+        assert doc["quick_start"]["words_to_quick_start"] < 400
+
+    def test_goal7_essay_before_the_quick_start_fails(self):
+        fixture = make_fixture(self.tmp_path)
+        buried = GOOD.replace(QUICK_START, FILLER + "\n\n" + QUICK_START)
+        code, doc, _ = run_scorer(fixture, buried, self.tmp_path)
+        assert code == 2
+        assert doc["gates"]["quick_start"] is False
+        assert doc["quick_start"]["words_to_quick_start"] > 400
+
+    def test_goal7_pure_explainer_is_exempt(self):
+        fixture = make_fixture(self.tmp_path)
+        explainer = GOOD.replace("## Quick start", "## How it thinks")
+        code, doc, _ = run_scorer(fixture, explainer, self.tmp_path)
+        assert code == 0
+        assert doc["quick_start"]["heading_found"] is False
+        assert doc["gates"]["quick_start"] is True
+
+    def test_goal8_open_page_over_the_band_fails(self):
+        fixture = make_fixture(self.tmp_path)
+        bloated = GOOD + "\n" + (FILLER * 5)
+        code, doc, _ = run_scorer(fixture, bloated, self.tmp_path)
+        assert code == 2
+        assert doc["gates"]["length"] is False
+        assert doc["length"]["open_page_words"] > 2500
+
+    def test_goal8_details_content_is_rent_free(self):
+        fixture = make_fixture(self.tmp_path)
+        collapsed = GOOD + "\n<details>\n<summary>Appendix</summary>\n\n" \
+            + (FILLER * 5) + "\n</details>\n"
+        code, doc, _ = run_scorer(fixture, collapsed, self.tmp_path)
+        assert code == 0
+        assert doc["gates"]["length"] is True
+        assert doc["length"]["open_page_words"] <= 2500
+
+    def test_goal10_vertical_mermaid_passes(self):
+        fixture = make_fixture(self.tmp_path)
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path)
+        assert code == 0
+        assert doc["gates"]["diagram"] is True
+        assert doc["diagram"]["mermaid_fences"] == 1
+        assert doc["diagram"]["vertical_declarations"] == 1
+
+    def test_goal10_no_diagram_fails(self):
+        fixture = make_fixture(self.tmp_path)
+        plain = GOOD.replace("```mermaid\nflowchart TD\n", "```\n")
+        code, doc, _ = run_scorer(fixture, plain, self.tmp_path)
+        assert code == 2
+        assert doc["gates"]["diagram"] is False
+        assert doc["diagram"]["mermaid_fences"] == 0
+
+    def test_goal10_horizontal_mermaid_fails(self):
+        fixture = make_fixture(self.tmp_path)
+        sideways = GOOD.replace("flowchart TD", "flowchart LR")
+        code, doc, _ = run_scorer(fixture, sideways, self.tmp_path)
+        assert code == 2
+        assert doc["gates"]["diagram"] is False
+        assert doc["diagram"]["horizontal_declarations"] == 1
+
+    def test_goal10_direction_lr_subgraph_fails(self):
+        fixture = make_fixture(self.tmp_path)
+        sideways = GOOD.replace("flowchart TD\n", "flowchart TD\n    direction LR\n")
+        code, doc, _ = run_scorer(fixture, sideways, self.tmp_path)
+        assert code == 2
+        assert doc["gates"]["diagram"] is False
+
+    def test_goal10_box_drawing_art_fails(self):
+        fixture = make_fixture(self.tmp_path)
+        boxed = GOOD + "\n```\n\u250c\u2500\u2510\n\u2502 q \u2502\n\u2514\u2500\u2518\n```\n"
+        code, doc, _ = run_scorer(fixture, boxed, self.tmp_path)
+        assert code == 2
+        assert doc["gates"]["diagram"] is False
+        assert doc["diagram"]["box_drawing_lines"] == 3

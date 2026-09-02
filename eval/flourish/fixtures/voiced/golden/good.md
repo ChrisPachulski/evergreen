@@ -26,10 +26,11 @@ tool.
 hushcron --retries 2 -- pg_dump --file /backups/nightly.sql mydb
 ```
 
-```
-+---------+     +----------+     +-----------------+
-| crontab | --> | hushcron | --> | mail(1) on fail |
-+---------+     +----------+     +-----------------+
+```mermaid
+flowchart TD
+    crontab[crontab entry] --> hushcron[hushcron wrapper]
+    hushcron --> success[exit 0: silence]
+    hushcron --> failure["nonzero: retry, then mail(1)"]
 ```
 
 ### Exit behavior

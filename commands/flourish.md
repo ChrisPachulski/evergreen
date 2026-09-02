@@ -13,7 +13,7 @@ makes you feel the problem, a tagline with a point of view, concrete stakes, per
 — all still code-backed. If you finish and the structure moved but the result reads neutral, you
 stopped at the skeleton. Run the voice pass.
 
-Argument: `{{args}}`. Default scope: the one file path given. With `--all`: every documentation file,
+Argument: `$ARGUMENTS`. Default scope: the one file path given. With `--all`: every documentation file,
 dropping the exempt set (specs/ADRs/roadmaps/CHANGELOG history/dated snapshots). Never flourish a
 frozen record.
 
@@ -40,15 +40,11 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
      (`docs/` is often gitignored; prefer `public/`/`assets/`/`.github/`). Never a visible
      placeholder box or "screenshot goes here" text. Raise a missing screenshot in your summary, not
      the doc.
-   - **The "how it works" diagram — mermaid, vertical, non-negotiable.** Every rewrite ships one
-     fenced ` ```mermaid ` block using `graph TD` / `flowchart TD` (`BT` only where the argument
-     flows upward). **Never `LR`/`RL`, never `direction LR` in a subgraph, never box-drawing ASCII
-     art** — that art dies on a font change and cannot be styled, linked, or diffed. Open the block
-     with the ELK directive, label nodes with real function and table names in plain language
-     first, and **render it before you ship it**
-     (`npx -y @mermaid-js/mermaid-cli -i <doc> -o /tmp/check.md`, output to scratch, never the
-     repo). Full contract: `skills/evergreen/references/mermaid-diagrams.md`. Enforced by
-     `hard-goals/flourish.md` goal 10 — a rewrite with no vertical mermaid block is not done.
+   - **The "how it works" diagram — mermaid, vertical.** A rewrite that carries a structure claim
+     ships one fenced mermaid block, `graph TD` / `flowchart TD`, rendered before it ships. The
+     contract (ELK directive, node rules, palette, render check) and the narrow no-structure-claim
+     exemption are `skills/evergreen/references/mermaid-diagrams.md`, enforced by
+     `hard-goals/flourish.md` goal 10.
    Then **demote** deep technical detail (full architecture, exhaustive dev setup, API surface) below
    the visitor-facing top — and demote means **move, verbatim, into `<details>` or a linked doc
    file**, never compress-to-summary. A 200-line API reference that comes back as a ten-line "module
@@ -72,22 +68,12 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
      own, or one from the 28-repo survey) and compare the target's shape and voice to it — not
      only the abstract style doc. The exemplar catches what the checklist misses.
 
-3. **Voice pass — make it sing** (the step that produces evergreen-ilk output, not just tidy output).
-   The skeleton is now right; give it a voice against `readme-style.md`'s Voice section:
-   - **Write a tagline with a point of view** — a dare, a stakes line, or a metaphor the product
-     earns, distinct from the definitional value prop. Not "X keeps docs fresh" but evergreen's "The
-     docs said yes. The code said no. Only one of them gets to be true."
-   - **Lead with a hook when the product has a point of view** — dramatize the pain in concrete,
-     lived terms before naming the tool (readme-style's hook-first register). Prefer this to the bare
-     `[Name] is a [category]` formula for any tool with an opinion.
-   - **Put personality in the seams** — section intros and FAQ answers, not just the hero.
-   - **Show it working** — for a dev tool, a before/after or a real slice of the tool's own output
-     beats a prose claim.
-   - **Don't-flatten guard:** if the source doc *already* has a strong hook or voice, your job is to
-     sharpen and keep it, **never** to replace an evocative opening with the definitional formula.
-     Flattening a doc that had voice is a failed flourish, even if the structure is now textbook.
-   Voice is not fabrication: every line it adds still faces step 4. This is prose-shaping of claims the
-   code backs, plus a marker for any rationale it can't.
+3. **Voice pass — make it sing.** The skeleton is now right; give it a voice against
+   `readme-style.md`'s Voice section: a tagline with a point of view distinct from the value prop,
+   a hook-first opener when the product has an opinion, personality in the seams, a show-it-working
+   beat, and the don't-flatten guard — a source doc that already has voice is sharpened, never
+   replaced with the definitional formula. Voice is not fabrication: every line it adds still faces
+   step 4, and a rationale the code can't back is markered.
 
 4. **Verify pass — the truth trial, judged by someone else** — run the freshness ladder (winnow
    depth) on the *rewritten* doc. Every factual claim and auto-written "why" must cite the code
@@ -100,9 +86,12 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
    **Run this pass on a different provider than the one that rewrote the doc.** You just wrote
    every badge and bullet on the page; checking them in the same context is self-assessment
    wearing a trial's clothes. Hand the judge the *rewritten doc and the repository* — never the
-   craft reasoning, never the source doc's ledger. Use `evergreen.judge.judge_json`; the model
-   follows the host's own codex configuration. If codex is unavailable or the call abstains, say
-   so on its own line — `flourish: external judge unavailable (<reason>) — verified in-session` —
+   craft reasoning, never the source doc's ledger. Run
+   `bin/evergreen judge --repo <repo> --doc <rewritten doc>`: it packs the doc and the in-repo files
+   the doc names into one isolated codex call, resolves the model from the host's own codex
+   configuration, and prints a verdict per claim (exit 3 when the judge is unavailable or abstains).
+   If codex is unavailable or the call abstains, say so on its own line —
+   `flourish: external judge unavailable (<reason>) — verified in-session` —
    and fall back. Never let the fallback pass silently as a cross-provider verification.
 
 5. **Emit the rewrite for approval.** Show it; never write silently. With `--all`, one per doc.
@@ -119,7 +108,8 @@ the craft pass.
 
 **Structure floor.** First screenful is hero → value prop → features → quick start (not
 architecture); a visual product shows a screenshot or an invisible comment marker (never a visible
-"screenshot goes here" box); **"how it works" is a vertical mermaid block — no ASCII art, no `LR`**;
+"screenshot goes here" box); **"how it works" is a vertical mermaid block — no ASCII art, no `LR`**
+(or the goal-10 exemption, declared);
 features are bullets, not paragraphs; deep internals sit below the
 visitor top; the never-present set (changelog/roadmap/aspirational) is cut, not prettied — and an
 inline API reference is *rehomed* (linked docs or `<details>`), never deleted.

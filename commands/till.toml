@@ -1,3 +1,4 @@
+# Gemini CLI command file ({{args}} syntax). Claude Code loads the sibling .md; Codex reads AGENTS.md.
 description = "Inventory the undocumented-surface candidates — every public declaration reachable from outside its file."
 prompt = """
 Arguments: `{{args}}`.

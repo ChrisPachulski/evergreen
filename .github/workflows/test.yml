@@ -57,6 +57,8 @@ jobs:
         run: bash tests/action.sh
       - name: Benchmark self-test
         run: python3 eval/bench/run_bench.py --selftest
+      - name: Readiness axes
+        run: bash tests/readiness.sh --fast
       - name: Public benchmark verification
         run: >-
           python3 eval/bench/publication.py verify

@@ -7,7 +7,8 @@ claims; seed is the sanctioned exception on the *creation* side — you were inv
 where none exist**, so write them. The discipline comes along: every sentence is a code-backed
 claim with a citation, or an explicit marked gap. Never invented prose.
 
-Argument: `{{args}}`. Default scope: the whole repo; an optional path narrows it.
+Argument: `$ARGUMENTS` — an optional scope path, and `--approve N` to pre-authorize writing the top N
+worthy candidates (see C2). Default scope: the whole repo.
 
 **Acceptance bar (non-negotiable).** Before you report, satisfy *every* MUST in
 [`skills/evergreen/hard-goals/seed.md`](../skills/evergreen/hard-goals/seed.md). A run that fails
@@ -67,8 +68,10 @@ silent.
 symbol, rank, one line on what its doc would say — plus a plain recommendation: which to write
 first and why ("14 worth documenting; I'd start with these 6 — the CI contract surfaces — and
 leave the eval internals for a later pass"). The owner chooses the count; the run never writes
-past that choice, and no answer means write nothing. Writing zero is a valid outcome of a correct
-run.
+past that choice, and no answer means write nothing. The owner may pre-authorize in the
+invocation: `--approve N` means write the top N of the worthy list in rank order without waiting,
+and the list, the recommendation, and the chosen count still appear in the report before any doc
+content. Writing zero is a valid outcome of a correct run.
 
 **D · Write, claim-disciplined.** Prose where the code backs it; each declarative sentence logged in
 a **claim ledger** with the code `file:line` that makes it true. What the code can't settle —
@@ -90,10 +93,12 @@ certify is cut or markered — the doc bends to the code, never the reverse.
 prose in the session that authored it is not a check: the reader has already seen the reasoning
 for every sentence, so the blindness the trial depends on is gone before it starts. Hand the
 judge the *proposed doc and the repository* and nothing else — never the authoring transcript,
-never the claim ledger's reasoning, never pass C's worthiness argument. Use
-`evergreen.judge.judge_json`; the model follows the host's own codex configuration, so there is
-no version to keep current here. If codex is unavailable or the call abstains, say so on its own
-line — `seed: external judge unavailable (<reason>) — certified in-session` — and fall back.
+never the claim ledger's reasoning, never pass C's worthiness argument. Run
+`bin/evergreen judge --repo <repo> --doc <proposed doc>`: it packs the doc and the in-repo files
+the doc names into one isolated codex call, resolves the model from the host's own codex
+configuration, and prints a verdict per claim (exit 3 when the judge is unavailable or abstains).
+If codex is unavailable or the call abstains, say so on its own line —
+`seed: external judge unavailable (<reason>) — certified in-session` — and fall back.
 A silent fallback is worse than no judge, because it reports a cross-provider certification that
 never happened.
 

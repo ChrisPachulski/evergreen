@@ -16,8 +16,32 @@ for length", "trimmed", "for length", "brevity", "shortened" — case/whitespace
 insensitive; hard-goals/flourish.md goal 2). Absent a declaration, any missing
 section fails conservation.
 
-Four gates, per skills/evergreen/hard-goals/flourish.md. Every check is a grep or
+The gates, per skills/evergreen/hard-goals/flourish.md. Every check is a grep or
 a count — no model call, ever. The frozen contract is the external arbiter.
+Gates 1-3 below cover hard goals 1-4; gates 5-10 are named for the goal they
+enforce. `--report` supplies the run's report and turns on goals 5, 6 and 9;
+without it those three are reported as NOT ENFORCED and the exit code ignores
+them. Goals 7, 8 and 10 are counted on the written result and always gate.
+
+  goal 5   claim_counts  — certified/cut/markered are stated in the report and
+                           sum to the stated claim total. Arithmetic only: the
+                           scorer cannot tell whether the counts are honest.
+  goal 6   shown         — the report holds a ```diff fence (or the full result
+                           inlined) AND a line naming a ledger. Presence only.
+  goal 7   quick_start   — the awk word count to the first
+                           Install/Quick start/Getting started/Usage heading is
+                           <= 400; a result with no such heading is exempt as a
+                           pure explainer, and the report is expected to say so.
+  goal 8   length        — the open page, <details> blocks removed, is <= 2,500
+                           words.
+  goal 9   verification  — a verification command and a verdict line after it,
+                           or the stated "declares no verification entry point"
+                           escape. Presence only: a report that prints GREEN it
+                           never earned passes here.
+  goal 10  diagram       — the goal's own four greps: >= 1 ```mermaid fence,
+                           >= 1 vertical graph/flowchart declaration, zero
+                           LR/RL declarations or `direction LR|RL` lines, zero
+                           box-drawing characters.
 
 1. conservation (GATES): every ground-truth `##`/`###` section must be (a) a
    heading in the result, (b) inside a `<details>` block, or in a linked
@@ -240,8 +264,8 @@ def is_prose(line):
 
 # --- gate 1: conservation -------------------------------------------------
 
-BODY_OVERLAP_MIN = 0.70     # >= 70% of the source body's unique tokens must survive
-BODY_TOKENS_MIN = 10        # under this, the body is too thin — heading match suffices
+BODY_OVERLAP_MIN = 0.70  # >= 70% of the source body's unique tokens must survive
+BODY_TOKENS_MIN = 10     # under this, the body is too thin — heading match suffices
 
 FORBIDDEN_CUT_REASONS = {
     "trimmed for length", "trimmed", "for length", "brevity", "shortened",
@@ -647,6 +671,138 @@ def gate_face(result_text):
         hero_ok and tagline_ok and score >= 4
 
 
+# --- gates 5, 6, 9: the report ----------------------------------------------
+# These three read the run's REPORT, not the rewrite, so they are enforced only
+# when --report is supplied. Presence and arithmetic are checked; truthfulness
+# is not — a report that states a verdict line it never earned passes goal 9
+# here and fails the hard goal in the world.
+
+COUNT_KEYS = ("certified", "cut", "markered")
+CLAIM_TOTAL_RE = re.compile(r"\bclaims?\b\s*[:=]?\s*(\d+)", re.I)
+LEDGER_RE = re.compile(r"\bledger\b", re.I)
+DIFF_FENCE_RE = re.compile(r"^```+\s*diff\b", re.I | re.M)
+NO_VERIFY_RE = re.compile(
+    r"declares?\s+no\s+verification\s+entry\s+point", re.I)
+VERIFY_CMD_RE = re.compile(
+    r"(?:^|`|\$\s*)(?:bash|sh|make|npm|yarn|pnpm|pytest|python3?|cargo|go|tox|"
+    r"just|task|ctest|mvn|gradle)\s+\S+")
+VERDICT_RE = re.compile(
+    r"\bNOT GREEN\b|\bGREEN\b|\bPASS(?:ED)?\b|\bFAIL(?:ED|URE)?\b|"
+    r"\b\d+\s+(?:passed|failed)\b|^\s*ok\s+\d+", re.M)
+
+
+def count_of(report_text, key):
+    """`certified: 7`, `certified 7`, or `7 certified` — first hit wins."""
+    m = re.search(rf"\b{key}\b\s*[:=]?\s*(\d+)", report_text, re.I)
+    if m:
+        return int(m.group(1))
+    m = re.search(rf"\b(\d+)\s+{key}\b", report_text, re.I)
+    return int(m.group(1)) if m else None
+
+
+def gate_claim_counts(report_text):
+    """Goal 5: certified / cut / markered are stated and sum to the claim set."""
+    counts = {k: count_of(report_text, k) for k in COUNT_KEYS}
+    total = None
+    m = CLAIM_TOTAL_RE.search(report_text)
+    if m:
+        total = int(m.group(1))
+    have_all = all(v is not None for v in counts.values()) and total is not None
+    summed = sum(v for v in counts.values() if v is not None)
+    ok = bool(have_all and summed == total)
+    return {"counts": counts, "claim_total": total, "sum": summed,
+            "ok": ok}, ok
+
+
+def gate_shown(report_text, result_text):
+    """Goal 6: the report carries the diff (or the full result) plus the ledger."""
+    has_diff = bool(DIFF_FENCE_RE.search(report_text))
+    has_full = bool(result_text.strip()) and result_text.strip() in report_text
+    has_ledger = bool(LEDGER_RE.search(report_text))
+    ok = (has_diff or has_full) and has_ledger
+    return {"diff_fence": has_diff, "full_result_inlined": has_full,
+            "ledger": has_ledger, "ok": ok}, ok
+
+
+def gate_verification(report_text):
+    """Goal 9: a verification command and its verdict line, or the stated escape."""
+    if NO_VERIFY_RE.search(report_text):
+        return {"declared_no_entry_point": True, "command": None,
+                "verdict_line": None, "ok": True}, True
+    # A fence's language tag ("```sh") is not a command, so fence lines are
+    # skipped: the command has to be a line someone could re-run.
+    lines = report_text.splitlines()
+    command, at = None, None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith(("```", "~~~")):
+            continue
+        m = VERIFY_CMD_RE.search(stripped)
+        if m:
+            command, at = m.group(0).strip(" `$"), i
+            break
+    verdict = None
+    if command is not None:
+        for line in lines[at + 1:]:
+            m = VERDICT_RE.search(line)
+            if m:
+                verdict = m.group(0).strip()
+                break
+    ok = bool(command and verdict)
+    return {"declared_no_entry_point": False, "command": command,
+            "verdict_line": verdict, "ok": ok}, ok
+
+
+# --- gates 7, 8, 10: counted on the written result --------------------------
+
+QUICK_START_RE = re.compile(r"^#{2,3} *(Install|Quick ?start|Getting started|Usage)")
+QUICK_START_MAX = 400  # readme-style.md caps the gateway archetype at 450
+OPEN_PAGE_MAX = 2500   # readme-style.md's onboarding ceiling
+MERMAID_FENCE_RE = re.compile(r"^```mermaid", re.M)
+VERTICAL_RE = re.compile(r"^\s*(graph|flowchart)\s+(TD|TB|BT)\b", re.M)
+HORIZONTAL_RE = re.compile(
+    r"^\s*(graph|flowchart)\s+(LR|RL)\b|^\s*direction\s+(LR|RL)\b", re.M)
+BOX_DRAWING_RE = re.compile(r"[─│┌┐└┘├┤┬┴┼━┃╔╗╚╝║═]")
+
+
+def gate_quick_start(result_text):
+    """Goal 7: the awk word count to the first install heading is <= 400."""
+    words = 0
+    for line in result_text.splitlines():
+        if QUICK_START_RE.match(line):
+            return {"words_to_quick_start": words, "heading_found": True,
+                    "bound": QUICK_START_MAX, "ok": words <= QUICK_START_MAX}, \
+                words <= QUICK_START_MAX
+        words += len(line.split())
+    # No install path at all: a pure explainer, which the goal exempts.
+    return {"words_to_quick_start": None, "heading_found": False,
+            "bound": QUICK_START_MAX, "ok": True,
+            "note": "no install heading — pure explainer, goal 7 exempts it"}, True
+
+
+def gate_length(result_text):
+    """Goal 8: the open page, <details> excluded, is <= 2,500 words."""
+    open_page = re.sub(r"<details>.*?</details>", "", result_text, flags=re.S)
+    words = len(open_page.split())
+    return {"open_page_words": words, "bound": OPEN_PAGE_MAX,
+            "ok": words <= OPEN_PAGE_MAX}, words <= OPEN_PAGE_MAX
+
+
+def gate_diagram(result_text):
+    """Goal 10: the four greps — vertical mermaid, no horizontal, no box art."""
+    checks = {
+        "mermaid_fences": len(MERMAID_FENCE_RE.findall(result_text)),
+        "vertical_declarations": len(VERTICAL_RE.findall(result_text)),
+        "horizontal_declarations": len(HORIZONTAL_RE.findall(result_text)),
+        "box_drawing_lines": sum(1 for line in result_text.splitlines()
+                                 if BOX_DRAWING_RE.search(line)),
+    }
+    ok = (checks["mermaid_fences"] >= 1 and checks["vertical_declarations"] >= 1
+          and checks["horizontal_declarations"] == 0
+          and checks["box_drawing_lines"] == 0)
+    return {**checks, "ok": ok}, ok
+
+
 # --- gate 4: voice (advisory only) -----------------------------------------
 
 def report_voice(gt, result_text):
@@ -778,6 +934,33 @@ def print_human(doc):
     print(f"face:         {'PASS' if g['face'] else 'FAIL'}"
           f" — {face['score']}/5 ({parts}); hero mandatory")
 
+    qs, ln, dg = doc["quick_start"], doc["length"], doc["diagram"]
+    reached = "no install heading (pure explainer)" \
+        if not qs["heading_found"] else f"{qs['words_to_quick_start']} words"
+    print(f"quick start:  {'PASS' if g['quick_start'] else 'FAIL'}"
+          f" — {reached}, bound {qs['bound']}")
+    print(f"length:       {'PASS' if g['length'] else 'FAIL'}"
+          f" — open page {ln['open_page_words']} words, bound {ln['bound']}")
+    print(f"diagram:      {'PASS' if g['diagram'] else 'FAIL'}"
+          f" — mermaid {dg['mermaid_fences']}, vertical {dg['vertical_declarations']},"
+          f" horizontal {dg['horizontal_declarations']},"
+          f" box-drawing lines {dg['box_drawing_lines']}")
+
+    if doc["report"]["supplied"]:
+        counts, shown, verify = (doc["claim_counts"], doc["shown"],
+                                 doc["verification"])
+        print(f"claim counts: {'PASS' if g['claim_counts'] else 'FAIL'}"
+              f" — {counts['counts']} sum {counts['sum']},"
+              f" claim set {counts['claim_total']}")
+        print(f"rewrite shown:{'PASS' if g['shown'] else 'FAIL'}"
+              f" — diff {shown['diff_fence']}, full result {shown['full_result_inlined']},"
+              f" ledger {shown['ledger']}")
+        print(f"verification: {'PASS' if g['verification'] else 'FAIL'}"
+              f" — command {verify['command']!r}, verdict {verify['verdict_line']!r},"
+              f" no-entry-point {verify['declared_no_entry_point']}")
+    else:
+        print("report gates (5, 6, 9): NOT ENFORCED — no --report given")
+
     hook = voice["hook"]
     proxy = voice["proxy"]
     hook_bit = hook["status"] if hook["status"] == "n/a" else \
@@ -795,6 +978,8 @@ def main(argv=None):
     ap.add_argument("--result", required=True, help="path to the rewritten readme")
     ap.add_argument("--cuts", default=None,
                     help='path to, or inline, JSON list of {"heading", "reason"}')
+    ap.add_argument("--report", default=None,
+                    help="the run's report; enables the goal 5/6/9 gates")
     ap.add_argument("--json", action="store_true", dest="as_json",
                     help="emit the machine-readable document instead of the human report")
     args = ap.parse_args(argv)
@@ -814,24 +999,48 @@ def main(argv=None):
     source_text = source_path.read_text(errors="replace")
     result_text = result_path.read_text(errors="replace")
 
+    report_text = None
+    if args.report is not None:
+        report_path = Path(args.report)
+        if not report_path.is_file():
+            die(f"report file not found: {report_path}")
+        report_text = report_path.read_text(errors="replace")
+
     cons_detail, cons_ok = gate_conservation(gt, fixture, source_text,
                                              result_text, cuts)
     truth_detail, truth_ok = gate_truth(gt, source_text, result_text)
     face_detail, face_ok = gate_face(result_text)
+    qs_detail, qs_ok = gate_quick_start(result_text)
+    len_detail, len_ok = gate_length(result_text)
+    dia_detail, dia_ok = gate_diagram(result_text)
     voice_detail = report_voice(gt, result_text)
 
-    all_ok = cons_ok and truth_ok and face_ok
+    gates = {"conservation": cons_ok, "truth": truth_ok, "face": face_ok,
+             "quick_start": qs_ok, "length": len_ok, "diagram": dia_ok}
     doc = {
         "schema_version": SCHEMA_VERSION,
         "fixture": str(fixture),
         "result": str(result_path),
-        "gates": {"conservation": cons_ok, "truth": truth_ok, "face": face_ok},
-        "verdict": "PASS" if all_ok else "FAIL",
+        "report": {"supplied": report_text is not None, "path": args.report},
         "conservation": cons_detail,
         "truth": truth_detail,
         "face": face_detail,
+        "quick_start": qs_detail,
+        "length": len_detail,
+        "diagram": dia_detail,
         "voice": voice_detail,
     }
+    if report_text is not None:
+        counts_detail, counts_ok = gate_claim_counts(report_text)
+        shown_detail, shown_ok = gate_shown(report_text, result_text)
+        verify_detail, verify_ok = gate_verification(report_text)
+        gates.update({"claim_counts": counts_ok, "shown": shown_ok,
+                      "verification": verify_ok})
+        doc.update({"claim_counts": counts_detail, "shown": shown_detail,
+                    "verification": verify_detail})
+    all_ok = all(gates.values())
+    doc["gates"] = gates
+    doc["verdict"] = "PASS" if all_ok else "FAIL"
     if args.as_json:
         print(json.dumps(doc, indent=2))
     else:

@@ -20,8 +20,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || exit 0
 # quoting exactly, so this path: extracts the JSON "command" value (missing/empty -> none, like
 # the helper's malformed-payload branch), joins backslash-newline continuations, turns real
 # newlines/tabs into spaces, removes QUOTED SPANS (content included) so quoted words never create
-# intent, then requires add/commit in git-subcommand position (option tokens, each optionally
-# followed by one value token, may intervene). It does not attempt to evaluate variables,
+# intent, then requires an index-writing subcommand or commit in git-subcommand position (option
+# tokens, each optionally followed by one value token, may intervene). It does not evaluate variables,
 # substitutions, aliases, or other computed commands. Residual false positives — all fail-closed,
 # on this degraded path only:
 #   - an UNQUOTED word in subcommand-like position (e.g. `git log --grep add`) still registers
@@ -44,6 +44,9 @@ FALLBACK_TEXT="$(printf '%s' "$FALLBACK_CMD" \
   | sed -e 's/\\"[^"]*\\"//g' -e "s/'[^']*'//g" | tr -d '\\')"
 # Option tokens after `git`, each optionally followed by one value token (e.g. -C <path>).
 GIT_OPTION_GAP='([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'
+# Every subcommand that can write the index, mirroring STAGING_SUBCOMMANDS in the Python
+# classifier: paired with a commit in one call they stage content this hook never inspects.
+GIT_STAGING='(add|mv|rm|apply|stash|restore|checkout|reset|update-index|read-tree|cherry-pick|revert|merge|rebase|am)'
 
 fallback_has_git_intent() {
   local wanted="$1"
@@ -67,20 +70,21 @@ fallback_intent() {
     echo release-tag
     return
   fi
-  local add=false commit=false
+  local add=false staging=false commit=false
   fallback_has_git_intent add && add=true
+  fallback_has_git_intent "$GIT_STAGING" && staging=true
   fallback_has_git_intent commit && commit=true
   # Wrapper rescan: quoted eval/sh -c bodies vanished with the quoted spans above, so a coarse
   # raw-text match must conservatively block what the stripped text can no longer see.
-  if ! $add && ! $commit \
+  if ! $staging && ! $commit \
      && printf '%s' "$FALLBACK_CMD" | grep -Eq \
        '(^|[^[:alnum:]_-])(eval|(ba|z)?sh[[:space:]]+-c)([^[:alnum:]_-]|$)' \
      && printf '%s' "$FALLBACK_CMD" | grep -Eq \
-       '(^|[^[:alnum:]_-])git.*(add|commit)([^[:alnum:]_-]|$)'; then
+       "(^|[^[:alnum:]_-])git.*(${GIT_STAGING}|commit)([^[:alnum:]_-]|\$)"; then
     echo compound
     return
   fi
-  if $add && $commit; then
+  if $staging && $commit; then
     echo compound
   # An option must OPEN a token. Without the leading boundary the short-flag branch also matched
   # the tail of any hyphenated word — `identifier-shaped` in a commit-message body read as a
@@ -107,7 +111,7 @@ esac
 # Any call containing both intents is deliberately rejected. Shell grammar is too broad to prove
 # ordering or exclusivity safely at this trust boundary.
 if [ "$intent" = "compound" ]; then
-  echo "evergreen guard: run git add and git commit in separate Bash tool calls so the finalized staged index can be inspected, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
+  echo "evergreen guard: run the index-writing command (add, mv, rm, apply, stash, restore, checkout, reset, and the other history commands) and git commit in separate Bash tool calls so the finalized staged index can be inspected, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
   exit 2
 fi
 

@@ -840,6 +840,7 @@ class ReceiptTests(unittest.TestCase):
             "evidence_state": "declared_publication",
             "judge_sha256": "e" * 64,
             "languages": ["Java", "Python", "go", "rust", "typescript"],
+            "local_datasets": {"absent": 0, "present": 5},
             "manifest": "bench/manifest.json",
             "protocol": "unverified",
             "provenance_commit": "a" * 40,
@@ -847,6 +848,56 @@ class ReceiptTests(unittest.TestCase):
             "report": "bench/report.md",
             "resolver": "unverified",
         })
+
+    def test_absent_local_datasets_are_reported_not_refused(self):
+        manifest = self.benchmark_manifest()
+        for artifact in manifest["artifacts"]:
+            (self.repo / artifact["dataset"]["path"]).unlink()
+        self.write_benchmark_manifest(manifest)
+
+        benchmark = build_receipt(
+            self.repo, Path("bench/manifest.json")
+        )["benchmark"]
+
+        self.assertEqual(benchmark["local_datasets"], {"absent": 5, "present": 0})
+        self.assertEqual(benchmark["evidence_state"], "declared_publication")
+
+    def test_present_local_datasets_are_counted(self):
+        manifest = self.benchmark_manifest()
+        for artifact in manifest["artifacts"][1:]:
+            (self.repo / artifact["dataset"]["path"]).unlink()
+        self.write_benchmark_manifest(manifest)
+
+        benchmark = build_receipt(
+            self.repo, Path("bench/manifest.json")
+        )["benchmark"]
+
+        self.assertEqual(benchmark["local_datasets"], {"absent": 4, "present": 1})
+
+    def test_missing_tracked_artifact_is_still_refused(self):
+        manifest = self.benchmark_manifest()
+        (self.repo / manifest["artifacts"][0]["path"]).unlink()
+        self.write_benchmark_manifest(manifest)
+
+        with self.assertRaisesRegex(ReceiptError, "regular file"):
+            build_receipt(self.repo, Path("bench/manifest.json"))
+
+    def test_missing_tracked_report_is_still_refused(self):
+        manifest = self.benchmark_manifest()
+        (self.repo / manifest["report"]["path"]).unlink()
+        self.write_benchmark_manifest(manifest)
+
+        with self.assertRaisesRegex(ReceiptError, "regular file"):
+            build_receipt(self.repo, Path("bench/manifest.json"))
+
+    def test_single_byte_manifest_tamper_is_refused(self):
+        self.write_benchmark_manifest(self.benchmark_manifest())
+        path = self.repo / "bench" / "manifest.json"
+        raw = path.read_bytes()
+        path.write_bytes(raw + b" ")
+
+        with self.assertRaisesRegex(ReceiptError, "captured HEAD"):
+            build_receipt(self.repo, Path("bench/manifest.json"))
 
     def test_untracked_benchmark_manifest_is_not_a_declared_publication(self):
         manifest = self.benchmark_manifest()

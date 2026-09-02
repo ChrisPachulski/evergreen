@@ -14,9 +14,9 @@ diff, and scratch tests where appropriate).
 
 Active every response. When a response changes code that has docs, or writes/reviews docs, surface
 a one-line verdict — the finding(s), or `evergreen: docs still match` when the touched surface
-holds. Silent only when nothing documented was touched. Off with "stop evergreen" or `/evergreen off`.
+holds. Silent only when nothing documented was touched. Off with "stop evergreen" or `/evergreen:mode off`.
 
-## Intensity (`/evergreen off|light|strict`, per repo)
+## Intensity (`/evergreen:mode off|light|strict`, per repo)
 
 - **light** (default) — ladder rungs 1–3 + cite-only prose checks.
 - **strict** — also the full rung-4 semantic pass.
@@ -38,9 +38,10 @@ every sentence, so the trial inspects its own work and finds it good. This binds
 certification (`commands/seed.md` pass E) and flourish's verify pass — the two places a model
 grades prose it just authored. It does *not* bind judgments made before anything is written
 (seed's worthiness) or judgments with no external arbiter (flourish's craft floors, already graded
-mechanically by a frozen fixture). Use `evergreen.judge.judge_json`, which resolves the model from
-the host's own codex configuration — never hardcode a model name in this repository, it goes stale
-the week the next tier ships. No codex, or an abstention: fall back and **say so in the output**,
+mechanically by a frozen fixture). Use `bin/evergreen judge --repo PATH --doc PATH`, which packs
+the doc plus the in-repo files it names into one isolated codex call and resolves the model from the host's own codex
+configuration — never hardcode a model name in this repository, it goes stale the week the next
+tier ships. No codex, or an abstention: fall back and **say so in the output**,
 because a silent fallback claims a cross-provider check that did not happen.
 
 **When a judge misfires, fix the rubric before the model tier.** The first move is the ambiguous
@@ -342,16 +343,16 @@ The reflex is the *truth* axis. Three on-demand commands, same prove-or-drop cre
   guard hook backstops it. The guard inspects the finalized staged index on commit-only calls and
   blocks known secret/slop paths, while deletion-only cleanup remains allowed. If one Bash tool
   call contains both `git add` and `git commit`, use **separate tool calls**: PreToolUse cannot
-  inspect the index between them, so the compound call is conservatively rejected. Commit modes
+  inspect the index between them, so the compound call is conservatively rejected. The same rule covers every index-writing subcommand (`mv`, `rm`, `apply`, `stash`, `restore`, `checkout`, `reset`, `update-index`, `read-tree`, `cherry-pick`, `revert`, `merge`, `rebase`, `am`) paired with a commit in one call. Commit modes
   that can source unstaged content (`-a`/`--all`, include/only, and pathspec forms) are likewise
   rejected; use a separately staged plain commit. `EVERGREEN_GUARD=off` bypasses the guard for a
   run — deliberately, on the human's call.
-- **`/evergreen:seed [path]` — creation.** The sanctioned doc-creation exception (explicit request
+- **`/evergreen:seed [path] [--approve N]` — creation.** The sanctioned doc-creation exception (explicit request
   only), built as a bounded, fail-closed proposer: it proceeds only from a complete surface-shaped
   inventory (`symbol · kind · declaration path:line · rank`, from the deterministic `till`
   subcommand — path-only `impact` output is not enough and fails closed), triages the ranking
   until it goes cold, then presents the full worthy list with a recommendation and lets the owner
-  choose how many get written — each must earn its place with a concrete reader use the
+  choose how many get written (`--approve N` pre-authorizes the top N from the invocation) — each must earn its place with a concrete reader use the
   declaration/signature alone can't recover, and no doc exceeds 60 lines. Every sentence is
   ledgered to a code `file:line` or markered `<!-- seed:gap — author: … -->`, and the whole output
   is winnowed at birth by a different provider (all four rungs, winnow's trial verbatim) before it

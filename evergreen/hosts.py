@@ -17,7 +17,7 @@ from .host_snapshot import (
     snapshot as _snapshot,
 )
 from .host_transaction import TransactionEngine
-from .host_types import HostStatus, OperationResult, Ownership
+from .host_types import HostStatus, JournalRecord, OperationResult, Ownership
 
 BEGIN_MARKER = "<!-- evergreen:begin -->"
 END_MARKER = "<!-- evergreen:end -->"
@@ -205,6 +205,12 @@ def doctor(home: Path, plugin_root: Path, host: str = "all") -> OperationResult:
             healthy = False
             messages.extend(host_errors)
             continue
+        pending = _pending_transaction_artifacts(status)
+        if pending:
+            healthy = False
+            messages.append(
+                f"error {status.name} pending transaction artifacts {', '.join(pending)}"
+            )
         state, state_error = _load_ownership(status)
         if state_error:
             healthy = False
@@ -257,6 +263,31 @@ def validate_host_evidence(value, *, require_all=True):
 def host_evidence_aligned(value, host):
     from .host_evidence import host_evidence_aligned as aligned
     return aligned(value, host)
+
+
+def _pending_transaction_artifacts(status):
+    """Read-only scan for journal, backup, temporary, and commit-marker leftovers."""
+    found = []
+    scanned = {
+        status.instructions.parent: (
+            status.instructions.name, status.ownership.name, status.skill.parent.name,
+        ),
+        status.skill.parent: (status.skill.name,),
+    }
+    for directory, targets in scanned.items():
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            continue                                     # unreadable roots are reported elsewhere
+        for entry in entries:
+            if any(JournalRecord.artifact_name(target, entry.name) for target in targets):
+                found.append(str(entry))
+    try:
+        markers = status.root.parent.glob(".evergreen-transaction-*.json*")
+        found.extend(str(marker) for marker in markers)
+    except OSError:
+        pass
+    return sorted(set(found))[:16]                       # bounded like the recovery scanners
 
 
 def _canonical(plugin_root):

@@ -51,7 +51,8 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
 
 7. **MUST put the write count in the owner's hands.**
    CHECK: the report shows the full worthy list with a stated recommendation BEFORE any doc is
-   drafted, then the owner's chosen count `C`; `documented + worthy + not-worthy + deferred == N`;
+   drafted, then the owner's chosen count `C` — given as a reply, or as the `--approve N` invocation
+   argument, in which case `C = min(N, worthy)`; `documented + worthy + not-worthy + deferred == N`;
    `written ≤ C ≤ worthy`; with no owner answer, `written == 0`; zero pre-diff documented
    candidates are written. Pass = all counts hold and the list-then-choice ordering is visible in
    the report.

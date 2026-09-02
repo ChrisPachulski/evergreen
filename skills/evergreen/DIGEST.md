@@ -3,7 +3,7 @@
 Keep docs true to the code *right now*. This local semantic skill has a deterministic trust layer
 in CI. When a response changes code that has docs, or writes/
 reviews docs, surface a one-line verdict — the finding(s), or `evergreen: docs still match`.
-Silent only when nothing documented was touched. Off with "stop evergreen" or `/evergreen off`.
+Silent only when nothing documented was touched. Off with "stop evergreen" or `/evergreen:mode off`.
 
 Candidate set = what changed: grep the docs for the touched file paths and edited symbol names,
 not the whole tree. Walk the rungs in order per claim; cheap mechanical checks before semantic:
@@ -119,7 +119,7 @@ Rules:
   mirrored snippet); flag-never-rewrite everything else. Truth findings never block a commit.
 - The hygiene guard alone may block known staged secret/slop paths. Deletion-only cleanup is
   allowed. A compound stage-and-commit call must use **separate tool calls** because PreToolUse
-  cannot inspect the finalized index between commands. Commit modes that can source unstaged
+  cannot inspect the finalized index between commands. The same rule covers every index-writing subcommand (`mv`, `rm`, `apply`, `stash`, `restore`, `checkout`, `reset`, `update-index`, `read-tree`, `cherry-pick`, `revert`, `merge`, `rebase`, `am`) paired with a commit in one call. Commit modes that can source unstaged
   content (`-a`/`--all`, include/only, and pathspec forms) require a separately staged plain
   commit; `EVERGREEN_GUARD=off` is the bypass.
 

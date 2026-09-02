@@ -21,12 +21,14 @@ the designated files untracked.
 
 **The isolation check is part of the script, not a comment.** `setup.sh` asserts the new repo's
 toplevel is the temp dir and exits non-zero otherwise. Verified: toplevel resolves to the temp dir,
-`git remote -v` is empty, 12 tracked files against 13 on disk with the gap being `scratch/`.
+`git remote -v` is empty, 15 tracked files against 16 on disk, the one-file gap being
+`scratch/local-state.txt`.
 
 ## What is planted
 
-`manifest.tsv` is the answer key — 13 rows, `kind` ∈ `ordinary | orphan | decoy | leak |
-ignore-gap | misplaced | untested`.
+`manifest.tsv` is the answer key — 16 rows, `kind` ∈ `ordinary | orphan | decoy | leak |
+ignore-gap | misplaced | untested | unresolvable`. Fifteen are tracked; `scratch/local-state.txt`
+is the untracked one, so the filesystem inventory sees 16 files and `git ls-files` sees 15.
 
 | id | path | why it is there |
 |----|------|-----------------|
@@ -38,8 +40,8 @@ ignore-gap | misplaced | untested`.
 | C16 | `toolbox/handlers/legacy_export.py` | **the unresolvable case** — a basename grep returns zero, and `dispatch.py` builds the handler name from `TOOLBELT_HANDLER`, which nothing here sets. Expected verdict: **`unsettled`** |
 | C12 | `tests/test_runner.py` | exercises `normalize_title` and asserts nothing, so it cannot prove tested-ness |
 
-Six more rows are ordinary files that must be left alone. An exam of nothing but traps measures
-recall and tells you nothing about false positives, which here are the expensive error.
+The other nine rows are ordinary files that must be left alone. An exam of nothing but traps
+measures recall and tells you nothing about false positives, which here are the expensive error.
 
 ## The decoy and the unresolvable case are different failures
 
@@ -70,11 +72,27 @@ repository. That gap is real and stated rather than papered over — though the 
 branch that matters more. Quietly assuming a repo is private is the failure that leaks; a missing
 `gh` binary is not.
 
+## Which hard goals are enforced
+
+All seven goals in [`../../skills/evergreen/hard-goals/cultivate.md`](../../skills/evergreen/hard-goals/cultivate.md),
+plus classification against the manifest.
+
+| goal | status | what the check actually proves |
+|------|--------|--------------------------------|
+| 1 — inventory the filesystem, not the index | enforced | one inventory row whose `tracked` (15), `on_disk` (16) and `gap_accounted` (1) match the manifest. |
+| 2 — a reference graph behind every verdict | enforced | every verdict's `evidence` carries a `git grep` command **and its captured result** — a count (`3 hits`), an explicit zero (`0 hits` / `no hits`), or a path list. The bare words `git grep`, and a command followed by prose, are both rejected: they are what a run that skipped the pass also writes. |
+| 3 — no bare "clean" verdict | enforced | a clean/no-slop conclusion anywhere in the output fails, and a specific not-checked list must be present. |
+| 4 — real exposure, not prose | **half-covered** | the fixture has no remote, so only the fallback branch is graded: `gh_ran: false` with `visibility: unchecked`. The live-remote branch is not covered by this exam. |
+| 5 — tested-with-an-assertion or a gap | enforced, proxied in part | a `tested` claim needs a `file:line`, and the planted assertion-free test (`tests/test_runner.py`) is rejected by path. The scorer does not open the cited line. |
+| 6 — state what was NOT checked | enforced | at least one specific item; "everything" and its cousins do not count. |
+| 7 — unresolvable stays unsettled | enforced | the unresolvable file may not be forced into a settled verdict, and an `unsettled` row must name a concrete resolver. |
+
 ## What the scorer cannot do
 
 It checks that a reference-graph result was *emitted* with every verdict. It cannot re-run that
 graph, prove a cited test line actually asserts, evaluate dynamic references other than the planted
-decoy, or exercise the live `gh` path. A verdict with fabricated evidence attached passes goal 2.
+decoy, or exercise the live `gh` path. A verdict whose evidence is a well-shaped fabrication passes
+goal 2.
 
 ## Run it
 
@@ -91,7 +109,8 @@ Same contract as [`../seed/`](../seed/): `--gate` compares against `baseline.jso
 when a number goes **down**; `--write-baseline` records a new accepted baseline as a deliberate
 act. Exit codes: 0 pass, 2 gate fail, 1 operational error.
 
-Proven able to fail, not just able to run. Synthetic runs exit 2 for: proposing the decoy for
-deletion (`DECOY FALSE POSITIVES: 1`), concluding `Verdict: clean` (goal 3), forcing the
-unresolvable file into `keep`, forcing it into `delete-proposed`, and returning `unsettled` without
-naming what would settle it (all goal 7).
+Proven able to fail, not just able to run: `python3 eval/cultivate/score.py --selftest` grades
+thirteen built-in transcripts — one known-pass and one failing control per gate, including
+evidence that is the bare words `git grep`, a `git grep` whose result is prose, a clean verdict,
+an assumed visibility, an assertion-free "tested" claim, the unresolvable file forced into `keep`,
+an `unsettled` row with no named resolver, and the decoy proposed for deletion.

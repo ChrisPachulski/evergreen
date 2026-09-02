@@ -152,10 +152,11 @@ infrastructure failure advisory, and the report must remain inconclusive.
 `bash tests/all.sh` is the definition of green. Run it before reporting any change to this
 repository as done, working, passing, or ready.
 
-A Python runner alone is **not** green. `tests/all.sh` runs four suites and two of them are
+A Python runner alone is **not** green. `tests/all.sh` runs five suites and three of them are
 shell integration suites no Python runner collects:
 `tests/hooks.sh` enforces that policy text is identical across README.md, AGENTS.md, SKILL.md, and
-DIGEST.md, and `tests/action.sh` exercises the result envelope end to end. Neither is collected by
+DIGEST.md, `tests/action.sh` exercises the result envelope end to end, and `tests/readiness.sh`
+grades the flourish golden matrix. None of the three is collected by
 `unittest` or `pytest`, so a docs restructure or a schema change can pass the Python tests and still
 break CI — which is exactly how a README split shipped 36 broken assertions to main on 2026-08-08.
 

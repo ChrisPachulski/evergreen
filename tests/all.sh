@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The local mirror of the CI test job. Run this before claiming a change is green.
 #
-# Why this exists: the Python tests are only one of four suites CI runs. On 2026-08-08 a
+# Why this exists: the Python tests are only one of five suites this runs. On 2026-08-08 a
 # README restructure passed `pytest tests/` and broke 36 assertions in tests/hooks.sh, which
 # no Python runner touches; the same session then shipped a schema change that broke
 # tests/action.sh the same way. Both reached main. "pytest passed" is not "green", and the
@@ -39,6 +39,10 @@ run "Python tests"       "$PY" -m unittest discover -s tests -p 'test_*.py'
 run "Hook integration"   bash tests/hooks.sh
 run "Action integration" bash tests/action.sh
 run "Benchmark self-test" "$PY" eval/bench/run_bench.py --selftest
+# Fifth suite: the readiness axes, which is where the flourish golden matrix and
+# the eval scorer selftests live. --fast swaps its full pytest run for the focused
+# set, because suite one above already ran the whole thing.
+run "Readiness axes"     bash tests/readiness.sh --fast
 
 printf '\n%s=== verdict ===%s\n' "$B" "$N"
 if [ -n "$FAILED" ]; then
@@ -46,6 +50,6 @@ if [ -n "$FAILED" ]; then
   printf 'A change is not done while any suite above fails.\n'
   exit 1
 fi
-printf '%sGREEN%s - all four CI suites pass locally.\n' "$G" "$N"
+printf '%sGREEN%s - all five suites pass locally.\n' "$G" "$N"
 printf 'This mirrors the CI test job; it does not run the oracle or public-benchmark jobs.\n'
 exit 0

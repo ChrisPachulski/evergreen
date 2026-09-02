@@ -30,9 +30,9 @@ With evergreen, in the same turn:
 
 ```
 evergreen [light]: you renamed --workers to --concurrency.
-  [contract] README.md:42   documents --workers — gone from cli.py → fix
-  [contract] docs/cli.md:8  same flag, same fix
-left alone: docs/adr/0003.md mentions --workers — an ADR, frozen in time.
+  [high] in_docs_not_code contract  README.md:42 — documents --workers; gone from cli.py:30 → fix
+  [med]  in_docs_not_code contract  docs/cli.md:8 — same dead flag → fix
+  left alone: docs/adr/0003.md mentions --workers — an ADR, frozen in time.
 ```
 
 It cites the line or it says nothing. And it leaves the docs that are *meant* to describe the past — ADRs, specs, dated snapshots — alone. They lead the code; they don't lie about it.
@@ -248,7 +248,9 @@ Use `--json` when another tool needs the same fields:
 ```
 
 An optional checked-in public benchmark manifest identifies declared evidence; it does not prove a
-fresh provider execution, artifact reverification, or detector-quality result.
+fresh provider execution, artifact reverification, or detector-quality result. Artifacts the
+manifest tracks at HEAD must exist and match; the raw dataset rows it names are local and ignored
+by git, so a fresh clone reports them as absent under `local_datasets` rather than refusing.
 
 `./bin/evergreen grade verify --repo PATH --manifest PATH [--json]` is the mechanical half of that
 boundary. It reads a committed manifest at `eval/grade/public/<version>/evidence.json` and derives
@@ -282,10 +284,11 @@ warnings. Deterministic confidence means the provider proved its mechanical fact
 a documentation claim false. `bin/evergreen till [--repo PATH] [--json] [PATH...]` is its read-only
 sibling: a deterministic, ranked inventory of the tracked public declaration surface that seed
 consumes, failing closed with a `truncated` warning whenever the inventory it builds could be
-incomplete. Tracked files in languages it cannot parse, extensionless scripts without a Python
+incomplete. Tracked files in languages it cannot parse, extensionless scripts without a Python or shell
 shebang (a Python-shebang script such as `bin/evergreen` joins the parsed inventory), and untracked
 source stay outside that inventory and are named in an `outside inventory` warning instead of
-vanishing silently.
+vanishing silently; files dropped by the tests/vendor rule are counted in their own warning, and a
+truncation warning names which cap tripped (files, bytes, candidates, or the deadline).
 Drift-shaped adapters may translate mechanical facts into this
 schema, but provider-supplied findings and verdicts are rejected at the boundary. See the
 [`provider-evidence.json`](examples/provider-evidence.json) sample and the
@@ -294,16 +297,23 @@ schema, but provider-supplied findings and verdicts are rejected at the boundary
 ### What `impact` scans, and how it ranks
 
 Without configuration, the command searches bounded, Git-tracked living docs for exact changed
-paths and declaration-shaped contract symbols. A symbol counts only where the declaration is
+paths and declaration-shaped contract symbols. A path mention counts only at a token boundary (the
+bytes on either side are not path characters, one trailing period allowed), and a bare name with no
+slash or dot in it counts only inside a code span or when a slash follows it, so a directory named
+`evergreen` does not match the English word. A symbol counts only where the declaration is
 reachable from outside its file: function-local declarations, members of a private type, and
 declarations a language marks private (a leading underscore, a lowercase Go initial, a Rust item
-without `pub`) are not contracts. It does not index CLI flag strings, environment keys, or other
-quoted literals, because the scan masks string bodies before extracting declarations. A renamed
-`--flag` is therefore invisible to this ranking unless a `.evergreen-map.json` entry names the doc;
-the ladder's dead-contract rung still reads the doc against the code and catches it, but `impact`
-will not nominate the doc for you. It excludes docs inside directory components named
-`plans`, `specs`, `adr`/`adrs`, `archive`/`archives`, `audit`/`audits`, `roadmaps`, or `readiness`, plus
-changelog and ISO-dated filenames. A repository-local
+without bare `pub`, a Swift `private` or `fileprivate`) are not contracts. Python `UPPER_SNAKE`
+constants at column 0 and POSIX shell functions in `.sh`/`.bash` files are declarations too. It
+does not index CLI flag strings, environment keys, or other quoted literals, because the scan
+masks string bodies before extracting declarations. A renamed `--flag` is therefore invisible to
+this ranking unless a `.evergreen-map.json` entry names the doc; the ladder's dead-contract rung
+still reads the doc against the code and catches it, but `impact` will not nominate the doc for
+you. Provider evidence paths are scanned exactly like changed paths, and an identifier-shaped
+evidence `symbol` joins the symbol scan. It excludes docs inside directory components named
+`plans`, `specs`, `adr`/`adrs`, `archive`/`archives`, `audit`/`audits`, `roadmaps`, `readiness`,
+`fixtures`/`__fixtures__`, `golden`, or `testdata`, plus changelog and ISO-dated
+filenames. Every bound it hits is a warning, including the symbol-match cap. A repository-local
 `.evergreen-map.json`, if present, adds explicit relationships; use the
 [`evergreen-map-v1` schema](schemas/evergreen-map-v1.schema.json) and the shipped
 [`evergreen-map.json` example](examples/evergreen-map.json). Human and `--json` output contain
@@ -331,7 +341,9 @@ files and their rollback snapshots are limited to 1 MiB, ownership records to 4 
 plugin manifest to 64 KiB; sparse files are checked by logical size. `doctor` makes no configuration
 changes or executes plugin code: it validates the canonical command, rules, manifest agreement,
 ownership, and links, then performs bounded UTF-8, shebang, and Python AST validation of canonical
-`bin/evergreen`.
+`bin/evergreen`. Bytecode caches are not canonical and are ignored, so the human and `--json`
+modes always agree, and a pending journal, backup, or commit marker left by an interrupted
+transaction is reported as `pending-transaction-artifacts` with its path and a non-zero exit.
 A typed transaction engine acquires every selected-host lock before recovery or mutation and
 journals every create, replace, link, and delete. It automatically resolves only exact bounded
 crash states; malformed, conflicting, or unverifiable journals fail closed with bounded manual
@@ -342,8 +354,9 @@ ownership state is changed.
 ### What the plugin costs per session
 
 What it costs, since you count tokens: session start injects a compact digest—currently about two-fifths of the full skill by words—not the full ruleset. The [digest](skills/evergreen/DIGEST.md)
-loads at startup, the full skill loads on demand, and the post-turn nudge fires once per new change,
-not on every turn while the tree sits dirty.
+loads at startup (if it is missing, the activation hook says so and injects the full skill), the
+full skill loads on demand, and the post-turn nudge fires once per new change, not on every turn
+while the tree sits dirty.
 
 ### CI — the full contract
 
@@ -403,7 +416,7 @@ This CI boundary is separate from the local hygiene guard. Truth findings never 
 The guard inspects staged filenames against a narrow, high-signal block list (credential
 filenames like `.env`/`*.pem`, OS cruft, AI-slop report names) — a secret or slop file outside
 that list, such as `config.yaml`, isn't inspected or blocked. It also conservatively rejects a Bash tool call that combines
-`git add` and `git commit`, because it cannot inspect the finalized index between them. It also
+`git add` and `git commit`, because it cannot inspect the finalized index between them. The same rule covers every index-writing subcommand (`mv`, `rm`, `apply`, `stash`, `restore`, `checkout`, `reset`, `update-index`, `read-tree`, `cherry-pick`, `revert`, `merge`, `rebase`, `am`) paired with a commit in one call. It also
 rejects commit modes such as `-a`/`--all`, `--include`, `--only`, and pathspec commits because they
 can source unstaged working-tree content after inspection. Use a **separately staged plain commit**;
 run staging and commit in **separate tool calls**. Deletion-only cleanup is allowed, and
@@ -440,17 +453,18 @@ Four axes — **truth · craft · hygiene · creation** — one creed: prove it 
 
 | Command | What it does |
 |---------|--------------|
-| `/evergreen [off \| light \| strict]` | Set the intensity for this repo. No argument reports the current one. |
+| `/evergreen:mode [off \| light \| strict]` | Set the intensity for this repo; the tracker hook persists it to `.evergreen-mode` and excludes that file from git. No argument reports the current one. |
 | `/evergreen:winnow [base-ref]` | **Truth, deep.** Walk every claim that changed since a ref and *certify it true or surface it* — silence means certified, not just "no lie found." Always strict. Prove-by-test is the default, not a flag: where the code runs and the safety boundary holds, a behavioral claim reading can't settle is settled by execution (write the test the doc implies, run it) — fails → drift proven, passes → certified by test; a refused or inconclusive run falls back to `behavior-asserted — verify manually`. |
 | `/evergreen:flourish <file> [--all] [--manual]` | **Craft.** Rewrite an accurate-but-ugly doc to a gold standard (mined from 28 top READMEs), then prove every claim against the code. Emits a diff — never a silent overwrite. The only sanctioned prose-rewrite. |
 | `/evergreen:cultivate [path]` | **Hygiene.** Local-only files leaking into git, gitignore gaps, AI-slop that shouldn't be tracked or public. Proposes untrack/ignore/delete — never auto. A commit-time guard backstops it (the one thing that *blocks*). |
-| `/evergreen:seed [path]` | **Creation.** From a symbol-level surface inventory (fail-closed without one), triage everything worth documenting, recommend a batch, and write only what the owner approves — each doc ≤ 60 lines, earning its place with a behavior the signature alone can't show, every sentence code-backed and winnow-certified at birth; what the code can't settle is markered for the author, never invented. Purely additive and approval-gated. |
+| `/evergreen:seed [path] [--approve N]` | **Creation.** From a symbol-level surface inventory (fail-closed without one), triage everything worth documenting, recommend a batch, and write only what the owner approves — each doc ≤ 60 lines, earning its place with a behavior the signature alone can't show, every sentence code-backed and winnow-certified at birth; what the code can't settle is markered for the author, never invented. Purely additive and approval-gated; `--approve N` pre-authorizes the top N worthy from the invocation. |
 | `/evergreen:impact [--repo PATH] [--evidence FILE] PATH...` | **Truth, candidate query.** Find additive documentation candidates before editing changed paths. Read-only; never emits findings or verdicts. |
 | `/evergreen:till [--repo PATH] [PATH...]` | **Creation, surface inventory.** Inventory the undocumented-surface candidates — every public declaration reachable from outside its file. Read-only. |
 | `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` | **Truth, candidate query.** Rank documentation related to changed paths and optional provider evidence. Read-only; never emits findings or verdicts. |
-| `bin/evergreen till [--repo PATH] [--json] [PATH...]` | **Creation, surface inventory.** Deterministic ranked inventory of every declaration in its parsed surface (Python, Go, Rust, Swift, JS/TS) reachable from outside its file — the fail-closed provider behind `/evergreen:seed`. Read-only; scan incompleteness fails closed with a `truncated` warning, and files outside the parsed surface are named in `outside inventory` warnings. |
-| `bin/evergreen conform [--mode off\|light\|strict] [--json] [PATH]` | **Truth, mode compliance.** Hold a reflex transcript to the intensity it declares: `light` may emit `path`, `contract`, and `snippet` findings and never `prose`. Reads a file or standard input; exit 0 when it conforms, 1 when it does not. Read-only. |
-| `bin/evergreen receipt [--repo PATH] [--benchmark-manifest PATH] [--json]` | **Operational evidence.** Emit deterministic local repository, release-boundary, and optional declared benchmark identity without network access or mutation. |
+| `bin/evergreen till [--repo PATH] [--json] [PATH...]` | **Creation, surface inventory.** Deterministic ranked inventory of every declaration in its parsed surface (Python, Go, Rust, Swift, JS/TS, POSIX shell) reachable from outside its file, ranked by references including names on multi-line import continuations — the fail-closed provider behind `/evergreen:seed`. Read-only; scan incompleteness fails closed with a `truncated` warning, and files outside the parsed surface are named in `outside inventory` warnings. |
+| `bin/evergreen conform [--mode off\|light\|strict] [--json] [PATH]` | **Truth, mode compliance.** Hold a reflex transcript to the intensity it declares: `light` may emit `path`, `contract`, and `snippet` findings and never `prose`. Reads a file or standard input; a line shaped like a finding that does not parse is itself a violation, and an undeclared mode is a violation even under `--mode`. Exit 0 when it conforms, 1 when it does not. Read-only. |
+| `bin/evergreen judge --repo PATH --doc PATH [--timeout N] [--json]` | **Truth, external judge.** Pack one doc plus the in-repo files it names into one isolated codex call and print a certified / drift / unverified verdict per claim — the cross-provider pass flourish and seed require. Read-only, no network beyond codex itself; exit 0 on a verdict, 3 when codex is unavailable or abstains, 2 on bad input. |
+| `bin/evergreen receipt [--repo PATH] [--benchmark-manifest PATH] [--json]` | **Operational evidence.** Emit deterministic local repository, release-boundary, and optional declared benchmark identity without network access or mutation; absent local dataset files are counted, not refused. |
 | `bin/evergreen grade verify --repo PATH --manifest PATH [--json]` | **Operational evidence, gate.** Re-derive an A grade from a committed evidence manifest against the policy frozen in the subject commit. The manifest supplies observations only — a self-asserted `grade`, a threshold override, or bytes that differ from the captured HEAD are refused. Read-only; exit 0 only on a derived `A`, 1 when `inconclusive`, 2 otherwise. |
 
 ## How it's checked
@@ -482,13 +496,13 @@ Not unless you ask. The reflex points; you write — a dead flag or moved path i
 It flags only what it can cite against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it offers the `.evergreen-ignore` line that keeps it dropped in every session after. The asymmetry is the product choice: a false flag costs you the ten seconds it takes to read the cited line and say no, while missed drift costs whoever trusts the doc next — which is why every flag must carry evidence you can dismiss at a glance.
 
 **Does it scale?**
-It reads paths, contracts, and prose — not your abstract syntax tree. Nothing to parse means no per-language parser to maintain and nothing that breaks on syntax it has never seen: any language, any repo, nothing to compile.
+It reads paths, contracts, and prose — not your abstract syntax tree. The reflex greps and reads, so it works in any language with nothing to compile; the `till` inventory behind `seed` uses small per-language declaration grammars (Python, Go, Rust, Swift, JS/TS, POSIX shell) and names every file it cannot parse rather than skipping it.
 
 **What about releases?**
 It treats a shipped marketing version as a living public claim, distinct from the build number, and reconciles the surfaces that repeat that identity. Rules in the operations reference above.
 
 **Does `light` mode make the commands less thorough?**
-No. Intensity steers the ride-along reflex only. `light` tells it to walk the mechanical rungs and defer the semantic read; `strict` adds that read; `off` silences the session preamble and the post-turn nudge. A command you type — `winnow`, `flourish`, `seed`, `cultivate` — pins its own depth and runs at full strictness in every mode, `off` included. Findings name the rung that proved them (`path · contract · snippet · prose`); light must never emit a `prose` finding, and `bin/evergreen conform` checks a transcript against the mode it declared. `off` means "stop nudging me," not "stop working."
+No. Intensity steers the ride-along reflex only. `light` tells it to walk the mechanical rungs and defer the semantic read; `strict` adds that read; `off` silences the session preamble and the post-turn nudge. A command you type — `winnow`, `flourish`, `seed`, `cultivate` — pins its own depth and runs at full strictness in every mode, `off` included. Findings name the rung that proved them (`path · contract · snippet · prose`); light must never emit a `prose` finding, and `bin/evergreen conform` checks a transcript against the mode it declared. `off` means "stop nudging me," not "stop working." The tracker hook persists a mode only from a `/evergreen:mode` line at the start of a line or an imperative phrase in the first sixty characters of your message, writes it to `.evergreen-mode`, and excludes that file through `.git/info/exclude`; text that merely quotes those phrases never flips it.
 
 **Why "evergreen"?**
 A doc that stays true as the code grows is evergreen. Yours aren't. Yet.

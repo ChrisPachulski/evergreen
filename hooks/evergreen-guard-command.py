@@ -49,6 +49,16 @@ TAG_NONCREATION = {"-d", "--delete", "-l", "--list", "-v", "--verify"}
 # `--option=value`, so the value is never read as the refname or committish.
 TAG_VALUE_OPTIONS = {"-m", "--message", "-F", "--file", "-u", "--local-user", "--cleanup", "--trailer"}
 RELEASE_TAG_PREFIX = "evergreen--v"
+# Subcommands that can WRITE THE INDEX, and therefore decide what a commit in the same call
+# finalizes. `add` is only the most common of them: `git mv secrets.txt .env && git commit`,
+# `git apply --cached p.patch && git commit`, and `git stash pop && git commit` each stage
+# content the PreToolUse hook never gets to inspect, because the index it reads is the one
+# from before the call. Any of these paired with a commit is compound for the same reason
+# `add` is. Only `add` and `commit` classify on their own — see main().
+STAGING_SUBCOMMANDS = {
+    "add", "mv", "rm", "apply", "stash", "restore", "checkout", "reset",
+    "update-index", "read-tree", "cherry-pick", "revert", "merge", "rebase", "am",
+}
 UNSAFE_LONG = {
     "--all", "--include", "--only", "--interactive", "--patch",
     "--pathspec-from-file", "--pathspec-file-nul",
@@ -430,7 +440,7 @@ def collect_intents(command: str) -> set:
                 if found is None:
                     continue
                 subcommand = segment[found]
-                if subcommand in {"add", "commit"}:
+                if subcommand == "commit" or subcommand in STAGING_SUBCOMMANDS:
                     intents.add(subcommand)
                 elif subcommand == "tag":
                     tag_intent = _release_tag_intent(segment, found)
@@ -543,9 +553,10 @@ def main() -> int:
 
     intents = collect_intents(command)
     has_add = "add" in intents
+    has_staging = bool(intents & STAGING_SUBCOMMANDS)
     has_commit = "commit" in intents
     release = intents & {"release-tag", "release-tag-elsewhere"}
-    if release and (has_add or has_commit):
+    if release and (has_staging or has_commit):
         # An evergreen--v* tag creation must be the only git operation in its call: the
         # certification gate exits before the staged-index inspection, so a combined add or
         # commit would otherwise ride past the hygiene backstop.
@@ -554,11 +565,14 @@ def main() -> int:
         print("release-elsewhere")
     elif "release-tag" in intents:
         print("release-tag")
-    elif has_add and has_commit:
+    elif has_staging and has_commit:
         print("compound")
     elif has_commit and has_unsafe_commit_mode(command):
         print("unsafe")
     else:
+        # Only add and commit ask for the staged-index inspection. A lone `git mv` or `git reset`
+        # stages nothing this hook can judge yet; the commit that follows it is inspected, which
+        # is the whole point of forcing the two into separate calls.
         print("git" if has_add or has_commit else "none")
     return 0
 

@@ -164,9 +164,6 @@ class HostEvidenceTests(unittest.TestCase):
     def test_host_evidence_rejects_writable_package_source(self):
         self.assert_package_source_inventory_fails_closed("writable")
 
-    def test_host_evidence_rejects_nonempty_bytecode_cache(self):
-        self.assert_package_source_inventory_fails_closed("bytecode")
-
     def test_host_evidence_rejects_unexpected_package_symlink(self):
         self.assert_package_source_inventory_fails_closed("symlink")
 
@@ -182,10 +179,6 @@ class HostEvidenceTests(unittest.TestCase):
             (source.parent / "unexpected.py").write_text("raise RuntimeError('imported')\n")
         elif change == "writable":
             source.chmod(0o666)
-        elif change == "bytecode":
-            cache = source.parent / "__pycache__"
-            cache.mkdir()
-            (cache / "impact.cpython-314.pyc").write_bytes(b"executable bytecode")
         else:
             outside = Path(self.temporary.name) / "importable package"
             outside.mkdir()
@@ -197,6 +190,56 @@ class HostEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence["canonical"]["hashes"], {})
         for host in evidence["hosts"].values():
             self.assertIn("canonical-invalid", host["doctor_issues"])
+
+    def doctor_verdicts(self, plugin):
+        from evergreen.hosts import collect_host_evidence, doctor
+
+        evidence = collect_host_evidence(self.home, plugin, "all")
+        return doctor(self.home, plugin, "all").ok, not any(
+            observation["doctor_issues"] for observation in evidence["hosts"].values()
+        )
+
+    def test_package_bytecode_leaves_both_doctor_modes_agreeing(self):
+        from evergreen.hosts import install
+
+        plugin = Path(self.temporary.name) / "canonical"
+        self.copy_plugin(plugin)
+        for directory in (".claude", ".codex"):
+            (self.home / directory).mkdir()
+        self.assertTrue(install(self.home, plugin, "all").ok)
+        cache = plugin / "evergreen" / "__pycache__"
+        cache.mkdir()
+        (cache / "impact.cpython-314.pyc").write_bytes(b"compiled bytecode")
+
+        self.assertEqual(self.doctor_verdicts(plugin), (True, True))
+
+        (plugin / "bin" / "evergreen").chmod(0o644)      # a real canonical file, broken
+
+        self.assertEqual(self.doctor_verdicts(plugin), (False, False))
+
+    def test_pending_transaction_artifacts_reach_both_doctor_modes(self):
+        from evergreen.hosts import collect_host_evidence, doctor, install
+
+        for directory in (".claude", ".codex"):
+            (self.home / directory).mkdir()
+        self.assertTrue(install(self.home, self.plugin, "all").ok)
+        self.assertEqual(self.doctor_verdicts(self.plugin), (True, True))
+        leftover = self.home / ".codex" / f".AGENTS.md.evergreen-journal-{'0' * 32}"
+        leftover.write_bytes(b"{}")
+
+        result = doctor(self.home, self.plugin, "all")
+        evidence = collect_host_evidence(self.home, self.plugin, "all")
+
+        self.assertFalse(result.ok)
+        self.assertTrue(any(
+            "pending transaction artifacts" in message and str(leftover) in message
+            for message in result.messages
+        ), result.messages)
+        self.assertTrue(any(
+            issue.startswith("pending-transaction-artifacts: ") and str(leftover) in issue
+            for issue in evidence["hosts"]["codex"]["doctor_issues"]
+        ), evidence["hosts"]["codex"]["doctor_issues"])
+        self.assertEqual(evidence["hosts"]["claude"]["doctor_issues"], [])
 
     def test_complete_instruction_hash_detects_text_outside_owned_block_per_host(self):
         from evergreen.hosts import collect_host_evidence, install
