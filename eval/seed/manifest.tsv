@@ -9,4 +9,4 @@ U2	sort_releases	helpers.py	unscored	pre-existing fixture symbol; complete inven
 U3	format_row	helpers.py	unscored	pre-existing fixture symbol; complete inventory only
 U4	build_parser	cli.py	unscored	pre-existing fixture symbol; complete inventory only
 U5	main	cli.py	unscored	pre-existing fixture symbol; complete inventory only
-U6	DEFAULT_TIMEOUT	config.py	unscored	pre-existing fixture constant; complete inventory only (till lists module constants since 0.7.0)
+U6	DEFAULT_TIMEOUT	config.py	unscored	pre-existing fixture constant till lists; complete inventory only

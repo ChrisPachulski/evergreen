@@ -86,8 +86,8 @@ Command execution passes through a shared gate as well: `run_bounded` (`ci/bound
 which runs one command under wall-clock, output, process-group, and environment bounds. With
 `clean_env` the child's environment is rebuilt from an allowlist — `PATH`, `HOME`, `TMPDIR`,
 `LANG`, `LC_ALL`, plus caller-named keeps — rather than inherited, and stderr is discarded.
-Failure never raises: a timeout returns exit 124, an output overflow 125, a command that cannot
-start 126, and captured output is dropped on failure unless `preserve_partial` keeps the truncated
+Its three bounded failures return instead of raising: a timeout returns exit 124, an output
+overflow 125, a command that cannot start 126, and captured output is dropped on failure unless `preserve_partial` keeps the truncated
 prefix. The process-group termination described above is enforced here.
 
 CI outcomes are deliberately distinct: **complete and clean**, **complete with findings**, and
@@ -278,6 +278,18 @@ is judgment frozen into grammar — till's Rust and Swift visibility rules were 
 nothing caught it (its tests now pin them) — which is why the judge covers it too. Removing a
 public subcommand and changing the record the gate reads are surface changes, so the `0.6.0`
 precedent takes a minor. So `0.8.0`, not `0.7.1`. The stream still carries no build-number field.
+
+### 0.8.1 release decision
+
+`0.8.1` changes no surface. The two exam runners grant the judge entry point their tasks already
+demanded and name it; the winnow exam gates the judge row's presence and coverage rather than its
+drift count, because its fixture seeds drift on purpose; the seed exam's answer key carries the
+module constant till lists; the fixture CLI honours the `--verbose` its doc promises; and
+the 0.8.0 winnow ledger was re-audited so that every certified row cites the one line that makes it
+true, with instructions, rationale, and claims about other systems recorded as dropped rather than
+counted, and nothing left unverified. Evaluation, fixture, and evidence fixes with no public subcommand, record
+shape, or command contract changed take a patch under the `0.5.0` precedent. So `0.8.1`, not
+`0.9.0`. The stream still carries no build-number field.
 
 ### Winnow-before-tag certification gate
 

@@ -1,6 +1,6 @@
 {
   "name": "evergreen",
-  "description": "Evergreen 0.8.0 ships the freshness reflex with rung-tagged findings, /evergreen:mode, read-only impact and till discovery, seeded doc creation, a mandatory second-provider judge, and generalized release identity checks.",
+  "description": "Evergreen 0.8.1 ships the freshness reflex with rung-tagged findings, /evergreen:mode, read-only impact and till discovery, seeded doc creation, a mandatory second-provider judge, and generalized release identity checks.",
   "owner": {
     "name": "Chris Pachulski",
     "url": "https://github.com/ChrisPachulski"
@@ -9,7 +9,7 @@
     {
       "name": "evergreen",
       "source": "./",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "description": "Ships the documentation-freshness reflex with rung-tagged findings and the /evergreen:mode intensity command, read-only impact and till surface discovery, seed's claim-disciplined doc creation, a mandatory second-provider judge inside winnow, seed, and flourish, evidence-backed receipts, trusted CI semantics, and generalized release identity checks. Four axes — truth, craft, hygiene, and creation — remain language-agnostic and rewrite nothing unasked."
     }
   ]
