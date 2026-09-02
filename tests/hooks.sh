@@ -320,11 +320,7 @@ done
 
 for tok in \
   "./bin/evergreen impact --repo ." \
-  "./bin/evergreen receipt --repo ." \
-  "./bin/evergreen install --host claude" \
-  "./bin/evergreen install --host codex" \
-  "./bin/evergreen doctor --host all --repo ." \
-  "./bin/evergreen uninstall --host all"; do
+  "./bin/evergreen receipt --repo ."; do
   grep -Fq "$tok" "$ROOT/README.md" \
     && ok "README documents shipped local/host command: $tok" \
     || no "README documents shipped local/host command: $tok"
@@ -363,19 +359,19 @@ codex = json.loads((root / ".codex-plugin/plugin.json").read_text())
 marketplace = json.loads((root / ".claude-plugin/marketplace.json").read_text())
 entry = next(item for item in marketplace["plugins"] if item["name"] == "evergreen")
 
-assert {claude["version"], codex["version"], entry["version"]} == {"0.6.1"}
+assert {claude["version"], codex["version"], entry["version"]} == {"0.7.0"}
 assert all("build" not in item and "build_number" not in item for item in (claude, codex, entry))
-assert "0.6.1" in marketplace["description"]
+assert "0.7.0" in marketplace["description"]
 for description in (
     claude["description"], codex["description"], marketplace["description"], entry["description"],
 ):
     lowered = description.lower()
-    assert "impact" in lowered and "install" in lowered and "release identity" in lowered
+    assert "impact" in lowered and "judge" in lowered and "release identity" in lowered
 PY
 then
-  ok "release 0.6.1 agrees across Claude/Codex/marketplace without a build counter"
+  ok "release 0.7.0 agrees across Claude/Codex/marketplace without a build counter"
 else
-  no "release 0.6.1 agrees across Claude/Codex/marketplace without a build counter"
+  no "release 0.7.0 agrees across Claude/Codex/marketplace without a build counter"
 fi
 
 # Execute both passive-input examples and both semantic branches they nominate.

@@ -38,6 +38,7 @@ identity; it is never written automatically. Exit codes: 0 pass, 2 gate fail,
 import argparse
 import csv
 import hashlib
+import collections
 import json
 import re
 import sys
@@ -394,6 +395,19 @@ def score(text: str, manifest_path: Path, approve: int | None = None) -> dict[st
     gates["goal 8 — per-doc bound (<= 60 added lines)"] = gate_result(
         not invalid_bounds, {"invalid": invalid_bounds})
 
+    # Goal 8, the two counts the per-doc bound leaves open: every gap marker and every
+    # touched doc path belongs to a written doc, and neither count exceeds `written`.
+    written_paths = {str(doc.get("path", "")) for doc in docs}
+    gap_docs = [str(row.get("doc", "")) for row in [r for r in rows if r.get('type') == 'gap']]
+    touched = set(gap_docs) | {str(row.get("doc", "")) for row in claims}
+    stray = sorted(touched - written_paths)
+    per_doc = collections.Counter(gap_docs)                  # the command allows one marker per written doc
+    bounded = (len(gap_docs) <= len(docs) and len(touched) <= len(docs) and not stray
+               and all(count <= 1 for count in per_doc.values()))
+    gates["goal 8 — markers and doc paths bounded by written"] = gate_result(
+        bounded, {"gap_markers": len(gap_docs), "markers_per_doc": dict(per_doc), "touched_doc_paths": len(touched),
+                  "written": len(docs), "stray_paths": stray})
+
     unknown = [row for row in candidates if str(row.get("symbol")) not in known]
     scores = {name: int(gate["pass"]) for name, gate in gates.items()}
     return {"schema_version": SCHEMA_VERSION, "gates": gates, "scores": scores,
@@ -625,6 +639,19 @@ def selftest(manifest_path: Path) -> int:
         find(rows, "doc", symbol="with_backoff")["lines"] = 61
         return rows
     mutate("goal 8 — a doc over the 60-line bound", oversized)
+
+    def extra_marker(rows):
+        for note in ("why a second marker", "why a third marker"):
+            rows.append({"type": "gap", "doc": "eval/fixture/docs/with_backoff.md",
+                         "text": f"<!-- seed:gap — author: {note} -->"})
+        return rows
+    mutate("goal 8 — more than one gap marker on a written doc", extra_marker)
+
+    def stray_path(rows):
+        rows.append({"type": "gap", "doc": "eval/fixture/docs/never_written.md",
+                     "text": "<!-- seed:gap — author: stray -->"})
+        return rows
+    mutate("goal 8 — a marker on a doc path that was never written", stray_path)
 
     def speculation(rows):
         doc = find(rows, "doc", symbol="with_backoff")

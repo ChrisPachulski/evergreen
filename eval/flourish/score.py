@@ -788,8 +788,19 @@ def gate_length(result_text):
             "ok": words <= OPEN_PAGE_MAX}, words <= OPEN_PAGE_MAX
 
 
-def gate_diagram(result_text):
-    """Goal 10: the four greps — vertical mermaid, no horizontal, no box art."""
+STRUCTURE_HEADING_RE = re.compile(
+    r"^#{1,6}\s.*\b(how it works|architecture|pipeline)\b", re.I | re.M)
+DIAGRAM_EXEMPT_RE = re.compile(r"no structure claim\s*[—-]+\s*diagram exempt", re.I)
+DIAGRAM_EXEMPT_MAX = 300   # open-page words; a doc this small has no structure to draw
+
+
+def gate_diagram(result_text, report_text=None):
+    """Goal 10: the four greps — vertical mermaid, no horizontal, no box art.
+
+    The one exemption the contract grants: a doc with no how-it-works, architecture,
+    or pipeline heading and an open page under 300 words may declare
+    `no structure claim — diagram exempt` in the report. All three must hold.
+    """
     checks = {
         "mermaid_fences": len(MERMAID_FENCE_RE.findall(result_text)),
         "vertical_declarations": len(VERTICAL_RE.findall(result_text)),
@@ -800,6 +811,15 @@ def gate_diagram(result_text):
     ok = (checks["mermaid_fences"] >= 1 and checks["vertical_declarations"] >= 1
           and checks["horizontal_declarations"] == 0
           and checks["box_drawing_lines"] == 0)
+    if not ok and report_text and DIAGRAM_EXEMPT_RE.search(report_text):
+        open_page = re.sub(r"<details>.*?</details>", "", result_text, flags=re.S)
+        exempt = (not STRUCTURE_HEADING_RE.search(result_text)
+                  and len(open_page.split()) < DIAGRAM_EXEMPT_MAX
+                  and checks["horizontal_declarations"] == 0
+                  and checks["box_drawing_lines"] == 0)
+        checks["exemption_declared"] = True
+        checks["exemption_honored"] = exempt
+        ok = exempt
     return {**checks, "ok": ok}, ok
 
 
@@ -1012,7 +1032,7 @@ def main(argv=None):
     face_detail, face_ok = gate_face(result_text)
     qs_detail, qs_ok = gate_quick_start(result_text)
     len_detail, len_ok = gate_length(result_text)
-    dia_detail, dia_ok = gate_diagram(result_text)
+    dia_detail, dia_ok = gate_diagram(result_text, report_text)
     voice_detail = report_voice(gt, result_text)
 
     gates = {"conservation": cons_ok, "truth": truth_ok, "face": face_ok,

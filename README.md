@@ -83,35 +83,13 @@ jobs:
 
 Drift never fails the build. The full CI contract — what a green check certifies, the four outcomes, fork-PR behavior, and every process bound — is in the operations reference below.
 
-<details>
-<summary>Host setup, platform support, and the reversible CLI install</summary>
-
-Candidate queries require Python 3.10+ and Git. Host management requires Python 3.11+ and is
-supported on macOS and Linux: install, doctor, and uninstall rely on POSIX locks, symlinks, file
-modes, atomic rename, metadata copying, and directory `fsync`. The semantic skill remains
-language-agnostic, but the bundled host-management CLI does not currently support Windows.
-
-The local CLI can wire the canonical skill into either host while preserving existing instructions:
-
-```sh
-./bin/evergreen install --host claude
-./bin/evergreen install --host codex
-./bin/evergreen doctor --host all --repo .
-./bin/evergreen uninstall --host all
-```
-
-Add trusted, passive provider facts to a candidate query when available:
+Every subcommand needs Python 3.10+ and Git, except `judge`, which needs Python 3.11+ for
+`tomllib`; receipt collection runs on macOS and Linux only. Add trusted, passive provider facts to a
+candidate query when available:
 
 ```sh
 ./bin/evergreen impact --repo . --evidence examples/provider-evidence.json eval/fixture/config.py
 ```
-
-Instruction files and their rollback snapshots are limited to 1 MiB, ownership records to 4 KiB, and
-each plugin manifest to 64 KiB; sparse files are checked by logical size. Full transaction
-semantics, lock and journal behavior, and what `doctor` will and won't touch are in
-the operations reference below.
-
-</details>
 
 ## How it works
 
@@ -174,7 +152,7 @@ Evidence providers and source maps are passive candidate inputs; Evergreen never
 Winnow's prove-by-test path runs locally under a declared test command, a bounded timeout, and a disposable scratch location; CI has a different boundary. Both contracts are in the operations reference below.
 
 <details>
-<summary><strong>Operations reference</strong> — release identity, receipt policy, evidence boundary, host-install transactions, and the full CI contract</summary>
+<summary><strong>Operations reference</strong> — release identity, receipt policy, evidence boundary, other agents, and the full CI contract</summary>
 
 ### Release identity
 
@@ -252,18 +230,8 @@ fresh provider execution, artifact reverification, or detector-quality result. A
 manifest tracks at HEAD must exist and match; the raw dataset rows it names are local and ignored
 by git, so a fresh clone reports them as absent under `local_datasets` rather than refusing.
 
-`./bin/evergreen grade verify --repo PATH --manifest PATH [--json]` is the mechanical half of that
-boundary. It reads a committed manifest at `eval/grade/public/<version>/evidence.json` and derives
-the grade itself: the manifest may carry observations only, so a `grade`, `pass`, or `success` key,
-a threshold override, or a runtime `evidence_head` is rejected before evaluation. It scores against
-`eval/grade-policy-v1.json` exactly as frozen in the subject commit, and the eight required
-categories and their gates are pinned in code, so a rewritten policy is refused rather than honored.
-It also refuses to grade itself: the verifying checkout must be clean with `bin/evergreen`,
-`evergreen/grade.py`, `evergreen/receipt.py`, and `eval/grade-policy-v1.json` matching its own HEAD,
-and its commit must appear in the candidate's history strictly before the subject. Read-only; exit 0
-only on a derived `A`, 1 when `inconclusive`, 2 otherwise. The verifier ships; an earned grade does
-not — this tree publishes no `eval/grade/public/` manifest, and the A-grade certification is not an
-active release gate.
+No grade verifier ships: an earned quality grade needs detector evidence this tree does not publish,
+so nothing here re-derives one.
 
 The semantic pass may gather optional local evidence with read, grep, diff, or a scratch test. In CI,
 the deterministic trust layer does the mechanical work: it binds a bounded change manifest and
@@ -328,28 +296,11 @@ scanned corpus is a vocabulary word rather than a link, and is demoted — one t
 in a fifth of the docs, two when it appears in nearly a third or more. Ranking orders the
 candidate set; it never suppresses a candidate, and it never settles the semantic claim.
 
-### Host install — transaction semantics
+### Other agents
 
-Use `install --dry-run` or `uninstall --dry-run` to preview. A dry run only reads: when a pending
-transaction is on disk it names the artifacts and refuses rather than recovering them, because
-recovery is a write. Setup records an owned instruction
-block and skill link; uninstall removes only that owned state. It refuses ambiguous, unowned, or
-unsafe paths and rolls back ordinary operation failures across the selected hosts. Host mutation
-requires exclusive access: preflight and postimage checks refuse detected conflicts, preserve
-concurrent state, and report manual recovery instead of claiming a false rollback. Instruction
-files and their rollback snapshots are limited to 1 MiB, ownership records to 4 KiB, and each
-plugin manifest to 64 KiB; sparse files are checked by logical size. `doctor` makes no configuration
-changes or executes plugin code: it validates the canonical command, rules, manifest agreement,
-ownership, and links, then performs bounded UTF-8, shebang, and Python AST validation of canonical
-`bin/evergreen`. Bytecode caches are not canonical and are ignored, so the human and `--json`
-modes always agree, and a pending journal, backup, or commit marker left by an interrupted
-transaction is reported as `pending-transaction-artifacts` with its path and a non-zero exit.
-A typed transaction engine acquires every selected-host lock before recovery or mutation and
-journals every create, replace, link, and delete. It automatically resolves only exact bounded
-crash states; malformed, conflicting, or unverifiable journals fail closed with bounded manual
-recovery paths.
-A replaced skill link aborts the entire selected-host uninstall before any instruction, link, or
-ownership state is changed.
+There is no host installer. Claude Code and Codex both load this plugin through their own plugin
+mechanisms, and any other skill-capable agent takes `skills/evergreen/SKILL.md` as a skill or
+[`AGENTS.md`](AGENTS.md) as flat instructions; nothing in the repository writes to a home directory.
 
 ### What the plugin costs per session
 
@@ -407,8 +358,8 @@ reported as inconclusive before the provider runs.
 
 On POSIX, timeouts stop the pinned CLI and children that remain in its inherited process group.
 Deliberately detached descendants are outside portable standard-library containment and require
-runner-level OS isolation. Here, bare/safe/no-tools/no-session flags prevent repository or model
-content from spawning them; the hosted runner remains the outer isolation boundary.
+runner-level OS isolation. Here the driver passes the bare, safe-mode, no-tools, and no-session flags, so repository and
+model content get no shell of their own; the hosted runner remains the outer isolation boundary.
 
 #### The commit-time hygiene guard
 
@@ -437,7 +388,8 @@ Setup failures and timeouts are inconclusive, not proof of drift.
 CI has a different boundary: it supplies delimited, bounded, exact-commit evidence to a semantic
 reviewer with no tools, then independently validates schema, commit binding, counts, citations,
 and runtime identity.
-Repository content cannot change those instructions or the publication policy.
+Repository content reaches the model only as delimited untrusted data, and the publication policy
+is enforced by the validator, not by the model.
 
 #### Executable-oracle source pack
 
@@ -465,7 +417,6 @@ Four axes — **truth · craft · hygiene · creation** — one creed: prove it 
 | `bin/evergreen conform [--mode off\|light\|strict] [--json] [PATH]` | **Truth, mode compliance.** Hold a reflex transcript to the intensity it declares: `light` may emit `path`, `contract`, and `snippet` findings and never `prose`. Reads a file or standard input; a line shaped like a finding that does not parse is itself a violation, and an undeclared mode is a violation even under `--mode`. Exit 0 when it conforms, 1 when it does not. Read-only. |
 | `bin/evergreen judge --repo PATH --doc PATH [--timeout N] [--json]` | **Truth, external judge.** Pack one doc plus the in-repo files it names into one isolated codex call and print a certified / drift / unverified verdict per claim — the cross-provider pass flourish and seed require. Read-only, no network beyond codex itself; exit 0 on a verdict, 3 when codex is unavailable or abstains, 2 on bad input. |
 | `bin/evergreen receipt [--repo PATH] [--benchmark-manifest PATH] [--json]` | **Operational evidence.** Emit deterministic local repository, release-boundary, and optional declared benchmark identity without network access or mutation; absent local dataset files are counted, not refused. |
-| `bin/evergreen grade verify --repo PATH --manifest PATH [--json]` | **Operational evidence, gate.** Re-derive an A grade from a committed evidence manifest against the policy frozen in the subject commit. The manifest supplies observations only — a self-asserted `grade`, a threshold override, or bytes that differ from the captured HEAD are refused. Read-only; exit 0 only on a derived `A`, 1 when `inconclusive`, 2 otherwise. |
 
 ## How it's checked
 
@@ -502,7 +453,7 @@ It reads paths, contracts, and prose — not your abstract syntax tree. The refl
 It treats a shipped marketing version as a living public claim, distinct from the build number, and reconciles the surfaces that repeat that identity. Rules in the operations reference above.
 
 **Does `light` mode make the commands less thorough?**
-No. Intensity steers the ride-along reflex only. `light` tells it to walk the mechanical rungs and defer the semantic read; `strict` adds that read; `off` silences the session preamble and the post-turn nudge. A command you type — `winnow`, `flourish`, `seed`, `cultivate` — pins its own depth and runs at full strictness in every mode, `off` included. Findings name the rung that proved them (`path · contract · snippet · prose`); light must never emit a `prose` finding, and `bin/evergreen conform` checks a transcript against the mode it declared. `off` means "stop nudging me," not "stop working." The tracker hook persists a mode only from a `/evergreen:mode` line at the start of a line or an imperative phrase in the first sixty characters of your message, writes it to `.evergreen-mode`, and excludes that file through `.git/info/exclude`; text that merely quotes those phrases never flips it.
+No. Intensity steers the ride-along reflex only. `light` tells it to walk the mechanical rungs and defer the semantic read; `strict` adds that read; `off` silences the session preamble and the post-turn nudge. A command you type — `winnow`, `flourish`, `seed`, `cultivate` — pins its own depth and runs at full strictness in every mode, `off` included. Findings name the rung that proved them (`path · contract · snippet · prose`); light must never emit a `prose` finding, and `bin/evergreen conform` checks a transcript against the mode it declared. `off` means "stop nudging me," not "stop working." The tracker hook persists a mode only from an evergreen sigil line (`/`, `@`, or `$` before the word, with or without `:mode`, and `normal` meaning off) that begins a line or sits in the first sixty characters of your message, or from an imperative phrase in that same window; writes it to `.evergreen-mode`, and excludes that file through `.git/info/exclude`. Text that merely quotes those phrases later in a message never flips it.
 
 **Why "evergreen"?**
 A doc that stays true as the code grows is evergreen. Yours aren't. Yet.

@@ -813,3 +813,40 @@ class FlourishResultCountTests(unittest.TestCase):
         assert code == 2
         assert doc["gates"]["diagram"] is False
         assert doc["diagram"]["box_drawing_lines"] == 3
+
+
+class DiagramExemptionTests(unittest.TestCase):
+    """Goal 10's one exemption: declared in the report, and only for a doc with no structure claim."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("flourish_score", SCORER)
+        cls.score = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.score)
+
+    TINY = "# tiny\n\nA one-paragraph tool. Run `tiny` and it prints hello.\n\n## Install\n\n```sh\npip install tiny\n```\n"
+    DECLARED = "verdict: no structure claim — diagram exempt\n"
+
+    def test_declared_exemption_on_a_tiny_doc_with_no_structure_heading_passes(self):
+        detail, ok = self.score.gate_diagram(self.TINY, self.DECLARED)
+        assert ok is True and detail["exemption_honored"] is True
+
+    def test_exemption_is_refused_when_a_structure_heading_exists(self):
+        doc = self.TINY + "\n## How it works\n\nMagic.\n"
+        detail, ok = self.score.gate_diagram(doc, self.DECLARED)
+        assert ok is False and detail["exemption_honored"] is False
+
+    def test_exemption_is_refused_past_three_hundred_open_page_words(self):
+        doc = self.TINY + ("word " * 300) + "\n"
+        detail, ok = self.score.gate_diagram(doc, self.DECLARED)
+        assert ok is False and detail["exemption_honored"] is False
+
+    def test_no_declaration_means_no_exemption(self):
+        detail, ok = self.score.gate_diagram(self.TINY, "verdict: done\n")
+        assert ok is False and "exemption_declared" not in detail
+
+    def test_box_drawing_art_is_never_exempt(self):
+        doc = self.TINY + "\n┌──┐\n│ x │\n└──┘\n"
+        detail, ok = self.score.gate_diagram(doc, self.DECLARED)
+        assert ok is False

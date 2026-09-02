@@ -56,7 +56,7 @@ plus classification against the manifest.
 | 5 — zero unmarked speculation | enforced | every declarative unit matches a ledger row by normalized substring or sits on a `seed:gap` line. A paraphrase sharing no tokens with its row walks through. |
 | 6 — purely additive | **proxied** | proposal paths that already exist under `eval/fixture/` fail. The judged run is read-only, so there is no real diff to read `-` lines from. |
 | 7 — the owner sets the write count | enforced | the worthy list and its recommendation appear before any doc content; `documented + worthy + not-worthy + deferred == N`; `written <= chosen <= worthy`; no owner answer means `written == 0`; a pre-diff `documented` candidate may not be written. The owner's count comes from an `owner` row or the `--approve N` invocation argument. |
-| 8 — useful, small, repeat-visible | enforced, one part proxied | every written doc needs a `reader-use` claim citing code outside its declaration line, and stays within 60 lines. The post-diff grep is **proxied** by a scan of the proposed body outside `seed:gap` lines, since a read-only run writes no file to grep. |
+| 8 — useful, small, repeat-visible | enforced, one part proxied | every written doc needs a `reader-use` claim citing code outside its declaration line, and stays within 60 lines. Gap markers and touched doc paths each stay within `written`, and every marker sits on a written doc. The post-diff grep is **proxied** by a scan of the proposed body outside `seed:gap` lines, since a read-only run writes no file to grep. |
 
 ### The rows the goal gates read
 

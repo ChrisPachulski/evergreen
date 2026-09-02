@@ -51,8 +51,8 @@ model's head. Three thin hooks make it ride along, and they never read or analyz
 - **`evergreen-activate.sh`** (SessionStart) injects the mode preamble plus the condensed
   `DIGEST.md` (about two-fifths of the full skill by words, which stays loadable on demand).
 - **`evergreen-mode-tracker.sh`** (UserPromptSubmit) is the *sole writer* of the intensity state. It
-  matches the sigil forms only where they begin a line and the imperative forms only in the first
-  sixty characters of the prompt, so text that merely quotes them never flips the mode.
+  matches a sigil form where it begins a line or sits in the first sixty characters of the prompt,
+  and an imperative form only inside that window, so text that merely quotes them never flips the mode.
 - **`evergreen-stop.sh`** (Stop) is a post-turn audit request when code-with-docs changed; git/state
   guards only, always non-blocking, deduped to fire once per distinct change state (a signature in
   `.git/`, not on every turn while the tree sits dirty).
@@ -115,7 +115,7 @@ which turns a mode that was previously unfalsifiable into one anybody can check 
 Nothing stops a model mid-turn; the hooks deliberately never read output. That boundary is the
 honest limit of the claim.
 
-## Shipped local and host surface
+## Shipped local surface
 
 `bin/evergreen impact` and `bin/evergreen till` are the dependency-free, read-only query entry
 points, and `bin/evergreen judge` is the one sanctioned external call: it packs a doc plus the
@@ -130,21 +130,9 @@ truncation warning names the cap that tripped. Their
 human and JSON forms expose ranked candidates, reasons or scan counts, and warnings; they do not
 expose semantic findings or verdicts.
 
-The same CLI provides reversible `install`, `doctor`, and `uninstall` operations for Claude and
-Codex. Install owns only a marked instruction block, a skill link, and a bounded ownership record;
-uninstall requires that proof and preserves user-owned text. Multi-host preflight and ordinary
-rollback are transactional under the required exclusive-access contract. Detected concurrent
-changes are preserved and reported for manual recovery rather than overwritten. Doctor never
-repairs, installs, or executes plugin code: it validates canonical files and host state, then
-performs bounded UTF-8, shebang, and Python AST validation of canonical `bin/evergreen`; bytecode
-caches are ignored, and pending transaction artifacts are reported with their paths. Provider
-dependencies are never installed.
-
-Host policy and planning stay in `hosts.py`; typed identities live in `host_types.py`; bounded
-metadata integrity lives in `host_metadata.py`; `host_lock.py`, `host_snapshot.py`, and
-`host_journal.py` isolate those transaction responsibilities; and one `TransactionEngine` in
-`host_transaction.py` coordinates publication, crash recovery, rollback, and commit. Every
-mutation uses the same prepared-to-published protocol rather than a per-action state machine.
+No host installer ships. Claude Code and Codex load the plugin through their own plugin
+mechanisms, other agents take `SKILL.md` or `AGENTS.md` directly, and nothing in the repository
+writes outside the checkout.
 
 ## Evidence-backed completion receipts
 
@@ -260,6 +248,21 @@ compatibility event, and the number understates the release rather than misdescr
 exception with its reason attached, not a new precedent to cite.
 
 The stream still carries no build-number field.
+
+### 0.7.0 release decision
+
+Since `0.6.1` the stream gained a new CLI subcommand, `judge`, and a Claude Code command,
+`/evergreen:mode`, replacing a `.toml` file Claude Code never loaded; the guard's compound rule
+widened to fifteen index-writing subcommands; `conform` rejects unparseable finding lines; the
+impact and till grammars changed (Python constants, shell functions, Rust and Swift visibility,
+multi-line imports); every eval scorer enforces its hard goals, and a fifth suite joined the
+definition of green. It also removed two shipped surfaces: `grade verify`, which could not return
+an earned grade for any input and had no caller, and the reversible host `install`, `doctor`, and
+`uninstall` commands, which duplicated what both hosts' own plugin mechanisms already do, and the
+three Gemini-style `.toml` command files no host manifest referenced. The additions justify a minor by the `0.5.0` precedent; the
+removals are pre-1.0 surfaces with no external consumer, recorded here rather than taking a major.
+So `0.7.0`, not `0.6.2` or `1.0.0`. The Python floor is 3.10 for every subcommand except `judge`,
+which needs 3.11 for `tomllib`. The stream still carries no build-number field.
 
 ### Winnow-before-tag certification gate
 

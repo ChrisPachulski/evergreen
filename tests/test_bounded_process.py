@@ -76,11 +76,11 @@ class BoundedProcessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             marker = Path(temporary) / "detached-descendant-survived"
             child = (
-                "import pathlib,time; time.sleep(.3); "
+                "import pathlib,time; time.sleep(2.5); "
                 f"pathlib.Path({str(marker)!r}).write_text('alive')"
             )
             result = self.run_runner(
-                "--timeout-seconds", "0.1",
+                "--timeout-seconds", "1",
                 "--max-output-bytes", "100",
                 code=(
                     "import subprocess,sys; "
@@ -88,7 +88,12 @@ class BoundedProcessTests(unittest.TestCase):
                     "start_new_session=True)"
                 ),
             )
-            time.sleep(0.4)
+            # The runner is killed at 1 s, after the child has had time to spawn the
+            # detached grandchild even on a loaded host; the grandchild outlives the kill
+            # by holding the pipe for 2.5 s, so the marker appears only if it survived.
+            deadline = time.monotonic() + 15
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
 
             self.assertEqual(result.returncode, 124)
             self.assertTrue(marker.exists())

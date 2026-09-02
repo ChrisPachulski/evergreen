@@ -329,7 +329,7 @@ usage quota was exhausted mid-run (all 346 rows honestly abstained rather than y
 result), and it is not being re-run.
 
 This is a **development benchmark study**, not A-grade oracle evidence. These derived rows have no
-executable oracle category (`category` is `null`), while the frozen grade contract requires five
+executable oracle category (`category` is `null`), while the oracle package contract requires five
 oracle-kind cells and the source-pack program remains incomplete. After screening,
 [`bind_subset.py`](bind_subset.py) checks every retained JSON row against the exact eligible parent,
 recomputes the complete two-of-three retained set from the byte-bound vote ledger, and emits an
@@ -420,8 +420,7 @@ manifest currently binds the v4-context datasets, whose availability rows are id
 v2's. The mirror set is derivable
 from the manifest itself: bare-clone every distinct `project` in
 `cascade-java-v2-split-manifest.json` (16 GitHub repos) under `<mirror-root>/<owner>/<name>`. The
-augmented files are multi-megabyte, and the grade inventory bounds every tracked blob at 1 MiB,
-so they live outside the repository; only
+augmented files are multi-megabyte, so they live outside the repository; only
 [`cascade-java-v2-split-manifest.json`](cascade-java-v2-split-manifest.json) is committed, and it
 binds both files' exact SHA-256s, as does every run artifact. The files are regenerable from the
 upstream zip (hash below) plus mirrors at the pair ids' fixed commits. `make_split.py` generates

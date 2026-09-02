@@ -2,3 +2,5 @@
 eval/fixture/*
 # The flourish fixtures' ugliness is planted on purpose — the reflex must not "fix" the exam.
 eval/flourish/fixtures/*
+# The cultivate exam's slop is planted on purpose — the reflex must not "clean" the exam.
+eval/cultivate/template/*

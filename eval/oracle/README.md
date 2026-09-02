@@ -44,8 +44,8 @@ discovery. Broader package support belongs only in response to a selected frozen
 
 The pilot executes project Python as the current user. Its bounded environment improves
 reproducibility but is not a security sandbox; use only explicitly trusted repositories. The
-integration test is preserved in `tests/test_oracle_python_pilot.py`, but salvage did not execute
-it.
+integration test was removed in commit 9849746; the pilot module `eval/oracle/python_pilot.py`
+remains, and salvage did not execute it.
 
 ## Measurement-first boundary
 

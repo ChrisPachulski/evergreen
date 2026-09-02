@@ -1,12 +1,26 @@
 {
   "name": "evergreen",
-  "version": "0.6.1",
-  "description": "Ships read-only impact and till surface discovery, seed's claim-disciplined doc creation, passive evidence and source maps, reversible Claude/Codex install, doctor, and uninstall, findings that name the ladder rung that proved them, the conform mode check, trusted CI semantics, and generalized release identity checks.",
-  "author": { "name": "Chris Pachulski", "url": "https://github.com/ChrisPachulski" },
+  "version": "0.7.0",
+  "description": "Ships the documentation-freshness reflex with rung-tagged findings and the /evergreen:mode intensity command, read-only impact and till surface discovery, seed's claim-disciplined doc creation, an isolated codex judge for cross-provider certification, the conform mode check, evidence-backed receipts, trusted CI semantics, and generalized release identity checks.",
+  "author": {
+    "name": "Chris Pachulski",
+    "url": "https://github.com/ChrisPachulski"
+  },
   "homepage": "https://github.com/ChrisPachulski/evergreen",
   "repository": "https://github.com/ChrisPachulski/evergreen",
   "license": "MIT",
-  "keywords": ["documentation", "drift", "freshness", "staleness", "docs-as-code", "ai-agent-skill"],
-  "commands": ["./commands/"],
-  "skills": ["./skills/evergreen"]
+  "keywords": [
+    "documentation",
+    "drift",
+    "freshness",
+    "staleness",
+    "docs-as-code",
+    "ai-agent-skill"
+  ],
+  "commands": [
+    "./commands/"
+  ],
+  "skills": [
+    "./skills/evergreen"
+  ]
 }
