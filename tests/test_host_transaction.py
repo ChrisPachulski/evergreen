@@ -943,3 +943,29 @@ class HostTests(HostTestCase):
                 self.assertFalse(result.ok)
                 self.assertIn("ordinary recovery completed", " ".join(result.messages))
                 self.assertEqual(self.snapshot(include_directories=True), before)
+
+    def test_backup_verification_tolerates_an_access_time_bump(self):
+        from types import SimpleNamespace
+
+        from evergreen import host_commit
+
+        directory = self.home / ".codex"
+        directory.mkdir()
+        instructions = directory / "AGENTS.md"
+        instructions.write_bytes(b"original")
+        backup = f".AGENTS.md.evergreen-backup-{'0' * 32}"
+        parent = host_snapshot.snapshot(directory, allow_directory=True)
+        parent_fd = host_snapshot.open_directory(parent)
+        try:
+            os.link(
+                instructions.name, backup, src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
+            )
+            before = host_snapshot.snapshot_at(instructions, parent_fd)
+            # A read of the backup, or of the inode it shares with the original,
+            # bumps only atime; verification must not treat that as a change.
+            os.utime(directory / backup, ns=(before.atime_ns + 10**9, before.mtime_ns))
+            entry = SimpleNamespace(before=before, parent=parent, backup=backup)
+
+            host_commit.verify_backup(parent_fd, entry)
+        finally:
+            os.close(parent_fd)

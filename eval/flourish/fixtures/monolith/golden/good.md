@@ -28,10 +28,11 @@ format and level:
 logloom app.log worker.log --format logfmt --level error
 ```
 
-```
-+-----------+     +---------+     +--------------------+
-| app.log   | --> | logloom | --> | kept=N malformed=M |
-+-----------+     +---------+     +--------------------+
+```mermaid
+flowchart TD
+    inputs[app.log, worker.log] --> logloom[logloom]
+    logloom --> parsed[records kept]
+    logloom --> summary["kept=N malformed=M"]
 ```
 
 ### Exit codes

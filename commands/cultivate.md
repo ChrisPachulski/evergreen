@@ -7,7 +7,7 @@ that shouldn't be: files nothing references, local-only files leaked into git, g
 cross-repo artifacts in the wrong tree, and the repo's **own exposure** — whether the whole thing is
 public when something in it assumes private.
 
-Argument: `{{args}}`. Scope: the whole repo; an optional path narrows it.
+Argument: `$ARGUMENTS`. Scope: the whole repo; an optional path narrows it.
 
 **Acceptance bar (non-negotiable).** Before you report, satisfy *every* MUST in
 [`skills/evergreen/hard-goals/cultivate.md`](../skills/evergreen/hard-goals/cultivate.md). A run that
@@ -67,6 +67,10 @@ artifacts, OS cruft, AI-slop names (`AUDIT-*`, `*_SUMMARY.md`/`*-SUMMARY.md`, `S
 **D · Misplaced.** A real file in the wrong tree (an Xcode `.xcprivacy` in a server repo). Right
 file, wrong place.
 
+**Scale.** Over about 500 committed files, run the graph on every non-source file repo-wide (assets,
+docs, configs, data, scripts) and on source files inside the scope path only; state that split in
+coverage. An unscoped run that skipped source files says so — it never implies the whole tree.
+
 **E · `.evergreen-keep`.** If present (one glob/pattern per line), declared-legit paths are
 suppressed. Its presence is evidence — cite it.
 
@@ -81,6 +85,12 @@ assumes private is an exposure finding, the highest severity there is — alread
 moment it was pushed. Cross-check the real `isPrivate` against every documented privacy/visibility
 claim; a mismatch is a finding even when no single file is individually wrong. If `gh` is
 unavailable, say so and flag visibility as unchecked — never pass it silently.
+
+**G · Test coverage, by assertion.** Enumerate the non-trivial code elements — public functions,
+types, CLI subcommands, hooks — with the command shown (`bin/evergreen till --repo .` for parsed
+languages, a grep otherwise). Classify each as **tested** (cite a test `file:line` whose body
+asserts on it) or **gap**. A test that only calls the element and asserts nothing is a gap. The
+enumerated count equals the classified count; a gap is reported, never fixed here.
 
 ## Prove every verdict — both directions
 

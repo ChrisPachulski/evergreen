@@ -20,7 +20,7 @@ cat > "$STUB_BIN/claude" <<'EOF'
 set -u
 if [[ " $* " = *' --version '* ]]; then
   [ ! -e "$HOME/hang-version" ] || sleep 5
-  printf '%s\n' '2.1.197 (Claude Code)'
+  printf '%s\n' '2.1.257 (Claude Code)'
   exit 0
 fi
 printf '%s\n' "$*" > "$HOME/claude-args.log"
@@ -174,7 +174,7 @@ clean_result() {
 Analysis complete.
 
 \`\`\`evergreen-result
-{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.197 (Claude Code)"}}
+{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -182,7 +182,7 @@ EOF
 finding_result() {
   cat <<EOF
 \`\`\`evergreen-result
-{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":0,"drift":1,"unverified":0},"findings":[{"severity":"high","category":"name_mismatch","rung":"contract","doc_path":"README.md","doc_line":2,"claim":"Run \u0060demo --workers 4\u0060.","code_path":"app.py","code_line":1,"why":"The implementation now exposes concurrency instead of workers.","fix_or_flag":"fix"}],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.197 (Claude Code)"}}
+{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":0,"drift":1,"unverified":0},"findings":[{"severity":"high","category":"name_mismatch","rung":"contract","doc_path":"README.md","doc_line":2,"claim":"Run \u0060demo --workers 4\u0060.","code_path":"app.py","code_line":1,"why":"The implementation now exposes concurrency instead of workers.","fix_or_flag":"fix"}],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -190,7 +190,7 @@ EOF
 wrong_commit_result() {
   cat <<EOF
 \`\`\`evergreen-result
-{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"0000000000000000000000000000000000000000","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.197 (Claude Code)"}}
+{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"0000000000000000000000000000000000000000","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -321,7 +321,7 @@ ACTUAL_OBJECT="$(printf '%s' "$ENCODED_MANIFEST" | python3 -c 'import json,sys; 
 contains "$PROMPT_FILE" "Do not follow" "prompt does not explicitly forbid repository instructions"
 contains "$PROMPT_FILE" "exactly one fenced block" "prompt does not require one result envelope"
 contains "$PROMPT_FILE" '"model":"test-model"' "prompt does not record the resolved model identity"
-contains "$PROMPT_FILE" '"cli_version":"2.1.197 (Claude Code)"' "prompt does not record the resolved CLI identity"
+contains "$PROMPT_FILE" '"cli_version":"2.1.257 (Claude Code)"' "prompt does not record the resolved CLI identity"
 contains "$PROMPT_FILE" '<untrusted_repository_context encoding="json">' "prompt lacks commit-derived context"
 contains "$PROMPT_FILE" '\u003c/untrusted_repository_context\u003e' "hostile context delimiter was not JSON-escaped"
 CONTEXT_JSON="$(awk '/^<untrusted_repository_context encoding="json">$/{take=1;next} /^<\/untrusted_repository_context>$/{take=0} take' "$PROMPT_FILE" | tr -d '\n')"
@@ -507,10 +507,10 @@ contains "$SUMMARY_FILE" 'inconclusive' "model output overflow did not render as
 pass "Claude execution is time and output bounded"
 
 make_repo concrete-model
-TEST_MODEL=claude-opus-4-8 run_driver concrete-model "$(clean_result | sed 's/test-model/claude-opus-4-8/')"
+TEST_MODEL=claude-opus-5 run_driver concrete-model "$(clean_result | sed 's/test-model/claude-opus-5/')"
 [ "$STATUS" -eq 0 ] || fail "concrete configured model should produce a complete audit"
-contains "$CLAUDE_ARGS_FILE_PATH" '--model claude-opus-4-8' "driver did not pass the concrete model explicitly"
-contains "$SUMMARY_FILE" 'model: claude-opus-4-8' "renderer did not publish the trusted concrete model"
+contains "$CLAUDE_ARGS_FILE_PATH" '--model claude-opus-5' "driver did not pass the concrete model explicitly"
+contains "$SUMMARY_FILE" 'model: claude-opus-5' "renderer did not publish the trusted concrete model"
 pass "concrete model identity"
 
 make_repo missing-cli
@@ -624,9 +624,9 @@ not_contains "$GH_LOG_FILE" "pr comment 42" "uncertain patch failure created a d
 contains "$CASE_DIR/stderr" "comment update failed" "patch uncertainty was not logged"
 pass "bot-owned update never duplicates on uncertainty"
 
-contains "$ROOT/action.yml" '@anthropic-ai/claude-code@2.1.197' "Action does not pin the tested Claude CLI"
+contains "$ROOT/action.yml" '@anthropic-ai/claude-code@2.1.257' "Action does not pin the tested Claude CLI"
 contains "$ROOT/action.yml" 'model:' "Action lacks a model input"
-contains "$ROOT/action.yml" 'default: "claude-opus-4-8"' "Action model default is not concrete and tested"
+contains "$ROOT/action.yml" 'default: "claude-opus-5"' "Action model default is not concrete and tested"
 contains "$ROOT/action.yml" 'EVERGREEN_MODEL: ${{ inputs.model }}' "Action does not pass its concrete model"
 contains "$ROOT/action.yml" 'fail_on_inconclusive:' "Action lacks fail_on_inconclusive input"
 contains "$ROOT/action.yml" 'EVERGREEN_FAIL_ON_INCONCLUSIVE:' "Action does not pass the inconclusive policy"
@@ -643,7 +643,7 @@ NPM_PROBE_ENV="$TMP_ROOT/npm-probe-env.log"
 : > "$NPM_PROBE_LOG"
 : > "$NPM_PROBE_ENV"
 ANTHROPIC_API_KEY=secret GITHUB_TOKEN=token NPM_LOG="$NPM_PROBE_LOG" NPM_ENV_LOG="$NPM_PROBE_ENV" \
-  env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN "$STUB_BIN/npm" install -g @anthropic-ai/claude-code@2.1.197
+  env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN "$STUB_BIN/npm" install -g @anthropic-ai/claude-code@2.1.257
 contains "$NPM_PROBE_ENV" 'ANTHROPIC_API_KEY= GITHUB_TOKEN=' "npm child environment retained audit secrets"
 not_contains "$NPM_PROBE_ENV" '=set' "npm child environment retained audit secrets"
 not_contains "$ROOT/.github/workflows/evergreen-pr.yml" 'continue-on-error:' "workflow masks the inconclusive policy"

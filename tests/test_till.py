@@ -181,37 +181,35 @@ class GapsTests(unittest.TestCase):
         report = till(self.repo)
 
         self.assertEqual([c.symbol for c in report.candidates], ["real"])
-        self.assertEqual(report.source_files_in_scope, 1)
+        # build.sh is parsed source with no function in it; only Java stays unparsed.
+        self.assertEqual(report.source_files_in_scope, 2)
         # The exclusion names its files: a bare count once hid what was dropped.
         self.assertTrue(any(
-            "2 tracked source file(s) outside inventory" in item
-            and "Main.java" in item and "build.sh" in item
+            "1 tracked source file(s) outside inventory" in item and "Main.java" in item
             for item in report.warnings
         ))
         self.assertFalse(any("truncated" in item for item in report.warnings))
 
-    def test_python_shebang_scripts_join_the_inventory(self):
+    def test_shebang_scripts_join_the_inventory(self):
         from evergreen.till import till
 
         self.track({
             "api.py": "def real():\n    pass\n",
             "bin/tool": "#!/usr/bin/env python3\ndef cli():\n    pass\n",
-            "hook": "#!/bin/sh\necho hi\n",
+            "hook": "#!/bin/sh\npre_commit() {\n  echo hi\n}\n",
+            "notes": "plain data\n",
         })
 
         report = till(self.repo)
 
-        # The CLI entry point is public surface; a shell script stays outside inventory.
+        # Both CLI entry points are public surface; a file with no shebang is data.
         self.assertEqual(
             sorted((c.symbol, c.path) for c in report.candidates),
-            [("cli", "bin/tool"), ("real", "api.py")],
+            [("cli", "bin/tool"), ("pre_commit", "hook"), ("real", "api.py")],
         )
-        self.assertEqual(report.source_files_in_scope, 2)
-        self.assertEqual(report.source_files_scanned, 2)
-        self.assertTrue(any(
-            "1 tracked source file(s) outside inventory" in item and "hook" in item
-            for item in report.warnings
-        ))
+        self.assertEqual(report.source_files_in_scope, 3)
+        self.assertEqual(report.source_files_scanned, 3)
+        self.assertFalse(any("outside inventory" in item for item in report.warnings))
         self.assertFalse(any("truncated" in item for item in report.warnings))
 
     def test_test_and_vendor_paths_are_outside_scope(self):
@@ -519,7 +517,10 @@ class GapsTests(unittest.TestCase):
 
         report = till(self.repo)
 
-        self.assertEqual([(c.symbol, c.line) for c in report.candidates], [("real", 5)])
+        # DOC is a real module constant; the string body it holds declares nothing.
+        self.assertEqual(
+            [(c.symbol, c.line) for c in report.candidates], [("DOC", 1), ("real", 5)]
+        )
 
     def test_import_alias_lines_produce_no_candidates(self):
         from evergreen.till import till
@@ -769,6 +770,79 @@ class GapsTests(unittest.TestCase):
         # only the import line vouches for `entry`.
         symbols = [c.symbol for c in report.candidates]
         self.assertLess(symbols.index("entry"), symbols.index("key"))
+
+    def test_names_on_import_continuation_lines_count_as_references(self):
+        from evergreen.till import till
+
+        self.track({
+            "a.py": "def alpha():\n    pass\ndef beta():\n    pass\n",
+            "b.py": "from a import (\n    beta,\n)\n",
+            "a.js": "export function gamma() {}\nexport function delta() {}\n",
+            "b.js": "import {\n  delta,\n} from './a.js';\n",
+            "a.rs": "pub fn epsilon() {}\npub fn zeta() {}\n",
+            "b.rs": "use a::{\n    zeta,\n};\n",
+        })
+
+        report = till(self.repo)
+        symbols = [c.symbol for c in report.candidates]
+
+        # Each pair declares its two names in the same file, in the same order; only the
+        # continuation-line import separates them.
+        for referenced, unreferenced in (
+            ("beta", "alpha"), ("delta", "gamma"), ("zeta", "epsilon"),
+        ):
+            self.assertLess(symbols.index(referenced), symbols.index(unreferenced))
+
+    def test_candidate_cap_warning_names_the_candidate_cap(self):
+        from evergreen import till as module
+
+        self.track({"api.py": "def one():\n    pass\ndef two():\n    pass\n"})
+
+        with mock.patch.object(module, "MAX_GAP_CANDIDATES", 1):
+            report = module.till(self.repo)
+
+        self.assertIn("candidates truncated (maximum 1 candidates)", report.warnings)
+        # The candidate cap, not the file cap, was the practical ceiling on this repo.
+        self.assertEqual(module.MAX_GAP_CANDIDATES, 50_000)
+
+    def test_test_and_vendor_exclusions_are_counted_in_a_warning(self):
+        from evergreen.till import till
+
+        self.track({
+            "api.py": "def real():\n    pass\n",
+            "tests/helper.sh": "helper() {\n  echo hi\n}\n",
+            "tests/test_x.py": "def test_real():\n    pass\n",
+            "vendor/lib.go": "func Vendored() {}\n",
+            "node_modules/pkg/index.js": "export function vendored() {}\n",
+            "third_party/Main.java": "public class Main {}\n",
+            "tests/notes.md": "not source\n",
+        })
+
+        report = till(self.repo)
+
+        self.assertEqual([c.symbol for c in report.candidates], ["real"])
+        # The shell script under tests/ was absent from the inventory and from the
+        # accounting alike, so nothing in the report said it existed.
+        self.assertIn(
+            "5 tracked source file(s) excluded by the "
+            "tests/vendor/node_modules/third_party rule",
+            report.warnings,
+        )
+
+    def test_shell_functions_and_python_constants_join_the_inventory(self):
+        from evergreen.till import till
+
+        self.track({
+            "config.py": "DEFAULT_TIMEOUT = 30\n_HIDDEN = 1\n",
+            "build.sh": "build_all() {\n  echo build\n}\n_private() {\n  :\n}\n",
+        })
+
+        report = till(self.repo)
+
+        self.assertEqual(
+            sorted((c.symbol, c.kind, c.path) for c in report.candidates),
+            [("DEFAULT_TIMEOUT", "const", "config.py"), ("build_all", "func", "build.sh")],
+        )
 
     def test_escaping_scope_path_raises_value_error_and_cli_exits_2(self):
         from evergreen.till import till

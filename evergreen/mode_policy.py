@@ -31,8 +31,12 @@ MODE_RUNGS: dict[str, frozenset[str]] = {
 
 # `[high] in_docs_not_code contract  README.md:42 - ...`
 FINDING_RE = re.compile(
-    r"^\s*\[(?P<severity>high|med|low)\]\s+(?P<category>[a-z_]+)\s+(?P<rung>[a-z]+)\b"
+    r"^\s*\[(?P<severity>high|med|low)\]\s+(?P<category>[a-z_]+)\s+(?P<rung>[a-z]+)\s+\S+:\d+"
 )
+# Any line opening with a bracketed token is claiming to be a finding. One that does not parse
+# is not absence of findings, it is a finding nobody can check -- and the earlier contract let a
+# whole run of them pass silently, so an output in the pre-rung shape conformed to everything.
+FINDING_SHAPED_RE = re.compile(r"^\s*\[[^\]]+\]")
 # `evergreen [light]: you renamed ...`
 HEADER_RE = re.compile(r"^\s*evergreen\s*\[(?P<mode>off|light|strict)\]\s*:")
 
@@ -59,17 +63,32 @@ def emitted_rungs(text: str) -> list[tuple[int, str]]:
 def violations(text: str, mode: str | None = None) -> list[str]:
     """Every way a run's output contradicts the intensity it ran under.
 
-    An undeclared mode is itself a violation when none is supplied: a run that never says
-    which intensity it used cannot be held to one, and unfalsifiable is the state this
-    module exists to remove.
+    An undeclared mode is a violation whether or not a mode is supplied. Supplying one says
+    which intensity to hold the output to; it cannot supply the declaration the run owed its
+    reader, and a `--mode` that silenced the rule let any undeclared output be certified by
+    naming the mode at the checker instead. A declaration that contradicts the supplied mode
+    is the same failure from the other side and is reported too.
     """
-    resolved = mode or declared_mode(text)
-    if resolved is None:
-        return ["no intensity declared: output must open with `evergreen [<mode>]:`"]
-    if resolved not in MODE_RUNGS:
-        return [f"unknown intensity {resolved!r}: expected off, light, or strict"]
-    allowed = MODE_RUNGS[resolved]
+    if mode is not None and mode not in MODE_RUNGS:
+        return [f"unknown intensity {mode!r}: expected off, light, or strict"]
+    declared = declared_mode(text)
     found = []
+    if declared is None:
+        found.append("no intensity declared: output must open with `evergreen [<mode>]:`")
+    elif mode is not None and declared != mode:
+        found.append(
+            f"declared intensity {declared} contradicts the {mode} the output is held to"
+        )
+    resolved = mode or declared
+    if resolved is None:
+        return found
+    allowed = MODE_RUNGS[resolved]
+    for number, line in enumerate(text.splitlines(), start=1):
+        if FINDING_SHAPED_RE.match(line) and not FINDING_RE.match(line):
+            found.append(
+                f"line {number}: unparseable finding line; expected "
+                "`[sev] category rung file:line`"
+            )
     for number, rung in emitted_rungs(text):
         if rung not in LADDER:
             found.append(f"line {number}: unknown rung {rung!r}; expected one of {', '.join(LADDER)}")

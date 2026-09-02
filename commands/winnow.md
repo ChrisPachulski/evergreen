@@ -17,8 +17,8 @@ claim and either **certify** it (cite the code that makes it true) or **surface*
 silence = every claim certified, not "no lie found". Always runs at **strict** depth (all four rungs)
 regardless of the repo's ambient mode.
 
-Scope: changes since `${1:-origin/main}` (diff against that ref); if it doesn't exist, winnow the
-docs against the current tree.
+Scope: `$ARGUMENTS` names the base ref to diff against (default `origin/main` when empty); if that
+ref does not exist, winnow the docs against the current tree.
 
 Walk the ladder, cheapest rung first, stop reporting at the first that holds:
 

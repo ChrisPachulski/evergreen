@@ -25,7 +25,9 @@ code_changed=0
 while IFS= read -r f; do
   [ -z "$f" ] && continue
   fl="$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')"
-  case "$fl" in *.md|*.markdown|*.rst) continue ;; esac
+  # .evergreen-mode is this plugin's own per-repo state. A mode change is not a code change,
+  # and counting it made the tracker's write nudge the very turn that only switched modes.
+  case "$fl" in *.md|*.markdown|*.rst|.evergreen-mode|*/.evergreen-mode) continue ;; esac
   code_changed=1; break
 done <<EOF
 $changed

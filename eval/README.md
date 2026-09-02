@@ -15,8 +15,41 @@ must be left alone.
 - `prompt.md` — the task given to the judged model (appended to the shipped SKILL body, so the
   eval always measures the ruleset as it currently is).
 - `run.sh` — one measured run: `claude -p` winnows the fixture read-only, output is scored.
-- `score.py` — grades a run against the manifest: recall over seeded drift, decoy false
-  positives, exempt-doc violations, precision, and any unseeded flags for manual audit.
+- `score.py` — grades a run twice over: the fixture exam (recall over seeded drift, decoy false
+  positives, exempt-doc violations, precision, and any unseeded flags for manual audit) and the
+  frozen hard goals. Exit 0 only when both pass; 2 on any failure; 1 when nothing in the
+  transcript parses. `--allow-misses N` widens the recall bar (default 0, strict).
+  `--selftest` grades built-in pass/fail transcripts — one failing control per gate — and needs
+  no run at all.
+
+## The ledger the scorer reads
+
+Goals 1, 2, 3 and 5 are counts over the run's own claim ledger, so the run has to emit one. The
+trailing `jsonl` block carries it; prose lines are ignored.
+
+```jsonl
+{"type":"claims","n":19,"command":"grep -rnE '`[^`]+`' README.md docs/"}
+{"type":"verdict","status":"certified","file":"README.md","line":12,"claim":"<doc phrase>","code":"shipit/cli.py:31"}
+{"type":"verdict","status":"drift","file":"README.md","line":8,"claim":"<doc phrase>","why":"gone; shipit/cli.py:1"}
+{"type":"verdict","status":"unverified","file":"docs/usage.md","line":22,"claim":"<doc phrase>","why":"behavior-asserted"}
+{"type":"left_alone","file":"CHANGELOG.md","reason":"history, frozen in time"}
+```
+
+A legacy `{"type":"flag",...}` row still counts as a `drift` verdict, so an older transcript
+still scores on the fixture exam — but with no claims row it fails goals 1, 2 and 5, which is
+the intended reading of "not done". A run that states the census in prose
+(`N = 19 documented claims ...` with the command on a nearby line) is also accepted.
+
+## Which hard goals are enforced
+
+| goal | status | what the check actually proves |
+|------|--------|--------------------------------|
+| 1 — enumerate the whole claim set | enforced | a single census states `N` and a countable command. The command is not re-run. |
+| 2 — a verdict row per claim | enforced | verdict rows == `N`, counted exactly. |
+| 3 — a code `path:line` on every certified row | enforced | the citation is present and is not a doc path. It is never opened. |
+| 4 — every drift proven gone by grep | **proxied** | a drift row scores only when its claim quotes the planted token from `manifest.tsv`. Re-running each grep needs the fixture tree at the run's commit, which the scorer does not have. |
+| 5 — nothing silently dropped | enforced | certified + drift + unverified == `N`, and no fourth status is allowed. |
+| 6 — exempt docs stay out of findings | enforced | no exempt path on a certified or drift row. This now fails the run rather than only printing. |
 
 ## Run it
 

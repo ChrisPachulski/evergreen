@@ -44,11 +44,43 @@ and a noisy golden label is worse than no label.
 
 ## What it grades
 
-The eight goals in [`../../skills/evergreen/hard-goals/seed.md`](../../skills/evergreen/hard-goals/seed.md),
-plus classification against the manifest. `score.py`'s docstring states what each gate can and
-cannot catch — read it before trusting a number. The honest ceiling: the ledger gate proves a
-citation is *present*, never that it is *true*, and the speculation gate matches normalized
-substrings, so a paraphrase sharing no tokens with its ledger row walks straight through.
+All eight goals in [`../../skills/evergreen/hard-goals/seed.md`](../../skills/evergreen/hard-goals/seed.md),
+plus classification against the manifest.
+
+| goal | status | what the check actually proves |
+|------|--------|--------------------------------|
+| 1 — complete, surface-shaped inventory | enforced | one inventory row with `source_files == scanned_files`, `candidates` matching the row count and the manifest; every candidate row carries symbol, kind, a declaration `path:line`, and a rank; no `truncated` warning; every `outside inventory` warning quoted a second time in the report. |
+| 2 — walk the ranking, stop only when cold | enforced | ranks are 1..R in emission order with no gap, the inspected rows form a prefix, the remainder is `deferred`, and the walk stops at `N` or after 10 consecutive cold verdicts. |
+| 3 — a code `file:line` on every claim | enforced | the citation is present. It is never opened, so it proves presence, not truth. |
+| 4 — winnow the seeded output | enforced | one winnow row with `certified` == claim-ledger rows, `drift` == 0, `unverified` == 0. |
+| 5 — zero unmarked speculation | enforced | every declarative unit matches a ledger row by normalized substring or sits on a `seed:gap` line. A paraphrase sharing no tokens with its row walks through. |
+| 6 — purely additive | **proxied** | proposal paths that already exist under `eval/fixture/` fail. The judged run is read-only, so there is no real diff to read `-` lines from. |
+| 7 — the owner sets the write count | enforced | the worthy list and its recommendation appear before any doc content; `documented + worthy + not-worthy + deferred == N`; `written <= chosen <= worthy`; no owner answer means `written == 0`; a pre-diff `documented` candidate may not be written. The owner's count comes from an `owner` row or the `--approve N` invocation argument. |
+| 8 — useful, small, repeat-visible | enforced, one part proxied | every written doc needs a `reader-use` claim citing code outside its declaration line, and stays within 60 lines. The post-diff grep is **proxied** by a scan of the proposed body outside `seed:gap` lines, since a read-only run writes no file to grep. |
+
+### The rows the goal gates read
+
+Goals 1, 2, 4 and 7 are counts over rows the run emits, so the trailing `jsonl` block carries
+four types beyond the ones `prompt.md` lists today, plus three fields on `candidate` and `doc`:
+
+```jsonl
+{"type":"inventory","source_files":4,"scanned_files":4,"candidates":10,"warnings":[]}
+{"type":"candidate","symbol":"with_backoff","kind":"function","code_ref":"helpers.py:12","rank":1,"verdict":"worthy","reader_use":"..."}
+{"type":"recommendation","worthy":["with_backoff","resolve_setting"],"recommend":2}
+{"type":"owner","chosen":2}
+{"type":"claim","doc":"<path>","claim":"<sentence>","code_ref":"cli.py:44","kind":"reader-use"}
+{"type":"winnow","certified":4,"drift":0,"unverified":0}
+{"type":"doc","path":"<path>","symbol":"with_backoff","lines":12,"body":"<full content>"}
+```
+
+`prompt.md` is not part of this change, so a run driven by the prompt as it stands emits neither
+the inventory row nor the winnow row and fails goals 1, 2, 4 and 7 — which is the honest reading
+of "not done" until the prompt asks for them. `--approve N` supplies the owner's chosen count when
+the invocation carries it instead of the transcript.
+
+`score.py --selftest` grades built-in pass/fail transcripts with one failing control per gate, so
+a gate that stopped discriminating is caught without a model call. The honest ceiling stands: the
+ledger gate proves a citation is *present*, never that it is *true*.
 
 Over-population and under-population are reported as separate counts. They are not equally bad and
 averaging them would hide the one that matters.
@@ -77,8 +109,10 @@ SEED_EXAM_JUDGE=external bash eval/seed/run.sh   # widens the grant to the judge
 ```
 
 widens the tool grant to exactly the judge entry point and costs one codex call. The judge's own
-correctness is proven separately and more cheaply, by pointing `judge_json` at a doc with a known
-planted lie and confirming it comes back `drift`; that is a better test of the judge than any seed
+correctness is proven separately and more cheaply, by pointing
+`bin/evergreen judge --repo PATH --doc PATH` at a doc with a known planted lie and confirming it
+comes back `drift` (exit 0 with a verdict, 3 when it abstains or is unavailable, 2 on bad input);
+that is a better test of the judge than any seed
 run, because seed writes its claims *from* the code and rarely produces a false one to catch.
 
 ## The gate

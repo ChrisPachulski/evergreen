@@ -69,8 +69,16 @@ for fixture in eval/flourish/fixtures/*/; do
       gutted.md|fabricated.md|skeleton.md) want=2 ;;
       *) continue ;;
     esac
-    python3 eval/flourish/score.py --fixture "$fixture" --result "$golden" \
-      >/dev/null 2>&1
+    # A golden with a sibling <name>.report.md is graded with the report gates
+    # (hard goals 5, 6, 9) on; without one, those three stay unenforced.
+    report="${golden%.md}.report.md"
+    if [ -f "$report" ]; then
+      python3 eval/flourish/score.py --fixture "$fixture" --result "$golden" \
+        --report "$report" >/dev/null 2>&1
+    else
+      python3 eval/flourish/score.py --fixture "$fixture" --result "$golden" \
+        >/dev/null 2>&1
+    fi
     got=$?
     flourish_graded=$((flourish_graded+1))
     if [ "$got" != "$want" ]; then
@@ -84,6 +92,22 @@ if $flourish_ok && [ "$flourish_graded" -gt 0 ]; then
   pass "flourish golden matrix ($flourish_graded goldens, every trap trips its gate)"
 else
   fail "flourish golden matrix" "graded $flourish_graded"
+fi
+
+# --- axis: eval scorer selftests --------------------------------------------
+# Each scorer grades built-in pass/fail transcripts, one failing control per
+# hard goal, so a gate that stopped discriminating is caught without a model call.
+selftests_ok=true
+for scorer in eval/score.py eval/seed/score.py eval/cultivate/score.py; do
+  if ! python3 "$scorer" --selftest >/dev/null 2>&1; then
+    selftests_ok=false
+    printf '       %s --selftest failed\n' "$scorer"
+  fi
+done
+if $selftests_ok; then
+  pass "eval scorer selftests (winnow, seed, cultivate)"
+else
+  fail "eval scorer selftests" "python3 <scorer> --selftest"
 fi
 
 # --- axis: oracle provenance contract (CI's offline job) ---------------------

@@ -382,16 +382,108 @@ class ImpactTests(unittest.TestCase):
         self.assertEqual(warnings, [])
         self.assertEqual(return_contract.line, 11)
         report = impact(root, [], [timeout])
-        self.assertEqual([candidate.path for candidate in report.candidates], [
-            "eval/fixture/config.py",
-        ])
-        self.assertIn("(deterministic)", report.candidates[0].reasons[0])
-        self.assertFalse(hasattr(report.candidates[0], "finding"))
-        self.assertFalse(hasattr(report.candidates[0], "verdict"))
+        paths = [candidate.path for candidate in report.candidates]
+        source = next(item for item in report.candidates
+                      if item.path == "eval/fixture/config.py")
+        self.assertIn("(deterministic)", source.reasons[0])
+        # Evidence with no changed path still reaches the living docs that name it.
+        self.assertIn("README.md", paths)
+        self.assertFalse(hasattr(source, "finding"))
+        self.assertFalse(hasattr(source, "verdict"))
 
         boundary = (root / "examples/provider-boundary.md").read_text()
         self.assertIn("Expected: no finding", boundary)
         self.assertIn("per-project timeout override remains true", boundary)
+
+    def test_evidence_alone_nominates_docs_by_path_and_by_symbol(self):
+        from evergreen.evidence import load_evidence
+        from evergreen.impact import impact
+
+        root = Path(__file__).resolve().parents[1]
+        (self.repo / "README.md").write_text(
+            "Call `load_config()`; it lives in `eval/fixture/config.py`.\n", encoding="utf-8"
+        )
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+        evidence, warnings = load_evidence(root / "examples/provider-evidence.json", self.repo)
+
+        self.assertEqual(warnings, [])
+        report = impact(self.repo, [], evidence)
+
+        readme = next(item for item in report.candidates if item.path == "README.md")
+        self.assertIn(
+            "living doc mentions evidence path eval/fixture/config.py", readme.reasons
+        )
+        self.assertIn("evidence symbol load_config", readme.reasons)
+
+    def test_path_mentions_need_a_token_boundary_and_a_bare_name_needs_a_path_token(self):
+        from evergreen.impact import impact
+
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs/near.md").write_text(
+            "The file xsrc/thing.py belongs to another tree.\n", encoding="utf-8"
+        )
+        (self.repo / "docs/prose.md").write_text(
+            "The evergreen approach keeps documentation alive.\n", encoding="utf-8"
+        )
+        (self.repo / "docs/real.md").write_text(
+            "See src/thing.py and evergreen/impact.py.\n", encoding="utf-8"
+        )
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+
+        report = impact(self.repo, ["src/thing.py", "evergreen"], [])
+        paths = {candidate.path for candidate in report.candidates}
+
+        self.assertIn("docs/real.md", paths)
+        self.assertNotIn("docs/near.md", paths)
+        self.assertNotIn("docs/prose.md", paths)
+
+    def test_symbol_match_cap_warns_and_stops_counting_document_frequency(self):
+        from evergreen import impact as module
+
+        (self.repo / "src").mkdir()
+        (self.repo / "src/client.py").write_text("class Client:\n    pass\n", encoding="utf-8")
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs/api.md").write_text("Use `Client`.\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+
+        with mock.patch.object(module, "MAX_SYMBOL_MATCHES", 0):
+            report = module.impact(self.repo, ["src/client.py"], [])
+
+        self.assertIn("symbol matches truncated (maximum 0)", report.warnings)
+        self.assertFalse(any(
+            reason.startswith("living doc mentions contract symbol")
+            for candidate in report.candidates for reason in candidate.reasons
+        ))
+
+    def test_fixture_golden_and_testdata_trees_are_exempt_docs(self):
+        from evergreen.impact import impact
+
+        for directory in ("fixtures", "__fixtures__", "golden", "testdata"):
+            (self.repo / directory).mkdir()
+            (self.repo / directory / "notes.md").write_text(
+                "Mentions src/thing.py.\n", encoding="utf-8"
+            )
+        # Singular `fixture` stays live: it is where the repo's own worked example lives.
+        (self.repo / "fixture").mkdir()
+        (self.repo / "fixture/README.md").write_text(
+            "Mentions src/thing.py.\n", encoding="utf-8"
+        )
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs/live.md").write_text(
+            "Mentions src/thing.py.\n", encoding="utf-8"
+        )
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+
+        report = impact(self.repo, ["src/thing.py"], [])
+
+        self.assertEqual(
+            sorted(candidate.path for candidate in report.candidates),
+            ["docs/live.md", "fixture/README.md", "src/thing.py"],
+        )
 
     def test_impact_revalidates_hostile_and_malformed_evidence_without_aborting(self):
         from evergreen.impact import impact
@@ -962,7 +1054,56 @@ class DeclarationScanTests(unittest.TestCase):
             b"    pass\n"
         )
 
-        self.assertEqual(self.names(source, ".py"), {"real", "also_real"})
+        self.assertEqual(
+            self.names(source, ".py"), {"real", "also_real", "PATTERN", "GUARD"}
+        )
+
+    def test_module_constants_and_shell_functions_are_declarations(self):
+        python = (
+            "DEFAULT_TIMEOUT = 30\n"
+            "_PRIVATE_TIMEOUT = 1\n"
+            "class Config:\n"
+            "    INDENTED = 2\n"
+        )
+        shell = (
+            "#!/bin/sh\n"
+            "# commented_out() { :; }\n"
+            "build_all() {\n"
+            "  echo build\n"
+            "}\n"
+            "function run_tests {\n"
+            "  echo test\n"
+            "}\n"
+            "_private_helper() { :; }\n"
+        )
+
+        self.assertEqual(self.names(python.encode(), ".py"), {"DEFAULT_TIMEOUT", "Config"})
+        self.assertEqual(self.names(shell.encode(), ".sh"), {"build_all", "run_tests"})
+
+    def test_rust_crate_and_super_visibility_are_not_public(self):
+        source = (
+            b"pub fn open() {}\n"
+            b"pub(crate) fn crate_only() {}\n"
+            b"pub(super) fn parent_only() {}\n"
+            b"fn helper() {}\n"
+        )
+
+        self.assertEqual(self.names(source, ".rs"), {"open"})
+
+    def test_swift_access_levels_decide_reachability(self):
+        source = (
+            b"open func opened() {}\n"
+            b"public func published() {}\n"
+            b"internal func internalOnly() {}\n"
+            b"func unmarked() {}\n"
+            b"private func hidden() {}\n"
+            b"fileprivate func alsoHidden() {}\n"
+        )
+
+        self.assertEqual(
+            self.names(source, ".swift"),
+            {"opened", "published", "internalOnly", "unmarked"},
+        )
 
     def test_impact_module_scans_its_own_source_faithfully(self):
         payload = (Path(__file__).resolve().parents[1] / "evergreen" / "impact.py").read_bytes()

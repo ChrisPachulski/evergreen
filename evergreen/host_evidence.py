@@ -11,6 +11,8 @@ OWNERSHIP_FILE = _hosts.OWNERSHIP_FILE
 MAX_COMMAND_BYTES = _hosts.MAX_COMMAND_BYTES
 MAX_EVIDENCE_FILES = 256
 MAX_EVIDENCE_BYTES = 4 * 1024 * 1024
+BYTECODE_DIRECTORY = "__pycache__"
+BYTECODE_SUFFIX = ".pyc"
 PACKAGE_SOURCES = (
     "__init__.py", "evidence.py", "execution_policy.py", "till.py", "grade.py",
     "host_commit.py", "host_evidence.py", "host_journal.py", "host_lock.py",
@@ -35,6 +37,7 @@ _kind = _hosts._kind
 _normalized_lexical_path = _hosts._normalized_lexical_path
 _normalized_snapshot_target = _hosts._normalized_snapshot_target
 _ownership_from_snapshot = _hosts._ownership_from_snapshot
+_pending_transaction_artifacts = _hosts._pending_transaction_artifacts
 _instruction_state_from_snapshot = _hosts._instruction_state_from_snapshot
 _read_regular_bounded = _hosts._read_regular_bounded
 _snapshot = _hosts._snapshot
@@ -329,13 +332,15 @@ def _active_hashes(root):
         elif kind == "directory":
             for directory, names, filenames in os.walk(path, followlinks=False):
                 _secure_active_path(Path(directory))
+                names[:] = sorted(name for name in names if name != BYTECODE_DIRECTORY)
                 for name in names:
                     candidate = Path(directory) / name
                     if _kind(candidate) != "directory":
                         raise OSError(f"unsafe active evidence directory: {candidate}")
                     _secure_active_path(candidate)
-                names[:] = sorted(names)
                 for filename in sorted(filenames):
+                    if filename.endswith(BYTECODE_SUFFIX):
+                        continue
                     candidate = Path(directory) / filename
                     if _kind(candidate) != "regular":
                         raise OSError(f"unsafe active evidence file: {candidate}")
@@ -365,10 +370,13 @@ def _package_sources(root):
     for child in package.iterdir():
         if child.name in expected:
             continue
-        if child.name == "__pycache__" and _kind(child) == "directory":
-            _secure_active_path(child)
-            if not any(child.iterdir()):
-                continue
+        # Bytecode is a build artifact, never canonical evidence, so its content is
+        # not hashed. The kind is still checked: a symlink wearing either name is a
+        # trap, because Python itself will import through it.
+        if child.name == BYTECODE_DIRECTORY and _kind(child) == "directory":
+            continue
+        if child.name.endswith(BYTECODE_SUFFIX) and _kind(child) == "regular":
+            continue
         raise OSError(f"unexpected canonical package entry: {child}")
     sources = []
     for name in PACKAGE_SOURCES:
@@ -518,6 +526,9 @@ def _host_observation_issues(status, canonical, canonical_valid, installed, stat
         issues.append("host-root-absent")
     if status.problem:
         issues.append("host-root-unsafe")
+    pending = _pending_transaction_artifacts(status)
+    if pending:
+        issues.append("pending-transaction-artifacts: " + ", ".join(pending))
     if state is None:
         issues.append("ownership-missing-or-invalid")
     else:

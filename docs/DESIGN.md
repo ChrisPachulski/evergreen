@@ -50,12 +50,15 @@ model's head. Three thin hooks make it ride along, and they never read or analyz
 
 - **`evergreen-activate.sh`** (SessionStart) injects the mode preamble plus the condensed
   `DIGEST.md` (about two-fifths of the full skill by words, which stays loadable on demand).
-- **`evergreen-mode-tracker.sh`** (UserPromptSubmit) is the *sole writer* of the intensity state.
+- **`evergreen-mode-tracker.sh`** (UserPromptSubmit) is the *sole writer* of the intensity state. It
+  matches the sigil forms only where they begin a line and the imperative forms only in the first
+  sixty characters of the prompt, so text that merely quotes them never flips the mode.
 - **`evergreen-stop.sh`** (Stop) is a post-turn audit request when code-with-docs changed; git/state
   guards only, always non-blocking, deduped to fire once per distinct change state (a signature in
   `.git/`, not on every turn while the tree sits dirty).
 
-State is a per-repo `.evergreen-mode` file (`off|light|strict`, default `light`, gitignored). An
+State is a per-repo `.evergreen-mode` file (`off|light|strict`, default `light`); the tracker
+excludes it through `.git/info/exclude`, so a consumer repo never sees it as untracked. An
 optional repo-local `.evergreen-ignore` lists patterns the *agent* honors when deciding what to
 flag — there is no hook that parses it; the skill is the enforcement.
 
@@ -96,7 +99,7 @@ infrastructure advisory without changing the rendered status.
 The commit-time hygiene guard has a narrower boundary. It inspects the finalized staged index on a
 commit-only call, blocks known secret/slop paths, and allows deletion-only cleanup. A single shell
 call that combines staging and commit is rejected conservatively because PreToolUse cannot observe
-the index between them. Commit modes that can add unstaged content (`-a`/`--all`, include/only, or
+the index between them. The same rule covers every index-writing subcommand (`mv`, `rm`, `apply`, `stash`, `restore`, `checkout`, `reset`, `update-index`, `read-tree`, `cherry-pick`, `revert`, `merge`, `rebase`, `am`) paired with a commit in one call. Commit modes that can add unstaged content (`-a`/`--all`, include/only, or
 pathspec forms) are rejected for the same reason: use a **separately staged plain commit**.
 Run staging and commit in **separate tool calls**. `EVERGREEN_GUARD=off` remains the explicit
 bypass. Semantic truth findings and CI drift findings do not use this blocking path.
@@ -115,12 +118,15 @@ honest limit of the claim.
 ## Shipped local and host surface
 
 `bin/evergreen impact` and `bin/evergreen till` are the dependency-free, read-only query entry
-points. `impact` takes changed paths, optional evidence JSON, and repository-local
+points, and `bin/evergreen judge` is the one sanctioned external call: it packs a doc plus the
+in-repo files it names into an isolated codex session for the cross-provider certification that
+seed and flourish require, and abstains rather than guessing. `impact` takes changed paths, optional evidence JSON, and repository-local
 `.evergreen-map.json` mappings; `till` inventories the tracked public declaration surface for seed
 and fails closed with a `truncated` warning whenever the inventory it builds could be incomplete;
-files outside the parseable surface (unparsed languages, extensionless scripts without a Python
-shebang, untracked source) are surfaced with `outside inventory` warnings rather than silently
-skipped; a Python-shebang script such as `bin/evergreen` joins the parsed inventory. Their
+files outside the parseable surface (unparsed languages, extensionless scripts without a Python or
+shell shebang, untracked source) are surfaced with `outside inventory` warnings rather than silently
+skipped; a Python-shebang script such as `bin/evergreen` joins the parsed inventory, and a
+truncation warning names the cap that tripped. Their
 human and JSON forms expose ranked candidates, reasons or scan counts, and warnings; they do not
 expose semantic findings or verdicts.
 
@@ -130,7 +136,8 @@ uninstall requires that proof and preserves user-owned text. Multi-host prefligh
 rollback are transactional under the required exclusive-access contract. Detected concurrent
 changes are preserved and reported for manual recovery rather than overwritten. Doctor never
 repairs, installs, or executes plugin code: it validates canonical files and host state, then
-performs bounded UTF-8, shebang, and Python AST validation of canonical `bin/evergreen`. Provider
+performs bounded UTF-8, shebang, and Python AST validation of canonical `bin/evergreen`; bytecode
+caches are ignored, and pending transaction artifacts are reported with their paths. Provider
 dependencies are never installed.
 
 Host policy and planning stay in `hosts.py`; typed identities live in `host_types.py`; bounded

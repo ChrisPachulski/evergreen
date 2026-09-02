@@ -1,3 +1,4 @@
+# Gemini CLI command file ({{args}} syntax). Claude Code loads commands/mode.md as /evergreen:mode; Codex reads AGENTS.md.
 description = "Set or report the evergreen freshness-reflex intensity for this repo (off | light | strict)."
 prompt = """
 Argument given: `{{args}}`.

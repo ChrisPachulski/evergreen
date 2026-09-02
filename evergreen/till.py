@@ -30,19 +30,19 @@ from .impact import (
 
 MAX_GAP_SOURCE_FILES = 10_000
 MAX_GAP_SCAN_BYTES = 64 * 1024 * 1024
-MAX_GAP_CANDIDATES = 10_000
+MAX_GAP_CANDIDATES = 50_000
 MAX_GAP_SCOPE_PATHS = 1000
 GAP_SCAN_TIMEOUT_SECONDS = 10
 
 # Only suffixes DECLARATION_RE actually parses. Adding a language is one entry here
 # once the regex knows its declaration keyword.
-GAP_SOURCE_SUFFIXES = frozenset((".py", ".go", ".rs", ".swift",
+GAP_SOURCE_SUFFIXES = frozenset((".py", ".go", ".rs", ".swift", ".sh", ".bash",
                                  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"))
 # Suffixes that plainly hold source DECLARATION_RE cannot parse. Files wearing one are never
 # inventoried, so their presence is surfaced as a scope note instead of vanishing silently.
 UNPARSED_SOURCE_SUFFIXES = frozenset((
     ".java", ".kt", ".kts", ".scala", ".groovy", ".c", ".h", ".cc", ".cpp", ".hpp",
-    ".cs", ".m", ".mm", ".rb", ".php", ".pl", ".lua", ".sh", ".bash", ".zsh", ".ps1",
+    ".cs", ".m", ".mm", ".rb", ".php", ".pl", ".lua", ".zsh", ".ps1",
     ".ex", ".exs", ".erl", ".hs", ".ml", ".clj", ".dart", ".r", ".jl", ".zig", ".nim",
 ))
 EXEMPT_SOURCE_PARTS = {"tests", "test", "testdata", "vendor", "vendored",
@@ -60,6 +60,9 @@ IMPORT_LINE_RE = re.compile(
     rb"(?m)^[ \t]*(?:from|import|export|use|pub[ \t]+use)[ \t{(][^\r\n]*"
     rb"|^[^\r\n]*?(?<![A-Za-z0-9_$])require[ \t]*\([^\r\n]*"
 )
+# A parenthesised or braced import puts most of its names on continuation lines; reading only
+# the opening line scored every one of them zero.
+MAX_IMPORT_CONTINUATION_LINES = 200
 _TYPE_KINDS = frozenset(keyword.decode("ascii") for keyword in TYPE_DECLARATION_KEYWORDS)
 MAX_NAMED_EXCLUSIONS = 5
 SHEBANG_SNIFF_BYTES = 128
@@ -83,14 +86,44 @@ class TillReport:
     warnings: tuple[str, ...]
 
 
+SHELL_SHEBANG_RE = re.compile(rb"(?<![A-Za-z0-9_])(?:bash|sh|dash|ksh)(?![A-Za-z0-9_])")
+
+
+def _bracket_depth(segment):
+    return (segment.count(b"(") - segment.count(b")") +
+            segment.count(b"{") - segment.count(b"}"))
+
+
+def _import_segments(masked):
+    """Import statements, with the continuation lines of a bracketed name list folded in."""
+    lines = masked.split(b"\n")
+    index = 0
+    while index < len(lines):
+        match = IMPORT_LINE_RE.match(lines[index])
+        if match is None:
+            index += 1
+            continue
+        segment = match.group(0)
+        depth = _bracket_depth(segment)
+        consumed = 0
+        while (depth > 0 and index + 1 < len(lines) and
+               consumed < MAX_IMPORT_CONTINUATION_LINES):
+            index += 1
+            consumed += 1
+            segment += b"\n" + lines[index]
+            depth += _bracket_depth(lines[index])
+        yield segment
+        index += 1
+
+
 def _script_suffix(path):
     """First-line sniff of an extensionless file: which inventory bucket is this script?
 
-    Returns ".py" for a Python shebang (the file joins the scanned inventory -- a CLI entry
-    point is public surface), "" for any other shebang or a symlinked script (surfaced as
-    outside inventory), and None for plain data. The single O_NOFOLLOW / O_NONBLOCK open with
-    a post-open fstat is the whole check: no stat-then-open window for a swapped symlink or
-    FIFO to exploit, matching `_bounded_regular_bytes`.
+    Returns ".py" for a Python shebang and ".sh" for a shell one (the file joins the scanned
+    inventory -- a CLI entry point is public surface), "" for any other shebang or a symlinked
+    script (surfaced as outside inventory), and None for plain data. The single O_NOFOLLOW /
+    O_NONBLOCK open with a post-open fstat is the whole check: no stat-then-open window for
+    a swapped symlink or FIFO to exploit, matching `_bounded_regular_bytes`.
     """
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -110,7 +143,10 @@ def _script_suffix(path):
         os.close(descriptor)
     if not head.startswith(b"#!"):
         return None
-    return ".py" if b"python" in head.split(b"\n", 1)[0] else ""
+    first = head.split(b"\n", 1)[0]
+    if b"python" in first:
+        return ".py"
+    return ".sh" if SHELL_SHEBANG_RE.search(first) else ""
 
 
 def _named_exclusions(paths):
@@ -128,15 +164,16 @@ def _admissible(pure):
 
 
 def _script_bucket(path, repo, kind):
-    """Bucket an extensionless path by shebang: ("py", checked) joins the inventory; ("other",
-    None) is a non-Python or unresolvable script, outside inventory; (None, None) is data."""
+    """Bucket an extensionless path by shebang: (suffix, checked) joins the inventory;
+    ("other", None) is an unparsed or unresolvable script, outside inventory; (None, None)
+    is data."""
     try:
         checked = _path(path, repo, kind)
     except ValueError:
         return "other", None  # cannot prove it is not source: surface it
     script = _script_suffix(repo / checked)
-    if script == ".py":
-        return "py", checked
+    if script in GAP_SOURCE_SUFFIXES:
+        return script, checked
     return ("other", None) if script is not None else (None, None)
 
 
@@ -192,6 +229,7 @@ def till(repo: Path, scope: tuple[str, ...] = ()) -> TillReport:
 
     files = []
     unparsed = []
+    exempted = 0
     matched_scopes = set()
     for encoded in payload.split(b"\0"):
         if not encoded:
@@ -208,9 +246,13 @@ def till(repo: Path, scope: tuple[str, ...] = ()) -> TillReport:
             if not hits:
                 continue
             matched_scopes.update(hits)
-        if not _admissible(pure):
-            continue
         suffix = pure.suffix.lower()
+        if not _admissible(pure):
+            # Counted, not just skipped: a shell script under tests/ was absent from the
+            # inventory and from the exclusion accounting alike, so nothing said it existed.
+            if suffix in GAP_SOURCE_SUFFIXES or suffix in UNPARSED_SOURCE_SUFFIXES:
+                exempted += 1
+            continue
         if suffix in GAP_SOURCE_SUFFIXES:
             try:
                 files.append((_path(path, repo, "tracked source"), suffix))
@@ -225,10 +267,10 @@ def till(repo: Path, scope: tuple[str, ...] = ()) -> TillReport:
                 collector.add(SCAN_DEADLINE_WARNING)
                 break
             bucket, checked = _script_bucket(path, repo, "tracked file")
-            if bucket == "py":
-                # A Python-shebang script is the CLI surface itself; excluding it made the
-                # tool blind to its own primary documented entry point.
-                files.append((checked, ".py"))
+            if bucket in GAP_SOURCE_SUFFIXES:
+                # A shebang script is the CLI surface itself; excluding it made the tool
+                # blind to its own primary documented entry point.
+                files.append((checked, bucket))
             elif bucket:
                 unparsed.append(path)
     if scope and not truncated:
@@ -241,6 +283,11 @@ def till(repo: Path, scope: tuple[str, ...] = ()) -> TillReport:
         collector.add(
             f"{len(unparsed)} tracked source file(s) outside inventory "
             f"(unparsed language or no suffix): {_named_exclusions(unparsed)}"
+        )
+    if exempted:
+        collector.add(
+            f"{exempted} tracked source file(s) excluded by the "
+            "tests/vendor/node_modules/third_party rule"
         )
 
     # Unfiltered on purpose: glob-filtering this listing silently dropped untracked Java/C++,
@@ -293,7 +340,7 @@ def till(repo: Path, scope: tuple[str, ...] = ()) -> TillReport:
         )
     source_files_in_scope = len(files)
     if len(files) > MAX_GAP_SOURCE_FILES:
-        collector.add(f"source files truncated (maximum {MAX_GAP_SOURCE_FILES})")
+        collector.add(f"source files truncated (maximum {MAX_GAP_SOURCE_FILES} files)")
         files = files[:MAX_GAP_SOURCE_FILES]
 
     rows = []
@@ -321,7 +368,7 @@ def till(repo: Path, scope: tuple[str, ...] = ()) -> TillReport:
         # comment prose and string bodies from posing as import lines.
         masked = _masked_literals(content, suffix)
         tokens = Counter()
-        for segment in IMPORT_LINE_RE.findall(masked):
+        for segment in _import_segments(masked):
             tokens.update(IDENTIFIER_RE.findall(segment))
         totals.update(tokens)
         names = set()
@@ -336,7 +383,9 @@ def till(repo: Path, scope: tuple[str, ...] = ()) -> TillReport:
         if len(rows) > MAX_GAP_CANDIDATES:
             # Stop before accumulation outgrows the cap by more than one file's worth; a
             # truncated inventory fails closed either way, so bounded work wins.
-            collector.add(f"candidates truncated (maximum {MAX_GAP_CANDIDATES})")
+            collector.add(
+                f"candidates truncated (maximum {MAX_GAP_CANDIDATES} candidates)"
+            )
             break
 
     def rank_key(row):

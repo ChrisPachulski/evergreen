@@ -5,6 +5,8 @@ at carrying. Flourish requires that claim to be drawn, in mermaid, checked into 
 sketched in box-drawing characters that die on the first font change.
 
 **Two rules are hard** (see `hard-goals/flourish.md`, goal 10). Everything else here is craft.
+The one exemption is narrow: a doc with no how-it-works, architecture, or pipeline section and an
+open page under 300 words may declare `no structure claim — diagram exempt` in the report.
 
 1. **Mermaid, not ASCII.** A fenced ` ```mermaid ` block. Never box-drawing art, never a
    pre-rendered image where the source could live in the file.
