@@ -31,3 +31,7 @@ npm test
 ```
 
 12 passed, 0 failed.
+
+## Second-provider judge
+
+judge: codex ok — docs 1, certified 1, drift 0, unverified 0

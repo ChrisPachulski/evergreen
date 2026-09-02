@@ -636,6 +636,10 @@ bash tests/all.sh
 ```
 
 GREEN - all four CI suites pass locally.
+
+## Second-provider judge
+
+judge: codex ok — docs 1, certified 1, drift 0, unverified 0
 """
 
 FILLER = ("The queue drains steadily and the workers keep their own pace. " * 60)
@@ -656,6 +660,8 @@ class FlourishReportGateTests(unittest.TestCase):
         assert doc["gates"]["claim_counts"] is True
         assert doc["gates"]["shown"] is True
         assert doc["gates"]["verification"] is True
+        assert doc["gates"]["judge"] is True
+        assert doc["judge"]["provider"] == "codex"
 
     def test_report_gates_are_not_enforced_without_a_report(self):
         fixture = make_fixture(self.tmp_path)
@@ -663,6 +669,47 @@ class FlourishReportGateTests(unittest.TestCase):
         assert code == 0
         assert doc["report"]["supplied"] is False
         assert "claim_counts" not in doc["gates"]
+        assert "judge" not in doc["gates"]
+
+    def test_goal_second_provider_passes_when_ok_and_no_drift(self):
+        fixture = make_fixture(self.tmp_path)
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=REPORT)
+        assert code == 0
+        assert doc["gates"]["judge"] is True
+        assert doc["judge"] == {"present": True, "provider": "codex", "status": "ok",
+                                "docs": 1, "certified": 1, "drift": 0,
+                                "unverified": 0, "ok": True}
+
+    def test_goal_second_provider_fails_on_abstain(self):
+        fixture = make_fixture(self.tmp_path)
+        abstained = REPORT.replace(
+            "judge: codex ok — docs 1, certified 1, drift 0, unverified 0",
+            "judge: abstain — codex unavailable")
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=abstained)
+        assert code == 2
+        assert doc["gates"]["judge"] is False
+        assert doc["judge"]["status"] == "abstain"
+        assert doc["judge"]["reason"] == "codex unavailable"
+
+    def test_goal_second_provider_fails_on_drift(self):
+        fixture = make_fixture(self.tmp_path)
+        drifted = REPORT.replace(
+            "judge: codex ok — docs 1, certified 1, drift 0, unverified 0",
+            "judge: codex ok — docs 1, certified 0, drift 1, unverified 0")
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=drifted)
+        assert code == 2
+        assert doc["gates"]["judge"] is False
+        assert doc["judge"]["drift"] == 1
+
+    def test_goal_second_provider_fails_when_the_line_is_missing(self):
+        fixture = make_fixture(self.tmp_path)
+        no_judge = REPORT.replace(
+            "\n## Second-provider judge\n\n"
+            "judge: codex ok — docs 1, certified 1, drift 0, unverified 0\n", "")
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path, report=no_judge)
+        assert code == 2
+        assert doc["gates"]["judge"] is False
+        assert doc["judge"]["present"] is False
 
     def test_goal5_counts_must_sum_to_the_claim_set(self):
         fixture = make_fixture(self.tmp_path)

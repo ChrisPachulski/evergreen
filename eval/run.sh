@@ -5,6 +5,7 @@
 # measures the ruleset as it currently ships.
 set -euo pipefail
 cd "$(dirname "$0")"
+ROOT="$(cd .. && pwd)"
 command -v claude >/dev/null 2>&1 || { echo "needs the claude CLI on PATH" >&2; exit 1; }
 mkdir -p out
 OUT="out/run-$(date +%Y%m%d-%H%M%S).txt"
@@ -26,7 +27,14 @@ trap 'rm -rf "$SANDBOX"' EXIT
 git -C .. archive HEAD eval/fixture | tar -x -C "$SANDBOX" --strip-components=2
 [ -f "$SANDBOX/README.md" ] || { echo "fixture did not materialise" >&2; exit 1; }
 
-( cd "$SANDBOX" && claude -p "$PROMPT" --allowedTools "Read,Grep,Glob" \
+# The judge is mandatory on every run, so the grant carries exactly its entry point and the task
+# names it; no codex on the host is an abstention the scorer fails, never a silent pass.
+PROMPT="$PROMPT
+
+## Judge entry point
+
+Run the judge as \`python3 $ROOT/bin/evergreen judge\`; \`--repo .\` is this sandbox."
+( cd "$SANDBOX" && claude -p "$PROMPT" --allowedTools "Read,Grep,Glob,Bash(python3 $ROOT/bin/evergreen judge:*)" \
     ${EVAL_MODEL:+--model "$EVAL_MODEL"} ) | tee "$OUT"
 echo
 echo "--- score ($OUT) ---"

@@ -296,6 +296,27 @@ scanned corpus is a vocabulary word rather than a link, and is demoted — one t
 in a fifth of the docs, two when it appears in nearly a third or more. Ranking orders the
 candidate set; it never suppresses a candidate, and it never settles the semantic claim.
 
+### The second-provider judge
+
+A verdict is never its author's alone, and a deterministic one is judgment frozen into code, so the
+judge double-checks every command that judges. winnow, seed, and flourish end with it over prose: for
+every doc in scope, `bin/evergreen judge --repo . --doc <doc> --json` hands the doc plus
+the in-repo files it names to codex with tools disabled and returns a certified, drift, or
+unverified verdict per claim, resolving the model from the host's own codex configuration. The
+report carries the summed block verbatim, `judge: <provider> ok — docs K, certified N, drift D, unverified U`; a claim the judge calls drift goes back through the
+trial before the run reports. No codex, or an abstention, is reported as `judge: abstain —
+<reason>` and leaves the run not clean; the release gate refuses a winnow or cultivate record whose judge block
+is missing, abstained, or reports drift. The per-turn reflex stays single-provider, because a paid
+call on every turn would end the ride-along; in CI the tool-less model behind the deterministic
+validator is its second provider. It is plumbing, not a command to reach for: exit 0 on a verdict,
+3 when codex is unavailable or abstains, 2 on bad input. Two more modes cover the rest of the
+family: `--inventory <till.json>` reads the source files an inventory names and rules on every row
+(declared there, that kind, reachable from outside the file) and lists public declarations the
+inventory missed, which seed and the till command run before trusting the surface; and
+`--rubric cultivate` rules on whether each delete, untrack, flag, unsettled, or exposure conclusion
+in a cultivate report follows from the evidence it shows. Both certification records carry the
+result as a `judge` object, and the release gate refuses either without one.
+
 ### Other agents
 
 There is no host installer. Claude Code and Codex both load this plugin through their own plugin
@@ -406,16 +427,14 @@ Four axes — **truth · craft · hygiene · creation** — one creed: prove it 
 | Command | What it does |
 |---------|--------------|
 | `/evergreen:mode [off \| light \| strict]` | Set the intensity for this repo; the tracker hook persists it to `.evergreen-mode` and excludes that file from git. No argument reports the current one. |
-| `/evergreen:winnow [base-ref]` | **Truth, deep.** Walk every claim that changed since a ref and *certify it true or surface it* — silence means certified, not just "no lie found." Always strict. Prove-by-test is the default, not a flag: where the code runs and the safety boundary holds, a behavioral claim reading can't settle is settled by execution (write the test the doc implies, run it) — fails → drift proven, passes → certified by test; a refused or inconclusive run falls back to `behavior-asserted — verify manually`. |
-| `/evergreen:flourish <file> [--all] [--manual]` | **Craft.** Rewrite an accurate-but-ugly doc to a gold standard (mined from 28 top READMEs), then prove every claim against the code. Emits a diff — never a silent overwrite. The only sanctioned prose-rewrite. |
-| `/evergreen:cultivate [path]` | **Hygiene.** Local-only files leaking into git, gitignore gaps, AI-slop that shouldn't be tracked or public. Proposes untrack/ignore/delete — never auto. A commit-time guard backstops it (the one thing that *blocks*). |
-| `/evergreen:seed [path] [--approve N]` | **Creation.** From a symbol-level surface inventory (fail-closed without one), triage everything worth documenting, recommend a batch, and write only what the owner approves — each doc ≤ 60 lines, earning its place with a behavior the signature alone can't show, every sentence code-backed and winnow-certified at birth; what the code can't settle is markered for the author, never invented. Purely additive and approval-gated; `--approve N` pre-authorizes the top N worthy from the invocation. |
+| `/evergreen:winnow [base-ref]` | **Truth, deep.** Walk every claim that changed since a ref and *certify it true or surface it* — silence means certified, not just "no lie found." Always strict. Prove-by-test is the default, not a flag: where the code runs and the safety boundary holds, a behavioral claim reading can't settle is settled by execution (write the test the doc implies, run it) — fails → drift proven, passes → certified by test; a refused or inconclusive run falls back to `behavior-asserted — verify manually`. Ends with the mandatory second-provider judge pass; the report carries its verdict counts. |
+| `/evergreen:flourish <file> [--all] [--manual]` | **Craft.** Rewrite an accurate-but-ugly doc to a gold standard (mined from 28 top READMEs), then prove every claim against the code. Emits a diff — never a silent overwrite. The only sanctioned prose-rewrite. Ends with the mandatory second-provider judge pass; the report carries its verdict counts. |
+| `/evergreen:cultivate [path]` | **Hygiene.** Local-only files leaking into git, gitignore gaps, AI-slop that shouldn't be tracked or public. Proposes untrack/ignore/delete — never auto. A commit-time guard backstops it (the one thing that *blocks*). Its judgment rows go to the second-provider judge before they are proposed. |
+| `/evergreen:seed [path] [--approve N]` | **Creation.** From a symbol-level surface inventory (fail-closed without one), triage everything worth documenting, recommend a batch, and write only what the owner approves — each doc ≤ 60 lines, earning its place with a behavior the signature alone can't show, every sentence code-backed and winnow-certified at birth; what the code can't settle is markered for the author, never invented. Purely additive and approval-gated; `--approve N` pre-authorizes the top N worthy from the invocation. Ends with the mandatory second-provider judge pass; the report carries its verdict counts. |
 | `/evergreen:impact [--repo PATH] [--evidence FILE] PATH...` | **Truth, candidate query.** Find additive documentation candidates before editing changed paths. Read-only; never emits findings or verdicts. |
-| `/evergreen:till [--repo PATH] [PATH...]` | **Creation, surface inventory.** Inventory the undocumented-surface candidates — every public declaration reachable from outside its file. Read-only. |
+| `/evergreen:till [--repo PATH] [PATH...]` | **Creation, surface inventory.** Inventory the undocumented-surface candidates — every public declaration reachable from outside its file. Read-only. The inventory is then judged on a second provider and every disagreement shown. |
 | `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` | **Truth, candidate query.** Rank documentation related to changed paths and optional provider evidence. Read-only; never emits findings or verdicts. |
 | `bin/evergreen till [--repo PATH] [--json] [PATH...]` | **Creation, surface inventory.** Deterministic ranked inventory of every declaration in its parsed surface (Python, Go, Rust, Swift, JS/TS, POSIX shell) reachable from outside its file, ranked by references including names on multi-line import continuations — the fail-closed provider behind `/evergreen:seed`. Read-only; scan incompleteness fails closed with a `truncated` warning, and files outside the parsed surface are named in `outside inventory` warnings. |
-| `bin/evergreen conform [--mode off\|light\|strict] [--json] [PATH]` | **Truth, mode compliance.** Hold a reflex transcript to the intensity it declares: `light` may emit `path`, `contract`, and `snippet` findings and never `prose`. Reads a file or standard input; a line shaped like a finding that does not parse is itself a violation, and an undeclared mode is a violation even under `--mode`. Exit 0 when it conforms, 1 when it does not. Read-only. |
-| `bin/evergreen judge --repo PATH --doc PATH [--timeout N] [--json]` | **Truth, external judge.** Pack one doc plus the in-repo files it names into one isolated codex call and print a certified / drift / unverified verdict per claim — the cross-provider pass flourish and seed require. Read-only, no network beyond codex itself; exit 0 on a verdict, 3 when codex is unavailable or abstains, 2 on bad input. |
 | `bin/evergreen receipt [--repo PATH] [--benchmark-manifest PATH] [--json]` | **Operational evidence.** Emit deterministic local repository, release-boundary, and optional declared benchmark identity without network access or mutation; absent local dataset files are counted, not refused. |
 
 ## How it's checked
@@ -453,7 +472,7 @@ It reads paths, contracts, and prose — not your abstract syntax tree. The refl
 It treats a shipped marketing version as a living public claim, distinct from the build number, and reconciles the surfaces that repeat that identity. Rules in the operations reference above.
 
 **Does `light` mode make the commands less thorough?**
-No. Intensity steers the ride-along reflex only. `light` tells it to walk the mechanical rungs and defer the semantic read; `strict` adds that read; `off` silences the session preamble and the post-turn nudge. A command you type — `winnow`, `flourish`, `seed`, `cultivate` — pins its own depth and runs at full strictness in every mode, `off` included. Findings name the rung that proved them (`path · contract · snippet · prose`); light must never emit a `prose` finding, and `bin/evergreen conform` checks a transcript against the mode it declared. `off` means "stop nudging me," not "stop working." The tracker hook persists a mode only from an evergreen sigil line (`/`, `@`, or `$` before the word, with or without `:mode`, and `normal` meaning off) that begins a line or sits in the first sixty characters of your message, or from an imperative phrase in that same window; writes it to `.evergreen-mode`, and excludes that file through `.git/info/exclude`. Text that merely quotes those phrases later in a message never flips it.
+No. Intensity steers the ride-along reflex only. `light` tells it to walk the mechanical rungs and defer the semantic read; `strict` adds that read; `off` silences the session preamble and the post-turn nudge. A command you type — `winnow`, `flourish`, `seed`, `cultivate` — pins its own depth and runs at full strictness in every mode, `off` included. Findings name the rung that proved them (`path · contract · snippet · prose`); light must never emit a `prose` finding. `off` means "stop nudging me," not "stop working." The tracker hook persists a mode only from an evergreen sigil line (`/`, `@`, or `$` before the word, with or without `:mode`, and `normal` meaning off) that begins a line or sits in the first sixty characters of your message, or from an imperative phrase in that same window; writes it to `.evergreen-mode`, and excludes that file through `.git/info/exclude`. Text that merely quotes those phrases later in a message never flips it.
 
 **Why "evergreen"?**
 A doc that stays true as the code grows is evergreen. Yours aren't. Yet.

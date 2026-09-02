@@ -40,8 +40,11 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
    only under a trailing `left alone:` note.
    CHECK: no exempt-doc path appears on a `certified` or `drift` row. Pass = zero.
 
-## Why this works without a second AI at runtime
+## Why the checks stand without a second AI
 
 Every CHECK is a grep or a count that anyone — a human, or the same model on a later pass — re-runs to
-the same answer. The frozen contract *is* the external arbiter; no live cross-model call is required.
-A run that reads great but fails goal 4 is a failed run, full stop.
+the same answer. The frozen contract *is* the arbiter of these goals; none of them needs a model's
+opinion to pass. The second-provider judge every command run ends with since 0.8.0 is a separate
+mandatory pass over the verdicts, carried as its own row and gated by the eval scorer: it double-checks
+the judgment, it does not make the checks re-runnable. A run that reads great but fails goal 4 is a
+failed run, full stop.

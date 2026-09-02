@@ -67,8 +67,8 @@ PROSE_N_RE = re.compile(
 
 
 def load_output(text):
-    """(claims_rows, verdict_rows, left_alone_rows) from a noisy transcript."""
-    claims, verdicts, left = [], [], []
+    """(claims_rows, verdict_rows, left_alone_rows, judge_rows) from a noisy transcript."""
+    claims, verdicts, left, judge = [], [], [], []
     for line in text.splitlines():
         line = line.strip()
         if not line.startswith("{"):
@@ -92,7 +92,9 @@ def load_output(text):
                              "legacy": True})
         elif kind == "left_alone":
             left.append(obj)
-    return claims, verdicts, left
+        elif kind == "judge":
+            judge.append(obj)
+    return claims, verdicts, left, judge
 
 
 def base(p):
@@ -125,7 +127,31 @@ def prose_census(text):
     return {"n": n, "command": cmd or "", "source": "prose"}
 
 
-def grade_goals(text, claims_rows, verdicts):
+def grade_judge(judge_rows):
+    """Second provider — exactly one judge row, status ok, zero drift.
+
+    An absent row, an abstain, or drift > 0 each fail: a second-provider certification
+    pass is not optional evidence, it is the thing this goal exists to require.
+    """
+    if len(judge_rows) != 1:
+        return {"pass": False, "rows": judge_rows,
+                "why": f"expected exactly one judge row, saw {len(judge_rows)}"}
+    row = judge_rows[0]
+    status = row.get("status")
+    if status != "ok":
+        reason = row.get("reason")
+        return {"pass": False, "status": status, "reason": reason,
+                "provider": row.get("provider"),
+                "why": f"judge status is {status!r}, not \"ok\""}
+    drift = row.get("drift")
+    ok = isinstance(drift, int) and not isinstance(drift, bool) and drift == 0
+    return {"pass": ok, "status": status, "provider": row.get("provider"),
+            "docs": row.get("docs"), "certified": row.get("certified"),
+            "drift": drift, "unverified": row.get("unverified"),
+            "why": "ok" if ok else f"judge reports drift={drift}, not 0"}
+
+
+def grade_goals(text, claims_rows, verdicts, judge_rows):
     """The five transcript-checkable winnow hard goals. -> (rows, all_ok)."""
     census = claims_rows[0] if claims_rows else prose_census(text)
     n = None
@@ -167,12 +193,13 @@ def grade_goals(text, claims_rows, verdicts):
             "drift": len(by_status["drift"]),
             "unverified": len(by_status["unverified"]),
             "unknown_status": [str(v.get("status")) for v in unknown]},
+        "goal — second provider": grade_judge(judge_rows),
     }, by_status
 
 
 def score(text, manifest_path, allow_misses=0):
-    claims_rows, verdicts, left = load_output(text)
-    goals, by_status = grade_goals(text, claims_rows, verdicts)
+    claims_rows, verdicts, left, judge_rows = load_output(text)
+    goals, by_status = grade_goals(text, claims_rows, verdicts, judge_rows)
     drift_rows = by_status["drift"]
     certified_rows = by_status["certified"]
 
@@ -278,6 +305,8 @@ def _passing_rows(manifest_path):
              "why": "behavior-asserted — verify manually"}]
     out += [{"type": "left_alone", "file": r["file"], "reason": r["note"]}
             for r in exempt]
+    out += [{"type": "judge", "status": "ok", "provider": "codex",
+             "docs": 2, "certified": 2, "drift": 0, "unverified": 0}]
     census = {"type": "claims", "n": len(drift) + len(decoys) + 1,
               "command": "grep -rnE '`[^`]+`' README.md docs/"}
     return [census] + out
@@ -344,6 +373,24 @@ def selftest(manifest_path):
         rows[0]["n"] = int(rows[0]["n"]) + 1
         return rows
     mutate("goal 6 — an exempt doc on a drift row", exempt_flagged)
+
+    mutate("goal — second provider: no judge row",
+           lambda rows: [r for r in rows if r["type"] != "judge"])
+
+    def judge_abstain(rows):
+        for r in rows:
+            if r["type"] == "judge":
+                r["status"] = "abstain"
+                r["reason"] = "codex unavailable"
+        return rows
+    mutate("goal — second provider: judge abstained", judge_abstain)
+
+    def judge_drift(rows):
+        for r in rows:
+            if r["type"] == "judge":
+                r["drift"] = 1
+        return rows
+    mutate("goal — second provider: judge reports drift", judge_drift)
 
     def missed_drift(rows):
         out, dropped = [], False

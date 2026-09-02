@@ -42,8 +42,8 @@ du -sh */ .[^.]*/ 2>/dev/null | sort -rh      # where the bulk lives
 Separate legitimately-ignored bulk (`target/`, `node_modules/`, `dist/` — cite *why* dismissed) from
 suspicious untracked/ignored content (stray `plans/`, committed data, scratch reports).
 
-**B · Reference graph (the spine).** For every committed file that is not an entry point, manifest,
-or obviously-imported source, check whether anything reaches it — by path *and* basename:
+**B · Reference graph (the spine).** For every committed file that is not an entry point, check
+whether anything reaches it — by path *and* basename:
 ```sh
 git grep -l "<basename>" -- ':!<the file itself>'
 ```
@@ -96,8 +96,9 @@ enumerated count equals the classified count; a gap is reported, never fixed her
 
 "Cited" means you **ran the check and can show what it returned** — the index, the prose, and recall
 are not "looking". Every verdict points at an executed command's actual output:
-- **Keep** — cite the reference that reaches it, or the owner-intent you *read* (a local
-  `.gitignore`/README that says "this dir is public"). Never "seems fine."
+- **Keep** — cite the executed grep and the reference it found; a zero-hit grep keeps a file only
+  with the owner-intent you *read* beside it (a local `.gitignore`/README that says "this dir is
+  public"). Never a keep without its grep, never "seems fine."
 - **Surface** — cite zero references **and** the change that orphaned it (the deleted consumer), or
   the leak / misplacement. Read the file and its history before proposing deletion.
 
@@ -122,6 +123,18 @@ Few findings per run are judgment calls, so the trial's cost stays bounded; ever
 skips it. The trial lowers false deletes and false blocks — it does **not** earn the right to remove
 the escape hatch. The blocking path keeps its human override regardless.
 
+## Second provider — mandatory
+
+The mechanical evidence stands; the conclusions drawn from it get a second opinion. Write every
+non-`keep` row — `delete`, `untrack`, `flag`, `unsettled`, and the exposure verdict — with its
+executed evidence to a scratch file outside the repository and run `bin/evergreen judge --repo .
+--doc <that file> --rubric cultivate --json`. It reads the named files and rules on whether each
+conclusion follows from the evidence shown. A row it calls drift goes back through the trial before
+it is proposed; carry its trailer verbatim, `judge: <provider> ok — docs K, certified N, drift D,
+unverified U`, stage `report`. No codex, or an abstention, is `judge: abstain — <reason>`: reported,
+and the run is not clean. A certification record for the release gate carries the same numbers as a
+`judge` object.
+
 ## Fix categories
 
 - **Leaked-local** (env, artifacts, local config) → `git rm --cached` + `.gitignore`. File stays on
@@ -134,7 +147,8 @@ the escape hatch. The blocking path keeps its human override regardless.
 1. Inventory numbers (tracked vs on-disk) and what the bulk is.
 2. A table — `file · verdict (keep/untrack/delete/flag/unsettled) · evidence (executed command +
    result)`. An `unsettled` row states what would settle it, not a guess at the answer.
-3. **Coverage, stated plainly** — what you checked and what you did NOT. Never imply completeness you
+3. The judge line and any row it sent back through the trial.
+4. **Coverage, stated plainly** — what you checked and what you did NOT. Never imply completeness you
    didn't reach. `unsettled` rows are part of coverage, not omissions from it: a run with three of
    them reviewed the whole tree and could not resolve three files, which is a different and more
    useful report than one that silently kept them.

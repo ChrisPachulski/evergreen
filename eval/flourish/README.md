@@ -44,10 +44,10 @@ tokens (sections under 10 unique body tokens keep plain heading-match semantics)
 ## Which hard goals are enforced
 
 `score.py` grades the written result; `--report <path>` additionally grades the run's report and
-turns on goals 5, 6 and 9. Without `--report` those three print `NOT ENFORCED` and leave the exit
-code alone. In the golden matrix (`tests/readiness.sh`), a golden with a sibling
-`<name>.report.md` is graded with them on — `good.report.md` and `flattened.report.md` exist for
-exactly that.
+turns on goals 5, 6, 9, and the mandatory second-provider judge. Without `--report` those four
+print `NOT ENFORCED` and leave the exit code alone. In the golden matrix (`tests/readiness.sh`), a
+golden with a sibling `<name>.report.md` is graded with them on — `good.report.md` and
+`flattened.report.md` exist for exactly that, each carrying a passing `judge:` line.
 
 | goal | status | what the check actually proves |
 |------|--------|--------------------------------|
@@ -61,6 +61,7 @@ exactly that.
 | 8 — open page <= 2,500 words | enforced | the goal's own snippet: `<details>` blocks stripped, then a word count. |
 | 9 — run the repository's own checks | enforced with `--report` | a re-runnable command line and a verdict line after it, or the stated "declares no verification entry point" escape. **Presence only**: a report that prints a `GREEN` it never earned passes here and fails the hard goal in the world. |
 | 10 — one vertical mermaid diagram | enforced | the goal's four greps, exactly: a ```mermaid fence, a `graph`/`flowchart` TD/TB/BT declaration, zero LR/RL declarations or `direction LR|RL` lines, zero box-drawing characters. |
+| second provider | enforced with `--report` | the report's `judge: <provider> <ok\|abstain> — docs K, certified N, drift D, unverified U` line (or the short `judge: abstain — <reason>` escape) names status `ok` and drift 0. A missing line, an abstain, or drift > 0 fails. |
 | voice | advisory | reported (kept / flattened / absent) and never gates, so `flattened.md` still exits 0. |
 
 The `good` and `flattened` goldens carry a vertical mermaid diagram where their ASCII pipeline art

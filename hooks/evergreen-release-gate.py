@@ -7,8 +7,11 @@ walked that commit. Proof is two checked-in receipts — `eval/certifications/wi
 `eval/certifications/cultivate.json` — read from the HEAD tree, never from the working
 directory, so an uncommitted or locally edited record can never vouch for a tag. Each record
 names the commit its pass ran at; the winnow record must also report zero drift and zero
-unverified claims with counts that sum to its total. The certified commit must be HEAD itself
-or an ancestor of HEAD from which nothing outside `eval/certifications/` has since changed:
+unverified claims with counts that sum to its total, and carry a `judge` object recording a
+second-provider certification pass (`bin/evergreen judge`) with status `"ok"`, a named
+provider, and zero drift — an abstained or missing judge, or one reporting drift, refuses the
+tag exactly like a dirty winnow record does. The certified commit must be HEAD itself or an
+ancestor of HEAD from which nothing outside `eval/certifications/` has since changed:
 committing the records is the only history permitted between running a pass and tagging.
 
 The gate verifies record arithmetic and commit binding. That a record honestly reflects a
@@ -25,6 +28,7 @@ import sys
 RECORD_DIR = "eval/certifications"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 CLAIM_KEYS = ("total", "certified", "drift", "unverified")
+JUDGE_COUNT_KEYS = ("docs", "certified", "drift", "unverified")
 
 
 def _git(repo: str, *args: str) -> "tuple[int, str]":
@@ -59,6 +63,33 @@ def _validate_claims(path: str, record: dict) -> None:
         )
     if claims["certified"] + claims["drift"] + claims["unverified"] != claims["total"]:
         _refuse(f"{path} claim counts do not sum to total")
+
+
+def _validate_judge(path: str, record: dict) -> None:
+    """Either record's second-provider judge block: an "ok" status, a provider, no drift."""
+    judge = record.get("judge")
+    if not isinstance(judge, dict):
+        _refuse(f'{path} must carry a "judge" object recording the second-provider pass')
+    if not isinstance(judge.get("provider"), str) or not judge.get("provider"):
+        _refuse(f'{path} "judge.provider" must be a non-empty string')
+    if not all(
+        isinstance(judge.get(key), int)
+        and not isinstance(judge.get(key), bool)
+        and judge.get(key) >= 0
+        for key in JUDGE_COUNT_KEYS
+    ):
+        _refuse(
+            f'{path} "judge" must carry non-negative integer counts: '
+            "docs, certified, drift, unverified"
+        )
+    if judge["docs"] < 1:
+        _refuse(f'{path} "judge.docs" must be at least 1 — no document was certified')
+    if judge.get("status") != "ok":
+        reason = judge.get("reason")
+        detail = f": {reason}" if isinstance(reason, str) and reason else ""
+        _refuse(f'{path} judge status must be "ok" for a release tag{detail}')
+    if judge["drift"]:
+        _refuse(f'{path} judge reports drift={judge["drift"]}; a release tag requires zero')
 
 
 def _bind_subject(repo: str, path: str, kind: str, subject: str, head: str) -> None:
@@ -119,6 +150,7 @@ def main() -> int:
             _refuse(f'{path} "date" must be a non-empty string')
         if kind == "winnow":
             _validate_claims(path, record)
+        _validate_judge(path, record)
         _bind_subject(repo, path, kind, subject, head)
     return 0
 

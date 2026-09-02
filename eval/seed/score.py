@@ -235,6 +235,32 @@ def gate_winnow(winnows: list[dict[str, Any]], claim_rows: int) -> dict[str, Any
     return gate_result(ok, details)
 
 
+def gate_judge(judge_rows: list[dict[str, Any]], written: int) -> dict[str, Any]:
+    """Second provider — required whenever a doc was written; optional when none was."""
+    details: dict[str, Any] = {"rows": judge_rows, "written": written}
+    if written == 0 and not judge_rows:
+        details["why"] = "no docs written — the judge row is not required"
+        return gate_result(True, details)
+    if len(judge_rows) != 1:
+        details["why"] = f"expected exactly one judge row, saw {len(judge_rows)}"
+        return gate_result(False, details)
+    row = judge_rows[0]
+    status = row.get("status")
+    details.update({"status": status, "provider": row.get("provider"),
+                    "docs": row.get("docs"), "certified": row.get("certified"),
+                    "unverified": row.get("unverified")})
+    if status != "ok":
+        details.update({"reason": row.get("reason"),
+                        "why": f"judge status is {status!r}, not \"ok\""})
+        return gate_result(False, details)
+    drift = as_int(row.get("drift"))
+    details["drift"] = drift
+    ok = drift == 0
+    if not ok:
+        details["why"] = f"judge reports drift={drift}, not 0"
+    return gate_result(ok, details)
+
+
 def gate_owner(rows: list[dict[str, Any]], docs: list[dict[str, Any]],
                coverage_rows: list[dict[str, Any]], by_symbol: dict[str, Any],
                approve: int | None) -> dict[str, Any]:
@@ -311,6 +337,7 @@ def score(text: str, manifest_path: Path, approve: int | None = None) -> dict[st
     coverage_rows = [row for row in rows if row.get("type") == "coverage"]
     inventories = [row for row in rows if row.get("type") == "inventory"]
     winnows = [row for row in rows if row.get("type") == "winnow"]
+    judge_rows = [row for row in rows if row.get("type") == "judge"]
     by_symbol = {str(row.get("symbol")): row for row in candidates}
     known = {row["symbol"] for row in manifest}
     graded = [row for row in manifest if row["expected"] != "unscored"]
@@ -371,6 +398,10 @@ def score(text: str, manifest_path: Path, approve: int | None = None) -> dict[st
         rows, docs, coverage_rows, by_symbol, approve)
     gates["goal 8 — reader-use and repeat visibility"] = gate_reader_use(
         docs, claims, by_symbol)
+    inventory_judges = [row for row in judge_rows if row.get("stage") == "inventory"]
+    doc_judges = [row for row in judge_rows if row.get("stage", "docs") == "docs"]
+    gates["goal — second provider (inventory)"] = gate_judge(inventory_judges, 1)
+    gates["goal — second provider (docs)"] = gate_judge(doc_judges, len(docs))
 
     coverage_detail: dict[str, Any] = {"rows": coverage_rows, "manifest_total": len(manifest)}
     coverage_ok = len(coverage_rows) == 1
@@ -517,6 +548,11 @@ def _passing_rows(manifest_path: Path) -> list[dict[str, Any]]:
                  "not_worthy": verdicts.count("not-worthy"),
                  "deferred": verdicts.count("deferred"),
                  "written": len(docs)})
+    rows.append({"type": "judge", "stage": "inventory", "status": "ok", "provider": "codex",
+                 "docs": 4, "certified": 10, "drift": 0, "unverified": 0})
+    rows.append({"type": "judge", "stage": "docs", "status": "ok", "provider": "codex",
+                 "docs": len(docs), "certified": len(docs), "drift": 0,
+                 "unverified": 0})
     return rows
 
 
@@ -663,6 +699,36 @@ def selftest(manifest_path: Path) -> int:
         find(rows, "candidate", symbol="with_backoff")["verdict"] = "not-worthy"
         return rows
     mutate("classification — a worthy symbol declined", misclassified)
+
+    def no_judge(rows):
+        return [r for r in rows if not (r.get("type") == "judge" and r.get("stage") == "docs")]
+    mutate("goal — second provider: docs written, no judge row", no_judge)
+
+    def judge_abstain(rows):
+        find(rows, "judge", stage="docs")["status"] = "abstain"
+        find(rows, "judge", stage="docs")["reason"] = "codex unavailable"
+        return rows
+    mutate("goal — second provider: judge abstained", judge_abstain)
+
+    def judge_drift(rows):
+        find(rows, "judge", stage="docs")["drift"] = 1
+        return rows
+    mutate("goal — second provider: judge reports drift", judge_drift)
+
+    def no_inventory_judge(rows):
+        return [r for r in rows if not (r.get("type") == "judge" and r.get("stage") == "inventory")]
+    mutate("goal — second provider: inventory never judged", no_inventory_judge)
+
+    def inventory_judge_abstain(rows):
+        find(rows, "judge", stage="inventory")["status"] = "abstain"
+        find(rows, "judge", stage="inventory")["reason"] = "codex unavailable"
+        return rows
+    mutate("goal — second provider: inventory judge abstained", inventory_judge_abstain)
+
+    def inventory_judge_drift(rows):
+        find(rows, "judge", stage="inventory")["drift"] = 1
+        return rows
+    mutate("goal — second provider: inventory judge reports drift", inventory_judge_drift)
 
     ok = True
     for label, rows, approve, want_pass in cases:

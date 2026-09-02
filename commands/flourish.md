@@ -27,10 +27,15 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
 
 2. **Craft pass — impose the gold-standard skeleton** (`skills/evergreen/references/readme-style.md`).
    Restructuring, not light editing. Top of the result, in order:
-   - **Hero** — centered logo/mark if the repo has one, else a clean centered title block.
-   - **One-line value proposition** as the first prose (`[Name] is a [category] that [benefit]`), not
-     a paragraph. Pull it from the product/docs if buried.
-   - **Badges** — one row (stack + license minimum; CI/version where they exist).
+   - **Hero** — a centered block (`<h1 align="center">` or `<div align="center">`, the two forms the
+     scorer's `HERO_RE` accepts) carrying the logo/mark if the repo has one, else the title.
+   - **Badges** — one row under the title, after the epigraph if there is one (as this repo's own
+     README does), when the repo has any (stack + license are the usual minimum; CI/version where
+     they exist). `readme-style.md` calls the row optional, and the face gate passes at four of
+     five elements with hero and tagline both required, so a repo with nothing to badge skips it.
+   - **One-line value proposition** as the first definitional prose (`[Name] is a [category] that
+     [benefit]`), not a paragraph; a hook-first opener may precede it (the voice pass). Pull it from
+     the product/docs if buried.
    - **Features** — scannable bullets, each with a **bold lead descriptor**. Never a wall of prose.
    - **Quick start** — install + one minimal runnable example, near the top, before deep architecture.
      Push long/optional setup into collapsible `<details>`.
@@ -43,30 +48,37 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
    - **The "how it works" diagram — mermaid, vertical.** A rewrite that carries a structure claim
      ships one fenced mermaid block, `graph TD` / `flowchart TD`, rendered before it ships. The
      contract (ELK directive, node rules, palette, render check) and the narrow no-structure-claim
-     exemption are `skills/evergreen/references/mermaid-diagrams.md`, enforced by
-     `hard-goals/flourish.md` goal 10.
-   Then **demote** deep technical detail (full architecture, exhaustive dev setup, API surface) below
-   the visitor-facing top — and demote means **move, verbatim, into `<details>` or a linked doc
-   file**, never compress-to-summary. A 200-line API reference that comes back as a ten-line "module
-   map" wasn't demoted; it was destroyed with better manners. **Cut** is reserved for the
-   never-present set (changelog dumps, roadmaps, planning notes, aspirational features), and even a
-   cut runs a destination check first: content whose only home is this README — no docs site, no
-   linked file, the norm in internal repos — gets rehomed or collapsed, never deleted. Deleting the
-   sole copy of true reference material is not craft; it is data loss wearing a hero image. Fill
-   *derivable* gaps from the code (install from the manifest, usage from the CLI/exported API, a
-   runnable example). Write the "why" from code evidence (auto) or `<!-- evergreen: fill in -->`
-   marker it (`--manual`). Restructuring is not fabrication — you rearrange claims the code already
-   backs, not invent new ones.
-   - **Score the face, not just the spine.** Before any craft verdict, enumerate these
-     gold-standard face elements as present/absent: (a) centered visual hero (`<h1 align="center">`
-     or logo), (b) a one-line epigraph with voice under the title, (c) a badge row, (d) a
-     vivid/problem-first opener before the definitional line, (e) a **vertical mermaid "how it
-     works" diagram** (ASCII art scores this element *absent* — it is the thing being replaced).
-     A doc with a correct spine but a dead face is not at the gold standard — it is "accurate but
-     ugly," which is exactly flourish's job.
-   - **Diff against a shipped exemplar.** Open one concrete gold-standard README (this plugin's
-     own, or one from the 28-repo survey) and compare the target's shape and voice to it — not
-     only the abstract style doc. The exemplar catches what the checklist misses.
+     exemption are `skills/evergreen/references/mermaid-diagrams.md`; `hard-goals/flourish.md`
+     goal 10 enforces the countable part (a mermaid fence, a `TD`/`TB`/`BT` declaration, no `LR`, no
+     box-drawing characters) and the render check stays craft.
+   Then **demote** deep technical detail (full architecture, exhaustive dev setup, API surface)
+   below the visitor-facing top — and demote means **move, verbatim, into `<details>` or a linked
+   doc file**, never compress-to-summary (`eval/flourish/score.py` lets a section pass conservation
+   once 70% of its body's unique tokens survive, a body under ten unique tokens passing on its
+   heading alone; verbatim is the instruction, 70% is only the floor). A 200-line API reference that comes back as a ten-line "module map" wasn't demoted; it
+   was destroyed with better manners. **Cut** is reserved for the never-present set (changelog
+   dumps, roadmaps, planning notes, aspirational features), and even a cut runs a destination check
+   first: content whose only home is this README — no docs site, no linked file, the norm in
+   internal repos — gets rehomed or collapsed, never deleted. Deleting the sole copy of true
+   reference material is not craft; it is data loss wearing a hero image. Fill *derivable* gaps from
+   the code (install from the manifest, usage from the CLI/exported API, a runnable example). Write
+   the "why" from code evidence (auto) or `<!-- evergreen: fill in -->` marker it (`--manual`).
+   Restructuring is not fabrication — you rearrange claims the code already backs, not invent new
+   ones.
+   - **Score the face, not just the spine.** Before any craft verdict, enumerate these gold-standard
+     face elements as present/absent: (a) centered visual hero (`<h1 align="center">` or logo), (b)
+     a one-line epigraph with voice under the title, (c) a badge row, (d) a vivid/problem-first
+     opener before the definitional line, (e) a **vertical mermaid "how it works" diagram** (ASCII
+     art scores this element *absent* — it is the thing being replaced). Voice and vividness in (b)
+     and (d) are your call: `eval/flourish/score.py`'s face gate checks presence only — a centered
+     hero, an italic line distinct from the first prose, a badge row, prose before any architecture
+     heading, and an earned visual (a non-badge image, a fenced ASCII diagram, or a `<details>`
+     block; a mermaid fence is not counted there) — and the mermaid block is its separate diagram
+     gate, where ASCII art fails. A doc with a correct spine but a dead face is not at the gold
+     standard — it is "accurate but ugly," which is exactly flourish's job.
+   - **Diff against a shipped exemplar.** Open one concrete gold-standard README (this plugin's own,
+     or one from the 28-repo survey) and compare the target's shape and voice to it — not only the
+     abstract style doc. The exemplar catches what the checklist misses.
 
 3. **Voice pass — make it sing.** The skeleton is now right; give it a voice against
    `readme-style.md`'s Voice section: a tagline with a point of view distinct from the value prop,
@@ -83,16 +95,20 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
    **cut**; an ungrounded rationale is reduced to a marker. A "why" with no trace in code (pure
    business/regulatory/external intent) is markered, never invented.
 
-   **Run this pass on a different provider than the one that rewrote the doc.** You just wrote
-   every badge and bullet on the page; checking them in the same context is self-assessment
-   wearing a trial's clothes. Hand the judge the *rewritten doc and the repository* — never the
-   craft reasoning, never the source doc's ledger. Run
-   `bin/evergreen judge --repo <repo> --doc <rewritten doc>`: it packs the doc and the in-repo files
-   the doc names into one isolated codex call, resolves the model from the host's own codex
-   configuration, and prints a verdict per claim (exit 3 when the judge is unavailable or abstains).
-   If codex is unavailable or the call abstains, say so on its own line —
-   `flourish: external judge unavailable (<reason>) — verified in-session` —
-   and fall back. Never let the fallback pass silently as a cross-provider verification.
+   **Run this pass on a different provider than the one that rewrote the doc.** You just wrote every
+   badge and bullet on the page; checking them in the same context is self-assessment wearing a
+   trial's clothes. `bin/evergreen judge` always calls codex and never asks who wrote the doc, so
+   from a Claude session the provider differs by construction; a rewrite codex itself made gets no
+   cross-provider check here, and the report says so; neither the CLI nor the scorer's judge gate
+   checks that inequality. Hand the judge the *rewritten doc and the repository* — never the craft
+   reasoning, never the source doc's ledger. Run `bin/evergreen judge --repo <repo> --doc <rewritten
+   doc>`: it packs the doc and the in-repo files the doc names into one isolated codex call,
+   resolves the model from the host's own codex configuration, and prints a verdict per claim (exit
+   3 when the judge is unavailable or abstains). The report carries its summed block verbatim,
+   `judge: <provider> ok — docs K, certified N, drift D, unverified U`; a claim it calls drift goes
+   back through the truth trial. If codex is unavailable or the call abstains, the line is `judge:
+   abstain — <reason>`, the in-session verification stands on its own, and the rewrite is reported
+   as not clean. Never let a fallback pass silently as a cross-provider verification.
 
 5. **Emit the rewrite for approval.** Show it; never write silently. With `--all`, one per doc.
 
@@ -106,7 +122,7 @@ elements from the craft pass, each present/absent) **and** the spine check — b
 present" alone never justifies changing nothing; a voiceless doc with correct sections still gets
 the craft pass.
 
-**Structure floor.** First screenful is hero → value prop → features → quick start (not
+**Structure floor.** First screenful is hero → badges → value prop → features → quick start (not
 architecture); a visual product shows a screenshot or an invisible comment marker (never a visible
 "screenshot goes here" box); **"how it works" is a vertical mermaid block — no ASCII art, no `LR`**
 (or the goal-10 exemption, declared);
@@ -125,7 +141,8 @@ beautiful gutting — and it is a failed flourish even if every surviving line i
 *feel the problem*, or do they only define the tool? Is there a tagline with a point of view, distinct
 from the value prop? Do section intros / FAQ carry personality, or are they generic? If the source had
 a voice, is the rewrite at least as evocative — or did you flatten it to the template? A README that
-passes structure but reads neutral **fails this test**. The bar is this repo's own README; if yours is
+passes structure but reads neutral **fails this floor** — an in-session judgment; the scorer reports
+voice and never gates on it. The bar is this repo's own README; if yours is
 plainer than that, run the voice pass again.
 
 **Stranger floor** (the expert's blind spot). Read the result as someone who has never seen the
@@ -187,12 +204,15 @@ discipline against an over-confident "done", not a precision metric. Don't dress
 
 The craft trial stays **in-session**, deliberately, where the truth pass (step 4) does not. Taste
 is the author's call and has no external arbiter; a factual claim has one, and it is the code.
-`eval/flourish/score.py` already grades the craft floors mechanically against a frozen fixture —
-that, not a second provider, is the outside check on this verdict.
+`eval/flourish/score.py` grades conservation, truth, the face, the visitor counts, and the diagram
+mechanically against a frozen fixture, plus the report's claim counts, shown output, verification
+line, and judge row when a report is supplied (voice is reported, never gated; the stranger floor
+has no gate) — that, not a second provider, is the outside check on this verdict.
 
 Open with a one-line read of what you restructured *and how you sharpened the voice*, the verify
 verdict (certified / cut / markered), the conservation ledger (sections kept / demoted / rehomed /
-cut-with-reason — the hard goals in `skills/evergreen/hard-goals/flourish.md` make this binary),
-the stranger ledger (concepts a first-time reader must bring — each either introduced in place or
-named as assumed-with-reason), the **visitor counts** (words-to-quick-start and open-page words, both
+cut-with-reason; goals 1–3 in `skills/evergreen/hard-goals/flourish.md` make that ledger binary,
+while the stranger ledger and the caveat list that follow have no goal and stay judgments), the
+stranger ledger (concepts a first-time reader must bring — each either introduced in place or named
+as assumed-with-reason), the **visitor counts** (words-to-quick-start and open-page words, both
 printed from the commands above, with the repeated-caveat list), then the diff.

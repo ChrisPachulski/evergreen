@@ -16,4 +16,9 @@ Present `candidates` (symbol, kind, path:line, rank) exactly as returned, then
 containing `truncated` means the inventory is incomplete — say so; a seed run must fail closed on
 it. Any warning containing `outside inventory` counts tracked or untracked source the provider
 deliberately excludes — repeat it verbatim; nothing in those files may be classified as documented
-or not worthy. Candidates are nominations, never verdicts. Do not edit the project.
+or not worthy. Candidates are nominations, never verdicts. Then double-check the inventory on a second provider:
+save the JSON to a scratch path and run
+`python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" judge --repo . --inventory <that file>`;
+present every disagreement (a listed symbol the judge finds private or absent, a public declaration
+it finds missing) and its trailer line verbatim, or `judge: abstain — <reason>`. Do not edit the
+project.

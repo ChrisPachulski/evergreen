@@ -151,6 +151,7 @@ def score(text: str, manifest_path: Path) -> dict[str, Any]:
     exposures = [row for row in rows if row.get("type") == "exposure"]
     tested = [row for row in rows if row.get("type") == "tested"]
     not_checked = [row for row in rows if row.get("type") == "not_checked"]
+    judges = [row for row in rows if row.get("type") == "judge"]
 
     expected_tracked = sum(row["tracked"] == "yes" for row in manifest)
     expected_on_disk = len(manifest)
@@ -218,7 +219,11 @@ def score(text: str, manifest_path: Path) -> dict[str, Any]:
     ]
     unsettled_ok = not forced_unresolvable and not vague_unsettled
 
+    # The second provider rules on the report's conclusions: one judge row, stage report, ok, no drift.
+    judge_ok = (len(judges) == 1 and judges[0].get("stage", "report") == "report"
+                and judges[0].get("status") == "ok" and as_int(judges[0].get("drift")) == 0)
     gates: dict[str, dict[str, Any]] = {
+        "second provider — judged report": gate_result(judge_ok, {"rows": judges}),
         "goal 1 — inventory": gate_result(inventory_ok, inventory_details),
         "goal 2 — reference graph": gate_result(
             reference_ok, {"verdicts": len(verdicts), "invalid_evidence": invalid_evidence}),
@@ -314,6 +319,8 @@ def _passing_rows(manifest_path: Path) -> list[dict[str, Any]]:
     rows.append({"type": "not_checked",
                  "items": ["toolbox/plugins/adapter_runtime.py runtime behaviour",
                            "the live gh remote path"]})
+    rows.append({"type": "judge", "stage": "report", "status": "ok", "provider": "codex",
+                 "docs": 1, "certified": 5, "drift": 0, "unverified": 0})
     return rows
 
 
@@ -395,6 +402,21 @@ def selftest(manifest_path: Path) -> int:
             "delete-proposed"
         return rows
     mutate("classification — the decoy proposed for deletion", decoy_deleted)
+
+    def no_judge(rows):
+        return [r for r in rows if r.get("type") != "judge"]
+    mutate("second provider — report never judged", no_judge)
+
+    def judge_abstain(rows):
+        row = next(r for r in rows if r.get("type") == "judge")
+        row["status"], row["reason"] = "abstain", "codex unavailable"
+        return rows
+    mutate("second provider — judge abstained", judge_abstain)
+
+    def judge_drift(rows):
+        next(r for r in rows if r.get("type") == "judge")["drift"] = 1
+        return rows
+    mutate("second provider — judge reports drift", judge_drift)
 
     ok = True
     for label, rows, prose, want_pass in cases:

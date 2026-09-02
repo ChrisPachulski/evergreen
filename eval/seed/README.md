@@ -56,12 +56,14 @@ plus classification against the manifest.
 | 5 — zero unmarked speculation | enforced | every declarative unit matches a ledger row by normalized substring or sits on a `seed:gap` line. A paraphrase sharing no tokens with its row walks through. |
 | 6 — purely additive | **proxied** | proposal paths that already exist under `eval/fixture/` fail. The judged run is read-only, so there is no real diff to read `-` lines from. |
 | 7 — the owner sets the write count | enforced | the worthy list and its recommendation appear before any doc content; `documented + worthy + not-worthy + deferred == N`; `written <= chosen <= worthy`; no owner answer means `written == 0`; a pre-diff `documented` candidate may not be written. The owner's count comes from an `owner` row or the `--approve N` invocation argument. |
-| 8 — useful, small, repeat-visible | enforced, one part proxied | every written doc needs a `reader-use` claim citing code outside its declaration line, and stays within 60 lines. Gap markers and touched doc paths each stay within `written`, and every marker sits on a written doc. The post-diff grep is **proxied** by a scan of the proposed body outside `seed:gap` lines, since a read-only run writes no file to grep. |
+| 8 — useful, small, repeat-visible | enforced, one part proxied | every written doc needs a `reader-use` claim citing code outside its declaration line, and stays within 60 lines — the scorer bounds each doc, stricter than the goal's aggregate `A ≤ 60 × written`. Gap markers and touched doc paths each stay within `written`, and every marker sits on a written doc. The post-diff grep is **proxied** by a scan of the proposed body outside `seed:gap` lines, since a read-only run writes no file to grep. |
+| second provider (inventory) | enforced on every run | one `judge` row with stage `inventory`, status `ok`, drift 0: till's surface judged on a second provider before triage. |
+| second provider (docs) | enforced whenever a doc was written | one `judge` row with stage `docs`, status `ok`, drift 0; absent is allowed only when `written == 0`. |
 
 ### The rows the goal gates read
 
-Goals 1, 2, 4 and 7 are counts over rows the run emits, so the trailing `jsonl` block carries
-four types beyond the ones `prompt.md` lists today, plus three fields on `candidate` and `doc`:
+Goals 1, 2, 4 and 7 are counts over rows the run emits, so the trailing `jsonl` block carries the rows
+the goal gates read:
 
 ```jsonl
 {"type":"inventory","source_files":4,"scanned_files":4,"candidates":10,"warnings":[]}
@@ -71,11 +73,10 @@ four types beyond the ones `prompt.md` lists today, plus three fields on `candid
 {"type":"claim","doc":"<path>","claim":"<sentence>","code_ref":"cli.py:44","kind":"reader-use"}
 {"type":"winnow","certified":4,"drift":0,"unverified":0}
 {"type":"doc","path":"<path>","symbol":"with_backoff","lines":12,"body":"<full content>"}
+{"type":"judge","status":"ok","provider":"codex","docs":2,"certified":2,"drift":0,"unverified":0}
 ```
 
-`prompt.md` is not part of this change, so a run driven by the prompt as it stands emits neither
-the inventory row nor the winnow row and fails goals 1, 2, 4 and 7 — which is the honest reading
-of "not done" until the prompt asks for them. `--approve N` supplies the owner's chosen count when
+`--approve N` supplies the owner's chosen count when
 the invocation carries it instead of the transcript.
 
 `score.py --selftest` grades built-in pass/fail transcripts with one failing control per gate, so
@@ -92,23 +93,20 @@ bash eval/seed/run.sh                                    # default model
 EVAL_MODEL=claude-haiku-4-5-20251001 bash eval/seed/run.sh
 ```
 
-The runner pre-executes `till` and embeds its JSON as the pass-B provider result, so the judged run
-needs only `Read,Grep,Glob` — no shell, and one less nondeterministic step. It runs from the
+The runner pre-executes `till`, embeds its JSON as the pass-B provider result, and saves it as
+`till.json` in the sandbox root for the judge's `--inventory`, so the judged run
+needs only `Read,Grep,Glob` plus the judge entry point — no other shell, and one less
+nondeterministic step. It runs from the
 repository root with `eval/fixture` as a scope path, not from inside the fixture: `till` resolves
 the repository root and refuses a fixture-relative root.
 
 ### What this exam does *not* measure
 
-A read-only grant cannot shell out, so seed's pass-E certification takes its documented fallback
-and **the external judge is never exercised** by a default run. That is deliberate — the eight hard
-goals are about triage, ledger discipline, and coverage, none of which involve the judge — but it
-means a green exam says nothing about whether cross-provider certification works.
-
-```sh
-SEED_EXAM_JUDGE=external bash eval/seed/run.sh   # widens the grant to the judge entry point
-```
-
-widens the tool grant to exactly the judge entry point and costs one codex call. The judge's own
+The grant is read-only plus exactly one shell command, the judge entry point, because the judge is
+mandatory on every run: the inventory row is judged before triage and any written doc after it (one
+codex call per inventory batch and per doc), and a host without codex fails the two second-provider gates rather than passing
+quietly. The eight hard goals are about triage, ledger discipline, and coverage; the judge gates sit
+beside them, and a green exam proves the judge *ran*, not that it is right. The judge's own
 correctness is proven separately and more cheaply, by pointing
 `bin/evergreen judge --repo PATH --doc PATH` at a doc with a known planted lie and confirming it
 comes back `drift` (exit 0 with a verdict, 3 when it abstains or is unavailable, 2 on bad input);

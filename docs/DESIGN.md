@@ -110,25 +110,27 @@ Intensity was an instruction and nothing more until findings recorded their prov
 finding now names the rung that proved it: `path · contract · snippet · prose`. `prose` is the only rung
 resting on judgment rather than a mechanical check, so it is the only one an intensity has reason
 to withhold — light must never emit a `prose` finding, and an undeclared mode is itself a
-violation. `bin/evergreen conform` reads a transcript and holds it to the intensity it declares,
-which turns a mode that was previously unfalsifiable into one anybody can check after the fact.
-Nothing stops a model mid-turn; the hooks deliberately never read output. That boundary is the
+violation. The rung travels into the CI result envelope, where the validator checks it against
+its enum. Nothing stops a model mid-turn, the hooks deliberately never read output, and no local
+checker re-reads a transcript. That boundary is the
 honest limit of the claim.
 
 ## Shipped local surface
 
 `bin/evergreen impact` and `bin/evergreen till` are the dependency-free, read-only query entry
 points, and `bin/evergreen judge` is the one sanctioned external call: it packs a doc plus the
-in-repo files it names into an isolated codex session for the cross-provider certification that
-seed and flourish require, and abstains rather than guessing. `impact` takes changed paths, optional evidence JSON, and repository-local
-`.evergreen-map.json` mappings; `till` inventories the tracked public declaration surface for seed
-and fails closed with a `truncated` warning whenever the inventory it builds could be incomplete;
-files outside the parseable surface (unparsed languages, extensionless scripts without a Python or
-shell shebang, untracked source) are surfaced with `outside inventory` warnings rather than silently
-skipped; a Python-shebang script such as `bin/evergreen` joins the parsed inventory, and a
-truncation warning names the cap that tripped. Their
-human and JSON forms expose ranked candidates, reasons or scan counts, and warnings; they do not
-expose semantic findings or verdicts.
+in-repo files it names into an isolated codex session for the second-provider verdict every
+judging command must end with: prose in winnow, seed, and flourish, the surface inventory in seed
+and till, the judgment rows in cultivate. Its block is carried in every report, the release gate refuses a
+winnow or cultivate record without it, and it abstains rather than guessing. `impact` takes changed paths,
+optional evidence JSON, and repository-local `.evergreen-map.json` mappings; `till` inventories the
+tracked public declaration surface for seed and fails closed with a `truncated` warning whenever the
+inventory it builds could be incomplete; files outside the parseable surface (unparsed languages,
+extensionless scripts without a Python or shell shebang, untracked source) are surfaced with
+`outside inventory` warnings rather than silently skipped; a Python-shebang script such as
+`bin/evergreen` joins the parsed inventory, and a truncation warning names the cap that tripped.
+Their human and JSON forms expose ranked candidates, reasons or scan counts, and warnings; they do
+not expose semantic findings or verdicts.
 
 No host installer ships. Claude Code and Codex load the plugin through their own plugin
 mechanisms, other agents take `SKILL.md` or `AGENTS.md` directly, and nothing in the repository
@@ -264,6 +266,19 @@ removals are pre-1.0 surfaces with no external consumer, recorded here rather th
 So `0.7.0`, not `0.6.2` or `1.0.0`. The Python floor is 3.10 for every subcommand except `judge`,
 which needs 3.11 for `tomllib`. The stream still carries no build-number field.
 
+### 0.8.0 release decision
+
+`0.8.0` removes `conform`, a public subcommand that re-read a transcript nobody saved, and makes the
+second-provider judge mandatory rather than invocable: winnow, seed, and flourish end with it over
+prose, the seed and till commands run it over the surface inventory (the CLI's `till` subcommand
+only prints that inventory), cultivate runs it over its judgment rows,
+its block is carried in every report, the eval scorers refuse a report without it, and the release
+gate refuses a tag unless both certification records carry a `judge` object. A deterministic inventory
+is judgment frozen into grammar — till's Rust and Swift visibility rules were wrong until 0.7.0 and
+nothing caught it (its tests now pin them) — which is why the judge covers it too. Removing a
+public subcommand and changing the record the gate reads are surface changes, so the `0.6.0`
+precedent takes a minor. So `0.8.0`, not `0.7.1`. The stream still carries no build-number field.
+
 ### Winnow-before-tag certification gate
 
 A local `evergreen--v*` tag is a certification claim about the commit it names, so the PreToolUse
@@ -271,22 +286,24 @@ Bash guard refuses to create one until `hooks/evergreen-release-gate.py` verifie
 receipts, both read from the HEAD tree and never from the working directory:
 `eval/certifications/winnow.json` — a JSON object carrying `pass: "winnow"`, a `date`, the full
 40-hex `commit` the pass ran at, and integer `claims` counts that must report zero `drift`, zero
-`unverified`, and `certified + drift + unverified == total` — and
-`eval/certifications/cultivate.json`, the same shape without counts (`pass: "cultivate"`, `date`,
-`commit`), because cultivate never reports "clean"; its record asserts cadence, not cleanliness.
+`unverified`, and `certified + drift + unverified == total`, plus a `judge` object (`status` ok, a
+`provider`, `docs`, `certified`, `drift` 0, `unverified`) — and
+`eval/certifications/cultivate.json`, the same shape without claim counts (`pass: "cultivate"`,
+`date`, `commit`, and the same `judge` object), because cultivate never reports "clean"; its record
+asserts cadence and a judged report, not cleanliness.
 Each record's commit must be HEAD itself or an ancestor of HEAD from which nothing outside
 `eval/certifications/` has since changed, so committing the records is the only history permitted
-between running a pass and tagging. The ritual is therefore: commit the release work, run the
-winnow and cultivate passes at that commit, write each record naming it, commit the records, then
-tag. Tag deletion, listing, and verification pass through unclassified; a creation naming an
-explicit committish other than `HEAD`, a creation combined with `git add`/`git commit` in one
-call, and a run where python3 cannot verify the records are each refused rather than guessed at,
-while `EVERGREEN_GUARD=off` remains the deliberate operator bypass. The gate verifies record
-arithmetic and commit binding only — that a record honestly reflects a pass that ran is the
-runner's responsibility, and a tag created outside a hook-carrying session is not intercepted.
-This is a freshness-and-cadence gate on the documentation and hygiene axes, not a
-detector-quality gate: it neither claims nor requires the measured-detector evidence that the
-measurement-first boundary below reserves for quality thresholds.
+between running a pass and tagging. The ritual is therefore: commit the release work, run the winnow
+and cultivate passes at that commit, write each record naming it, commit the records, then tag. Tag
+deletion, listing, and verification pass through unclassified; a creation naming an explicit
+committish other than `HEAD`, a creation combined with `git add`/`git commit` in one call, and a run
+where python3 cannot verify the records are each refused rather than guessed at, while
+`EVERGREEN_GUARD=off` remains the deliberate operator bypass. The gate verifies record arithmetic
+and commit binding only — that a record honestly reflects a pass that ran is the runner's
+responsibility, and a tag created outside a hook-carrying session is not intercepted. This is a
+freshness-and-cadence gate on the documentation and hygiene axes, not a detector-quality gate: it
+neither claims nor requires the measured-detector evidence that the measurement-first boundary below
+reserves for quality thresholds.
 
 ### Measurement-first quality and release boundary
 

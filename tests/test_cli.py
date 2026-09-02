@@ -703,78 +703,32 @@ class CLIHarness(unittest.TestCase):
     run_cli = EvergreenCLITests.run_cli
 
 
-class ConformCLITests(CLIHarness):
-    def write_transcript(self, text):
-        path = self.repo / "transcript.txt"
-        path.write_text(text, encoding="utf-8")
-        return str(path)
-
-    def test_a_conforming_file_exits_zero_and_names_the_declared_intensity(self):
-        result = self.run_cli("conform", self.write_transcript(CONFORMING_LIGHT))
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("conforms to intensity light", result.stdout)
-
-    def test_standard_input_is_the_default_source(self):
-        result = self.run_cli("conform", stdin=LIGHT_EMITTING_PROSE)
-
-        self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("does not conform to intensity light", result.stdout)
-        self.assertIn("emitted a prose finding", result.stdout)
-
-    def test_json_output_carries_the_mode_and_the_violations(self):
-        result = self.run_cli(
-            "conform", "--json", self.write_transcript(LIGHT_EMITTING_PROSE)
-        )
-        payload = json.loads(result.stdout)
-
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(payload["mode"], "light")
-        self.assertFalse(payload["conforms"])
-        self.assertEqual(len(payload["violations"]), 1, payload)
-
-    def test_a_finding_shaped_line_that_does_not_parse_is_reported(self):
-        """The pre-rung output shape used to conform by parsing as no findings at all."""
-        result = self.run_cli("conform", self.write_transcript(PRE_RUNG_SHAPE))
-
-        self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("unparseable finding line", result.stdout)
-
-    def test_a_declaration_that_contradicts_the_requested_mode_is_reported(self):
-        result = self.run_cli(
-            "conform", "--mode", "strict", self.write_transcript(CONFORMING_LIGHT)
-        )
-
-        self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("declared intensity light contradicts", result.stdout)
-
-    def test_a_requested_mode_does_not_excuse_an_undeclared_one(self):
-        result = self.run_cli(
-            "conform", "--mode", "light",
-            self.write_transcript("evergreen: docs still match\n"),
-        )
-
-        self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("no intensity declared", result.stdout)
-
-    def test_an_unreadable_transcript_fails_rather_than_certifying(self):
-        result = self.run_cli("conform", str(self.repo / "absent.txt"))
-
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("evergreen:", result.stderr)
-
-
 class JudgeCLITests(CLIHarness):
-    def fake_codex(self, stdout_text):
-        """Put a `codex` on PATH that records its prompt and replays fixed output."""
+    def fake_codex(self, *stdout_texts):
+        """Put a `codex` on PATH that records each prompt and replays fixed output per call.
+
+        Batched modes make one call per batch, so the stand-in answers the Nth call with the
+        Nth text and repeats the last one afterwards -- which is also what the bounded retries
+        inside one call need.
+        """
         directory = Path(self.temporary.name) / "fake-codex"
         directory.mkdir(exist_ok=True)
-        events = directory / "events.jsonl"
-        events.write_text(stdout_text, encoding="utf-8")
+        for index, stdout_text in enumerate(stdout_texts, start=1):
+            (directory / f"events-{index}.jsonl").write_text(stdout_text, encoding="utf-8")
+        (directory / "events-last.jsonl").write_text(stdout_texts[-1], encoding="utf-8")
         prompt = directory / "prompt.txt"
         script = directory / "codex"
         script.write_text(
-            f'#!/bin/sh\ncat > "{prompt}"\ncat "{events}"\n', encoding="utf-8"
+            f'#!/bin/sh\n'
+            f'd="{directory}"\n'
+            f'n=$(cat "$d/count" 2>/dev/null || echo 0)\n'
+            f'n=$((n + 1))\n'
+            f'echo "$n" > "$d/count"\n'
+            f'cat > "$d/prompt-$n.txt"\n'
+            f'cp "$d/prompt-$n.txt" "{prompt}"\n'
+            f'if [ -f "$d/events-$n.jsonl" ]; then cat "$d/events-$n.jsonl"; '
+            f'else cat "$d/events-last.jsonl"; fi\n',
+            encoding="utf-8",
         )
         script.chmod(0o755)
         environment = dict(os.environ)
@@ -812,10 +766,18 @@ class JudgeCLITests(CLIHarness):
         self.assertIn("1 certified, 1 drift", result.stdout)
         self.assertIn("cli.py", prompt.read_text(encoding="utf-8"))
 
-    def test_json_output_is_the_raw_result_object(self):
-        value = {"findings": [], "summary": "nothing checkable"}
+    def test_json_output_is_one_summary_object(self):
+        value = {
+            "findings": [
+                {"verdict": "certified", "claim": "the flag is --concurrency",
+                 "evidence": "cli.py:30"},
+                {"verdict": "drift", "claim": "the default is 4", "evidence": "cli.py:31"},
+                {"verdict": "unverified", "claim": "it is fast", "evidence": "no benchmark"},
+            ],
+            "summary": "1 certified, 1 drift, 1 unverified",
+        }
         environment, _prompt = self.fake_codex(codex_events(value))
-        document = self.write_document("Prose with no claims.\n")
+        document = self.write_document("Claims about cli.py.\n")
 
         result = self.run_cli(
             "judge", "--repo", str(self.repo), "--doc", document, "--json", env=environment
@@ -824,7 +786,56 @@ class JudgeCLITests(CLIHarness):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(payload["status"], "ok")
-        self.assertEqual(payload["value"], value)
+        self.assertEqual(payload["provider"], "codex")
+        self.assertEqual(payload["stage"], "docs")
+        self.assertEqual(payload["docs"], 1)
+        self.assertEqual(payload["findings"], value["findings"])
+        self.assertEqual(payload["summary"], value["summary"])
+        self.assertEqual(payload["attempts"], 1)
+        self.assertNotIn("reason", payload)
+
+    def test_the_summary_counts_equal_the_findings(self):
+        value = {
+            "findings": [
+                {"verdict": "drift", "claim": "one", "evidence": "cli.py:1"},
+                {"verdict": "drift", "claim": "two", "evidence": "cli.py:2"},
+                {"verdict": "certified", "claim": "three", "evidence": "cli.py:3"},
+            ],
+            "summary": "2 drift",
+        }
+        environment, _prompt = self.fake_codex(codex_events(value))
+        document = self.write_document("Claims about cli.py.\n")
+
+        result = self.run_cli(
+            "judge", "--repo", str(self.repo), "--doc", document, "--json", env=environment
+        )
+        payload = json.loads(result.stdout)
+        counted = payload["certified"] + payload["drift"] + payload["unverified"]
+
+        self.assertEqual((payload["certified"], payload["drift"], payload["unverified"]),
+                         (1, 2, 0))
+        self.assertEqual(counted, len(payload["findings"]))
+
+    def test_the_human_trailer_line_is_pasteable(self):
+        value = {
+            "findings": [
+                {"verdict": "certified", "claim": "one", "evidence": "cli.py:1"},
+                {"verdict": "unverified", "claim": "two", "evidence": "nothing here"},
+            ],
+            "summary": "1 certified",
+        }
+        environment, _prompt = self.fake_codex(codex_events(value))
+        document = self.write_document("Claims about cli.py.\n")
+
+        result = self.run_cli(
+            "judge", "--repo", str(self.repo), "--doc", document, env=environment
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.splitlines()[-1],
+            "judge: codex ok \u2014 docs 1, certified 1, drift 0, unverified 1",
+        )
 
     def test_a_tool_call_abstains_with_exit_three(self):
         events = json.dumps(
@@ -886,6 +897,230 @@ class JudgeCLITests(CLIHarness):
 
         self.assertEqual(result.returncode, 3, result.stdout)
         self.assertIn("abstained", result.stderr)
+
+    @staticmethod
+    def row(symbol, path, line=1, kind="function"):
+        return {"symbol": symbol, "kind": kind, "path": path, "line": line, "rank": "key"}
+
+    def write_inventory(self, rows):
+        """A `till --json` report on disk, as the judge is asked to read it."""
+        path = self.repo / "inventory.json"
+        path.write_text(
+            json.dumps({
+                "schema_version": 1, "candidates": rows,
+                "source_files_in_scope": len({row["path"] for row in rows}),
+                "source_files_scanned": len({row["path"] for row in rows}), "warnings": [],
+            }),
+            encoding="utf-8",
+        )
+        return str(path)
+
+    @staticmethod
+    def call_count(prompt):
+        return int((prompt.parent / "count").read_text(encoding="utf-8").strip())
+
+    def test_inventory_certifies_a_row_the_packed_source_proves(self):
+        value = {
+            "findings": [{"verdict": "certified", "claim": "one (function) a.py:1",
+                          "evidence": "a.py:1 declares one"}],
+            "summary": "1 certified",
+        }
+        environment, prompt = self.fake_codex(codex_events(value))
+        (self.repo / "a.py").write_text("def one():\n    pass\n", encoding="utf-8")
+        inventory = self.write_inventory([self.row("one", "a.py")])
+
+        result = self.run_cli(
+            "judge", "--repo", str(self.repo), "--inventory", inventory, "--json",
+            env=environment,
+        )
+        payload = json.loads(result.stdout)
+        sent = prompt.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["stage"], "inventory")
+        self.assertEqual(payload["docs"], 1)
+        self.assertEqual(payload["certified"], 1)
+        self.assertEqual(payload["findings"], value["findings"])
+        self.assertIn("one (function) a.py:1", sent)
+        self.assertIn("BEGIN FILE a.py", sent)
+        self.assertIn("def one():", sent)
+        self.assertIn("UNTRUSTED DATA", sent)
+
+    def test_inventory_flags_a_private_symbol_listed_as_public(self):
+        value = {
+            "findings": [{"verdict": "drift", "claim": "_hidden (function) a.py:1",
+                          "evidence": "a.py:1 is private: leading underscore"}],
+            "summary": "1 drift",
+        }
+        environment, prompt = self.fake_codex(codex_events(value))
+        (self.repo / "a.py").write_text("def _hidden():\n    pass\n", encoding="utf-8")
+        inventory = self.write_inventory([self.row("_hidden", "a.py")])
+
+        result = self.run_cli(
+            "judge", "--repo", str(self.repo), "--inventory", inventory, env=environment
+        )
+        sent = prompt.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("drift  _hidden (function) a.py:1 -- a.py:1 is private", result.stdout)
+        self.assertEqual(
+            result.stdout.splitlines()[-1],
+            "judge: codex ok \u2014 docs 1, certified 0, drift 1, unverified 0",
+        )
+        self.assertIn("leading underscore is private", sent)
+
+    def test_inventory_flags_a_public_declaration_no_row_names(self):
+        value = {
+            "findings": [
+                {"verdict": "certified", "claim": "one (function) a.py:1", "evidence": "a.py:1"},
+                {"verdict": "drift", "claim": "missing: two a.py:4",
+                 "evidence": "a.py:4 declares two and no row names it"},
+            ],
+            "summary": "1 certified, 1 missing",
+        }
+        environment, prompt = self.fake_codex(codex_events(value))
+        (self.repo / "a.py").write_text(
+            "def one():\n    pass\n\ndef two():\n    pass\n", encoding="utf-8"
+        )
+        inventory = self.write_inventory([self.row("one", "a.py")])
+
+        result = self.run_cli(
+            "judge", "--repo", str(self.repo), "--inventory", inventory, env=environment
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("drift  missing: two a.py:4", result.stdout)
+        self.assertIn("`missing: <symbol> <path>:<line>`", prompt.read_text(encoding="utf-8"))
+
+    def test_inventory_batches_over_the_file_bound_into_separate_calls(self):
+        value = {
+            "findings": [{"verdict": "certified", "claim": "a row", "evidence": "a.py:1"}],
+            "summary": "batch done",
+        }
+        environment, prompt = self.fake_codex(codex_events(value))
+        names = [f"f{index:03d}.py" for index in range(45)]
+        for name in names:
+            (self.repo / name).write_text("def one():\n    pass\n", encoding="utf-8")
+        inventory = self.write_inventory([self.row("one", name) for name in names])
+
+        result = self.run_cli(
+            "judge", "--repo", str(self.repo), "--inventory", inventory, "--json",
+            env=environment,
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.call_count(prompt), 2)
+        self.assertEqual(payload["docs"], 45)
+        self.assertEqual(payload["certified"], 2)
+        self.assertEqual(payload["summary"], "batch done batch done")
+        self.assertEqual(payload["attempts"], 2)
+        first = (prompt.parent / "prompt-1.txt").read_text(encoding="utf-8")
+        second = (prompt.parent / "prompt-2.txt").read_text(encoding="utf-8")
+        self.assertIn("INVENTORY batch 1 of 2", first)
+        self.assertIn("INVENTORY batch 2 of 2", second)
+        self.assertIn("f044.py", second)
+        self.assertNotIn("f044.py", first)
+
+    def test_one_abstaining_batch_abstains_the_whole_inventory_run(self):
+        value = {
+            "findings": [{"verdict": "certified", "claim": "a row", "evidence": "a.py:1"}],
+            "summary": "batch done",
+        }
+        environment, _prompt = self.fake_codex(codex_events(value), "this is not JSONL\n")
+        names = [f"f{index:03d}.py" for index in range(45)]
+        for name in names:
+            (self.repo / name).write_text("def one():\n    pass\n", encoding="utf-8")
+        inventory = self.write_inventory([self.row("one", name) for name in names])
+
+        result = self.run_cli(
+            "judge", "--repo", str(self.repo), "--inventory", inventory, "--json",
+            env=environment,
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 3, result.stdout)
+        self.assertEqual(payload["status"], "abstain")
+        self.assertIn("batch 2 of 2", payload["reason"])
+        self.assertEqual(payload["findings"], [])
+        self.assertEqual(payload["certified"], 0)
+
+    def test_the_cultivate_rubric_packs_the_files_the_report_names(self):
+        value = {
+            "findings": [
+                {"verdict": "drift", "claim": "old.py - delete - grep found nothing",
+                 "evidence": "no command result shown"},
+            ],
+            "summary": "1 drift",
+        }
+        environment, prompt = self.fake_codex(codex_events(value))
+        (self.repo / "old.py").write_text("def still_used():\n    pass\n", encoding="utf-8")
+        document = self.write_document("old.py - delete - grep found nothing\n")
+
+        result = self.run_cli(
+            "judge", "--repo", str(self.repo), "--doc", document, "--rubric", "cultivate",
+            "--json", env=environment,
+        )
+        payload = json.loads(result.stdout)
+        sent = prompt.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["stage"], "report")
+        self.assertEqual(payload["drift"], 1)
+        self.assertEqual(payload["docs"], 1)
+        self.assertIn("BEGIN FILE old.py", sent)
+        self.assertIn("def still_used():", sent)
+        self.assertIn("executed command AND the result it captured", sent)
+        self.assertIn("UNTRUSTED DATA", sent)
+
+    def test_a_document_and_an_inventory_together_are_bad_input(self):
+        environment, prompt = self.fake_codex(codex_events({"findings": [], "summary": "x"}))
+        document = self.write_document("doc\n")
+        inventory = self.write_inventory([self.row("one", "a.py")])
+
+        both = self.run_cli(
+            "judge", "--repo", str(self.repo), "--doc", document, "--inventory", inventory,
+            env=environment,
+        )
+        neither = self.run_cli("judge", "--repo", str(self.repo), env=environment)
+        misapplied_rubric = self.run_cli(
+            "judge", "--repo", str(self.repo), "--inventory", inventory, "--rubric",
+            "cultivate", env=environment,
+        )
+
+        self.assertEqual(both.returncode, 2, both.stdout)
+        self.assertEqual(neither.returncode, 2, neither.stdout)
+        self.assertEqual(misapplied_rubric.returncode, 2, misapplied_rubric.stdout)
+        self.assertFalse(prompt.exists(), "the model was called on bad input")
+
+    def test_an_inventory_whose_files_are_all_gone_abstains_rather_than_sweeping_clean(self):
+        environment, prompt = self.fake_codex(codex_events({"findings": [], "summary": "x"}))
+        inventory = self.write_inventory([self.row("one", "gone.py")])
+
+        result = self.run_cli(
+            "judge", "--repo", str(self.repo), "--inventory", inventory, "--json",
+            env=environment,
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 3, result.stdout)
+        self.assertEqual(payload["status"], "abstain")
+        self.assertIn("could be packed", payload["reason"])
+        self.assertEqual(payload["docs"], 0)
+        self.assertFalse(prompt.exists(), "the model was called with nothing to judge")
+
+    def test_a_malformed_inventory_exits_two_without_calling_the_model(self):
+        environment, prompt = self.fake_codex(codex_events({"findings": [], "summary": "x"}))
+        inventory = self.repo / "inventory.json"
+        inventory.write_text('{"candidates": [{"symbol": "one"}]}', encoding="utf-8")
+
+        result = self.run_cli(
+            "judge", "--repo", str(self.repo), "--inventory", str(inventory), env=environment
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("inventory row is missing", result.stderr)
+        self.assertFalse(prompt.exists(), "the model was called on bad input")
 
     def test_instructions_inside_the_document_are_data_and_are_never_executed(self):
         environment, prompt = self.fake_codex(

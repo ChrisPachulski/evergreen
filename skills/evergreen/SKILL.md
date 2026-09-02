@@ -32,17 +32,24 @@ snap fails its challenge, which escalates the three reads to the strong model. W
 contested, the agreed verdict stands without a synthesis pass. Never let a cheap model make the
 load-bearing snap call — that's where precision is won or lost.
 
-**A pass that certifies output this session produced runs on a different provider.** Blindness
-between reads is not enough when the reader wrote the text: it has already seen the reasoning for
-every sentence, so the trial inspects its own work and finds it good. This binds seed's
-certification (`commands/seed.md` pass E) and flourish's verify pass — the two places a model
-grades prose it just authored. It does *not* bind judgments made before anything is written
-(seed's worthiness) or judgments with no external arbiter (flourish's craft floors, already graded
-mechanically by a frozen fixture). Use `bin/evergreen judge --repo PATH --doc PATH`, which packs
-the doc plus the in-repo files it names into one isolated codex call and resolves the model from the host's own codex
-configuration — never hardcode a model name in this repository, it goes stale the week the next
-tier ships. No codex, or an abstention: fall back and **say so in the output**,
-because a silent fallback claims a cross-provider check that did not happen.
+**A verdict is never its author's alone, and a deterministic one is judgment frozen into code.**
+Blindness between reads is not enough when the reader wrote the text; a single model certifying
+someone else's docs is still one opinion; and a grammar that decides what counts as public was
+written by someone who could be wrong. So every command that judges ends with a mandatory judge
+pass on a different provider. Over prose, in winnow, seed, and flourish:
+`bin/evergreen judge --repo . --doc <doc> --json` per doc in scope packs the doc plus the in-repo
+files it names into one isolated codex call, resolves the model from the host's own codex
+configuration (never hardcode a model name here, it goes stale the week the next tier ships), and
+returns a certified, drift, or unverified verdict per claim. The report carries the summed block
+verbatim, `judge: <provider> ok — docs K, certified N, drift D, unverified U`; a claim the judge calls drift goes back through the trial before the run reports.
+Over the surface inventory, in seed and the till command, `--inventory <till.json>` reads the
+source files and rules on every row, listing what the grammar missed. Over cultivate's delete,
+untrack, flag, unsettled, and exposure rows, `--rubric cultivate` rules on whether each conclusion
+follows from the evidence shown. It does *not* bind judgments made before anything is written
+(seed's worthiness) or judgments
+with no external arbiter (flourish's craft floors, graded mechanically by a frozen fixture), and
+it never runs per turn. No codex, or an abstention: report `judge: abstain — <reason>` and mark
+the run not clean, because a silent fallback claims a cross-provider check that did not happen.
 
 **When a judge misfires, fix the rubric before the model tier.** The first move is the ambiguous
 criterion and a counter-example added to the prong prompt — reaching for a stronger model first
@@ -302,7 +309,7 @@ Each finding carries a severity, a rung, and a fix-or-flag call.
 ## Output
 
 Open with the intensity you ran under: `evergreen [light]:`, `[strict]`, `[off]`. It makes the
-run falsifiable -- `bin/evergreen conform` holds the transcript to the mode it names, and
+run falsifiable, and
 **light must never emit a `prose` finding**. Declaring nothing is itself a violation.
 
 Point at the line; don't scold, pad, or rewrite. One-line read of what changed, one line per

@@ -33,6 +33,7 @@ trailing `jsonl` block carries it; prose lines are ignored.
 {"type":"verdict","status":"drift","file":"README.md","line":8,"claim":"<doc phrase>","why":"gone; shipit/cli.py:1"}
 {"type":"verdict","status":"unverified","file":"docs/usage.md","line":22,"claim":"<doc phrase>","why":"behavior-asserted"}
 {"type":"left_alone","file":"CHANGELOG.md","reason":"history, frozen in time"}
+{"type":"judge","status":"ok","provider":"codex","docs":19,"certified":17,"drift":0,"unverified":2}
 ```
 
 A legacy `{"type":"flag",...}` row still counts as a `drift` verdict, so an older transcript
@@ -50,6 +51,7 @@ the intended reading of "not done". A run that states the census in prose
 | 4 — every drift proven gone by grep | **proxied** | a drift row scores only when its claim quotes the planted token from `manifest.tsv`. Re-running each grep needs the fixture tree at the run's commit, which the scorer does not have. |
 | 5 — nothing silently dropped | enforced | certified + drift + unverified == `N`, and no fourth status is allowed. |
 | 6 — exempt docs stay out of findings | enforced | no exempt path on a certified or drift row. This now fails the run rather than only printing. |
+| second provider | enforced | exactly one `judge` row with status `ok` and drift 0, summed from `bin/evergreen judge --repo . --doc <doc> --json` over every doc in scope. An absent row, an abstain, or drift > 0 fails the run. |
 
 ## Run it
 

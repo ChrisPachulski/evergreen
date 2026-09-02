@@ -41,7 +41,13 @@ candidate must include `symbol · kind · declaration code path:line · impact r
 must report the number of source files scanned. A path-only result, missing scan count, or any
 truncation warning is `not done — surface inventory unavailable`; write nothing. (The provider is
 `python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" till --json --repo <repo> [path…]` — deterministic
-and read-only; a scope path narrows the inventory. Candidates are nominations, never verdicts.)
+and read-only; a scope path narrows the inventory. Candidates are nominations, never verdicts.) The
+inventory is judgment frozen into grammar, so it is judged before it is trusted: save the JSON to a
+scratch path and run `bin/evergreen judge --repo . --inventory <that file> --json`. A listed row the
+judge calls drift leaves the candidate set with the reason named; a public declaration the judge
+finds missing joins the walk after the provider's last rank, marked `judge-found`; carry the trailer
+verbatim, `judge: <provider> ok — docs K, certified N, drift D, unverified U` with stage
+`inventory`. An abstention is `judge: abstain — <reason>`, reported, and the run is not clean.
 
 **C · Gap triage — walk until the ranking goes cold.** Enumerate the exact tracked living-document
 path set `D`; in-code docstrings remain informational until a syntax-aware gap check exists. If `D`
@@ -97,10 +103,11 @@ never the claim ledger's reasoning, never pass C's worthiness argument. Run
 `bin/evergreen judge --repo <repo> --doc <proposed doc>`: it packs the doc and the in-repo files
 the doc names into one isolated codex call, resolves the model from the host's own codex
 configuration, and prints a verdict per claim (exit 3 when the judge is unavailable or abstains).
-If codex is unavailable or the call abstains, say so on its own line —
-`seed: external judge unavailable (<reason>) — certified in-session` — and fall back.
-A silent fallback is worse than no judge, because it reports a cross-provider certification that
-never happened.
+The report carries its summed block verbatim, `judge: <provider> ok — docs K, certified N, drift D,
+unverified U`; a claim it calls drift goes back through winnow's trial. If codex is unavailable or
+the call abstains, the line is `judge: abstain — <reason>`, the in-session certification stands on
+its own, and the proposal is reported as not clean. A silent fallback is worse than no judge,
+because it reports a cross-provider certification that never happened.
 
 **F · Propose.** Emit new files / purely additive diffs for approval. Never rewrite existing prose,
 never auto-commit. Nothing lands until the owner approves the batch.
@@ -140,7 +147,7 @@ otherwise certify prose it just authored.
 ## Output
 
 1. The provider command and its N surface-shaped candidates (pass B, verbatim), with the scanned
-   source-file count.
+   source-file count, then the inventory judge line and its disagreements.
 2. The gap table —
    `candidate · rank · pre-diff grep · documented | worthy | not-worthy | deferred · reader-use claim · code file:line`
    — followed by the worthy list, the recommendation, and the owner's chosen count.

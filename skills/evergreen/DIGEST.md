@@ -106,6 +106,11 @@ Rules:
   hardest-broken), a blind-spot pass, weighed into the verdict, never a veto. Mechanical facts
   (a grep, a reference count) skip the trial. Prove by test is the default where the code runs: a
   failing test the doc backs is drift; a test that won't run is inconclusive.
+- Every command that judges ends with the second-provider judge: `bin/evergreen judge --repo .
+  --doc <doc> --json` per doc in winnow, seed, and flourish, `--inventory <till.json>` over the
+  surface in seed and till, `--rubric cultivate` over cultivate's judgment rows; the report carries
+  `judge: <provider> ok — docs K, certified N, drift D, unverified U`; an abstention is reported as
+  `judge: abstain — <reason>`, never skipped, and leaves the run not clean.
 - Read the changed file at HEAD, not just the diff's `+` lines — rot lives in old comments.
 - Code is truth; the doc is the claim. Documented-but-missing = finding; undocumented =
   informational — `/evergreen:seed` is the on-demand exception, turning the informational tail into
@@ -124,8 +129,7 @@ Rules:
   commit; `EVERGREEN_GUARD=off` is the bypass.
 
 Output, per finding: `[high|med|low] category rung  file:line — what's wrong (cite the code) → fix | flag`
-Open with the mode: `evergreen [light]:`. light must never emit a `prose` finding, and
-`bin/evergreen conform` checks a transcript against the mode it declares.
+Open with the mode: `evergreen [light]:`. light must never emit a `prose` finding.
 Rung is which ladder rung proved it: `path · contract · snippet · prose`. Name the one that
 actually proved it; `prose` is the only one resting on judgment.
 Exempt docs go on a trailing `left alone:` line, never as a finding.

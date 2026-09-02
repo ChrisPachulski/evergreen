@@ -177,13 +177,12 @@ for tok in \
 done
 
 # Intensity and finding provenance must read the same on every surface an agent loads.
-# Added 2026-08-08: the rung field, the mode header, and conform shipped while AGENTS.md and
+# Added 2026-08-08: the rung field and the mode header shipped while AGENTS.md and
 # DESIGN.md still described the old contract. Prose parity was enforced for release identity and
 # the receipt policy but not for these, so the drift was invisible to CI.
 for tok in \
   "path · contract · snippet · prose" \
-  "light must never emit a \`prose\` finding" \
-  "bin/evergreen conform"; do
+  "light must never emit a \`prose\` finding"; do
   if grep -Fq "$tok" "$ROOT/README.md" \
      && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
      && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
@@ -359,9 +358,9 @@ codex = json.loads((root / ".codex-plugin/plugin.json").read_text())
 marketplace = json.loads((root / ".claude-plugin/marketplace.json").read_text())
 entry = next(item for item in marketplace["plugins"] if item["name"] == "evergreen")
 
-assert {claude["version"], codex["version"], entry["version"]} == {"0.7.0"}
+assert {claude["version"], codex["version"], entry["version"]} == {"0.8.0"}
 assert all("build" not in item and "build_number" not in item for item in (claude, codex, entry))
-assert "0.7.0" in marketplace["description"]
+assert "0.8.0" in marketplace["description"]
 for description in (
     claude["description"], codex["description"], marketplace["description"], entry["description"],
 ):
@@ -369,9 +368,9 @@ for description in (
     assert "impact" in lowered and "judge" in lowered and "release identity" in lowered
 PY
 then
-  ok "release 0.7.0 agrees across Claude/Codex/marketplace without a build counter"
+  ok "release 0.8.0 agrees across Claude/Codex/marketplace without a build counter"
 else
-  no "release 0.7.0 agrees across Claude/Codex/marketplace without a build counter"
+  no "release 0.8.0 agrees across Claude/Codex/marketplace without a build counter"
 fi
 
 # Execute both passive-input examples and both semantic branches they nominate.
@@ -1008,11 +1007,26 @@ empty "$(guard_cmd "git commit -m 'notes on evergreen--v9.9.9'")" \
   "release gate: quoted mention in a commit message is not a tag creation"
 release_subject="$(git -C "$TMP" rev-parse HEAD)"
 mkdir -p "$TMP/eval/certifications"
-release_records(){ # $1=subject sha, $2=certified, $3=drift, $4=unverified, $5=total
-  printf '{"pass":"winnow","date":"2026-08-07","commit":"%s","claims":{"total":%s,"certified":%s,"drift":%s,"unverified":%s}}\n' \
-    "$1" "$5" "$2" "$3" "$4" > "$TMP/eval/certifications/winnow.json"
-  printf '{"pass":"cultivate","date":"2026-08-07","commit":"%s"}\n' \
-    "$1" > "$TMP/eval/certifications/cultivate.json"
+release_records(){ # $1=subject sha, $2=certified, $3=drift, $4=unverified, $5=total,
+                    # $6=judge status (ok|abstain|missing, default ok), $7=judge drift (default 0)
+  judge_status="${6:-ok}"
+  judge_drift="${7:-0}"
+  if [ "$judge_status" = "missing" ]; then
+    printf '{"pass":"winnow","date":"2026-08-07","commit":"%s","claims":{"total":%s,"certified":%s,"drift":%s,"unverified":%s}}\n' \
+      "$1" "$5" "$2" "$3" "$4" > "$TMP/eval/certifications/winnow.json"
+  else
+    printf '{"pass":"winnow","date":"2026-08-07","commit":"%s","claims":{"total":%s,"certified":%s,"drift":%s,"unverified":%s},"judge":{"status":"%s","provider":"codex","docs":2,"certified":2,"drift":%s,"unverified":0,"reason":"abstained"}}\n' \
+      "$1" "$5" "$2" "$3" "$4" "$judge_status" "$judge_drift" > "$TMP/eval/certifications/winnow.json"
+  fi
+  cjudge_status="${8:-ok}"                         # $8=cultivate judge status (ok|abstain|missing), $9=its drift
+  cjudge_drift="${9:-0}"
+  if [ "$cjudge_status" = "missing" ]; then
+    printf '{"pass":"cultivate","date":"2026-08-07","commit":"%s"}\n' \
+      "$1" > "$TMP/eval/certifications/cultivate.json"
+  else
+    printf '{"pass":"cultivate","date":"2026-08-07","commit":"%s","judge":{"status":"%s","provider":"codex","stage":"report","docs":1,"certified":3,"drift":%s,"unverified":0,"reason":"abstained"}}\n' \
+      "$1" "$cjudge_status" "$cjudge_drift" > "$TMP/eval/certifications/cultivate.json"
+  fi
 }
 release_records "$release_subject" 4 0 0 4
 has "$(guard_cmd "$release_tag_cmd")" "no winnow certification record" \
@@ -1051,6 +1065,30 @@ release_records "$release_subject" 3 0 0 5
 git -C "$TMP" add eval/certifications; git -C "$TMP" commit -qm "records that do not sum"
 has "$(guard_cmd "$release_tag_cmd")" "do not sum to total" \
   "release gate: claim counts that do not sum to N are refused"
+release_records "$release_subject" 3 0 0 3 "missing"
+git -C "$TMP" add eval/certifications; git -C "$TMP" commit -qm "records missing judge block"
+has "$(guard_cmd "$release_tag_cmd")" '"judge" object' \
+  "release gate: a winnow record with no judge block is refused"
+release_records "$release_subject" 3 0 0 3 "abstain"
+git -C "$TMP" add eval/certifications; git -C "$TMP" commit -qm "records with abstain judge"
+has "$(guard_cmd "$release_tag_cmd")" "judge status must be" \
+  "release gate: an abstain judge status is refused"
+release_records "$release_subject" 3 0 0 3 "ok" 1
+git -C "$TMP" add eval/certifications; git -C "$TMP" commit -qm "records with judge drift"
+has "$(guard_cmd "$release_tag_cmd")" "judge reports drift" \
+  "release gate: judge drift greater than zero is refused"
+release_records "$release_subject" 3 0 0 3 ok 0 missing
+git -C "$TMP" add eval/certifications; git -C "$TMP" commit -qm "cultivate record missing judge block"
+has "$(guard_cmd "$release_tag_cmd")" '"judge" object' \
+  "release gate: a cultivate record with no judge block is refused"
+release_records "$release_subject" 3 0 0 3 ok 0 abstain
+git -C "$TMP" add eval/certifications; git -C "$TMP" commit -qm "cultivate record with abstain judge"
+has "$(guard_cmd "$release_tag_cmd")" "judge status must be" \
+  "release gate: an abstained cultivate judge is refused"
+release_records "$release_subject" 3 0 0 3 ok 0 ok 1
+git -C "$TMP" add eval/certifications; git -C "$TMP" commit -qm "cultivate record with judge drift"
+has "$(guard_cmd "$release_tag_cmd")" "judge reports drift" \
+  "release gate: cultivate judge drift greater than zero is refused"
 empty "$(EVERGREEN_GUARD=off guard_cmd "$release_tag_cmd")" \
   "release gate: EVERGREEN_GUARD=off bypasses deliberately"
 degraded_tag_out="$(printf '%s' "$(guard_payload "$release_tag_cmd")" | PATH="$NOPY:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)"

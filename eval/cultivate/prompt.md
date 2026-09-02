@@ -20,4 +20,10 @@ Emit one object per line:
 {"type":"exposure","gh_ran":true|false,"visibility":"<value or unchecked>"}
 {"type":"tested","element":"<symbol>","status":"tested|gap","test_ref":"<file:line or null>"}
 {"type":"not_checked","items":["<specific path or pass>", "..."]}
+{"type":"judge","stage":"report","status":"ok|abstain","provider":"codex","docs":<n>,"certified":<n>,"drift":<n>,"unverified":<n>,"reason":"<only on abstain>"}
 ```
+
+The judge row is the second-provider pass over your non-keep rows: write them with their evidence
+to a scratch file outside the repository and run
+`bin/evergreen judge --repo . --doc <that file> --rubric cultivate --json`; copy its summary
+fields into the row. An abstention is reported as status abstain with its reason, never omitted.

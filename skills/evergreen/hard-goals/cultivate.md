@@ -47,8 +47,9 @@ the AI · pre-committed · covers the hard part.** If a check needs the AI's opi
    Rationale: zero grep hits is a fact, "unreachable" is a claim drawn from it. Goal 2 forces the
    grep to exist; this goal stops the grep from being over-read into a delete.
 
-## Why this works without a second AI at runtime
+## Why the checks stand without a second AI
 
 Every CHECK is a command or count a third party — or the same model on a later pass — re-runs to the
-same yes/no. The frozen contract *is* the external arbiter. A run that reads thorough but fails goal 2
-(a `keep` with no grep behind it) is a failed run, full stop.
+same yes/no. The frozen contract *is* the arbiter of these goals; the mandatory second-provider judge
+(0.8.0) double-checks the verdict rows as its own gated row and replaces none of them. A run that
+reads thorough but fails goal 2 (a `keep` with no grep behind it) is a failed run, full stop.

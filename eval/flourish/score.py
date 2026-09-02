@@ -19,9 +19,10 @@ section fails conservation.
 The gates, per skills/evergreen/hard-goals/flourish.md. Every check is a grep or
 a count — no model call, ever. The frozen contract is the external arbiter.
 Gates 1-3 below cover hard goals 1-4; gates 5-10 are named for the goal they
-enforce. `--report` supplies the run's report and turns on goals 5, 6 and 9;
-without it those three are reported as NOT ENFORCED and the exit code ignores
-them. Goals 7, 8 and 10 are counted on the written result and always gate.
+enforce. `--report` supplies the run's report and turns on goals 5, 6, 9, and
+the mandatory second-provider judge; without it those four are reported as NOT
+ENFORCED and the exit code ignores them. Goals 7, 8 and 10 are counted on the
+written result and always gate.
 
   goal 5   claim_counts  — certified/cut/markered are stated in the report and
                            sum to the stated claim total. Arithmetic only: the
@@ -42,6 +43,10 @@ them. Goals 7, 8 and 10 are counted on the written result and always gate.
                            >= 1 vertical graph/flowchart declaration, zero
                            LR/RL declarations or `direction LR|RL` lines, zero
                            box-drawing characters.
+  second   judge         — the report's `judge:` line names a second-provider
+  provider                pass with status ok and drift 0. Presence and
+                           arithmetic are checked; the certification itself is
+                           not re-run.
 
 1. conservation (GATES): every ground-truth `##`/`###` section must be (a) a
    heading in the result, (b) inside a `<details>` block, or in a linked
@@ -689,6 +694,33 @@ VERIFY_CMD_RE = re.compile(
 VERDICT_RE = re.compile(
     r"\bNOT GREEN\b|\bGREEN\b|\bPASS(?:ED)?\b|\bFAIL(?:ED|URE)?\b|"
     r"\b\d+\s+(?:passed|failed)\b|^\s*ok\s+\d+", re.M)
+JUDGE_LINE_RE = re.compile(
+    r"^judge:\s*(?P<provider>\S+)\s+(?P<status>ok|abstain)\s*[—-]+\s*"
+    r"docs\s+(?P<docs>\d+),\s*certified\s+(?P<certified>\d+),\s*"
+    r"drift\s+(?P<drift>\d+),\s*unverified\s+(?P<unverified>\d+)", re.I | re.M)
+JUDGE_ABSTAIN_RE = re.compile(r"^judge:\s*abstain\s*[—-]+\s*(?P<reason>.+)$", re.I | re.M)
+
+
+def gate_judge(report_text):
+    """Second provider — the report's `judge:` line, status ok and drift 0.
+
+    Two accepted shapes: the full line with provider and counts, or the short
+    abstain escape naming only a reason. Anything else is treated as absent.
+    """
+    m = JUDGE_LINE_RE.search(report_text)
+    if m:
+        status = m.group("status").lower()
+        drift = int(m.group("drift"))
+        ok = status == "ok" and drift == 0
+        return {"present": True, "provider": m.group("provider"), "status": status,
+                "docs": int(m.group("docs")), "certified": int(m.group("certified")),
+                "drift": drift, "unverified": int(m.group("unverified")),
+                "ok": ok}, ok
+    m = JUDGE_ABSTAIN_RE.search(report_text)
+    if m:
+        return {"present": True, "provider": None, "status": "abstain",
+                "reason": m.group("reason").strip(), "ok": False}, False
+    return {"present": False, "provider": None, "status": None, "ok": False}, False
 
 
 def count_of(report_text, key):
@@ -978,8 +1010,13 @@ def print_human(doc):
         print(f"verification: {'PASS' if g['verification'] else 'FAIL'}"
               f" — command {verify['command']!r}, verdict {verify['verdict_line']!r},"
               f" no-entry-point {verify['declared_no_entry_point']}")
+        judge = doc["judge"]
+        print(f"judge:        {'PASS' if g['judge'] else 'FAIL'}"
+              f" — present {judge['present']}, provider {judge['provider']!r},"
+              f" status {judge['status']!r}, drift {judge.get('drift')}")
     else:
-        print("report gates (5, 6, 9): NOT ENFORCED — no --report given")
+        print("report gates (5, 6, 9, second provider):"
+              " NOT ENFORCED — no --report given")
 
     hook = voice["hook"]
     proxy = voice["proxy"]
@@ -1054,10 +1091,11 @@ def main(argv=None):
         counts_detail, counts_ok = gate_claim_counts(report_text)
         shown_detail, shown_ok = gate_shown(report_text, result_text)
         verify_detail, verify_ok = gate_verification(report_text)
+        judge_detail, judge_ok = gate_judge(report_text)
         gates.update({"claim_counts": counts_ok, "shown": shown_ok,
-                      "verification": verify_ok})
+                      "verification": verify_ok, "judge": judge_ok})
         doc.update({"claim_counts": counts_detail, "shown": shown_detail,
-                    "verification": verify_detail})
+                    "verification": verify_detail, "judge": judge_detail})
     all_ok = all(gates.values())
     doc["gates"] = gates
     doc["verdict"] = "PASS" if all_ok else "FAIL"

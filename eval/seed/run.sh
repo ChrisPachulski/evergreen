@@ -18,18 +18,17 @@ PROMPT="$(
   cat eval/seed/prompt.md
 )"
 
-# Pass E certifies on an external provider, which needs to shell out. The default grant is
-# read-only, so the judged run takes seed's documented fallback and the exam measures triage and
-# claim discipline alone. SEED_EXAM_JUDGE=external widens the grant to exactly the judge entry
-# point, so a run can exercise the real certification path — and costs one codex call.
-TOOLS="Read,Grep,Glob"
-if [ "${SEED_EXAM_JUDGE:-fallback}" = "external" ]; then
-  TOOLS="$TOOLS,Bash(python3 -c \"from evergreen.judge import*\":*)"
-  # The judged run executes in a bare sandbox that holds only the fixture, so the package the
-  # judge lives in is not on the path there. Export the repo root for import resolution only —
-  # cwd stays the sandbox, which is what keeps the CLI from adopting this project's context.
-  export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
-fi
+# The judge is mandatory on every run: pass B's inventory and any pass-E doc go to the second
+# provider, so the grant carries exactly the judge entry point and the task names it. No codex on
+# the host is an abstention the scorer fails, never a silent pass. The entry point is absolute
+# because the judged run executes in a bare sandbox that holds only the fixture.
+TOOLS="Read,Grep,Glob,Bash(python3 $ROOT/bin/evergreen judge:*)"
+PROMPT="$PROMPT
+
+## Judge entry point
+
+Run the judge as \`python3 $ROOT/bin/evergreen judge\`; \`--repo .\` is this sandbox, and the pass-B
+inventory is saved at \`till.json\` in it for \`--inventory\`."
 
 # The judged run happens OUTSIDE this repository, in a bare copy of the fixture. Running it in
 # place lets the CLI walk up to evergreen's own CLAUDE.md, .claude/, and hooks, and a session
@@ -41,6 +40,9 @@ SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/seed-exam.XXXXXX")"
 trap 'rm -rf "$SANDBOX"' EXIT
 git -C "$ROOT" archive HEAD eval/fixture | tar -x -C "$SANDBOX"
 [ -d "$SANDBOX/eval/fixture" ] || { echo "fixture did not materialise" >&2; exit 1; }
+# The judge's --inventory wants a file and the grant has no write tool, so the runner saves the
+# pass-B inventory beside the fixture; the task names the path.
+printf '%s\n' "$TILL" > "$SANDBOX/till.json"
 
 ( cd "$SANDBOX" && claude -p "$PROMPT" --allowedTools "$TOOLS" \
     ${EVAL_MODEL:+--model "$EVAL_MODEL"} ) | tee "$OUT"

@@ -112,7 +112,8 @@ def run_bounded(
         return returncode, bytes(output), None
     except subprocess.TimeoutExpired:
         _stop(process)
-        return TIMEOUT_EXIT, b"", f"command timed out after {timeout_seconds:g} seconds"
+        return (TIMEOUT_EXIT, bytes(output) if preserve_partial else b"",
+                f"command timed out after {timeout_seconds:g} seconds")
     finally:
         selector.close()
         process.stdout.close()

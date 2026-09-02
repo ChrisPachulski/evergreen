@@ -51,6 +51,16 @@ class BoundedProcessTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 2)
         self.assertIn(b"timed out", result.stderr)
 
+    def test_timeout_keeps_the_captured_prefix_when_asked(self):
+        code = "import sys,time; sys.stdout.write('partial'); sys.stdout.flush(); time.sleep(9)"
+        for preserve, expected in ((True, b"partial"), (False, b"")):
+            status, output, reason = bounded_process.run_bounded(
+                [sys.executable, "-c", code], timeout_seconds=0.3, max_output_bytes=100,
+                clean_env=False, keep_env=[], preserve_partial=preserve)
+            self.assertEqual(status, bounded_process.TIMEOUT_EXIT)
+            self.assertEqual(output, expected)
+            self.assertIn("timed out", reason)
+
     def test_timeout_kills_inherited_group_descendant_after_parent_has_exited(self):
         with tempfile.TemporaryDirectory() as temporary:
             marker = Path(temporary) / "descendant-survived"

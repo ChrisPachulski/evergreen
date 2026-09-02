@@ -52,6 +52,15 @@ Use argv, not a shell string. A trusted application-behavior failure proves drif
 certifies by test. Any refused, inconclusive, timed-out, unavailable, or setup-failed run falls back
 to `behavior-asserted — verify manually`.
 
+**Second provider — mandatory.** After the ladder and the trial, run
+`bin/evergreen judge --repo . --doc <doc> --json` for every doc in scope. Sum the verdicts into one
+line the report carries verbatim: `judge: <provider> ok — docs K, certified N, drift D, unverified
+U`. A claim you certified that the judge calls drift goes back
+through the trial; it ships as drift only if the accusation beats its defence, and either way the
+disagreement is named. No codex, or an abstention, is `judge: abstain — <reason>`: the run is
+reported, not clean, and never claims a cross-provider check that did not happen. A certification
+record for the release gate carries the same numbers as a `judge` object.
+
 **Affirmative verification** — every claim is left in one of three states, never silently passed:
 - **certified** — you read the doc passage and the current code and they match; cite the code.
 - **drift** — a finding (a category below); cite the code that makes it wrong.

@@ -1,18 +1,30 @@
 # Task
 
-Run `/evergreen:seed` against **only** `eval/fixture/`. Judge only code and docs
-inside that directory, and do not modify anything. You are running from the
-repository root, not from the fixture: do not inspect or classify Evergreen's
-own docs, commands, skills, or source files.
+This file is the tail of the exam prompt. `eval/seed/run.sh` assembles the whole prompt in this
+order: the evergreen skill body, `commands/seed.md`, the pass-B provider inventory under the
+heading "Pass-B provider inventory (quote verbatim)", this task, and a "Judge entry point" section
+naming the one shell command the run may use.
 
-The provider inventory below is pass-B output. It was produced before this run;
-do not shell out or rerun the provider. Quote it in your report exactly as
-given, including any warnings. Use only Read, Grep, and Glob.
+Run `/evergreen:seed` (the command in `commands/seed.md`) against **only** `eval/fixture/`.
 
-Triaging must cover the supplied inventory. Follow the seed command's evidence
-rules, including alias-aware documentation checks. Proposed documentation is
-report-only: do not create files. For every proposed doc, include its complete
-content in the required output and ledger each declarative claim against code.
+## Declared deviations from the command
+
+The exam narrows the command on purpose, and where the two differ the narrowing wins:
+
+- **Scope.** Judge only code and docs inside `eval/fixture/`. Evergreen's own docs, commands,
+  skills, and source files are the ruleset you run, never the subject.
+- **Pass B.** The provider inventory in the prompt was produced before this run in place of the
+  `till` call the command makes. Do not shell out or rerun the provider; quote it exactly as given,
+  including any warnings.
+- **Pass E writes.** The command writes approved docs as new files. This run writes nothing: each
+  proposed doc is emitted whole as a `doc` row in the ledger below, which is what the scorer reads.
+  Do not create or modify any file.
+- **Tools.** The grant is Read, Grep, Glob, and the judge entry point; there is no write tool,
+  which is why the runner saved the inventory file for you. The command's `git grep` becomes Grep;
+  its evidence rules, including alias-aware documentation checks, still apply.
+
+Triaging must cover the supplied inventory. For every proposed doc, include its complete content in
+the required output and ledger each declarative claim against code.
 
 Before any doc content, show the full worthy list with a plain recommendation of which to write
 first and why, then the owner's chosen count. If the task carries `--approve N`, that is the owner's
@@ -32,7 +44,18 @@ Emit one object per line, in this order:
 {"type":"winnow","certified":<n>,"drift":<n>,"unverified":<n>}
 {"type":"coverage","N":<n>,"documented":<n>,"worthy":<n>,"not_worthy":<n>,"deferred":<n>,"written":<n>}
 {"type":"doc","path":"<path>","symbol":"<name>","lines":<n>,"body":"<full proposed content>"}
+{"type":"judge","stage":"inventory","status":"ok","provider":"codex","docs":<n>,"certified":<n>,"drift":<n>,"unverified":<n>}
+{"type":"judge","stage":"docs","status":"ok","provider":"codex","docs":<n>,"certified":<n>,"drift":<n>,"unverified":<n>}
 ```
 
 One `candidate` row per inventory entry, in provider rank order with no rank skipped; the
 `winnow` row's `certified` equals the number of `claim` rows and its other two counts are zero.
+Judge the inventory before triage: the runner saved the supplied pass-B inventory as `till.json`
+in the sandbox root (the "Judge entry point" section names it); run the judge entry point with
+`--repo . --inventory till.json --json` and emit its summary as the `stage: inventory` judge row on
+every run. If any doc was written, run the entry point with
+`--repo . --doc <doc> --json` for each proposed doc and sum the results into the `stage: docs`
+judge row — omit that row only when no doc was written. An abstention (codex unavailable, or the
+call refused) is reported as `{"type":"judge","status":"abstain","provider":"codex","docs":<n
+judged so far>,"certified":<n>,"drift":<n>,"unverified":<n>,"reason":"<the abstention reason>"}`,
+never omitted.

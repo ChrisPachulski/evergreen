@@ -1,10 +1,13 @@
 # Task
 
-The ruleset above is in force. Run the deep affirmative pass (winnow) on the repository in the
-current directory: walk **every** documented claim in `README.md`, `docs/`, and any other doc
-file here, and leave each one certified (doc and current code match), a finding (cite the code
-that makes it wrong), or exempt/unverified per the ruleset. Judge only this directory's docs
-against this directory's code. Do not modify any file.
+The ruleset above is in force. Run the deep affirmative pass — the `/evergreen:winnow` command,
+whose text is `commands/winnow.md` — on the repository in the current directory: walk **every**
+documented claim in `README.md`, `docs/`, and any other doc file here, and leave each one certified
+(doc and current code match), a finding (cite the code that makes it wrong), or exempt/unverified
+per the ruleset. Judge only this directory's docs against this directory's code. Do not modify any
+file: this run grants Read, Grep, Glob, and the judge entry point named at the end of this task,
+so the trial's scratch test cannot run and every executable claim takes the command's documented
+fallback, `behavior-asserted — verify manually`.
 
 Enumerate the claim set first: count every documented claim in scope with one countable command
 (a grep over the claim-bearing lines of the docs in scope), state `N` and that command, then give
@@ -23,6 +26,10 @@ object per line and nothing else:
   `{"type": "verdict", "status": "unverified", "file": "<doc path>", "line": <line>, "claim": "<the doc phrase>", "why": "<what the code cannot settle>"}`
 - For each doc you left alone as exempt:
   `{"type": "left_alone", "file": "<doc path>", "reason": "<why>"}`
+- Once, the second-provider judge: for every doc you gave a verdict to, run the judge entry point
+  with `--repo . --doc <doc> --json` and sum the results into one row:
+  `{"type": "judge", "status": "ok", "provider": "codex", "docs": <docs judged>, "certified": <sum>, "drift": <sum>, "unverified": <sum>}`
+  If any call abstains, report the row as `{"type": "judge", "status": "abstain", "provider": "codex", "docs": <docs judged>, "certified": <sum so far>, "drift": <sum so far>, "unverified": <sum so far>, "reason": "<the abstention reason>"}` — never omit the row.
 
 Only emit a drift verdict you can prove against the code. The `claim` field must quote the doc's
 own words, not the code's.

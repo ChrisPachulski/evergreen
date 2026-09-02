@@ -122,8 +122,7 @@ publication; without direct authority, external release state remains unverified
 Per repo: `off | light | strict`, default light. It steers the ride-along reflex only — a command
 you type pins its own depth and runs at full strictness in every mode, `off` included. Rung is
 which ladder rung proved a finding: `path · contract · snippet · prose`. light must never emit a `prose` finding, and an
-undeclared mode is itself a violation. `bin/evergreen conform` holds a transcript to the intensity
-it declares.
+undeclared mode is itself a violation.
 
 ## Two depths
 
@@ -132,6 +131,21 @@ it declares.
   it), **drift** (a finding), or **`unverified — <why>`** (a behavioral claim the code can't settle —
   reported, not passed). Post-pass silence = every claim certified. `unverified` (this code) ≠
   `UNVERIFIABLE` (another system, dropped).
+
+## Second provider
+
+A verdict is never its author's alone, and a deterministic one is judgment frozen into code, so the
+judge double-checks every command that judges. winnow, seed, and flourish end with it over prose:
+`bin/evergreen judge --repo . --doc <doc> --json` per doc in scope hands the doc plus the
+in-repo files it names to codex with tools disabled and returns a certified, drift, or unverified
+verdict per claim. The report carries the summed block verbatim, `judge: <provider> ok — docs K, certified N, drift D, unverified U`; a claim the judge calls drift
+goes back through the trial before the run reports. No codex, or an abstention, is reported as
+`judge: abstain — <reason>` and leaves the run not clean. Seed and the till command judge the surface inventory before
+trusting it (`--inventory <till.json>`: every row checked against the source, missing public
+declarations listed), and cultivate hands its delete, untrack, flag, unsettled, and exposure rows
+to the judge (`--rubric cultivate`) before proposing them. The release gate refuses a winnow or
+cultivate record whose judge block is missing, abstained, or reports drift. The per-turn reflex stays
+single-provider; in CI the tool-less model behind the deterministic validator is its second provider.
 
 ## CI trust contract
 
@@ -152,13 +166,13 @@ infrastructure failure advisory, and the report must remain inconclusive.
 `bash tests/all.sh` is the definition of green. Run it before reporting any change to this
 repository as done, working, passing, or ready.
 
-A Python runner alone is **not** green. `tests/all.sh` runs five suites and three of them are
-shell integration suites no Python runner collects:
-`tests/hooks.sh` enforces that policy text is identical across README.md, AGENTS.md, SKILL.md, and
-DIGEST.md, `tests/action.sh` exercises the result envelope end to end, and `tests/readiness.sh`
-grades the flourish golden matrix. None of the three is collected by
-`unittest` or `pytest`, so a docs restructure or a schema change can pass the Python tests and still
-break CI — which is exactly how a README split shipped 36 broken assertions to main on 2026-08-08.
+A Python runner alone is **not** green. `tests/all.sh` runs five suites and three of them are shell
+integration suites no Python runner collects: `tests/hooks.sh` checks that README.md, DESIGN.md,
+SKILL.md, DIGEST.md, and AGENTS.md carry the completion receipt policy sentence-for-sentence and an
+identical delimited block, `tests/action.sh` exercises the result envelope end to end, and
+`tests/readiness.sh` grades the flourish golden matrix. None of the three is collected by `unittest`
+or `pytest`, so a docs restructure or a schema change can pass the Python tests and still break CI —
+which is exactly how a README split shipped 36 broken assertions to main on 2026-08-08.
 
 Read the verdict line, not the exit code of a grep over the output. `tests/hooks.sh` prints `FAIL`
 and `tests/action.sh` prints `not ok`; a pattern that matches one silently passes the other.

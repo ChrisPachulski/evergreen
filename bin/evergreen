@@ -39,7 +39,7 @@ def terminal_display(value, limit=4096):
 def parser():
     root = argparse.ArgumentParser(
         prog="evergreen",
-        description="Evergreen candidate queries, transcript checks, receipts, and the isolated judge.",
+        description="Evergreen candidate queries, receipts, and the second-provider judge the commands run.",
     )
     commands = root.add_subparsers(dest="command", required=True)
     query = commands.add_parser(
@@ -65,25 +65,18 @@ def parser():
     receipt.add_argument("--benchmark-manifest", help="Evergreen public benchmark manifest")
     receipt.add_argument("--json", action="store_true", help="emit one JSON object")
     receipt.set_defaults(run=run_receipt)
-    conform = commands.add_parser(
-        "conform", help="check a reflex transcript against the intensity it declared"
-    )
-    conform.add_argument(
-        "path", nargs="?", default="-",
-        help="file holding evergreen output, or - for standard input (default: -)",
-    )
-    conform.add_argument(
-        "--mode", choices=("off", "light", "strict"),
-        help="intensity to hold the output to (default: the one the output declares)",
-    )
-    conform.add_argument("--json", action="store_true", help="emit one JSON object")
-    conform.set_defaults(run=run_conform)
     judge = commands.add_parser(
         "judge",
-        help="certify a document against the code it describes with one isolated model call",
+        help="certify a document or a till inventory against the code, in isolated model calls",
     )
     judge.add_argument("--repo", required=True, help="repository the document describes")
-    judge.add_argument("--doc", required=True, help="document to certify")
+    subject = judge.add_mutually_exclusive_group(required=True)
+    subject.add_argument("--doc", help="document to certify")
+    subject.add_argument("--inventory", help="`evergreen till --json` output to certify")
+    judge.add_argument(
+        "--rubric", choices=("doc", "cultivate"), default="doc",
+        help="how to read --doc: prose claims (default) or a cultivate report of judgment rows",
+    )
     judge.add_argument(
         "--timeout", type=int, default=300, help="seconds allowed for the call (default: 300)"
     )
@@ -92,28 +85,8 @@ def parser():
     return root
 
 
-def run_conform(args):
-    import json
-    from evergreen.mode_policy import declared_mode, violations
-
-    text = sys.stdin.read() if args.path == "-" else Path(args.path).read_text(encoding="utf-8")
-    found = violations(text, args.mode)
-    mode = args.mode or declared_mode(text)
-    if args.json:
-        print(json.dumps(
-            {"schema_version": 1, "mode": mode, "violations": found,
-             "conforms": not found}, sort_keys=True, separators=(",", ":")))
-    elif found:
-        print(f"evergreen: output does not conform to intensity {mode}:")
-        for line in found:
-            print(f"  {line}")
-    else:
-        print(f"evergreen: output conforms to intensity {mode}")
-    return 1 if found else 0
-
-
 def run_judge(args):
-    """Certify one document against the repository code, with no network and no repo write.
+    """Certify a document or an inventory against the repository code, with no network access.
 
     The prompt is built here rather than improvised by whatever agent typed the command: the
     rubric, the untrusted-data boundary, and the read bounds are the parts a judge call cannot
@@ -121,7 +94,11 @@ def run_judge(args):
     to be retried by hand into a softer prompt.
     """
     try:
-        from evergreen.judge import collect_referenced_files, judge_json, judge_prompt
+        from evergreen.judge import (
+            CULTIVATE_RUBRIC, INVENTORY_RUBRIC, JUDGE_RUBRIC, collect_referenced_files,
+            inventory_batches, inventory_text, judge_json, judge_prompt, judge_report,
+            load_inventory,
+        )
     except ImportError as error:                              # tomllib arrived in Python 3.11
         print(f"evergreen: judge requires Python 3.11 or later ({error_display(error)})", file=sys.stderr)
         return 2
@@ -133,31 +110,76 @@ def run_judge(args):
     if args.timeout <= 0:
         print("evergreen: --timeout must be a positive number of seconds", file=sys.stderr)
         return 2
-    document = Path(args.doc).expanduser()
+    if args.inventory is not None and args.rubric != "doc":
+        print("evergreen: --rubric applies to --doc, not --inventory", file=sys.stderr)
+        return 2
+    subject = Path(args.doc if args.inventory is None else args.inventory).expanduser()
     try:
-        text = document.read_text(encoding="utf-8", errors="replace")
+        text = subject.read_text(encoding="utf-8", errors="replace")
     except (OSError, UnicodeError) as error:
         print(f"evergreen: {error_display(error)}", file=sys.stderr)
         return 2
 
-    files, warnings = collect_referenced_files(repo.resolve(), text)
+    if args.inventory is not None:
+        try:
+            rows = load_inventory(text)
+        except ValueError as error:
+            print(f"evergreen: {error_display(error)}", file=sys.stderr)
+            return 2
+        batches, warnings = inventory_batches(repo.resolve(), rows)
+        prompts = [
+            (judge_prompt(
+                f"INVENTORY batch {index} of {len(batches)}", inventory_text(batch_rows),
+                files, INVENTORY_RUBRIC,
+            ), len(files))
+            for index, (files, batch_rows) in enumerate(batches, start=1)
+        ]
+        stage = "inventory"
+    else:
+        files, warnings = collect_referenced_files(repo.resolve(), text)
+        rubric = CULTIVATE_RUBRIC if args.rubric == "cultivate" else JUDGE_RUBRIC
+        prompts = [(judge_prompt(subject.name, text, files, rubric), 1)]
+        stage = "report" if args.rubric == "cultivate" else "docs"
     for warning in warnings:
         print(f"evergreen: {terminal_display(warning)}", file=sys.stderr)
-    result = judge_json(judge_prompt(document.name, text, files), timeout=args.timeout)
-    if args.json:
-        print(json.dumps(result, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
-    elif result["status"] == "ok":
-        for finding in result["value"]["findings"]:
+
+    # One abstaining call ends the run: the rest of the batches would only buy findings the
+    # report is going to throw away. Nothing to call is an abstention too -- an inventory whose
+    # files have all moved must not read as a clean sweep of a surface nobody judged.
+    results = [] if prompts else [
+        {"status": "abstain", "reason": "no source file from the inventory could be packed",
+         "attempts": 0}
+    ]
+    for prompt, _count in prompts:
+        results.append(judge_json(prompt, timeout=args.timeout))
+        if results[-1]["status"] != "ok":
+            break
+    report = judge_report(stage, sum(count for _p, count in prompts), results, len(prompts))
+    print_judge(report, args.json)
+    return 0 if report["status"] == "ok" else 3
+
+
+def print_judge(report, as_json):
+    """The findings, then the one trailer line a run can paste verbatim."""
+    if as_json:
+        print(json.dumps(report, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        return
+    if report["status"] == "ok":
+        for finding in report["findings"]:
             print(
                 f"{terminal_display(finding['verdict'])}  {terminal_display(finding['claim'])} "
                 f"-- {terminal_display(finding['evidence'])}"
             )
-        print(terminal_display(result["value"]["summary"]))
+        print(terminal_display(report["summary"]))
+        print(
+            f"judge: codex ok \u2014 docs {report['docs']}, certified {report['certified']}, "
+            f"drift {report['drift']}, unverified {report['unverified']}"
+        )
     else:
         print(
-            f"evergreen: judge abstained: {terminal_display(result['reason'])}", file=sys.stderr
+            f"evergreen: judge abstained: {terminal_display(report['reason'])}", file=sys.stderr
         )
-    return 0 if result["status"] == "ok" else 3
+        print(f"judge: abstain \u2014 {terminal_display(report['reason'])}")
 
 
 def run_impact(args):

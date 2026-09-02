@@ -66,9 +66,10 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
    newly created doc path** returns a non-marker hit for every written symbol. Pass = all checks
    hold; `written == 0` implies no documentation diff.
 
-## Why this works without a second AI at runtime
+## Why the checks stand without a second AI
 
 Every CHECK is a grep or a count that anyone — a human, or the same model on a later pass — re-runs
-to the same answer. The frozen contract *is* the external arbiter. A run that writes beautiful docs
-but fails goal 4 shipped unproven claims — a failed run, full stop, because seeded docs are claims
-from the moment they exist.
+to the same answer. The frozen contract *is* the arbiter of these goals; the mandatory
+second-provider judge (0.8.0) double-checks the inventory and the written docs as its own gated rows
+and replaces none of them. A run that writes beautiful docs but fails goal 4 shipped unproven claims
+— a failed run, full stop, because seeded docs are claims from the moment they exist.

@@ -125,9 +125,11 @@ caveat. Every line of it was true, conserved, voiced, and correctly structured *
 spine was right and the document was still unusable to a stranger. No goal above 6 could catch that,
 because none of them counted anything.
 
-## Why this works without a second AI at runtime
+## Why the checks stand without a second AI
 
 Every CHECK is a grep or a count that anyone — a human, or the same model on a later pass — re-runs
-to the same answer. The frozen contract *is* the external arbiter. A run that ships a gorgeous hero
-over a gutted body fails goals 1–3 mechanically, full stop — which is exactly the run that sailed
+to the same answer. The frozen contract *is* the arbiter of these goals; the mandatory second-provider
+judge (0.8.0) double-checks the truth pass as its own row, gated by the scorer's report gates, and
+replaces none of them. A run that ships a gorgeous hero over a gutted body fails goals 1–3
+mechanically, full stop — which is exactly the run that sailed
 through before this file existed.
