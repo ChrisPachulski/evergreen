@@ -497,7 +497,7 @@ DECLARATIONS = {
     "get_release_name": "helpers.py:31", "ordered_releases": "helpers.py:40",
     "render_release": "helpers.py:52", "load_config": "config.py:20",
     "sort_releases": "helpers.py:60", "format_row": "helpers.py:70",
-    "build_parser": "cli.py:10", "main": "cli.py:80",
+    "build_parser": "cli.py:10", "main": "cli.py:80", "DEFAULT_TIMEOUT": "config.py:4",
 }
 WRITTEN = {
     "with_backoff": (

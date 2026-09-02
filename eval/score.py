@@ -128,10 +128,12 @@ def prose_census(text):
 
 
 def grade_judge(judge_rows):
-    """Second provider — exactly one judge row, status ok, zero drift.
+    """Second provider — exactly one judge row, status ok, at least one doc judged.
 
-    An absent row, an abstain, or drift > 0 each fail: a second-provider certification
-    pass is not optional evidence, it is the thing this goal exists to require.
+    An absent row, an abstain, or a row that judged no doc each fail: a second-provider pass is
+    not optional evidence, it is the thing this goal exists to require. The judge's drift count is
+    reported, never gated: this fixture seeds drift on purpose, so a judge that finds some is doing
+    its job. Zero judge drift is the release gate's rule, for real docs.
     """
     if len(judge_rows) != 1:
         return {"pass": False, "rows": judge_rows,
@@ -143,12 +145,12 @@ def grade_judge(judge_rows):
         return {"pass": False, "status": status, "reason": reason,
                 "provider": row.get("provider"),
                 "why": f"judge status is {status!r}, not \"ok\""}
-    drift = row.get("drift")
-    ok = isinstance(drift, int) and not isinstance(drift, bool) and drift == 0
+    docs = row.get("docs")
+    ok = isinstance(docs, int) and not isinstance(docs, bool) and docs >= 1
     return {"pass": ok, "status": status, "provider": row.get("provider"),
-            "docs": row.get("docs"), "certified": row.get("certified"),
-            "drift": drift, "unverified": row.get("unverified"),
-            "why": "ok" if ok else f"judge reports drift={drift}, not 0"}
+            "docs": docs, "certified": row.get("certified"),
+            "drift": row.get("drift"), "unverified": row.get("unverified"),
+            "why": "ok" if ok else f"judge reports docs={docs!r}; at least one doc must be judged"}
 
 
 def grade_goals(text, claims_rows, verdicts, judge_rows):
@@ -385,12 +387,12 @@ def selftest(manifest_path):
         return rows
     mutate("goal — second provider: judge abstained", judge_abstain)
 
-    def judge_drift(rows):
+    def judge_no_docs(rows):
         for r in rows:
             if r["type"] == "judge":
-                r["drift"] = 1
+                r["docs"] = 0
         return rows
-    mutate("goal — second provider: judge reports drift", judge_drift)
+    mutate("goal — second provider: judge row judged no doc", judge_no_docs)
 
     def missed_drift(rows):
         out, dropped = [], False

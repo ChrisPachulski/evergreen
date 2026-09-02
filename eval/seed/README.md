@@ -20,8 +20,9 @@ Five graded rows, one per verdict seed can reach:
 | S4 | `ordered_releases` | `not-worthy` | forwards to `sort_releases` unchanged |
 | S5 | `render_release` | `documented` | the alias trap — a fixed-string grep for the symbol finds nothing, but `README.md:17-18` ("Output defaults to table") already describes exactly what it does |
 
-The fixture's five pre-existing symbols (`load_config`, `sort_releases`, `format_row`,
-`build_parser`, `main`) are carried as `unscored` rows. They were never designed as exam cases, so
+The fixture's six pre-existing symbols (`load_config`, `sort_releases`, `format_row`,
+`build_parser`, `main`, and the `DEFAULT_TIMEOUT` constant till has listed since 0.7.0) are carried
+as `unscored` rows. They were never designed as exam cases, so
 inventing labels for them would add noise to the answer key — but they still count toward the
 coverage identity, because a run that silently drops half the inventory has failed goal 2 whatever
 it says about the other half.

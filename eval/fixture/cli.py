@@ -29,6 +29,8 @@ def main(argv=None):
     cfg = load_config(args.config)
     releases = sort_releases(cfg.get("releases", []))
     for r in releases:
+        if args.verbose:
+            print(f"rendering {r.get('name', '')}", file=sys.stderr)
         print(format_row(r, as_json=args.output == "json"))
     return 0
 

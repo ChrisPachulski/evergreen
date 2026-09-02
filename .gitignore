@@ -5,6 +5,8 @@ PLAN.md
 PLAN-REVIEW-LOG.md
 # Raw/local benchmark runs and logs; never publish these files directly.
 eval/out/
+eval/seed/out/
+eval/cultivate/out/
 eval/bench/out/
 eval/bench/*.log
 # Third-party source rows (code+doc pairs) stay local; manifests, votes, schemas, and

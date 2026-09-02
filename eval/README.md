@@ -51,7 +51,7 @@ the intended reading of "not done". A run that states the census in prose
 | 4 — every drift proven gone by grep | **proxied** | a drift row scores only when its claim quotes the planted token from `manifest.tsv`. Re-running each grep needs the fixture tree at the run's commit, which the scorer does not have. |
 | 5 — nothing silently dropped | enforced | certified + drift + unverified == `N`, and no fourth status is allowed. |
 | 6 — exempt docs stay out of findings | enforced | no exempt path on a certified or drift row. This now fails the run rather than only printing. |
-| second provider | enforced | exactly one `judge` row with status `ok` and drift 0, summed from `bin/evergreen judge --repo . --doc <doc> --json` over every doc in scope. An absent row, an abstain, or drift > 0 fails the run. |
+| second provider | enforced | exactly one `judge` row with status `ok` and `docs` ≥ 1, summed from the judge entry point run with `--repo . --doc <doc> --json` over every doc in scope. An absent row, an abstain, or a row that judged no doc fails the run. The judge's drift count is reported, not gated: this fixture seeds drift on purpose, so a judge that finds some is doing its job; zero judge drift is the release gate's rule, for real docs. |
 
 ## Run it
 
