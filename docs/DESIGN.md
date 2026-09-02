@@ -291,6 +291,17 @@ counted, and nothing left unverified. Evaluation, fixture, and evidence fixes wi
 shape, or command contract changed take a patch under the `0.5.0` precedent. So `0.8.1`, not
 `0.9.0`. The stream still carries no build-number field.
 
+### 0.8.2 release decision
+
+`0.8.2` corrects the README's install and Action sections to the repository's real exposure. The
+repository is private, so every route starts from read access: a clone over SSH added as a local
+marketplace or loaded with `--plugin-dir`, and an Action that resolves only from repositories GitHub
+lets reach a private one. A doc describing a public install path for a private repository is drift
+of the kind this tool exists to catch, not an owner's choice: the docs follow the setting, the
+setting does not follow the docs. A documentation-only correction with no surface change takes a
+patch under the `0.5.0` precedent. So `0.8.2`, not `0.9.0`. The stream still carries no build-number
+field.
+
 ### Winnow-before-tag certification gate
 
 A local `evergreen--v*` tag is a certification claim about the commit it names, so the PreToolUse

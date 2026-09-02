@@ -41,12 +41,23 @@ Your agent already has an *update the docs if applicable* step. [That's an inten
 
 ## Install
 
+This repository is private. Every route below starts from read access to it: an SSH key or token
+that can clone `ChrisPachulski/evergreen`. Nothing here is on a public marketplace.
+
 ### Claude Code
 
+Clone it, then add the clone as a marketplace:
+
 ```
-/plugin marketplace add ChrisPachulski/evergreen
+git clone git@github.com:ChrisPachulski/evergreen.git ~/.claude/plugins/evergreen-local
+/plugin marketplace add ~/.claude/plugins/evergreen-local
 /plugin install evergreen@evergreen
 ```
+
+For one session without registering anything, `claude --plugin-dir ~/.claude/plugins/evergreen-local`
+loads the same clone. `/plugin marketplace add ChrisPachulski/evergreen` works only where git can
+already read the repository over HTTPS; elsewhere it fails at the clone, which is why the local path
+is the documented route.
 
 It rides along every session: adds `/evergreen:winnow`, and — after a turn that changed code in a repo with tracked docs — leaves a quiet nudge to go check for drift. Intensity is `off | light | strict` (default **light**), and it steers the automatic pass only — a command you type runs at full depth in any mode, including `off`. The truth reflex never blocks your commit; it flags, you decide.
 
@@ -80,6 +91,10 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           fail_on_inconclusive: true
 ```
+
+The Action lives in this private repository, so `uses:` resolves only from repositories GitHub lets
+reach it: repositories owned by the same account, when this repository's Actions access setting
+allows them. Anywhere else, vendor a copy of the repository and point `uses:` at it.
 
 Drift never fails the build. The full CI contract — what a green check certifies, the four outcomes, fork-PR behavior, and every process bound — is in the operations reference below.
 
