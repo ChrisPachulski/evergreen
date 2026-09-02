@@ -75,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with: { fetch-depth: 0 }
-      - uses: ChrisPachulski/evergreen@bbc45d1c18e74f09ea69e973f4420b10b393679e # immutable 0.7.0 Action runtime (evergreen--v0.7.0)
+      - uses: ChrisPachulski/evergreen@07bc76746377784858a0fe40dedd65b1d64890bb # immutable 0.8.0 Action runtime (evergreen--v0.8.0)
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           fail_on_inconclusive: true
