@@ -1,1 +1,1 @@
-{"pass": "winnow", "date": "2026-09-01", "commit": "80d8b3f7f8a7309085c014fcbc2bddc6e53402eb", "claims": {"total": 797, "certified": 797, "drift": 0, "unverified": 0}}
+{"pass": "winnow", "date": "2026-09-02", "commit": "a61a6734c5e2e495f5b958caffb6fe6226171f77", "claims": {"total": 796, "certified": 796, "drift": 0, "unverified": 0}, "judge": {"status": "ok", "provider": "codex", "stage": "docs", "docs": 17, "certified": 321, "drift": 0, "unverified": 352}}
