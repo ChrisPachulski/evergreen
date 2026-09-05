@@ -79,11 +79,10 @@ for tok in \
   if grep -Fq "$tok" "$ROOT/README.md" \
      && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
      && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
-     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
-     && grep -Fq "$tok" "$ROOT/AGENTS.md"; then
-    ok "provider candidate boundary agrees across product/Claude/Codex: $tok"
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md"; then
+    ok "provider candidate boundary agrees across product/Claude: $tok"
   else
-    no "provider candidate boundary agrees across product/Claude/Codex: $tok"
+    no "provider candidate boundary agrees across product/Claude: $tok"
   fi
 done
 
@@ -92,6 +91,22 @@ for file in "$ROOT/README.md" "$ROOT/docs/DESIGN.md" "$ROOT/skills/evergreen/SKI
     && ok "Drift-shaped interoperability documented in ${file#"$ROOT/"}" \
     || no "Drift-shaped interoperability documented in ${file#"$ROOT/"}"
 done
+
+# Codex reads AGENTS.md on every response. Since 2026-09-05 it is a router under the 800-word cap,
+# not a fifth copy of the policy text: it names DIGEST.md as the binding text for the four shared
+# contracts and carries no copy of the receipt block, because a second copy in another document is
+# drift. The four remaining surfaces above still carry the contracts sentence for sentence.
+for tok in "skills/evergreen/DIGEST.md" "receipt policy" "release identity" "safe prove by test" "provider"; do
+  grep -Fqi "$tok" "$ROOT/AGENTS.md" \
+    && ok "AGENTS.md routes Codex to DIGEST.md: $tok" \
+    || no "AGENTS.md routes Codex to DIGEST.md: $tok"
+done
+grep -Fq "evergreen-receipt-policy:start" "$ROOT/AGENTS.md" \
+  && no "AGENTS.md carries no second copy of the receipt block" \
+  || ok "AGENTS.md carries no second copy of the receipt block"
+[ "$(wc -w < "$ROOT/AGENTS.md" | tr -d ' ')" -le 800 ] \
+  && ok "AGENTS.md stays under the 800-word cap" \
+  || no "AGENTS.md stays under the 800-word cap"
 
 if ROOT="$ROOT" python3 - <<'PY'
 import json
@@ -132,11 +147,10 @@ for tok in "deterministic trust layer" "complete with findings" "complete with u
   if grep -Fq "$tok" "$ROOT/README.md" \
      && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
      && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
-     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
-     && grep -Fq "$tok" "$ROOT/AGENTS.md"; then
-    ok "trust semantics agree across product/Claude/Codex: $tok"
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md"; then
+    ok "trust semantics agree across product/Claude: $tok"
   else
-    no "trust semantics agree across product/Claude/Codex: $tok"
+    no "trust semantics agree across product/Claude: $tok"
   fi
 done
 
@@ -149,11 +163,10 @@ for tok in "MARKETING_VERSION" "CURRENT_PROJECT_VERSION" "release_identity_drift
            "external build state unverified" "0.9.0 (72)" "0.9.1 (73)" \
            "upload-safe" "Universal Purchase" "upload, push"; do
   if grep -q "$tok" "$ROOT/skills/evergreen/SKILL.md" \
-     && grep -q "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
-     && grep -q "$tok" "$ROOT/AGENTS.md"; then
-    ok "release identity agrees across Claude/Codex: $tok"
+     && grep -q "$tok" "$ROOT/skills/evergreen/DIGEST.md"; then
+    ok "release identity agrees across Claude: $tok"
   else
-    no "release identity agrees across Claude/Codex: $tok"
+    no "release identity agrees across Claude: $tok"
   fi
 done
 
@@ -168,11 +181,10 @@ for tok in \
   if grep -Fq "$tok" "$ROOT/README.md" \
      && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
      && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
-     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
-     && grep -Fq "$tok" "$ROOT/AGENTS.md"; then
-    ok "general release identity agrees across product/Claude/Codex: $tok"
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md"; then
+    ok "general release identity agrees across product/Claude: $tok"
   else
-    no "general release identity agrees across product/Claude/Codex: $tok"
+    no "general release identity agrees across product/Claude: $tok"
   fi
 done
 
@@ -186,11 +198,10 @@ for tok in \
   if grep -Fq "$tok" "$ROOT/README.md" \
      && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
      && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
-     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
-     && grep -Fq "$tok" "$ROOT/AGENTS.md"; then
-    ok "intensity and rung provenance agree across product/Claude/Codex: $tok"
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md"; then
+    ok "intensity and rung provenance agree across product/Claude: $tok"
   else
-    no "intensity and rung provenance agree across product/Claude/Codex: $tok"
+    no "intensity and rung provenance agree across product/Claude: $tok"
   fi
 done
 
@@ -205,7 +216,6 @@ paths = (
     root / "docs/DESIGN.md",
     root / "skills/evergreen/SKILL.md",
     root / "skills/evergreen/DIGEST.md",
-    root / "AGENTS.md",
 )
 start = "<!-- evergreen-receipt-policy:start -->"
 end = "<!-- evergreen-receipt-policy:end -->"
@@ -249,11 +259,10 @@ for tok in \
   if grep -Fq "$tok" "$ROOT/README.md" \
      && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
      && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
-     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md" \
-     && grep -Fq "$tok" "$ROOT/AGENTS.md"; then
-    ok "completion receipt policy agrees across product/Claude/Codex: $tok"
+     && grep -Fq "$tok" "$ROOT/skills/evergreen/DIGEST.md"; then
+    ok "completion receipt policy agrees across product/Claude: $tok"
   else
-    no "completion receipt policy agrees across product/Claude/Codex: $tok"
+    no "completion receipt policy agrees across product/Claude: $tok"
   fi
 done
 

@@ -63,7 +63,7 @@ It rides along every session: adds `/evergreen:winnow`, and — after a turn tha
 
 ### Any other agent
 
-The whole skill is [`skills/evergreen/SKILL.md`](skills/evergreen/SKILL.md). Drop it into any skill-capable agent, or paste it into your system prompt. For Codex, Copilot, Gemini, and anything that reads [`AGENTS.md`](AGENTS.md), the flat-prose ruleset already lives at the repo root.
+The whole skill is [`skills/evergreen/SKILL.md`](skills/evergreen/SKILL.md). Drop it into any skill-capable agent, or paste it into your system prompt. For Codex, Copilot, Gemini, and anything that reads [`AGENTS.md`](AGENTS.md), the repo root carries a short router that binds them to the contracts in [`skills/evergreen/DIGEST.md`](skills/evergreen/DIGEST.md).
 
 ### No install at all
 

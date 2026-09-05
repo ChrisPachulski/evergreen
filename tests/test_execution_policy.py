@@ -23,13 +23,21 @@ class ExecutionPolicyTests(unittest.TestCase):
         surfaces = (
             ROOT / "skills" / "evergreen" / "SKILL.md",
             ROOT / "skills" / "evergreen" / "DIGEST.md",
-            ROOT / "AGENTS.md",
             ROOT / "commands" / "winnow.md",
         )
         for sentence in CONTRACT:
             for surface in surfaces:
                 with self.subTest(sentence=sentence, surface=surface.name):
                     self.assertIn(sentence, surface.read_text())
+
+    def test_agents_md_routes_codex_to_the_digest_instead_of_copying_the_contract(self):
+        """AGENTS.md is Codex's every-response surface and a router since 2026-09-05: it names
+        DIGEST.md as the binding text and carries no second copy, which would be drift."""
+        agents = (ROOT / "AGENTS.md").read_text()
+        self.assertIn("skills/evergreen/DIGEST.md", agents)
+        self.assertIn("safe prove by test", agents.lower())
+        for sentence in CONTRACT:
+            self.assertNotIn(sentence, agents)
 
     def test_no_module_level_private_helper_is_unreferenced(self):
         tree = ast.parse(POLICY.read_text())
