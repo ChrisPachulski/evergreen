@@ -1,6 +1,12 @@
 name: test
 on:
+  # Branch pushes are covered by their pull_request run; an unfiltered `push`
+  # ran every PR commit twice, and each run carries two macOS legs billed ~10x
+  # Linux (62 macOS minutes in one day, 2026-09-02). main and tags still run on
+  # push, so both OS families keep gating every merge and every release.
   push:
+    branches: [main]
+    tags: ["**"]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -9,6 +15,12 @@ on:
         required: true
         type: boolean
         default: false
+# A newer commit on the same ref supersedes the run in flight. Never cancel on
+# main or a tag: those are the release gate.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 env:
