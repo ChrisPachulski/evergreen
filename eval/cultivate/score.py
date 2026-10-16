@@ -22,6 +22,14 @@ only its fallback here: the fixture has no remote, so a passing run reports
 `gh_ran: false` and `visibility: unchecked`. The live-remote branch of goal 4
 is not covered by this exam and would require a throwaway public repository.
 
+A verdict identity gate rejects an unknown verdict value, ANY path repeated
+across more than one verdict row (even a same-verdict repeat, which would
+otherwise silently overwrite the row's evidence), and a verdict for a path
+outside the manifest. The repeat check is what catches a run that quietly
+walks back an earlier delete-proposed (or any other verdict) to keep for the
+same path -- a last-row-wins lookup on its own would hide that flip-flop
+whenever the final row happens to still match the expected verdict.
+
 Goal 2 wants the grep RUN, so a verdict's `evidence` must carry a `git grep`
 command AND its captured result — a count (`3 hits`), an explicit zero
 (`0 hits` / `no hits`), or a path list. The bare words `git grep`, or a command
@@ -54,6 +62,7 @@ VAGUE_NOT_CHECKED = {"all", "everything", "nothing", "none", "checked everything
 
 
 SETTLED_VERDICTS = {"keep", "orphan", "untrack", "ignore", "delete-proposed"}
+KNOWN_VERDICTS = SETTLED_VERDICTS | {"unsettled"}
 # Goal 2 wants the reference graph RUN, so evidence is a command AND its captured
 # result. `git grep` as a bare phrase is a claim that one was run, which is what a
 # run that skipped the pass also writes.
@@ -131,6 +140,22 @@ def as_int(value: object) -> int | None:
         return None
 
 
+def verdict_identity_faults(verdicts: list[dict[str, Any]],
+                            known_paths: set[str]) -> dict[str, Any]:
+    """Unknown verdict values, repeated-path rows, and paths outside the manifest."""
+    # Dict lookup by path silently takes the LAST row, so any repeat -- even a
+    # same-verdict repeat that just overwrites the evidence, or a flip-flop
+    # where an earlier delete-proposed is walked back to keep -- would
+    # otherwise pass unnoticed on whichever row happens to land last.
+    unknown_verdicts = sorted({str(row.get("path")) for row in verdicts
+                               if str(row.get("verdict")) not in KNOWN_VERDICTS})
+    paths = [str(row.get("path")) for row in verdicts]
+    duplicate_paths = sorted({p for p in paths if paths.count(p) > 1})
+    extraneous_paths = sorted(set(paths) - known_paths)
+    return {"unknown_verdicts": unknown_verdicts, "duplicate_paths": duplicate_paths,
+            "extraneous_paths": extraneous_paths}
+
+
 def specific_not_checked(rows: list[dict[str, Any]]) -> list[str]:
     items: list[str] = []
     for row in rows:
@@ -176,6 +201,9 @@ def score(text: str, manifest_path: Path) -> dict[str, Any]:
                         for row in verdicts
                         if evidence_rejection(row.get("evidence")) is not None]
     reference_ok = bool(verdicts) and not invalid_evidence
+
+    identity = verdict_identity_faults(verdicts, {row["path"] for row in manifest})
+    identity_ok = not any(identity.values())
 
     noncoverage = specific_not_checked(not_checked)
     clean_matches = CLEAN_CONCLUSION_RE.findall(text)
@@ -227,6 +255,7 @@ def score(text: str, manifest_path: Path) -> dict[str, Any]:
         "goal 1 — inventory": gate_result(inventory_ok, inventory_details),
         "goal 2 — reference graph": gate_result(
             reference_ok, {"verdicts": len(verdicts), "invalid_evidence": invalid_evidence}),
+        "goal — verdict identity": gate_result(identity_ok, identity),
         "goal 3 — no bare clean": gate_result(
             no_clean_ok, {"clean_conclusions": clean_matches, "not_checked": noncoverage}),
         "goal 4 — exposure fallback": gate_result(
@@ -396,6 +425,48 @@ def selftest(manifest_path: Path) -> int:
             "git grep -nF legacy_export -- .\n0 hits")
         return rows
     mutate("goal 7 — unsettled with no named resolver", vague_unsettled)
+
+    def unknown_verdict_value(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        # Also fails classification -- an enum value outside the known set
+        # can never equal a manifest "expected" string -- but the identity
+        # gate must independently name the bad verdict, not ride along.
+        first_verdict(rows, "toolbox/cli.py")["verdict"] = "archive"
+        return rows
+    mutate("goal — verdict identity: an unknown verdict value", unknown_verdict_value)
+
+    def duplicate_path_same_verdict(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        # Same final verdict as expected, so classification alone would pass
+        # this straight through; only the identity gate's own repeat check
+        # catches the second row silently overwriting the first's evidence.
+        original = first_verdict(rows, "README.md")
+        rows.append({"type": "verdict", "path": "README.md",
+                     "verdict": original["verdict"], "evidence": "git grep -nF README -- .\n1 hits"})
+        return rows
+    mutate("goal — verdict identity: a repeated path with the same verdict",
+           duplicate_path_same_verdict)
+
+    def delete_proposed_hidden_behind_keep(
+            rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        # The FINAL row for this path still equals the manifest's expected
+        # verdict, so classification alone would pass this too -- only the
+        # identity gate's repeat check surfaces the earlier delete-proposed
+        # that got walked back to keep for the same path.
+        path = "README.md"
+        rows.insert(0, {"type": "verdict", "path": path, "verdict": "delete-proposed",
+                        "evidence": "git grep -nF README -- .\n0 hits"})
+        return rows
+    mutate("goal — verdict identity: a delete-proposed verdict hidden behind a later keep",
+           delete_proposed_hidden_behind_keep)
+
+    def extraneous_verdict_path(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        # A path outside the manifest entirely: classification never looks at
+        # it (it only iterates manifest rows), so only the identity gate
+        # notices this verdict was reported for the wrong path.
+        rows.append({"type": "verdict", "path": "toolbox/never_inventoried.py",
+                     "verdict": "keep", "evidence": "git grep -nF never_inventoried -- .\n0 hits"})
+        return rows
+    mutate("goal — verdict identity: a verdict for a path outside the manifest",
+           extraneous_verdict_path)
 
     def decoy_deleted(rows):
         first_verdict(rows, "toolbox/plugins/adapter_runtime.py")["verdict"] = \

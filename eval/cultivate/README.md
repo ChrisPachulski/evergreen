@@ -82,6 +82,7 @@ classification against the manifest.
 |------|--------|--------------------------------|
 | 1 — inventory the filesystem, not the index | enforced | one inventory row whose `tracked` (15), `on_disk` (16) and `gap_accounted` (1) match the manifest. The two counting commands and the line-by-line gap accounting are not checked. |
 | 2 — a reference graph behind every verdict | enforced | every verdict's `evidence` carries a `git grep` command **and its captured result** — a count (`3 hits`), an explicit zero (`0 hits` / `no hits`), or a path list. The bare words `git grep`, and a command followed by prose, are both rejected: they are what a run that skipped the pass also writes. |
+| verdict identity | enforced | every verdict path belongs to the manifest and appears at most once, including repeated rows with the same verdict; unknown verdict values fail. |
 | 3 — no bare "clean" verdict | enforced | a `verdict`/`conclusion`/`result` line concluding clean or no slop, or a "repository is clean" sentence, fails (`CLEAN_CONCLUSION_RE`; other phrasings pass), and a specific not-checked list must be present. |
 | 4 — real exposure, not prose | **half-covered** | the fixture has no remote, so only the fallback branch is graded: `gh_ran: false` with `visibility: unchecked`. The live-remote branch is not covered by this exam. |
 | 5 — tested-with-an-assertion or a gap | enforced, proxied in part | a `tested` claim needs a `file:line`, and the planted assertion-free test (`tests/test_runner.py`) is rejected by path. The scorer does not open the cited line and does not compare the enumerated count with the classified count. |
@@ -114,7 +115,8 @@ act. Exit codes: 0 pass, 2 gate fail (a failing `--selftest` and an argparse usa
 2), 1 operational error.
 
 Proven able to fail, not just able to run: `python3 eval/cultivate/score.py --selftest` grades
-sixteen built-in transcripts — one known-pass and one failing control per gate, including
+built-in transcripts — a known-pass and failing controls for the gates, including
 evidence that is the bare words `git grep`, a `git grep` whose result is prose, a clean verdict,
 an assumed visibility, an assertion-free "tested" claim, the unresolvable file forced into `keep`,
-an `unsettled` row with no named resolver, and the decoy proposed for deletion.
+an `unsettled` row with no named resolver, duplicate or unknown verdict paths, and the decoy
+proposed for deletion.

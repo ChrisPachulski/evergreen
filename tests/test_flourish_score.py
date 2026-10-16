@@ -11,6 +11,8 @@ import unittest
 from pathlib import Path
 
 SCORER = Path(__file__).resolve().parents[1] / "eval" / "flourish" / "score.py"
+FLOURISH_DIR = SCORER.parent
+MONOLITH_FIXTURE = FLOURISH_DIR / "fixtures" / "monolith"
 
 SOURCE = """# shipit
 
@@ -897,3 +899,94 @@ class DiagramExemptionTests(unittest.TestCase):
         doc = self.TINY + "\n┌──┐\n│ x │\n└──┘\n"
         detail, ok = self.score.gate_diagram(doc, self.DECLARED)
         assert ok is False
+
+
+# --- ground-truth claims validation (load_ground_truth) -----------------------
+
+class GroundTruthClaimsValidationTests(unittest.TestCase):
+    def setUp(self: "GroundTruthClaimsValidationTests") -> None:
+        self.tmp_path = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp_path, True)
+
+    def test_missing_claims_key_is_malformed(
+            self: "GroundTruthClaimsValidationTests") -> None:
+        gt = ground_truth()
+        del gt["claims"]
+        fixture = make_fixture(self.tmp_path, gt=gt)
+        code, _, proc = run_scorer(fixture, GOOD, self.tmp_path)
+        assert code == 1
+        assert "claims" in proc.stderr
+
+    def test_explicitly_empty_claims_list_is_valid(
+            self: "GroundTruthClaimsValidationTests") -> None:
+        gt = ground_truth()
+        gt["claims"] = []
+        fixture = make_fixture(self.tmp_path, gt=gt)
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path)
+        assert code == 0
+        assert doc["truth"]["unbacked_total"] == 0
+
+    def test_non_string_id_or_text_is_rejected(
+            self: "GroundTruthClaimsValidationTests") -> None:
+        for i, bad_row in enumerate((
+            {"id": 7, "text": "supports TLS", "backed": False},
+            {"id": "c9", "text": None, "backed": False},
+            {"id": "c9", "text": ["supports", "TLS"], "backed": False},
+        )):
+            gt = ground_truth()
+            gt["claims"] = [bad_row]
+            case_dir = self.tmp_path / f"case{i}"
+            case_dir.mkdir()
+            fixture = make_fixture(case_dir, gt=gt)
+            code, _, proc = run_scorer(fixture, GOOD, case_dir)
+            assert code == 1, bad_row
+            assert "claims row" in proc.stderr, bad_row
+
+    def test_non_boolean_backed_is_rejected(
+            self: "GroundTruthClaimsValidationTests") -> None:
+        gt = ground_truth()
+        gt["claims"] = [{"id": "c9", "text": "supports TLS", "backed": "false"}]
+        fixture = make_fixture(self.tmp_path, gt=gt)
+        code, _, proc = run_scorer(fixture, GOOD, self.tmp_path)
+        assert code == 1
+        assert "backed" in proc.stderr
+
+    def test_malformed_keywords_type_is_rejected(
+            self: "GroundTruthClaimsValidationTests") -> None:
+        gt = ground_truth()
+        gt["claims"] = [{"id": "c9", "text": "supports TLS", "backed": False,
+                         "keywords": "tls"}]  # a string, not a list of strings
+        fixture = make_fixture(self.tmp_path, gt=gt)
+        code, _, proc = run_scorer(fixture, GOOD, self.tmp_path)
+        assert code == 1
+        assert "keywords" in proc.stderr
+
+    def test_null_keywords_grade_like_absent_keywords(
+            self: "GroundTruthClaimsValidationTests") -> None:
+        gt = ground_truth()
+        gt["claims"] = [{"id": "c9", "text": "supports TLS", "backed": False,
+                         "keywords": None}]
+        fixture = make_fixture(self.tmp_path, gt=gt)
+        code, doc, _ = run_scorer(fixture, GOOD, self.tmp_path)
+        assert code == 0
+        assert doc["truth"]["unbacked_total"] == 1
+
+
+# --- known ceiling: negation is not parsed, only keyword stems are -----------
+
+class NegationFalsePositiveCeilingTests(unittest.TestCase):
+    """Pin the keyword matcher's documented negation false positive."""
+
+    def setUp(self: "NegationFalsePositiveCeilingTests") -> None:
+        self.tmp_path = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp_path, True)
+
+    def test_negated_limitation_sentence_still_fires_the_parallel_thread_stems(
+            self: "NegationFalsePositiveCeilingTests") -> None:
+        source = (MONOLITH_FIXTURE / "README.md").read_text()
+        result = source + "\nDoes not support parallel threads.\n"
+        code, doc, _ = run_scorer(MONOLITH_FIXTURE, result, self.tmp_path)
+        assert code == 2
+        assert doc["gates"]["truth"] is False
+        fired = {f["id"] for f in doc["truth"]["fabrications"]}
+        assert "c8" in fired  # the ceiling: stems fire on the limitation too

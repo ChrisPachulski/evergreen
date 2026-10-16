@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,8 +18,13 @@ from evergreen.judge import (
     judge_prompt,
     judge_report,
     load_inventory,
+    normalized_relative_path,
+    read_bounded,
+    reconcile_inventory,
     referenced_paths,
     resolve_judge_model,
+    sensitive_basename,
+    withheld_paths,
 )
 
 
@@ -103,7 +109,9 @@ class CollectReferencedFilesTest(unittest.TestCase):
         (self.repo / "cli.py").write_text("named\n", encoding="utf-8")
         (self.repo / "other.py").write_text("unnamed\n", encoding="utf-8")
 
-        collected, warnings = collect_referenced_files(self.repo, "the flag lives in cli.py")
+        collected, warnings, _held = collect_referenced_files(
+            self.repo, "the flag lives in cli.py"
+        )
 
         self.assertEqual(collected, [("cli.py", "named\n")])
         self.assertEqual(warnings, [])
@@ -111,7 +119,9 @@ class CollectReferencedFilesTest(unittest.TestCase):
     def test_directories_and_absent_paths_are_skipped_silently(self):
         (self.repo / "docs").mkdir()
 
-        collected, warnings = collect_referenced_files(self.repo, "see docs/ and gone.md")
+        collected, warnings, _held = collect_referenced_files(
+            self.repo, "see docs/ and gone.md"
+        )
 
         self.assertEqual(collected, [])
         self.assertEqual(warnings, [])
@@ -121,7 +131,7 @@ class CollectReferencedFilesTest(unittest.TestCase):
         secret.write_text("private\n", encoding="utf-8")
         (self.repo / "link.md").symlink_to(secret)
 
-        collected, _warnings = collect_referenced_files(self.repo, "read link.md")
+        collected, _warnings, _held = collect_referenced_files(self.repo, "read link.md")
 
         self.assertEqual(collected, [])
 
@@ -129,7 +139,7 @@ class CollectReferencedFilesTest(unittest.TestCase):
         (self.root / "secret.txt").write_text("private\n", encoding="utf-8")
         (self.repo / "docs").mkdir()
 
-        collected, warnings = collect_referenced_files(
+        collected, warnings, _held = collect_referenced_files(
             self.repo, "read docs/../../secret.txt now"
         )
 
@@ -141,7 +151,7 @@ class CollectReferencedFilesTest(unittest.TestCase):
         for name in names:
             (self.repo / name).write_text("x\n", encoding="utf-8")
 
-        collected, warnings = collect_referenced_files(self.repo, " ".join(names))
+        collected, warnings, _held = collect_referenced_files(self.repo, " ".join(names))
 
         self.assertEqual(len(collected), MAX_JUDGE_FILES)
         self.assertEqual(len(warnings), 5)
@@ -151,7 +161,9 @@ class CollectReferencedFilesTest(unittest.TestCase):
         (self.repo / "big.txt").write_text("b" * (MAX_JUDGE_BYTES + 1), encoding="utf-8")
         (self.repo / "small.txt").write_text("s\n", encoding="utf-8")
 
-        collected, warnings = collect_referenced_files(self.repo, "big.txt and small.txt")
+        collected, warnings, _held = collect_referenced_files(
+            self.repo, "big.txt and small.txt"
+        )
 
         self.assertEqual(collected, [("small.txt", "s\n")])
         self.assertTrue(any("would exceed" in warning for warning in warnings), warnings)
@@ -191,7 +203,7 @@ class InventoryBatchTest(unittest.TestCase):
     def test_rows_sharing_a_file_are_packed_with_it_once(self):
         (self.repo / "a.py").write_text("def one():\n    pass\n", encoding="utf-8")
 
-        batches, warnings = inventory_batches(
+        batches, warnings, _dropped = inventory_batches(
             self.repo, [self.row("one", "a.py"), self.row("two", "a.py", 5)]
         )
 
@@ -206,7 +218,7 @@ class InventoryBatchTest(unittest.TestCase):
         for name in names:
             (self.repo / name).write_text("x = 1\n", encoding="utf-8")
 
-        batches, warnings = inventory_batches(
+        batches, warnings, _dropped = inventory_batches(
             self.repo, [self.row(name.removesuffix(".py"), name) for name in names]
         )
 
@@ -217,7 +229,7 @@ class InventoryBatchTest(unittest.TestCase):
         (self.repo / "big.py").write_text("b" * MAX_JUDGE_BYTES, encoding="utf-8")
         (self.repo / "small.py").write_text("s\n", encoding="utf-8")
 
-        batches, _warnings = inventory_batches(
+        batches, _warnings, _dropped = inventory_batches(
             self.repo, [self.row("big", "big.py"), self.row("small", "small.py")]
         )
 
@@ -227,13 +239,17 @@ class InventoryBatchTest(unittest.TestCase):
     def test_a_file_too_large_for_any_batch_takes_its_rows_out_with_a_warning(self):
         (self.repo / "huge.py").write_text("h" * (MAX_JUDGE_BYTES + 1), encoding="utf-8")
 
-        batches, warnings = inventory_batches(self.repo, [self.row("huge", "huge.py")])
+        batches, warnings, _dropped = inventory_batches(
+            self.repo, [self.row("huge", "huge.py")]
+        )
 
         self.assertEqual(batches, [])
         self.assertTrue(any("would exceed" in warning for warning in warnings), warnings)
 
     def test_a_row_naming_an_absent_file_is_dropped_with_a_warning(self):
-        batches, warnings = inventory_batches(self.repo, [self.row("gone", "gone.py")])
+        batches, warnings, _dropped = inventory_batches(
+            self.repo, [self.row("gone", "gone.py")]
+        )
 
         self.assertEqual(batches, [])
         self.assertTrue(any("no readable file" in warning for warning in warnings), warnings)
@@ -242,7 +258,7 @@ class InventoryBatchTest(unittest.TestCase):
         (self.root / "secret.txt").write_text("private\n", encoding="utf-8")
         (self.repo / "docs").mkdir()
 
-        batches, warnings = inventory_batches(
+        batches, warnings, _dropped = inventory_batches(
             self.repo, [self.row("secret", "docs/../../secret.txt")]
         )
 
@@ -264,7 +280,7 @@ class LoadInventoryTest(unittest.TestCase):
             "warnings": [],
         })
 
-        self.assertEqual(load_inventory(payload)[0]["symbol"], "one")
+        self.assertEqual(load_inventory(payload)[0][0]["symbol"], "one")
 
     def test_malformed_inventories_are_refused_by_name(self):
         for payload in ("not json", "[]", json.dumps({"candidates": {}}),
@@ -422,6 +438,268 @@ class JudgeJsonEndToEndTest(unittest.TestCase):
 
         self.assertEqual(result["status"], "abstain")
         self.assertEqual(result["attempts"], 2)
+
+
+class IntakeSafetyTest(unittest.TestCase):
+    """What a judge prompt is allowed to carry out of the repository, and what it is not."""
+
+    def setUp(self: unittest.TestCase) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.repo = Path(temporary.name) / "repo"
+        self.repo.mkdir()
+
+    def git(self: unittest.TestCase, *arguments: str) -> None:
+        subprocess.run(["git", "-C", str(self.repo), *arguments], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def test_the_guard_credential_basenames_are_recognized(self: unittest.TestCase) -> None:
+        for candidate in ("config/.env", "deploy/staging.env", "certs/server.pem",
+                          "keys/api.key", "home/id_rsa", "store/bundle.p12"):
+            with self.subTest(candidate=candidate):
+                self.assertTrue(sensitive_basename(candidate))
+        for candidate in ("evergreen/judge.py", "docs/environment.md", "id_rsa.pub"):
+            with self.subTest(candidate=candidate):
+                self.assertFalse(sensitive_basename(candidate))
+
+    def test_a_credential_path_is_withheld_and_named(self: unittest.TestCase) -> None:
+        (self.repo / "config").mkdir()
+        (self.repo / "config" / ".env").write_text("TOKEN=hunter2\n", encoding="utf-8")
+        (self.repo / "cli.py").write_text("x = 1\n", encoding="utf-8")
+
+        # A bare `.env` never becomes a path token, because PATH_TOKEN_RE opens on a word
+        # character; the reachable form -- and the one a document would actually write -- is
+        # nested, so that is the path this asserts on.
+        collected, warnings, withheld = collect_referenced_files(
+            self.repo, "the token lives in config/.env, read by cli.py"
+        )
+
+        self.assertEqual(referenced_paths("see config/.env"), ["config/.env"])
+        self.assertEqual(collected, [("cli.py", "x = 1\n")])
+        self.assertEqual(withheld, ["config/.env"])
+        self.assertTrue(any("withheld config/.env" in warning for warning in warnings), warnings)
+
+    def test_an_allowance_readmits_one_exact_path_only(self: unittest.TestCase) -> None:
+        (self.repo / "config").mkdir()
+        (self.repo / "config" / ".env").write_text("TOKEN=dummy\n", encoding="utf-8")
+        (self.repo / "other.pem").write_text("not a real key\n", encoding="utf-8")
+
+        collected, _warnings, withheld = collect_referenced_files(
+            self.repo, "config/.env and other.pem", ("config/.env",)
+        )
+
+        self.assertEqual(collected, [("config/.env", "TOKEN=dummy\n")])
+        self.assertEqual(withheld, ["other.pem"])
+
+    def test_only_a_normalized_relative_path_is_a_usable_allowance(self: unittest.TestCase) -> None:
+        self.assertEqual(normalized_relative_path("config/.env"), "config/.env")
+        for value in ("", "/etc/passwd", "./config/.env", "a/../b", "a//b", "a/b/"):
+            with self.subTest(value=value):
+                self.assertIsNone(normalized_relative_path(value))
+
+    def test_outside_git_an_ordinary_untracked_file_is_still_read(self: unittest.TestCase) -> None:
+        (self.repo / "cli.py").write_text("x = 1\n", encoding="utf-8")
+
+        self.assertEqual(withheld_paths(self.repo, ["cli.py"]), {})
+
+    def test_a_git_ignored_file_is_withheld_in_a_repository(self: unittest.TestCase) -> None:
+        self.git("init", "-q")
+        (self.repo / ".gitignore").write_text("secrets.txt\n", encoding="utf-8")
+        (self.repo / "secrets.txt").write_text("s\n", encoding="utf-8")
+        (self.repo / "cli.py").write_text("x = 1\n", encoding="utf-8")
+
+        blocked = withheld_paths(self.repo, ["secrets.txt", "cli.py"])
+
+        self.assertEqual(list(blocked), ["secrets.txt"])
+        self.assertIn("ignores", blocked["secrets.txt"])
+
+    def test_a_git_classification_failure_fails_closed(self: unittest.TestCase) -> None:
+        self.git("init", "-q")
+        (self.repo / "cli.py").write_text("x = 1\n", encoding="utf-8")
+
+        with mock.patch("evergreen.judge._bounded_git_output", return_value=(None, False)):
+            blocked = withheld_paths(self.repo, ["cli.py"])
+
+        self.assertIn("could not classify", blocked["cli.py"])
+
+    def test_a_decode_expanded_file_cannot_pass_the_byte_bound(self: unittest.TestCase) -> None:
+        # Every invalid byte decodes to U+FFFD, three UTF-8 bytes, so a payload that fits the
+        # raw bound can still triple on the way into the prompt.
+        noisy = self.repo / "noise.bin"
+        noisy.write_bytes(b"\xff" * 8)
+
+        self.assertIsNone(read_bounded(noisy, 8))
+        self.assertEqual(read_bounded(noisy, 24), "�" * 8)
+
+
+class LoadInventoryAccountingTest(unittest.TestCase):
+    """What the inventory input already admitted about itself must survive into the report."""
+
+    @staticmethod
+    def report(rows: "list[dict]", **extra: object) -> str:
+        payload = {"schema_version": 1, "candidates": rows, "source_files_in_scope": 1,
+                   "source_files_scanned": 1, "warnings": []}
+        payload.update(extra)
+        return json.dumps(payload)
+
+    @staticmethod
+    def row(symbol: str = "one", path: str = "a.py", line: object = 1,
+            kind: str = "function") -> dict:
+        return {"symbol": symbol, "kind": kind, "path": path, "line": line, "rank": "key"}
+
+    def test_a_repeated_row_identity_is_refused(self: unittest.TestCase) -> None:
+        with self.assertRaises(ValueError) as caught:
+            load_inventory(self.report([self.row(), self.row()]))
+
+        self.assertIn("repeats the row", str(caught.exception))
+
+    def test_a_boolean_or_non_positive_line_is_refused(self: unittest.TestCase) -> None:
+        for line in (True, 0, -3):
+            with self.subTest(line=line), self.assertRaises(ValueError):
+                load_inventory(self.report([self.row(line=line)]))
+
+    def test_a_truncated_warning_is_a_gap_though_the_counts_agree(self: unittest.TestCase) -> None:
+        _rows, warnings, gaps = load_inventory(self.report(
+            [self.row()], warnings=["candidates truncated (maximum 2000 candidates)"],
+        ))
+
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(len(gaps), 1)
+        self.assertIn("truncated", gaps[0])
+
+    def test_a_declared_exclusion_stays_a_warning_only(self: unittest.TestCase) -> None:
+        _rows, warnings, gaps = load_inventory(self.report(
+            [self.row()], warnings=["path outside the inventory scope: vendor/"],
+        ))
+
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(gaps, [])
+
+    def test_malformed_warnings_cannot_hide_missing_coverage(self: unittest.TestCase) -> None:
+        for warnings in ("inventory truncated", 1, None, ["inventory truncated", {}]):
+            with self.subTest(warnings=warnings), self.assertRaises(ValueError):
+                load_inventory(self.report([self.row()], warnings=warnings))
+
+    def test_malformed_coverage_counts_are_refused(self: unittest.TestCase) -> None:
+        for field in ("source_files_in_scope", "source_files_scanned"):
+            for value in (True, "9", -1, 1.5):
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    load_inventory(self.report([self.row()], **{field: value}))
+
+    def test_a_scanned_count_short_of_the_scope_is_a_gap(self: unittest.TestCase) -> None:
+        _rows, _warnings, gaps = load_inventory(self.report(
+            [self.row()], source_files_in_scope=9, source_files_scanned=4,
+        ))
+
+        self.assertEqual(len(gaps), 1)
+        self.assertIn("scanned 4 of 9", gaps[0])
+
+
+class ReconcileInventoryTest(unittest.TestCase):
+    """The run knows exactly which decisions it is owed, and takes nothing else instead."""
+
+    @staticmethod
+    def row(symbol: str, path: str = "a.py", line: int = 1, kind: str = "function") -> dict:
+        return {"symbol": symbol, "kind": kind, "path": path, "line": line, "rank": "key"}
+
+    @staticmethod
+    def finding(verdict: str, claim: str, evidence: str = "a.py:1") -> dict:
+        return {"verdict": verdict, "claim": claim, "evidence": evidence}
+
+    def test_every_row_keeps_its_decision_in_input_order(self: unittest.TestCase) -> None:
+        rows = [self.row("one"), self.row("two", line=4)]
+        findings = [self.finding("drift", "two (function) a.py:4"),
+                    self.finding("certified", "one (function) a.py:1")]
+
+        reconciled = reconcile_inventory(rows, findings, ["a.py"])
+
+        self.assertEqual([entry["claim"] for entry in reconciled],
+                         ["one (function) a.py:1", "two (function) a.py:4"])
+        self.assertEqual([entry["verdict"] for entry in reconciled], ["certified", "drift"])
+
+    def test_a_row_with_no_decision_becomes_unverified(self: unittest.TestCase) -> None:
+        reconciled = reconcile_inventory(
+            [self.row("one"), self.row("two", line=4)],
+            [self.finding("certified", "one (function) a.py:1")], ["a.py"],
+        )
+
+        self.assertEqual(reconciled[1],
+                         {"verdict": "unverified", "claim": "two (function) a.py:4",
+                          "evidence": "no decision was returned for this row"})
+
+    def test_a_row_answered_twice_becomes_unverified(self: unittest.TestCase) -> None:
+        reconciled = reconcile_inventory(
+            [self.row("one")],
+            [self.finding("certified", "one (function) a.py:1"),
+             self.finding("drift", "one (function) a.py:1")], ["a.py"],
+        )
+
+        self.assertEqual(reconciled[0]["verdict"], "unverified")
+        self.assertIn("2 conflicting decisions", reconciled[0]["evidence"])
+
+    def test_the_rubrics_own_missing_extra_survives(self: unittest.TestCase) -> None:
+        extra = self.finding("drift", "missing: two a.py:4", "a.py:4 declares two")
+
+        reconciled = reconcile_inventory(
+            [self.row("one")], [self.finding("certified", "one (function) a.py:1"), extra],
+            ["a.py"],
+        )
+
+        self.assertEqual(reconciled[1], extra)
+
+    def test_a_fabricated_extra_becomes_unverified_not_dropped(self: unittest.TestCase) -> None:
+        malformed = [
+            self.finding("certified", "the module is well documented"),
+            self.finding("certified", "missing: two a.py:4"),            # not a drift
+            self.finding("drift", "missing: two a.py:0"),                # line is not positive
+            self.finding("drift", "missing: two elsewhere.py:4"),        # file was never packed
+        ]
+
+        reconciled = reconcile_inventory([self.row("one")], malformed, ["a.py"])
+
+        self.assertEqual(len(reconciled), 5)
+        self.assertEqual(reconciled[0]["verdict"], "unverified")  # the undecided row
+        for entry in reconciled[1:]:
+            self.assertEqual(entry["verdict"], "unverified")
+            self.assertIn("not as a well-formed", entry["evidence"])
+
+    def test_a_missing_extra_preserves_a_packed_path_with_spaces(self: unittest.TestCase) -> None:
+        path = "src/my file.py"
+        extra = self.finding("drift", f"missing: two {path}:4", f"{path}:4 declares two")
+        findings = [self.finding("certified", f"one (function) {path}:1"), extra]
+
+        self.assertEqual(reconcile_inventory([self.row("one", path)], findings, [path]),
+                         findings)
+        self.assertEqual(reconcile_inventory([self.row("one", path)], findings, ["other.py"])
+                         [1]["verdict"], "unverified")
+
+
+class JudgeReportAccountingTest(unittest.TestCase):
+    """A gap the run itself found has to reach the counts, not only stderr."""
+
+    @staticmethod
+    def ok(verdicts: "list[str]") -> dict:
+        return {
+            "status": "ok",
+            "value": {"findings": [{"verdict": verdict, "claim": verdict, "evidence": "a.py:1"}
+                                   for verdict in verdicts], "summary": "done"},
+            "attempts": 1,
+        }
+
+    def test_an_extra_finding_is_counted_so_nothing_reads_clean(self: unittest.TestCase) -> None:
+        withheld = {"verdict": "unverified", "claim": "source withheld: config/.env",
+                    "evidence": "not sent"}
+
+        report = judge_report("docs", 1, [self.ok(["certified"])], None, [withheld])
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual((report["certified"], report["unverified"]), (1, 1))
+        self.assertIn(withheld, report["findings"])
+
+    def test_the_warnings_ride_in_the_object_too(self: unittest.TestCase) -> None:
+        report = judge_report("inventory", 1, [self.ok([])], None, [], ["skipped a.py: gone"])
+
+        self.assertEqual(report["warnings"], ["skipped a.py: gone"])
 
 
 if __name__ == "__main__":

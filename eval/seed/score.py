@@ -25,9 +25,13 @@ catch a paraphrase sharing no tokens with its ledger row, intent hidden in code
 blocks, or a gap marker placed misleadingly beside unrelated prose. The additive
 gate catches proposal paths that already exist in `eval/fixture/`, not deleted
 lines in an actual diff because the judged run is read-only. Coverage catches
-bad arithmetic and an incomplete inventory count; per-doc bound catches declared
-documents over 60 lines. Unknown candidate symbols are printed for hand audit
-and never gate.
+bad arithmetic and an incomplete inventory count. Goal 1 also gates candidate
+identity: every manifest symbol must appear exactly once among the candidate
+rows, with its declaration's module basename matching the manifest. Unknown symbols,
+duplicates, and wrong modules fail the gate. Per-doc bound counts a doc's ACTUAL body lines
+(never the self-reported `lines` field) against 60, and a missing or
+non-string body fails it outright. The docs-stage judge row's own `docs`
+count is checked against the number of unique written doc paths.
 
 Without `--gate`, any failed gate exits 2. `--gate` additionally compares the
 current 0/1 gate scores with `baseline.json` and fails only if a recorded number
@@ -149,7 +153,7 @@ def as_int(value: object) -> int | None:
         return None
 
 
-def candidate_field_faults(row: dict[str, Any]) -> list[str]:
+def candidate_field_faults(row: dict[str, Any], module: str | None) -> list[str]:
     """Goal 1: every candidate row carries symbol, kind, declaration, rank."""
     faults: list[str] = []
     if not str(row.get("symbol", "")).strip():
@@ -159,6 +163,8 @@ def candidate_field_faults(row: dict[str, Any]) -> list[str]:
     ref = str(row.get("code_ref") or row.get("declaration") or "").strip()
     if not PATH_LINE_RE.match(ref):
         faults.append(f"declaration is not path:line ({ref!r})")
+    if module is not None and Path(ref.rsplit(":", 1)[0]).name != module:
+        faults.append(f"declaration module does not match {module!r} ({ref!r})")
     if as_int(row.get("rank")) is None:
         faults.append("no rank")
     return faults
@@ -166,8 +172,11 @@ def candidate_field_faults(row: dict[str, Any]) -> list[str]:
 
 def gate_inventory(text: str, inventories: list[dict[str, Any]],
                    candidates: list[dict[str, Any]],
-                   manifest_total: int) -> dict[str, Any]:
+                   manifest: list[dict[str, str]]) -> dict[str, Any]:
     """Goal 1 — a complete, surface-shaped inventory with every field present."""
+    manifest_total = len(manifest)
+    known_modules = {row["symbol"]: row["module"] for row in manifest}
+    known_symbols = set(known_modules)
     details: dict[str, Any] = {"rows": inventories, "manifest_total": manifest_total}
     if len(inventories) != 1:
         details["why"] = f"expected exactly one inventory row, saw {len(inventories)}"
@@ -183,18 +192,29 @@ def gate_inventory(text: str, inventories: list[dict[str, Any]],
     # quoted in the report as a named exclusion, not swallowed by the row.
     unquoted = [w for w in warnings if "outside inventory" in w.lower()
                 and text.count(w) < 2]
-    field_faults = {str(row.get("symbol")): candidate_field_faults(row)
+    field_faults = {str(row.get("symbol")): candidate_field_faults(
+                        row, known_modules.get(str(row.get("symbol"))))
                     for row in candidates}
     field_faults = {k: v for k, v in field_faults.items() if v}
+    # Identity, not just count: every manifest symbol exactly once, nothing else.
+    candidate_symbols = [str(row.get("symbol")) for row in candidates]
+    duplicate_symbols = sorted({s for s in candidate_symbols
+                                if candidate_symbols.count(s) > 1})
+    unknown_symbols = sorted({s for s in candidate_symbols if s not in known_symbols})
+    missing_symbols = sorted(known_symbols - set(candidate_symbols))
     ok = (source is not None and source == scanned
           and declared == len(candidates) == manifest_total
-          and not truncated and not unquoted and not field_faults)
+          and not truncated and not unquoted and not field_faults
+          and not duplicate_symbols and not unknown_symbols and not missing_symbols)
     details.update({"source_files": source, "scanned_files": scanned,
                     "declared_candidates": declared,
                     "candidate_rows": len(candidates),
                     "truncated_warnings": truncated,
                     "unquoted_outside_inventory": unquoted,
-                    "row_faults": field_faults})
+                    "row_faults": field_faults,
+                    "duplicate_symbols": duplicate_symbols,
+                    "unknown_symbols": unknown_symbols,
+                    "missing_symbols": missing_symbols})
     return gate_result(ok, details)
 
 
@@ -235,7 +255,8 @@ def gate_winnow(winnows: list[dict[str, Any]], claim_rows: int) -> dict[str, Any
     return gate_result(ok, details)
 
 
-def gate_judge(judge_rows: list[dict[str, Any]], written: int) -> dict[str, Any]:
+def gate_judge(judge_rows: list[dict[str, Any]], written: int,
+              enforce_docs_count: bool = False) -> dict[str, Any]:
     """Second provider — required whenever a doc was written; optional when none was."""
     details: dict[str, Any] = {"rows": judge_rows, "written": written}
     if written == 0 and not judge_rows:
@@ -253,6 +274,11 @@ def gate_judge(judge_rows: list[dict[str, Any]], written: int) -> dict[str, Any]
         details.update({"reason": row.get("reason"),
                         "why": f"judge status is {status!r}, not \"ok\""})
         return gate_result(False, details)
+    if enforce_docs_count:
+        judged_docs = as_int(row.get("docs"))
+        if judged_docs != written:
+            details["why"] = f"judge counted docs={judged_docs}, not {written} written"
+            return gate_result(False, details)
     drift = as_int(row.get("drift"))
     details["drift"] = drift
     ok = drift == 0
@@ -363,7 +389,7 @@ def score(text: str, manifest_path: Path, approve: int | None = None) -> dict[st
             other_misses.append(row["id"])
     gates: dict[str, dict[str, Any]] = {}
     gates["goal 1 — complete inventory"] = gate_inventory(
-        text, inventories, candidates, len(manifest))
+        text, inventories, candidates, manifest)
     gates["goal 2 — ranked walk, no cherry-picking"] = gate_walk(
         candidates, len(manifest))
     gates["classification"] = gate_result(
@@ -400,8 +426,10 @@ def score(text: str, manifest_path: Path, approve: int | None = None) -> dict[st
         docs, claims, by_symbol)
     inventory_judges = [row for row in judge_rows if row.get("stage") == "inventory"]
     doc_judges = [row for row in judge_rows if row.get("stage", "docs") == "docs"]
+    written_doc_count = len({str(row.get("path", "")) for row in docs})
     gates["goal — second provider (inventory)"] = gate_judge(inventory_judges, 1)
-    gates["goal — second provider (docs)"] = gate_judge(doc_judges, len(docs))
+    gates["goal — second provider (docs)"] = gate_judge(
+        doc_judges, written_doc_count, enforce_docs_count=True)
 
     coverage_detail: dict[str, Any] = {"rows": coverage_rows, "manifest_total": len(manifest)}
     coverage_ok = len(coverage_rows) == 1
@@ -415,14 +443,19 @@ def score(text: str, manifest_path: Path, approve: int | None = None) -> dict[st
             coverage_ok = False
     gates["goal 7 — coverage identity"] = gate_result(coverage_ok, coverage_detail)
 
+    # The self-reported `lines` field is not trusted: the bound is enforced
+    # against the doc's ACTUAL body content, and a missing/non-string body
+    # (required by the prompt whenever a doc is emitted) fails outright.
     invalid_bounds: list[dict[str, Any]] = []
     for doc in docs:
-        try:
-            valid = int(doc["lines"]) <= 60
-        except (KeyError, TypeError, ValueError):
-            valid = False
-        if not valid:
-            invalid_bounds.append(doc)
+        body = doc.get("body")
+        if not isinstance(body, str) or not body.strip():
+            invalid_bounds.append({**doc, "why": "missing or malformed body"})
+            continue
+        actual_lines = len(body.splitlines())
+        if actual_lines > 60:
+            invalid_bounds.append({**doc, "why": f"body is {actual_lines} lines, over 60",
+                                   "actual_lines": actual_lines})
     gates["goal 8 — per-doc bound (<= 60 added lines)"] = gate_result(
         not invalid_bounds, {"invalid": invalid_bounds})
 
@@ -479,7 +512,7 @@ def render(result: dict[str, Any], gate_status: str | None) -> None:
         elif not gate["pass"]:
             print(f"  {json.dumps(details, sort_keys=True)}")
     if result["unknown_candidates"]:
-        print("unknown candidates (hand audit, not gated):")
+        print("unknown candidates (inventory gate failed):")
         for row in result["unknown_candidates"]:
             print(f"  {row.get('symbol')} rank {row.get('rank')}")
     if gate_status:
@@ -671,10 +704,63 @@ def selftest(manifest_path: Path) -> int:
         return rows
     mutate("goal 8 — the symbol never appears in the written doc", symbol_absent)
 
-    def oversized(rows):
-        find(rows, "doc", symbol="with_backoff")["lines"] = 61
+    def gap_filler(n: int) -> str:
+        # seed:gap-marked lines are exempt from the speculation gate, so this
+        # padding trips only the line-count bound -- every other gate about
+        # this doc (reader-use, symbol visibility, claim ledger) stays intact.
+        return "\n".join(f"<!-- seed:gap — filler line {i} -->" for i in range(n))
+
+    def oversized(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        doc = find(rows, "doc", symbol="with_backoff")
+        doc["body"] = doc["body"] + gap_filler(60) + "\n"
         return rows
-    mutate("goal 8 — a doc over the 60-line bound", oversized)
+    mutate("goal 8 — a doc whose actual body is over 60 lines", oversized)
+
+    def small_lines_field_big_body(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        # The self-reported `lines` field lies small; only the real body counts.
+        doc = find(rows, "doc", symbol="with_backoff")
+        doc["lines"] = 5
+        doc["body"] = doc["body"] + gap_filler(60) + "\n"
+        return rows
+    mutate("goal 8 — falsified body (small `lines` field, oversized actual body)",
+           small_lines_field_big_body)
+
+    def missing_body(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        del find(rows, "doc", symbol="with_backoff")["body"]
+        return rows
+    mutate("goal 8 — a doc with no body", missing_body)
+
+    def duplicate_symbol(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        find(rows, "candidate", rank=2)["symbol"] = find(rows, "candidate", rank=1)["symbol"]
+        return rows
+    mutate("goal 1 — falsified identity (duplicate candidate symbol)", duplicate_symbol)
+
+    def unknown_symbol(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        find(rows, "candidate", rank=1)["symbol"] = "not_in_the_manifest"
+        return rows
+    mutate("goal 1 — falsified identity (candidate symbol not in manifest)", unknown_symbol)
+
+    def wrong_module(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        find(rows, "candidate", symbol="get_release_name")["code_ref"] = "config.py:999"
+        return rows
+    mutate("goal 1 — falsified identity (candidate in the wrong module)", wrong_module)
+
+    def falsified_count(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        # Declared count and row count still agree with each other, just not
+        # with the manifest: one candidate row was dropped, and the declared
+        # count was quietly dropped to match it.
+        rows[0]["candidates"] = int(rows[0]["candidates"]) - 1
+        rows.remove(find(rows, "candidate", rank=11))
+        return rows
+    mutate("goal 1 — falsified count (fewer candidate rows than the manifest)",
+           falsified_count)
+
+    def judge_docs_count_mismatch(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        find(rows, "judge", stage="docs")["docs"] = \
+            len([r for r in rows if r.get("type") == "doc"]) + 1
+        return rows
+    mutate("goal — second provider: judge doc count does not match written docs",
+           judge_docs_count_mismatch)
 
     def extra_marker(rows):
         for note in ("why a second marker", "why a third marker"):

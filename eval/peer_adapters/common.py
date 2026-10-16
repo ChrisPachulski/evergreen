@@ -129,6 +129,8 @@ def _run_bounded(command, payload, timeout):
                 if key.data == "stdin":
                     try:
                         count = os.write(stream.fileno(), payload[sent:sent + 64 * 1024])
+                    except BlockingIOError:
+                        continue
                     except BrokenPipeError:
                         count = 0
                         sent = len(payload)

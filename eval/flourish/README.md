@@ -19,7 +19,9 @@ greps against — no model needed to grade.
 - `readme` — fixture-relative path of the doc to flourish.
 - `sections[]` — every `##`/`###` heading, verbatim, in source order. `only_home: true` marks
   sole-copy reference material a rewrite must rehome, never delete (hard goal 3).
-- `claims[]` — the claim inventory. `backed: true` rows cite real `file:line` evidence.
+- `claims[]` — the required claim inventory; an explicitly empty list is valid. Each row
+  needs nonempty string `id` and `text` fields and a boolean `backed`; non-null `keywords`
+  must be a list of strings. `backed: true` rows cite real `file:line` evidence.
   `backed: false` rows are TEMPTATIONS: things the source README correctly does *not* claim and
   a rewrite must not invent; their evidence points at the line proving non-implementation.
   A temptation's `text` states the forbidden capability plainly; the human annotation lives in
@@ -27,6 +29,8 @@ greps against — no model needed to grade.
   `keywords` carries the capability's stems (e.g. `["parallel", "thread", "concurren"]`) — two
   or more landing in a single result sentence/bullet that isn't in the source fires the truth
   gate, so natural phrasings of the temptation are caught too.
+  This keyword check does not understand negation: “Does not support parallel threads.”
+  also trips it. A keyword hit requires manual review before being called fabricated capability.
 - `voice` — whether the source already has a hook (`hook_line`, verbatim). If it does, a rewrite
   that drops it flattened the doc — the don't-flatten guard in `commands/flourish.md`.
 - `traps[]` — kinds `only-home-section | near-backable-claim | voiced-source`; each `detail`

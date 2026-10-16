@@ -91,10 +91,18 @@ written result and always gate.
        fallback (content tokens of the claim text, length >= 4, stopwords
        dropped, stemmed to 6 chars, all landing on one result line; >= 2
        required).
+   Known false-positive ceiling (manual review required, not fixed here): the
+   keyword-stem match is purely lexical, with no negation parser. A true
+   LIMITATION sentence that shares the forbidden capability's stems -- "Does
+   not support parallel threads." carries both "parallel" and "thread" --
+   fires exactly like a real capability claim would. A human has to read the
+   flagged line and decide whether it is the claim or its denial; the gate
+   cannot.
    What it CANNOT catch:
      - synonym paraphrases sharing no keyword stem ("fans work out across
        cores" for the parallel trap);
-     - claims negated or numerically altered;
+     - a fabricated claim phrased as a negation or an altered number so it
+       reads as truthful while still smuggling the capability in;
      - a claim split across units so no single sentence carries >= 2 stems
        ("fans work out in parallel. Each file gets its own thread.") —
        per-unit matching is deliberate; document-level pooling would
@@ -558,7 +566,7 @@ def gate_truth(gt, source_text, result_text):
     for c in unbacked:
         text = c.get("text", "")
         c_norm = strip_markup(text)
-        stems = [str(k).lower() for k in c.get("keywords", []) if str(k).strip()]
+        stems = [str(k).lower() for k in c.get("keywords") or [] if str(k).strip()]
         method, at_line, evidence = None, None, None
         if c_norm and c_norm in result_norm:
             method = "exact"
@@ -947,6 +955,22 @@ def load_ground_truth(fixture):
             f" (scorer speaks {SCHEMA_VERSION})")
     if not isinstance(gt.get("sections"), list) or "readme" not in gt:
         die(f"{gt_path} is missing required keys (readme, sections)")
+    if "claims" not in gt or not isinstance(gt["claims"], list):
+        die(f"{gt_path} is missing a claims list (an empty list is fine, a missing key is not)")
+    for row in gt["claims"]:
+        if not isinstance(row, dict):
+            die(f"{gt_path} has a malformed claims row (not an object): {row!r}")
+        if not isinstance(row.get("id"), str) or not row["id"].strip():
+            die(f"{gt_path} has a claims row with a missing/non-string id: {row!r}")
+        if not isinstance(row.get("text"), str) or not row["text"].strip():
+            die(f"{gt_path} has a claims row with a missing/non-string text: {row!r}")
+        if not isinstance(row.get("backed"), bool):
+            die(f"{gt_path} has a claims row with a non-boolean backed: {row!r}")
+        keywords = row.get("keywords")
+        if keywords is not None and (not isinstance(keywords, list)
+                                     or not all(isinstance(k, str) for k in keywords)):
+            die(f"{gt_path} has a claims row with malformed keywords"
+                f" (must be a list of strings): {row!r}")
     return gt
 
 

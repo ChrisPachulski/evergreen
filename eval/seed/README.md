@@ -50,16 +50,16 @@ plus classification against the manifest.
 
 | goal | status | what the check actually proves |
 |------|--------|--------------------------------|
-| 1 — complete, surface-shaped inventory | enforced | one inventory row with `source_files == scanned_files`, `candidates` matching the row count and the manifest; every candidate row carries symbol, kind, a declaration `path:line`, and a rank; no `truncated` warning; every `outside inventory` warning quoted a second time in the report. |
+| 1 — complete, surface-shaped inventory | enforced | one inventory row with reported `source_files == scanned_files`, `candidates` matching the row count and the manifest, and every manifest symbol appearing exactly once with its declaration's module basename matching the manifest; every candidate row carries symbol, kind, a declaration `path:line`, and a rank; no `truncated` warning; every `outside inventory` warning quoted a second time in the report. The file counts are reported evidence, not an independent source scan. |
 | 2 — walk the ranking, stop only when cold | enforced | ranks are 1..R in emission order with no gap, the inspected rows form a prefix, the remainder is `deferred`, and the walk stops at `N` or after 10 consecutive cold verdicts. |
 | 3 — a code `file:line` on every claim | enforced | the citation is present. It is never opened, so it proves presence, not truth. |
 | 4 — winnow the seeded output | enforced | one winnow row with `certified` == claim-ledger rows, `drift` == 0, `unverified` == 0. |
 | 5 — zero unmarked speculation | enforced | every declarative unit matches a ledger row by normalized substring or sits on a `seed:gap` line. A paraphrase sharing no tokens with its row walks through. |
 | 6 — purely additive | **proxied** | proposal paths that already exist under `eval/fixture/` fail. The judged run is read-only, so there is no real diff to read `-` lines from. |
 | 7 — the owner sets the write count | enforced | the worthy list and its recommendation appear before any doc content; `documented + worthy + not-worthy + deferred == N`; `written <= chosen <= worthy`; no owner answer means `written == 0`; a pre-diff `documented` candidate may not be written. The owner's count comes from an `owner` row or the `--approve N` invocation argument. |
-| 8 — useful, small, repeat-visible | enforced, one part proxied | every written doc needs a `reader-use` claim citing code outside its declaration line, and stays within 60 lines — the scorer bounds each doc, stricter than the goal's aggregate `A ≤ 60 × written`. Gap markers and touched doc paths each stay within `written`, and every marker sits on a written doc. The post-diff grep is **proxied** by a scan of the proposed body outside `seed:gap` lines, since a read-only run writes no file to grep. |
+| 8 — useful, small, repeat-visible | enforced, one part proxied | every written doc needs a `reader-use` claim citing code outside its declaration line, and its actual body stays within 60 lines; a missing or empty body fails, regardless of the reported `lines` count. The scorer bounds each doc, stricter than the goal's aggregate `A ≤ 60 × written`. Gap markers and touched doc paths each stay within `written`, and every marker sits on a written doc. The post-diff grep is **proxied** by a scan of the proposed body outside `seed:gap` lines, since a read-only run writes no file to grep. |
 | second provider (inventory) | enforced on every run | one `judge` row with stage `inventory`, status `ok`, drift 0: till's surface judged on a second provider before triage. |
-| second provider (docs) | enforced whenever a doc was written | one `judge` row with stage `docs`, status `ok`, drift 0; absent is allowed only when `written == 0`. |
+| second provider (docs) | enforced whenever a doc was written | one `judge` row with stage `docs`, status `ok`, drift 0, and `docs` matching the number of unique written paths; absent is allowed only when `written == 0`. |
 
 ### The rows the goal gates read
 
@@ -67,7 +67,7 @@ Goals 1, 2, 4 and 7 are counts over rows the run emits, so the trailing `jsonl` 
 the goal gates read:
 
 ```jsonl
-{"type":"inventory","source_files":4,"scanned_files":4,"candidates":10,"warnings":[]}
+{"type":"inventory","source_files":4,"scanned_files":4,"candidates":11,"warnings":[]}
 {"type":"candidate","symbol":"with_backoff","kind":"function","code_ref":"helpers.py:12","rank":1,"verdict":"worthy","reader_use":"..."}
 {"type":"recommendation","worthy":["with_backoff","resolve_setting"],"recommend":2}
 {"type":"owner","chosen":2}
@@ -107,11 +107,11 @@ The grant is read-only plus exactly one shell command, the judge entry point, be
 mandatory on every run: the inventory row is judged before triage and any written doc after it (one
 codex call per inventory batch and per doc), and a host without codex fails the two second-provider gates rather than passing
 quietly. The eight hard goals are about triage, ledger discipline, and coverage; the judge gates sit
-beside them, and a green exam proves the judge *ran*, not that it is right. The judge's own
-correctness is proven separately and more cheaply, by pointing
-`bin/evergreen judge --repo PATH --doc PATH` at a doc with a known planted lie and confirming it
+beside them. The scorer checks the reported judge rows; it cannot prove that the provider ran
+or that its verdict was right. A separate behavioral check points
+`bin/evergreen judge --repo PATH --doc PATH` at a doc with a known planted lie and confirms it
 comes back `drift` (exit 0 with a verdict, 3 when it abstains or is unavailable, 2 on bad input);
-that is a better test of the judge than any seed
+that tests the judge more directly than a seed
 run, because seed writes its claims *from* the code and rarely produces a false one to catch.
 
 ## The gate

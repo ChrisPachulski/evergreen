@@ -15,7 +15,7 @@ End your reply with a fenced `jsonl` block and nothing else inside that block.
 Emit one object per line:
 
 ```jsonl
-{"type":"verdict","path":"<p>","verdict":"keep|orphan|untrack|ignore|delete-proposed","evidence":"<the executed grep result or reason>"}
+{"type":"verdict","path":"<p>","verdict":"keep|orphan|untrack|ignore|delete-proposed|unsettled","evidence":"<the executed grep result, or the resolver that would settle it>"}
 {"type":"inventory","tracked":<n>,"on_disk":<n>,"gap_accounted":<n>}
 {"type":"exposure","gh_ran":true|false,"visibility":"<value or unchecked>"}
 {"type":"tested","element":"<symbol>","status":"tested|gap","test_ref":"<file:line or null>"}

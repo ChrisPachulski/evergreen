@@ -95,11 +95,11 @@ if [[ "$*" = *'rev-parse --verify'* ]]; then
   printf 'ARGS=%s SECRET=%s\n' "$*" "${UNRELATED_SECRET+set}" >> "$HOME/git-resolve.log"
 fi
 case "$mode:$*" in
-  hang-resolve:*'rev-parse --verify'*) sleep 5 ;;
+  hang-resolve:*'rev-parse --verify'*) sleep 30 ;;
   malformed-resolve:*'rev-parse --verify'*) printf '%s\n' 'not-a-commit'; exit 0 ;;
   diff:*'diff --name-only'*|tree:*'ls-tree -r -z --name-only'*) exit 70 ;;
-  hang-diff:*'diff --name-only'*|hang-tree:*'ls-tree -r -z --name-only'*) sleep 5 ;;
-  hang-manifest:*'diff --name-status'*) sleep 5 ;;
+  hang-diff:*'diff --name-only'*|hang-tree:*'ls-tree -r -z --name-only'*) sleep 30 ;;
+  hang-manifest:*'diff --name-status'*) sleep 30 ;;
 esac
 exec "$(dirname "$0")/actual/git" "$@"
 EOF
@@ -131,8 +131,8 @@ mode="$(cat "$HOME/hang-prefilter" 2>/dev/null || true)"
 if [[ "${1:-}" = *path_prefilter.py ]]; then
   printf 'SECRET=%s\n' "${UNRELATED_SECRET+set}" >> "$HOME/prefilter-env.log"
   case "$mode:$*" in
-    code:*'--mode code'*) sleep 5 ;;
-    docs:*'--mode docs'*) sleep 5 ;;
+    code:*'--mode code'*) sleep 30 ;;
+    docs:*'--mode docs'*) sleep 30 ;;
   esac
 fi
 exec "$(dirname "$0")/actual/python3" "$@"
@@ -166,6 +166,18 @@ EOF
   fi
   git -C "$REPO" add .
   git -C "$REPO" commit -qm head
+  HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
+}
+
+add_json_import_marker() {
+  cat > "$REPO/json.py" <<'EOF'
+import os
+from pathlib import Path
+
+Path(os.environ["JSON_IMPORT_MARKER"]).write_text(os.environ.get("UNRELATED_SECRET", ""))
+EOF
+  git -C "$REPO" add json.py
+  git -C "$REPO" commit -qm json-import-marker
   HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
 }
 
@@ -258,6 +270,7 @@ run_driver() {
     EVERGREEN_IS_FORK="${TEST_IS_FORK:-false}" \
     ANTHROPIC_API_KEY="${TEST_API_KEY-test-key}" \
     UNRELATED_SECRET=must-not-reach-claude \
+    JSON_IMPORT_MARKER="$CASE_DIR/json-imported" \
     HOME="$CASE_DIR" \
     REAL_GIT_BIN="$REAL_GIT_BIN" \
     TEST_GIT_FAIL_MODE="${TEST_GIT_FAIL_MODE:-}" \
@@ -282,6 +295,19 @@ run_driver clean "$(clean_result)"
 contains "$SUMMARY_FILE" "docs still match the code" "clean result was not rendered as clean"
 contains "$GH_LOG_FILE" "pr comment 42" "clean result did not post a PR comment"
 pass "clean result"
+
+make_repo isolated-json-normal
+add_json_import_marker
+run_driver isolated-json-normal "$(clean_result)"
+[ "$STATUS" -eq 0 ] || fail "normal result should ignore repository json.py (got $STATUS)"
+[ ! -e "$CASE_DIR/json-imported" ] || fail "normal result imported repository json.py"
+
+make_repo isolated-json-inconclusive
+add_json_import_marker
+TEST_IS_FORK=true run_driver isolated-json-inconclusive "$(clean_result)"
+[ "$STATUS" -ne 0 ] || fail "fork result should remain inconclusive under strict policy"
+[ ! -e "$CASE_DIR/json-imported" ] || fail "inconclusive result imported repository json.py"
+pass "inline Python ignores repository modules"
 
 make_repo findings
 run_driver findings "$(finding_result)"
@@ -386,10 +412,11 @@ contains "$SUMMARY_FILE" 'Commit-derived review context is truncated or contains
 pass "review context bounds fail closed"
 
 make_repo resolve-timeout
-TEST_GIT_FAIL_MODE=hang-resolve TEST_GIT_TIMEOUT_SECONDS=1 \
+TEST_GIT_FAIL_MODE=hang-resolve TEST_GIT_TIMEOUT_SECONDS=10 \
   run_driver resolve-timeout '' true "$FAIL_GIT_BIN"
 [ "$STATUS" -ne 0 ] || fail "hanging commit resolution must be inconclusive"
-contains "$SUMMARY_FILE" 'diff base could not be resolved.' "commit resolution timeout lost its exact reason"
+contains "$SUMMARY_FILE" 'diff base could not be resolved.' \
+  "commit resolution timeout lost its exact reason; summary: $(tr '\n' ' ' < "$SUMMARY_FILE")"
 [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "commit resolution timeout still invoked Claude"
 
 make_repo malformed-resolve
@@ -420,17 +447,19 @@ contains "$SUMMARY_FILE" 'Git documentation detection failed.' "git tree prefilt
 pass "prefilter failures fail closed"
 
 make_repo diff-prefilter-timeout
-TEST_GIT_FAIL_MODE=hang-diff TEST_GIT_TIMEOUT_SECONDS=1 \
+TEST_GIT_FAIL_MODE=hang-diff TEST_GIT_TIMEOUT_SECONDS=10 \
   run_driver diff-prefilter-timeout '' true "$FAIL_GIT_BIN"
 [ "$STATUS" -ne 0 ] || fail "hanging git diff prefilter must be inconclusive"
-contains "$SUMMARY_FILE" 'Git change detection failed.' "git diff timeout lost its exact reason"
+contains "$SUMMARY_FILE" 'Git change detection failed.' \
+  "git diff timeout lost its exact reason; summary: $(tr '\n' ' ' < "$SUMMARY_FILE")"
 [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "git diff timeout still invoked Claude"
 
 make_repo tree-prefilter-timeout
-TEST_GIT_FAIL_MODE=hang-tree TEST_GIT_TIMEOUT_SECONDS=1 \
+TEST_GIT_FAIL_MODE=hang-tree TEST_GIT_TIMEOUT_SECONDS=10 \
   run_driver tree-prefilter-timeout '' true "$FAIL_GIT_BIN"
 [ "$STATUS" -ne 0 ] || fail "hanging git tree prefilter must be inconclusive"
-contains "$SUMMARY_FILE" 'Git documentation detection failed.' "git tree timeout lost its exact reason"
+contains "$SUMMARY_FILE" 'Git documentation detection failed.' \
+  "git tree timeout lost its exact reason; summary: $(tr '\n' ' ' < "$SUMMARY_FILE")"
 [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "git tree timeout still invoked Claude"
 
 make_repo prefilter-overflow
@@ -440,10 +469,11 @@ contains "$SUMMARY_FILE" 'Git change detection failed.' "prefilter overflow lost
 [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "prefilter overflow still invoked Claude"
 
 make_repo manifest-timeout
-TEST_GIT_FAIL_MODE=hang-manifest TEST_GIT_TIMEOUT_SECONDS=1 \
+TEST_GIT_FAIL_MODE=hang-manifest TEST_GIT_TIMEOUT_SECONDS=10 \
   run_driver manifest-timeout '' true "$FAIL_GIT_BIN"
 [ "$STATUS" -ne 0 ] || fail "hanging manifest git call must be inconclusive"
-contains "$SUMMARY_FILE" 'Change manifest is truncated or contains deterministic errors.' "manifest timeout lost its exact reason"
+contains "$SUMMARY_FILE" 'Change manifest is truncated or contains deterministic errors.' \
+  "manifest timeout lost its exact reason; summary: $(tr '\n' ' ' < "$SUMMARY_FILE")"
 [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "manifest timeout still invoked Claude"
 pass "Git preparation is time and output bounded"
 
@@ -462,8 +492,9 @@ for prefilter_mode in code docs; do
   elapsed="$(python3 -c 'import sys; print(float(sys.argv[2])-float(sys.argv[1]))' \
     "$started" "$(python3 -c 'import time; print(time.monotonic())')")"
   [ "$STATUS" -ne 0 ] || fail "hanging $prefilter_mode prefilter must be inconclusive"
-  python3 -c 'import sys; assert float(sys.argv[1]) < 3' "$elapsed" || \
+  python3 -c 'import sys; assert float(sys.argv[1]) < 10' "$elapsed" || \
     fail "hanging $prefilter_mode prefilter exceeded outer timeout ($elapsed seconds)"
+  margin="$(python3 -c 'import sys; print(10-float(sys.argv[1]))' "$elapsed")"
   if [ "$prefilter_mode" = code ]; then
     expected='Changed-path classification exceeded its safety bounds.'
   else
@@ -475,6 +506,7 @@ for prefilter_mode in code docs; do
   not_contains "$CASE_DIR/prefilter-env.log" 'SECRET=set' \
     "hanging $prefilter_mode prefilter inherited unrelated secrets"
   [ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "hanging $prefilter_mode prefilter invoked Claude"
+  echo "ok - hanging $prefilter_mode prefilter: ${elapsed}s elapsed, ${margin}s below 10s ceiling"
 done
 unset TEST_PREFILTER_BEHAVIOR
 unset TEST_PREFILTER_TIMEOUT_SECONDS

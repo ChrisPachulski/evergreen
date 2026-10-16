@@ -147,7 +147,7 @@ finish_review() {
 
 finish_inconclusive() {
   local reason="$1" raw
-  raw="$(python3 -c 'import json,sys; print(json.dumps({
+  raw="$(python3 -I -c 'import json,sys; print(json.dumps({
     "schema_version": 2, "status": "inconclusive", "base": sys.argv[1], "head": sys.argv[2],
     "claims": {"total": 0, "certified": 0, "drift": 0, "unverified": 0},
     "findings": [], "unverified": [], "errors": [sys.argv[3]],
@@ -240,14 +240,14 @@ if [ $? -ne 0 ] || [ -z "$MANIFEST" ]; then
   echo "evergreen: change manifest failed; review is inconclusive." >&2
   finish_inconclusive "Change manifest generation failed."
 fi
-MANIFEST_COMPLETE="$(printf '%s' "$MANIFEST" | python3 -c \
+MANIFEST_COMPLETE="$(printf '%s' "$MANIFEST" | python3 -I -c \
   'import json,sys; m=json.load(sys.stdin); print("yes" if not m["truncated"] and not m["errors"] else "no")' \
   2>/dev/null)"
 if [ "$MANIFEST_COMPLETE" != "yes" ]; then
   echo "evergreen: change manifest is incomplete; review is inconclusive." >&2
   finish_inconclusive "Change manifest is truncated or contains deterministic errors."
 fi
-MANIFEST_SAFE="$(printf '%s' "$MANIFEST" | python3 -c \
+MANIFEST_SAFE="$(printf '%s' "$MANIFEST" | python3 -I -c \
   'import sys; value=sys.stdin.read(); print(value.replace("&", r"\u0026").replace("<", r"\u003c").replace(">", r"\u003e"), end="")')"
 MANIFEST_SAFE_STATUS=$?
 if [ "$MANIFEST_SAFE_STATUS" -ne 0 ] || [ -z "$MANIFEST_SAFE" ]; then
@@ -261,7 +261,7 @@ if [ "$CONTEXT_STATUS" -ne 0 ] || [ -z "$CONTEXT" ]; then
   echo "evergreen: commit-derived review context is incomplete; review is inconclusive." >&2
   finish_inconclusive "Commit-derived review context is truncated or contains deterministic errors."
 fi
-CONTEXT_SAFE="$(printf '%s' "$CONTEXT" | python3 -c \
+CONTEXT_SAFE="$(printf '%s' "$CONTEXT" | python3 -I -c \
   'import sys; value=sys.stdin.read(); print(value.replace("&", r"\u0026").replace("<", r"\u003c").replace(">", r"\u003e"), end="")')"
 CONTEXT_SAFE_STATUS=$?
 if [ "$CONTEXT_SAFE_STATUS" -ne 0 ] || [ -z "$CONTEXT_SAFE" ]; then

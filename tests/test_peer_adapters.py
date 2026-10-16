@@ -1,6 +1,8 @@
 import hashlib
 import json
+import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -57,6 +59,25 @@ exports.detectDocsDrift = async function(options) {
 
 
 class PeerAdapterTests(unittest.TestCase):
+    def test_bounded_runner_retries_temporarily_full_stdin(self: unittest.TestCase) -> None:
+        from eval.peer_adapters import common
+
+        payload = b"preserve every byte\n" * 8192
+        original_write = os.write
+        attempts = iter((True,))
+
+        def write_after_block(fd: int, data: bytes) -> int:
+            if next(attempts, False):
+                raise BlockingIOError("pipe temporarily full")
+            return original_write(fd, data[:4096])
+
+        command = [sys.executable, "-c",
+                   "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())"]
+        with mock.patch.object(common.os, "write", side_effect=write_after_block):
+            output = common._run_bounded(command, payload, timeout=10)
+
+        self.assertEqual(output, payload)
+
     def test_drift_guardian_invokes_pinned_api_and_emits_exact_bound_decisions(self):
         from eval import peers
         from eval.peer_adapters import drift_guardian

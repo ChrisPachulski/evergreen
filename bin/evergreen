@@ -78,6 +78,11 @@ def parser():
         help="how to read --doc: prose claims (default) or a cultivate report of judgment rows",
     )
     judge.add_argument(
+        "--allow-sensitive-path", action="append", default=[], metavar="PATH",
+        help="repository-relative path to send even though it looks sensitive or is git-ignored "
+             "(repeatable; exact path only, and the containment and byte bounds still apply)",
+    )
+    judge.add_argument(
         "--timeout", type=int, default=300, help="seconds allowed for the call (default: 300)"
     )
     judge.add_argument("--json", action="store_true", help="emit the raw result object")
@@ -95,9 +100,11 @@ def run_judge(args):
     """
     try:
         from evergreen.judge import (
-            CULTIVATE_RUBRIC, INVENTORY_RUBRIC, JUDGE_RUBRIC, collect_referenced_files,
-            inventory_batches, inventory_text, judge_json, judge_prompt, judge_report,
-            load_inventory,
+            CULTIVATE_RUBRIC, INVENTORY_RUBRIC, JUDGE_RUBRIC, MAX_JUDGE_BYTES,
+            MAX_JUDGE_INVENTORY_BYTES, collect_referenced_files, inventory_batches,
+            inventory_row_text, inventory_text, judge_json, judge_prompt, judge_report,
+            load_inventory, normalized_relative_path, read_bounded, reconcile_inventory,
+            unverified_finding,
         )
     except ImportError as error:                              # tomllib arrived in Python 3.11
         print(f"evergreen: judge requires Python 3.11 or later ({error_display(error)})", file=sys.stderr)
@@ -113,20 +120,47 @@ def run_judge(args):
     if args.inventory is not None and args.rubric != "doc":
         print("evergreen: --rubric applies to --doc, not --inventory", file=sys.stderr)
         return 2
+    # An explicit --doc/--inventory is the operator's own choice of input and carries no
+    # filename policy; --allow-sensitive-path re-admits a *referenced* source, so it must name
+    # the one normalized repository-relative form the reference itself would take.
+    allowed = tuple(args.allow_sensitive_path)
+    unusable = [value for value in allowed if normalized_relative_path(value) is None]
+    if unusable:
+        print(
+            f"evergreen: --allow-sensitive-path needs an exact repository-relative path: "
+            f"{error_display(unusable[0])}",
+            file=sys.stderr,
+        )
+        return 2
     subject = Path(args.doc if args.inventory is None else args.inventory).expanduser()
-    try:
-        text = subject.read_text(encoding="utf-8", errors="replace")
-    except (OSError, UnicodeError) as error:
-        print(f"evergreen: {error_display(error)}", file=sys.stderr)
+    limit = MAX_JUDGE_BYTES if args.inventory is None else MAX_JUDGE_INVENTORY_BYTES
+    # The subject is read through the same bounded read the packed evidence gets: a document
+    # that grows or is swapped between the argument check and the read must fail closed, not
+    # arrive in a prompt at whatever size it reached.
+    text = read_bounded(subject, limit)
+    if text is None:
+        print(
+            f"evergreen: could not read {error_display(subject)} as a regular file of at most "
+            f"{limit} bytes",
+            file=sys.stderr,
+        )
         return 2
 
+    extra = []
     if args.inventory is not None:
         try:
-            rows = load_inventory(text)
+            rows, upstream, gaps = load_inventory(text)
         except ValueError as error:
             print(f"evergreen: {error_display(error)}", file=sys.stderr)
             return 2
-        batches, warnings = inventory_batches(repo.resolve(), rows)
+        batches, warnings, dropped = inventory_batches(repo.resolve(), rows, allowed)
+        # An upstream warning is often a declared exclusion, so it stays a warning; a scanned
+        # count short of the scope is real missing coverage, and that is unverified evidence.
+        warnings = upstream + warnings
+        extra = [
+            unverified_finding(inventory_row_text(row), "its source file was not sent to the judge")
+            for row in dropped
+        ] + [unverified_finding(gap, "carried forward from the inventory input") for gap in gaps]
         prompts = [
             (judge_prompt(
                 f"INVENTORY batch {index} of {len(batches)}", inventory_text(batch_rows),
@@ -136,7 +170,14 @@ def run_judge(args):
         ]
         stage = "inventory"
     else:
-        files, warnings = collect_referenced_files(repo.resolve(), text)
+        files, warnings, withheld = collect_referenced_files(repo.resolve(), text, allowed)
+        extra = [
+            unverified_finding(
+                f"source withheld: {path}",
+                "the file was not sent to the judge, so its claims are unsettled",
+            )
+            for path in withheld
+        ]
         rubric = CULTIVATE_RUBRIC if args.rubric == "cultivate" else JUDGE_RUBRIC
         prompts = [(judge_prompt(subject.name, text, files, rubric), 1)]
         stage = "report" if args.rubric == "cultivate" else "docs"
@@ -150,11 +191,29 @@ def run_judge(args):
         {"status": "abstain", "reason": "no source file from the inventory could be packed",
          "attempts": 0}
     ]
-    for prompt, _count in prompts:
-        results.append(judge_json(prompt, timeout=args.timeout))
-        if results[-1]["status"] != "ok":
+    for index, (prompt, _count) in enumerate(prompts):
+        result = judge_json(prompt, timeout=args.timeout)
+        if result["status"] == "ok" and args.inventory is not None:
+            batch_files, batch_rows = batches[index]
+            if batch_rows and not result["value"]["findings"]:
+                # A batch that carried rows and came back with no decision at all is not a clean
+                # batch; it is a batch nobody judged.
+                result = {"status": "abstain", "attempts": result["attempts"],
+                          "reason": "no decision was returned for a batch carrying rows"}
+            else:
+                result = {**result, "value": {
+                    **result["value"],
+                    "findings": reconcile_inventory(
+                        batch_rows, result["value"]["findings"],
+                        [name for name, _content in batch_files],
+                    ),
+                }}
+        results.append(result)
+        if result["status"] != "ok":
             break
-    report = judge_report(stage, sum(count for _p, count in prompts), results, len(prompts))
+    report = judge_report(
+        stage, sum(count for _p, count in prompts), results, len(prompts), extra, warnings
+    )
     print_judge(report, args.json)
     return 0 if report["status"] == "ok" else 3
 

@@ -1,8 +1,9 @@
 """Isolated Codex judge calls for documentation certification."""
 
+import fnmatch
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import selectors
 import shutil
@@ -14,10 +15,23 @@ import tomllib
 from collections import Counter
 from types import SimpleNamespace
 
+from evergreen.impact import _bounded_git_output, _bounded_regular_bytes
+
 MAX_MODEL_STDOUT_BYTES = 1024 * 1024
 MAX_MODEL_STDERR_BYTES = 256 * 1024
 MAX_JUDGE_FILES = 40
 MAX_JUDGE_BYTES = 256 * 1024
+# Inventory JSON has a separate input ceiling; packed source keeps MAX_JUDGE_BYTES per batch.
+MAX_JUDGE_INVENTORY_BYTES = 16 * 1024 * 1024
+# The one word every `till` bounded-work warning uses for work it did not finish.
+TRUNCATION_WORD = "truncated"
+# The credential basenames hooks/evergreen-guard.sh:178 refuses to let anyone commit, reused here
+# because a judge prompt leaves the machine the same way a push does. Basename globs only: this is
+# a filename policy, not a content scanner, and a secret in `settings.json` still goes out.
+SENSITIVE_BASENAME_PATTERNS = (
+    ".env", ".env.*", "*.env", "*.pem", "*.key", "id_rsa", "id_dsa", "id_ecdsa", "id_ecdsa_sk",
+    "id_ed25519", "id_ed25519_sk", "*.p12", "*.keystore",
+)
 # The widest run of path characters. A path in prose wears punctuation the run stops at or the
 # caller trims: backticks and parentheses are excluded here, `README.md:42` ends at the colon,
 # and a sentence-final period is stripped below.
@@ -143,8 +157,8 @@ def referenced_paths(text: str) -> list[str]:
 
 def _checked_file(
     repo: Path, root: str, candidate: str, warnings: list[str],
-) -> "tuple[Path, int] | None":
-    """The in-repo regular file at `candidate` and its size, or None when it is not one.
+) -> "Path | None":
+    """The in-repo regular file at `candidate`, or None when it is not one.
 
     Symlinks are never followed and nothing outside the repository is read: a document is
     untrusted input, so the set of paths it names is an attacker-chosen list of files to
@@ -162,36 +176,169 @@ def _checked_file(
     if os.path.realpath(full) != os.path.join(root, *candidate.split("/")):
         warnings.append(f"skipped {candidate}: resolves outside the repository")
         return None
-    return full, info.st_size
+    return full
 
 
-def collect_referenced_files(repo: Path, text: str) -> "tuple[list[tuple[str, str]], list[str]]":
-    """Read the in-repo files a document names, bounded in count and total bytes."""
-    root = os.path.realpath(repo)
-    collected: list[tuple[str, str]] = []
-    warnings: list[str] = []
-    total = 0
-    for candidate in sorted(set(referenced_paths(text))):
-        checked = _checked_file(repo, root, candidate, warnings)
-        if checked is None:
+def read_bounded(path: Path, limit: int) -> "str | None":
+    """The file's text, or None when it is not a regular file within `limit` bytes.
+
+    `_bounded_regular_bytes` is the one read in this repository that bounds the bytes actually
+    delivered rather than the size `stat` last reported: it re-opens with O_NOFOLLOW, re-checks
+    device and inode against the pre-open `lstat`, and stops at `limit + 1` bytes. A file that
+    grows or is swapped between the check and the read therefore fails closed instead of
+    smuggling a larger payload into a prompt.
+
+    The decoded text is measured again because it is the text, not the raw bytes, that reaches
+    the prompt: replacing an invalid byte costs three UTF-8 bytes, so a file of binary noise can
+    pass the raw bound and still land as three times the payload. Bounding both ends means the
+    caller's running total is exactly what it sends.
+    """
+    payload = _bounded_regular_bytes(path, limit)
+    if payload is None:
+        return None
+    text = payload.decode("utf-8", "replace")
+    return text if len(text.encode()) <= limit else None
+
+
+def sensitive_basename(candidate: str) -> bool:
+    """Whether the path's basename matches a credential filename the commit guard refuses."""
+    name = PurePosixPath(candidate).name
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in SENSITIVE_BASENAME_PATTERNS)
+
+
+def _in_git_repository(repo: Path) -> bool:
+    """Whether `repo` sits in a Git working tree, decided on disk rather than by asking Git.
+
+    The question this answers is what a failed `git` call means, so it cannot itself be a `git`
+    call: `git rev-parse` exits non-zero both for a plain directory and for a repository whose
+    Git invocation died, and those two must not share an answer. A `.git` entry -- directory or
+    the worktree's `.git` file -- on this path or above it is the on-disk fact instead.
+    """
+    for directory in (repo, *repo.parents):
+        if (directory / ".git").exists():
+            return True
+    return False
+
+
+def _git_ignored(repo: Path, candidates: "list[str]") -> "frozenset[str] | None":
+    """The candidates Git ignores; empty outside a repository, None when Git cannot classify.
+
+    Outside a Git working tree there is nothing to classify and every ordinary file stays
+    eligible. Inside one, a Git call that fails or is truncated returns None so the caller
+    withholds the whole candidate set: in a real repository an unknown safety classification
+    must not read as safe.
+    """
+    if not candidates:
+        return frozenset()
+    if not _in_git_repository(repo):
+        return frozenset()
+    payload, truncated = _bounded_git_output(
+        repo,
+        ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--", *candidates],
+    )
+    if payload is None or truncated:
+        return None
+    return frozenset(
+        piece.decode("utf-8", "replace") for piece in payload.split(b"\0") if piece
+    )
+
+
+def normalized_relative_path(value: str) -> "str | None":
+    """The value if it is already an exact normalized repository-relative path, else None.
+
+    `--allow-sensitive-path` is matched against candidate paths by exact string, so a value that
+    could be written more than one way would authorize by luck. Requiring the caller to write
+    the one normalized form keeps the opt-in as narrow as it reads. It never authorizes anything
+    the containment check would refuse: it only re-admits a path that already passed it.
+    """
+    if not value or value.startswith("/") or value != PurePosixPath(value).as_posix():
+        return None
+    parts = PurePosixPath(value).parts
+    return None if not parts or {".", ".."} & set(parts) else value
+
+
+def withheld_paths(
+    repo: Path, candidates: "list[str]", allowed: "tuple[str, ...]" = (),
+) -> "dict[str, str]":
+    """Map each candidate a judge call must not carry to the reason it is withheld.
+
+    Two rules, no framework: the commit guard's credential basenames, and whatever this
+    repository's own `.gitignore` already says is not source. `--allow-sensitive-path` names one
+    exact repository-relative path back in, for a sanitized fixture a rubric genuinely needs; it
+    reaches only this function, so containment and the byte bounds still apply to it.
+    """
+    blocked: dict[str, str] = {}
+    remaining: list[str] = []
+    for candidate in candidates:
+        if candidate in allowed:
             continue
-        full, size = checked
+        if sensitive_basename(candidate):
+            blocked[candidate] = "matches a credential filename pattern"
+        else:
+            remaining.append(candidate)
+    ignored = _git_ignored(repo, remaining)
+    for candidate in remaining:
+        if ignored is None:
+            blocked[candidate] = "Git could not classify it in this repository"
+        elif candidate in ignored:
+            blocked[candidate] = "Git ignores it"
+    return blocked
+
+
+def collect_referenced_files(
+    repo: Path, text: str, allowed: "tuple[str, ...]" = (),
+) -> "tuple[list[tuple[str, str]], list[str], list[str]]":
+    """Read the in-repo files a document names, bounded in count and total bytes.
+
+    The third return is the paths withheld by policy rather than by a bound: the caller turns
+    each into an `unverified` finding, because a document whose evidence was never sent must not
+    come back with a clean trailer.
+    """
+    root = os.path.realpath(repo)
+    warnings: list[str] = []
+    eligible = [
+        (candidate, full)
+        for candidate in sorted(set(referenced_paths(text)))
+        if (full := _checked_file(repo, root, candidate, warnings)) is not None
+    ]
+    blocked = withheld_paths(repo, [candidate for candidate, _full in eligible], allowed)
+    collected: list[tuple[str, str]] = []
+    withheld: list[str] = []
+    total = 0
+    for candidate, full in eligible:
+        if candidate in blocked:
+            withheld.append(candidate)
+            warnings.append(f"withheld {candidate}: {blocked[candidate]}")
+            continue
         if len(collected) >= MAX_JUDGE_FILES:
             warnings.append(f"skipped {candidate}: at the {MAX_JUDGE_FILES}-file limit")
             continue
-        if total + size > MAX_JUDGE_BYTES:
-            warnings.append(f"skipped {candidate}: would exceed {MAX_JUDGE_BYTES} bytes")
+        content = read_bounded(full, MAX_JUDGE_BYTES - total)
+        if content is None:
+            warnings.append(
+                f"skipped {candidate}: unreadable, or would exceed {MAX_JUDGE_BYTES} bytes"
+            )
             continue
-        try:
-            collected.append((candidate, full.read_text(encoding="utf-8", errors="replace")))
-        except OSError:
-            continue
-        total += size
-    return collected, warnings
+        collected.append((candidate, content))
+        total += len(content.encode())
+    return collected, warnings, withheld
 
 
-def load_inventory(text: str) -> "list[dict]":
-    """The candidate rows of a `till --json` report, or ValueError naming the defect."""
+def load_inventory(text: str) -> "tuple[list[dict], list[str], list[str]]":
+    """The rows of a `till --json` report, its warnings, and its coverage gaps.
+
+    The two string lists are deliberately not the same thing. A `till` warning is often a
+    declared exclusion -- a path outside the inventory's scope, a language it does not read --
+    and treating every one as missing coverage would manufacture doubt the input never
+    expressed, so those are carried forward for the operator and nothing more. A coverage gap is
+    what `till` itself says it could not finish: every one of its bounded-work warnings says
+    `truncated` in so many words (evergreen/till.py names the vocabulary), and a candidate,
+    byte, or deadline cap can bite inside files the counts already call scanned -- so the word,
+    not only a shortfall in the counts, has to raise the gap. A gap becomes `unverified`,
+    because a truncated inventory must not certify as a clean sweep of a surface `till` never
+    read. A row identity repeated in the input is refused outright: two rows with one identity
+    cannot both be reconciled against one decision.
+    """
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as error:
@@ -199,53 +346,91 @@ def load_inventory(text: str) -> "list[dict]":
     candidates = payload.get("candidates") if isinstance(payload, dict) else None
     if not isinstance(candidates, list):
         raise ValueError("inventory has no candidates list")
+    seen: set[tuple] = set()
     for row in candidates:
+        line = row.get("line") if isinstance(row, dict) else None
+        # `isinstance(True, int)` is True, so a JSON `true` would otherwise pass as line 1.
         if (not isinstance(row, dict) or not isinstance(row.get("symbol"), str)
                 or not isinstance(row.get("kind"), str) or not isinstance(row.get("path"), str)
-                or not isinstance(row.get("line"), int)):
-            raise ValueError("inventory row is missing symbol, kind, path, or line")
-    return candidates
+                or not isinstance(line, int) or isinstance(line, bool) or line < 1):
+            raise ValueError(
+                "inventory row is missing symbol, kind, path, or a positive integer line"
+            )
+        identity = (row["symbol"], row["kind"], row["path"], row["line"])
+        if identity in seen:
+            raise ValueError(f"inventory repeats the row {inventory_row_text(row)}")
+        seen.add(identity)
+    upstream = payload.get("warnings", [])
+    if not isinstance(upstream, list) or any(not isinstance(w, str) for w in upstream):
+        raise ValueError("inventory warnings must be a list of strings")
+    for field in ("source_files_in_scope", "source_files_scanned"):
+        if field in payload and (type(payload[field]) is not int or payload[field] < 0):
+            raise ValueError(f"inventory {field} must be a nonnegative integer")
+    warnings = [f"inventory warning carried forward: {warning}" for warning in upstream]
+    gaps = [
+        f"inventory coverage is incomplete: the inventory reported {warning!r}"
+        for warning in upstream if TRUNCATION_WORD in warning.lower()
+    ]
+    in_scope, scanned = payload.get("source_files_in_scope"), payload.get("source_files_scanned")
+    if in_scope is not None and scanned is not None and scanned < in_scope:
+        gaps.append(
+            f"inventory coverage is incomplete: it scanned {scanned} of {in_scope} source files "
+            f"in scope"
+        )
+    return candidates, warnings, gaps
+
+
+def inventory_row_text(row: "dict") -> str:
+    """One inventory row exactly as the rubric asks for it back as a claim."""
+    return f"{row['symbol']} ({row['kind']}) {row['path']}:{row['line']}"
 
 
 def inventory_text(rows: "list[dict]") -> str:
     """The inventory rows of one batch, one row per line, as the judged document."""
-    return "\n".join(f"{row['symbol']} ({row['kind']}) {row['path']}:{row['line']}"
-                     for row in rows)
+    return "\n".join(inventory_row_text(row) for row in rows)
 
 
 def inventory_batches(
-    repo: Path, rows: "list[dict]",
-) -> "tuple[list[tuple[list[tuple[str, str]], list[dict]]], list[str]]":
+    repo: Path, rows: "list[dict]", allowed: "tuple[str, ...]" = (),
+) -> "tuple[list[tuple[list[tuple[str, str]], list[dict]]], list[str], list[dict]]":
     """Group inventory rows by path and pack the source files into bounded batches.
 
     Every batch obeys the same per-call file and byte ceilings one document gets, so a
     whole-repository inventory costs many small isolated calls rather than one unbounded one.
-    A file that cannot be packed at all takes its rows out of the run with a warning; nothing
-    is judged against a packet that does not carry it.
+    A file that cannot be packed at all takes its rows out of the run with a warning, and those
+    rows come back as the third return so the caller can record each as `unverified`: nothing is
+    judged against a packet that does not carry it, and nothing silently vanishes either.
     """
     root = os.path.realpath(repo)
     warnings: list[str] = []
     grouped: dict[str, list[dict]] = {}
     for row in rows:
         grouped.setdefault(row["path"], []).append(row)
+    readable: list[tuple[str, Path]] = []
+    dropped: list[dict] = []
+    for path in sorted(grouped):
+        full = _checked_file(repo, root, path, warnings)
+        if full is None:
+            warnings.append(f"skipped {path}: no readable file at that path in the repository")
+            dropped.extend(grouped[path])
+        else:
+            readable.append((path, full))
+    blocked = withheld_paths(repo, [path for path, _full in readable], allowed)
     batches: list[tuple[list[tuple[str, str]], list[dict]]] = []
     files: list[tuple[str, str]] = []
     batch_rows: list[dict] = []
     total = 0
-    for path in sorted(grouped):
-        checked = _checked_file(repo, root, path, warnings)
-        if checked is None:
-            warnings.append(f"skipped {path}: no readable file at that path in the repository")
+    for path, full in readable:
+        if path in blocked:
+            warnings.append(f"withheld {path}: {blocked[path]}")
+            dropped.extend(grouped[path])
             continue
-        full, size = checked
-        if size > MAX_JUDGE_BYTES:
-            warnings.append(f"skipped {path}: would exceed {MAX_JUDGE_BYTES} bytes")
+        content = read_bounded(full, MAX_JUDGE_BYTES)
+        if content is None:
+            warnings.append(f"skipped {path}: unreadable, or would exceed {MAX_JUDGE_BYTES} bytes")
+            dropped.extend(grouped[path])
             continue
-        try:
-            content = full.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            warnings.append(f"skipped {path}: unreadable")
-            continue
+        size = len(content.encode())
         if files and (len(files) >= MAX_JUDGE_FILES or total + size > MAX_JUDGE_BYTES):
             batches.append((files, batch_rows))
             files, batch_rows, total = [], [], 0
@@ -254,7 +439,7 @@ def inventory_batches(
         total += size
     if files:
         batches.append((files, batch_rows))
-    return batches, warnings
+    return batches, warnings, dropped
 
 
 def judge_prompt(
@@ -442,17 +627,92 @@ def judge_json(prompt: str, timeout: int = 300, max_retries: int = 2) -> dict:
     return {"status": "abstain", "reason": reason, "attempts": attempts}
 
 
+def unverified_finding(claim: str, evidence: str) -> dict:
+    """The one finding shape an accounting gap is allowed to become."""
+    return {"verdict": "unverified", "claim": claim, "evidence": evidence}
+
+
+# The only extra finding the inventory rubric asks for, spelled exactly as it asks for it.
+MISSING_CLAIM_RE = re.compile(r"missing: (\S+) (.+):([1-9][0-9]*)\Z")
+
+
+def _valid_missing_extra(finding: "dict", paths: "frozenset[str]") -> bool:
+    """Whether an unmatched finding is the rubric's own `missing:` drift and nothing else."""
+    if finding["verdict"] != "drift":
+        return False
+    match = MISSING_CLAIM_RE.fullmatch(finding["claim"])
+    # The path must be one this batch actually carried: a `missing:` row naming a file the
+    # packet never held is a declaration nobody here could have read.
+    return match is not None and match.group(2) in paths
+
+
+def reconcile_inventory(
+    rows: "list[dict]", findings: "list[dict]", paths: "list[str]" = (),
+) -> "list[dict]":
+    """One decision per expected inventory row, in the input's own order.
+
+    The provider is answering about a fixed list of rows, so the run knows exactly which
+    decisions it is owed and must not accept anything else in their place. A row the provider
+    skipped becomes `unverified`, and so does one it answered twice: two decisions for one row
+    are a decision the run cannot read, and picking a winner would be inventing the verdict.
+    Only the rubric's own extra is accepted as it stands -- a `drift` whose claim is literally
+    `missing: <symbol> <path>:<line>` with a positive line and a path this batch packed. Any
+    other unmatched claim is a fabricated extra: it is never normalized into a match for
+    whichever row it resembles, and it is never silently dropped either, because a batch whose
+    extras were quietly discarded would certify its expected rows clean while the provider was
+    demonstrably answering a different question. It is recorded as `unverified` instead, so the
+    count and the trailer carry it.
+    """
+    expected = [inventory_row_text(row) for row in rows]
+    counted = Counter(finding["claim"] for finding in findings)
+    first: dict[str, dict] = {}
+    for finding in findings:
+        first.setdefault(finding["claim"], finding)
+    reconciled = []
+    for claim in expected:
+        if counted[claim] == 1:
+            reconciled.append(first[claim])
+        elif counted[claim] == 0:
+            reconciled.append(unverified_finding(claim, "no decision was returned for this row"))
+        else:
+            reconciled.append(unverified_finding(
+                claim, f"{counted[claim]} conflicting decisions were returned for this row"
+            ))
+    known, packed, emitted = set(expected), frozenset(paths), set()
+    for finding in findings:
+        claim = finding["claim"]
+        if claim in known or claim in emitted:
+            continue
+        emitted.add(claim)
+        # A repeated extra is as unreadable as a repeated row decision, so it fails the same way.
+        reconciled.append(
+            finding if counted[claim] == 1 and _valid_missing_extra(finding, packed)
+            else unverified_finding(
+                claim,
+                "the judge returned this for no row in the batch, more than once, or not as a "
+                "well-formed `missing: <symbol> <path>:<line>` drift over a packed file",
+            )
+        )
+    return reconciled
+
+
 def judge_report(
     stage: str, docs: int, results: "list[dict]", batches: int | None = None,
+    extra: "list[dict]" = (), warnings: "list[str]" = (),
 ) -> dict:
     """One object for the whole run: every batch aggregated, or the abstention that stopped it.
 
     One abstaining batch abstains the run. A partial verdict over a repository is worse than
-    no verdict: it reads as a clean sweep of a surface nobody actually judged.
+    no verdict: it reads as a clean sweep of a surface nobody actually judged. `extra` carries
+    the findings the run itself owes -- a source withheld before the call, a row whose file
+    could not be packed, an inventory that admitted its own incompleteness -- so those land in
+    the counts and the trailer rather than only in a warning nobody parses. `warnings` rides in
+    the object too: stderr is not machine-readable, and a consumer reading only the JSON must
+    still see what the run said aloud.
     """
     total_batches = len(results) if batches is None else batches
     attempts = sum(result.get("attempts", 0) for result in results)
-    base = {"provider": "codex", "stage": stage, "docs": docs}
+    base = {"provider": "codex", "stage": stage, "docs": docs, "warnings": list(warnings)}
     for index, result in enumerate(results, start=1):
         if result["status"] != "ok":
             reason = result["reason"]
@@ -463,6 +723,7 @@ def judge_report(
                 "findings": [], "summary": "", "reason": reason, "attempts": attempts,
             }
     findings = [finding for result in results for finding in result["value"]["findings"]]
+    findings.extend(extra)
     counts = Counter(finding["verdict"] for finding in findings)
     summaries = [result["value"]["summary"] for result in results if result["value"]["summary"]]
     return {

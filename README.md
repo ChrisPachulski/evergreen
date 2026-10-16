@@ -332,6 +332,21 @@ inventory missed, which seed and the till command run before trusting the surfac
 in a cultivate report follows from the evidence it shows. Both certification records carry the
 result as a `judge` object, and the release gate refuses either without one.
 
+Judge inputs must be regular files: `--doc` is bounded to 256 KiB and `--inventory` to
+16 MiB. Referenced source is packed in batches of at most 40 files and 256 KiB. Reads check
+the bytes actually read, including the UTF-8 text sent to the provider. By default, referenced
+files ignored by Git or matching the guard's credential filename patterns are withheld;
+ordinary untracked files remain eligible. For deliberately sanitized evidence, repeat
+`--allow-sensitive-path <exact-repo-relative-path>` to admit named files without bypassing
+containment or byte limits. This is a filename policy, not a secret-content scanner.
+
+For a completed document review, withheld source produces `unverified` findings. Inventory rows
+whose source was skipped, whose decision is missing, or whose decisions are duplicated also
+remain `unverified`; no packable source or an empty provider response for a nonempty batch
+abstains the run. Duplicate input rows and malformed warning or coverage fields are rejected. Inventory
+truncation and missing scan coverage become `unverified`, while declared exclusions remain
+warnings. JSON reports preserve the warnings as well as verdict counts.
+
 ### Other agents
 
 There is no host installer. Claude Code and Codex both load this plugin through their own plugin
