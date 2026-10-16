@@ -26,27 +26,6 @@ projects each, Rust names 20 candidates and includes an earlier exact-span proto
 TypeScript contain smaller catalogs. These are real source candidates, not admitted corpus rows or
 evidence of detector performance.
 
-## Python pilot
-
-`python_pilot.py` is a standard-library Python experiment, with Git as an external executable, for
-one narrow pattern: a selected unittest asserts an integer returned by one production function. It
-is designed to check pristine, semantic-no-op, and mutant variants twice and record the original
-assertion and source byte spans. It awards no grade and is not called by the product or benchmark
-runner.
-
-The current prototype expects the selected test to be named `ValueTests.test_value`. That limitation
-must be removed or frozen explicitly before using it on a development corpus. The report contains
-only identities derived from the exact Git tree and bound source/assertion bytes; it accepts no
-caller-supplied corpus, derivation, or grade identity.
-
-Its offline dependency scan currently supports flat local Python modules, not general package-root
-discovery. Broader package support belongs only in response to a selected frozen fixture.
-
-The pilot executes project Python as the current user. Its bounded environment improves
-reproducibility but is not a security sandbox; use only explicitly trusted repositories. The
-integration test was removed in commit 9849746; the pilot module `eval/oracle/python_pilot.py`
-remains, and salvage did not execute it.
-
 ## Measurement-first boundary
 
 Before any pilot or detector measurement runs, freeze the exact candidate revision, source

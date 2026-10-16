@@ -578,7 +578,6 @@ class OracleTests(unittest.TestCase):
 
         seed = self.seed()
         approved = {"python": seed["sandbox"]["image"]}
-        source = seed["source"]["code"].encode()
         mutation = oracle._mutated_source(seed)
         contract = oracle.MUTATION_OPERATORS[seed["mutation"]["operator"]]
         invalid = (

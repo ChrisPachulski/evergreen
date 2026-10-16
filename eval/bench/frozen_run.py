@@ -25,7 +25,7 @@ try:
     )
     from .runner import artifact_filename, load_dataset, require_single_language
     from .java_context import (
-        PROTOCOL as JAVA_CONTEXT_PROTOCOL, PROTOCOLS as JAVA_CONTEXT_PROTOCOLS, validate_context,
+        PROTOCOLS as JAVA_CONTEXT_PROTOCOLS, validate_context,
     )
     from .split_manifest import (
         MAX_DATASET_BYTES, MAX_MANIFEST_BYTES, load_split_bindings_bytes,
@@ -40,7 +40,7 @@ except ImportError:
     )
     from runner import artifact_filename, load_dataset, require_single_language
     from java_context import (
-        PROTOCOL as JAVA_CONTEXT_PROTOCOL, PROTOCOLS as JAVA_CONTEXT_PROTOCOLS, validate_context,
+        PROTOCOLS as JAVA_CONTEXT_PROTOCOLS, validate_context,
     )
     from split_manifest import MAX_DATASET_BYTES, MAX_MANIFEST_BYTES, load_split_bindings_bytes
     from workdir import work_dir

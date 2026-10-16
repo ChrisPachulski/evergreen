@@ -6,7 +6,6 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import selectors
-import shutil
 import stat
 import subprocess
 import tempfile
@@ -458,11 +457,6 @@ def judge_prompt(
     for name, content in files:
         parts.append(f"--{marker}-BEGIN FILE {name}--\n{content}\n--{marker}-END FILE--")
     return "\n\n".join(parts)
-
-
-def judge_available() -> bool:
-    """Return whether the Codex executable is available."""
-    return shutil.which("codex") is not None
 
 
 def _valid_judge_result(value: object) -> bool:

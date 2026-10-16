@@ -39,7 +39,6 @@ JAVA_CONFIG = LanguageConfig(
     ),
 )
 LANGUAGE = JAVA_CONFIG.language
-SOURCE_DIRECTORY = JAVA_CONFIG.source_directory
 TOOLCHAIN = MappingProxyType(
     {
         "toolchain_id": JAVA_CONFIG.toolchain_id,

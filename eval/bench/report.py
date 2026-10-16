@@ -596,19 +596,6 @@ def render_peer_markdown(
     return "\n".join(lines) + "\n", complete
 
 
-def coverage_passes(
-    paths, required_languages, coverage_threshold, decision_threshold=0.0,
-    precision_threshold=0.0, recall_threshold=0.0, f1_threshold=0.0,
-    minimum_reference_positive_decisions=MINIMUM_REFERENCE_CLASS_DECISIONS,
-    minimum_reference_negative_decisions=MINIMUM_REFERENCE_CLASS_DECISIONS,
-):
-    return _build_report(
-        paths, required_languages, coverage_threshold, decision_threshold,
-        precision_threshold, recall_threshold, f1_threshold,
-        minimum_reference_positive_decisions, minimum_reference_negative_decisions,
-    )[1]
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("artifacts", nargs="+")

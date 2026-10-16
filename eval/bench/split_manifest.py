@@ -244,12 +244,6 @@ def load_split_assignments(path: Path) -> dict[str, str]:
     return _manifest(path)[0]
 
 
-def load_split_bindings(path: Path):
-    """Load public split assignments, row digests, and dataset declarations."""
-    assignments, row_datasets, declared, _document = _manifest(path)
-    return assignments, row_datasets, declared
-
-
 def load_split_bindings_bytes(payload: bytes):
     """Validate one captured manifest byte snapshot without reopening its path."""
     try:

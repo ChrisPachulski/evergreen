@@ -21,7 +21,6 @@ CONFIG = _implementation.LanguageConfig(
     ),
 )
 LANGUAGE = CONFIG.language
-SOURCE_DIRECTORY = CONFIG.source_directory
 TOOLCHAIN = MappingProxyType(
     {
         "toolchain_id": CONFIG.toolchain_id,

@@ -1,8 +1,6 @@
 import copy
 import hashlib
 import json
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 import unittest
@@ -230,7 +228,6 @@ class SelectSplitTests(unittest.TestCase):
         self.dataset = self.root / "data.jsonl"
         payload = "".join(json.dumps(row, sort_keys=True) + "\n" for row in self.rows)
         self.dataset.write_text(payload)
-        digest = hashlib.sha256(payload.encode()).hexdigest()
         self.manifest = self.root / "split.json"
         self.manifest.write_text(json.dumps({
             "schema_version": 1,
