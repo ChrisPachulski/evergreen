@@ -20,7 +20,7 @@
 
 Your README was true the day you wrote it. Then a flag got renamed, a file moved, a function started returning something else — and the docs stayed exactly where they were. That's how documentation lies: not by being wrong when written, by being *left behind*. The gap opens quietly and nobody sees it until someone pastes a command that no longer exists.
 
-Evergreen is a local semantic skill, backed in CI by a deterministic trust layer. After a change lands, it reads the affected docs back against the source and surfaces only what it can cite as gone false — pointing at the exact line. It rewrites nothing on its own. It just refuses to let the docs and the code disagree in silence.
+Evergreen is a plugin for Claude Code and Codex, with a GitHub Action for pull requests. After a change lands, it reads the affected docs back against the source and surfaces only what it can cite as gone false — pointing at the exact line. It rewrites nothing on its own. It just refuses to let the docs and the code disagree in silence.
 
 ## Before / after
 
@@ -41,23 +41,12 @@ Your agent already has an *update the docs if applicable* step. [That's an inten
 
 ## Install
 
-This repository is private. Every route below starts from read access to it: an SSH key or token
-that can clone `ChrisPachulski/evergreen`. Nothing here is on a public marketplace.
-
 ### Claude Code
 
-Clone it, then add the clone as a marketplace:
-
 ```
-git clone git@github.com:ChrisPachulski/evergreen.git ~/.claude/plugins/evergreen-local
-/plugin marketplace add ~/.claude/plugins/evergreen-local
+/plugin marketplace add ChrisPachulski/evergreen
 /plugin install evergreen@evergreen
 ```
-
-For one session without registering anything, `claude --plugin-dir ~/.claude/plugins/evergreen-local`
-loads the same clone. `/plugin marketplace add ChrisPachulski/evergreen` works only where git can
-already read the repository over HTTPS; elsewhere it fails at the clone, which is why the local path
-is the documented route.
 
 It rides along every session: adds `/evergreen:winnow`, and — after a turn that changed code in a repo with tracked docs — leaves a quiet nudge to go check for drift. Intensity is `off | light | strict` (default **light**), and it steers the automatic pass only — a command you type runs at full depth in any mode, including `off`. The truth reflex never blocks your commit; it flags, you decide.
 
@@ -91,10 +80,6 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           fail_on_inconclusive: true
 ```
-
-The Action lives in this private repository, so `uses:` resolves only from repositories GitHub lets
-reach it: repositories owned by the same account, when this repository's Actions access setting
-allows them. Anywhere else, vendor a copy of the repository and point `uses:` at it.
 
 Drift never fails the build. The full CI contract — what a green check certifies, the four outcomes, fork-PR behavior, and every process bound — is in the operations reference below.
 
