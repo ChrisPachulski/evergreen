@@ -108,6 +108,17 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(repository["untracked"], 1)
         self.assertFalse(repository["clean"])
 
+    def test_the_plugin_mode_file_at_the_root_is_not_untracked_evidence(self):
+        (self.repo / ".evergreen-mode").write_text("strict")
+
+        repository = build_receipt(self.repo)["repository"]
+
+        self.assertEqual(repository["untracked"], 0)
+        self.assertTrue(repository["clean"])
+        (self.repo / "nested").mkdir()
+        (self.repo / "nested" / ".evergreen-mode").write_text("strict")
+        self.assertEqual(build_receipt(self.repo)["repository"]["untracked"], 1)
+
     def test_index_visibility_flags_fail_closed_instead_of_hiding_changes(self):
         for enable, disable in (
             ("--assume-unchanged", "--no-assume-unchanged"),

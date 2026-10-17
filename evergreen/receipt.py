@@ -497,7 +497,9 @@ def _status(root, pinned_index):
             unstaged += y != "."
             if record.startswith("2 "):
                 index += 1
-        elif record.startswith("? "):
+        # The mode tracker hides its root `.evergreen-mode` only through info/exclude, which
+        # the synthetic GIT_DIR deliberately drops; that one plugin-owned file is not evidence.
+        elif record.startswith("? ") and record != "? .evergreen-mode":
             untracked += 1
     if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", head):
         raise ReceiptError("Git repository has no HEAD commit")
