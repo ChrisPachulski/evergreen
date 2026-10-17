@@ -6,10 +6,13 @@ import tempfile
 import unittest
 
 from ci import pr_comment
+from ci.review_context import claim_id
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "ci" / "pr_comment.py"
+CLAIM_TEXT = "Run `shipit --workers 4`."
+CLAIM = claim_id("docs/usage.md", "2", CLAIM_TEXT)
 
 
 class PRCommentTests(unittest.TestCase):
@@ -25,6 +28,7 @@ class PRCommentTests(unittest.TestCase):
         self.git("commit", "-qm", "fixture")
         self.head = self.git("rev-parse", "HEAD")
         self.base = self.head
+        self.claims = [{"id": CLAIM, "path": "docs/usage.md", "line": 2, "text": CLAIM_TEXT}]
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -58,8 +62,26 @@ class PRCommentTests(unittest.TestCase):
         result.update(updates)
         return result
 
+    def envelope(self, **updates):
+        """Return a schema 3 model envelope: verdicts in, no model-reported counts."""
+        envelope = self.result()
+        del envelope["claims"]
+        envelope.update(schema_version=3, verdicts=[{"id": CLAIM, "verdict": "certified"}])
+        envelope.update(updates)
+        return envelope
+
+    def write_inventory(self, head=None):
+        claims = list(self.claims)
+        context = Path(self.temp_dir.name) / "context.json"
+        context.write_text(
+            json.dumps({"schema_version": 2, "head": head or self.head, "claims": claims}),
+            encoding="utf-8",
+        )
+        return ["--context", str(context)]
+
     def finding(self, **updates):
         finding = {
+            "id": CLAIM,
             "severity": "high",
             "category": "in_docs_not_code",
             "doc_path": "docs/usage.md",
@@ -74,7 +96,9 @@ class PRCommentTests(unittest.TestCase):
         finding.update(updates)
         return finding
 
-    def run_cli(self, text):
+    def run_cli(self, text, inventory=None):
+        if inventory is None:
+            inventory = self.write_inventory()
         return subprocess.run(
             [
                 sys.executable,
@@ -91,6 +115,7 @@ class PRCommentTests(unittest.TestCase):
                 "test-model",
                 "--cli-version",
                 "1.2.3",
+                *inventory,
             ],
             input=text,
             stdout=subprocess.PIPE,
@@ -204,13 +229,46 @@ class PRCommentTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
 
     def test_cli_returns_zero_for_valid_complete_result(self):
-        result = self.run_cli(json.dumps(self.result()))
+        result = self.run_cli(json.dumps(self.envelope()))
 
-        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("docs still match", result.stdout)
+        self.assertIn("| 1 | 0 | 0 | 1 |", result.stdout)
+
+    def test_cli_renders_counts_derived_from_verdicts_not_the_model(self):
+        drift = self.run_cli(json.dumps(self.envelope(
+            verdicts=[{"id": CLAIM, "verdict": "drift"}], findings=[self.finding()],
+        )))
+        counted = self.envelope(claims={"total": 9, "certified": 9, "drift": 0, "unverified": 0})
+        forged = self.run_cli(json.dumps(counted))
+        missing = self.run_cli(json.dumps(self.envelope(verdicts=[])))
+
+        self.assertEqual(drift.returncode, 0, drift.stdout)
+        self.assertIn("| 0 | 1 | 0 | 1 |", drift.stdout)
+        self.assertEqual(forged.returncode, 2)
+        self.assertIn("unknown result fields: claims", forged.stdout)
+        self.assertNotIn("| 9 |", forged.stdout)
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn("missing claim id", missing.stdout)
+
+    def test_cli_requires_the_trusted_inventory_for_a_complete_result(self):
+        absent = self.run_cli(json.dumps(self.envelope(verdicts=[])), inventory=[])
+        unbound = self.run_cli(json.dumps(self.envelope()), inventory=self.write_inventory(head="0" * 40))
+        fallback = self.run_cli(
+            json.dumps(self.envelope(verdicts=[], status="inconclusive", errors=["no key"])),
+            inventory=[],
+        )
+
+        self.assertEqual(absent.returncode, 2)
+        self.assertIn("requires the trusted claim inventory", absent.stdout)
+        self.assertEqual(unbound.returncode, 2)
+        self.assertIn("trusted review context is unreadable", unbound.stdout)
+        self.assertEqual(fallback.returncode, 2)
+        self.assertIn("no key", fallback.stdout)
+        self.assertIn("| 0 | 0 | 0 | 0 |", fallback.stdout)
 
     def test_cli_rejects_and_replaces_model_controlled_runtime_identity(self):
-        envelope = self.result(
+        envelope = self.envelope(
             runtime={"provider": "attacker", "model": "forged", "cli_version": "0.0.0"}
         )
 
@@ -223,8 +281,8 @@ class PRCommentTests(unittest.TestCase):
         self.assertNotIn("forged", result.stdout)
 
     def test_cli_rejects_invalid_citations_as_inconclusive(self):
-        envelope = self.result(
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+        envelope = self.envelope(
+            verdicts=[{"id": CLAIM, "verdict": "drift"}],
             findings=[self.finding(doc_line=1)],
         )
 

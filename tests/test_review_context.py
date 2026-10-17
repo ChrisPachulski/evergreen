@@ -52,7 +52,7 @@ class ReviewContextTests(unittest.TestCase):
 
         context = review_context.build_context(self.repo, head, manifest)
 
-        self.assertEqual(context["schema_version"], 1)
+        self.assertEqual(context["schema_version"], 2)
         self.assertEqual(context["head"], head)
         self.assertFalse(context["truncated"])
         self.assertEqual(context["errors"], [])
@@ -227,7 +227,7 @@ class ReviewContextTests(unittest.TestCase):
             [],
         )
         hits = review_context._excerpts("README.md", "Call recover() up to MAX_TERMS.\n", terms, deadline)
-        self.assertEqual([hit["matched_terms"] for hit in hits], [terms])
+        self.assertEqual([window["matched_terms"] for window, _claims in hits], [terms])
 
     def test_path_seeds_match_inside_longer_paths_and_urls(self):
         deadline = review_context.time.monotonic() + 3
@@ -238,7 +238,43 @@ class ReviewContextTests(unittest.TestCase):
         for term, doc in cases:
             with self.subTest(term=term):
                 hits = review_context._excerpts("README.md", doc, [term], deadline)
-                self.assertEqual([hit["matched_terms"] for hit in hits], [[term]])
+                self.assertEqual([window["matched_terms"] for window, _claims in hits], [[term]])
+
+    def test_enumerates_one_claim_per_matching_line_with_stable_ids(self):
+        doc = "# Title\nSet `workers` here.\nunrelated\n\n\n\n\nAgain `workers`.\n"
+        _base, head, manifest = self.fixture(doc)
+
+        context = review_context.build_context(self.repo, head, manifest)
+        again = review_context.build_context(self.repo, head, manifest)
+
+        self.assertEqual(len(context["candidates"]), 2)
+        self.assertEqual(
+            [(claim["path"], claim["line"], claim["text"]) for claim in context["claims"]],
+            [("README.md", 2, "Set `workers` here."), ("README.md", 8, "Again `workers`.")],
+        )
+        for claim in context["claims"]:
+            self.assertRegex(claim["id"], r"^[0-9a-f]{16}$")
+            self.assertEqual(
+                claim["id"],
+                review_context.claim_id(claim["path"], str(claim["line"]), claim["text"]),
+            )
+        self.assertEqual(context["claims"], again["claims"])
+        moved = review_context.claim_id("README.md", "3", "Set `workers` here.")
+        edited = review_context.claim_id("README.md", "2", "Set `workers` there.")
+        self.assertNotIn(moved, [claim["id"] for claim in context["claims"]])
+        self.assertNotIn(edited, [claim["id"] for claim in context["claims"]])
+
+    def test_claims_leave_with_the_window_the_output_bound_drops(self):
+        _base, head, manifest = self.fixture("workers\n\n\n\n\n\nworkers\n")
+        full = review_context.build_context(self.repo, head, manifest)
+        bound = len(review_context.encode_context(full))
+        with mock.patch.object(review_context, "MAX_OUTPUT_BYTES", bound - 1):
+            limited = review_context.build_context(self.repo, head, manifest)
+
+        self.assertEqual(len(full["claims"]), 2)
+        self.assertTrue(limited["truncated"])
+        self.assertEqual([claim["line"] for claim in limited["claims"]], [1])
+        self.assertEqual(len(limited["candidates"]), 1)
 
     def test_cli_emits_one_versioned_json_object(self):
         _base, head, manifest = self.fixture()

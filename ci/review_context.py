@@ -2,6 +2,7 @@
 """Build bounded documentation context from one exact Git commit and change manifest."""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
@@ -16,7 +17,7 @@ except ImportError:  # Direct script execution.
     from path_policy import is_protocol_path
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_DOC_LIST_BYTES = 1024 * 1024
 MAX_DOC_FILES = 1000
 MAX_BLOB_BYTES = 1024 * 1024
@@ -27,6 +28,7 @@ MAX_OUTPUT_BYTES = 120_000
 MAX_ERRORS = 100
 TIMEOUT_SECONDS = 3
 CONTEXT_LINES = 2
+CLAIM_ID_HEX = 16
 EXEMPT_DOC_PARTS = {
     "adr", "adrs", "archive", "archives", "audit", "audits", "plans", "readiness",
     "roadmaps", "specs",
@@ -45,9 +47,15 @@ def _empty(head: str) -> dict:
         "schema_version": SCHEMA_VERSION,
         "head": head,
         "candidates": [],
+        "claims": [],
         "truncated": False,
         "errors": [],
     }
+
+
+def claim_id(*parts: str) -> str:
+    """Return the opaque, stable id of one claim; no part may contain NUL except the last."""
+    return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()[:CLAIM_ID_HEX]
 
 
 def _git(repo: Path, deadline: float, limit: int, *args: str) -> tuple[bytes | None, str | None]:
@@ -146,7 +154,9 @@ def _tree_docs(payload: bytes, context: dict) -> list[tuple[str, str, int]]:
     return docs
 
 
-def _excerpts(path: str, text: str, terms: list[str], deadline: float) -> list[dict]:
+def _excerpts(
+    path: str, text: str, terms: list[str], deadline: float
+) -> list[tuple[dict, list[dict]]]:
     lines = text.split("\n") if text else []
     if text.endswith("\n"):
         lines.pop()
@@ -175,11 +185,12 @@ def _excerpts(path: str, text: str, terms: list[str], deadline: float) -> list[d
     for index in matching:
         start, end = max(0, index - CONTEXT_LINES), min(len(lines), index + CONTEXT_LINES + 1)
         if ranges and start <= ranges[-1][1]:
-            ranges[-1] = (ranges[-1][0], max(ranges[-1][1], end))
+            ranges[-1][1] = max(ranges[-1][1], end)
+            ranges[-1][2].append(index)
         else:
-            ranges.append((start, end))
+            ranges.append([start, end, [index]])
     result = []
-    for start, end in ranges:
+    for start, end, claimed in ranges:
         excerpt = "\n".join(lines[start:end])
         folded = excerpt.casefold()
         matched = []
@@ -188,24 +199,33 @@ def _excerpts(path: str, text: str, terms: list[str], deadline: float) -> list[d
                 raise TimeoutError
             if needle.search(folded):
                 matched.append(term)
-        result.append({
+        window = {
             "path": path,
             "start_line": start + 1,
             "end_line": end,
             "matched_terms": matched,
             "excerpt": excerpt,
-        })
+        }
+        # One claim per matching line; its id changes whenever the line's place or text does.
+        claims = [
+            {"id": claim_id(path, str(index + 1), lines[index]),
+             "path": path, "line": index + 1, "text": lines[index]}
+            for index in claimed
+        ]
+        result.append((window, claims))
     return result
 
 
-def _fit(context: dict, candidate: dict) -> bool:
+def _fit(context: dict, candidate: dict, claims: list[dict]) -> bool:
     if len(context["candidates"]) >= MAX_CANDIDATES:
         context["truncated"] = True
         return False
     context["candidates"].append(candidate)
+    context["claims"].extend(claims)
     if len(encode_context(context)) + 1 <= MAX_OUTPUT_BYTES:
         return True
     context["candidates"].pop()
+    del context["claims"][len(context["claims"]) - len(claims):]
     context["truncated"] = True
     return False
 
@@ -257,13 +277,14 @@ def build_context(repo: Path, head: str, manifest: dict) -> dict:
         except TimeoutError:
             context["errors"].append("review context exceeded wall-clock limit")
             break
-        for candidate in excerpts:
-            if not _fit(context, candidate):
+        for candidate, claims in excerpts:
+            if not _fit(context, candidate, claims):
                 break
         if context["truncated"]:
             break
     if len(context["errors"]) > MAX_ERRORS or len(encode_context(context)) + 1 > MAX_OUTPUT_BYTES:
         context["candidates"] = []
+        context["claims"] = []
         context["errors"] = ["review context errors exceed output bound"]
         context["truncated"] = True
     return context

@@ -3,6 +3,7 @@
 
 import argparse
 import html
+import json
 from pathlib import Path
 import sys
 
@@ -156,6 +157,21 @@ def render_result(
     return "\n".join(lines)
 
 
+def _trusted_inventory(context_path: Path, head: str) -> list[dict]:
+    """Read the driver's own context; the inventory never comes from model output."""
+    context = json.loads(context_path.read_text(encoding="utf-8"))
+    if not isinstance(context, dict) or context.get("head") != head:
+        raise ValueError("review context is not bound to the head commit")
+    claims = context.get("claims")
+    if not isinstance(claims, list) or not all(
+        isinstance(claim, dict) and isinstance(claim.get("id"), str)
+        and isinstance(claim.get("path"), str) and type(claim.get("line")) is int
+        for claim in claims
+    ):
+        raise ValueError("review context has no valid claim inventory")
+    return claims
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv == ["--selftest"]:
@@ -169,9 +185,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--cli-version", required=True)
+    parser.add_argument(
+        "--context", type=Path,
+        help="trusted review context whose claims list is the claim inventory the model received",
+    )
     args = parser.parse_args(argv)
 
-    result, errors = load_validated_result(sys.stdin.read(), args.repo, args.base, args.head)
+    claims, errors = [], []
+    if args.context is not None:
+        try:
+            claims = _trusted_inventory(args.context, args.head)
+        except (OSError, ValueError, RecursionError):
+            errors.append("trusted review context is unreadable or not bound to the head commit")
+    result, validation_errors = load_validated_result(
+        sys.stdin.read(), args.repo, args.base, args.head, claims=claims
+    )
+    errors.extend(validation_errors)
+    if result is not None and args.context is None and result["status"] == "complete":
+        errors.append("a complete result requires the trusted claim inventory")
     expected_runtime = {
         "provider": args.provider,
         "model": args.model,

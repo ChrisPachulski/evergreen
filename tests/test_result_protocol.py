@@ -7,6 +7,11 @@ from unittest import mock
 
 from ci import result_protocol
 from ci.result_protocol import load_validated_result, parse_result, validate_result
+from ci.review_context import claim_id
+
+
+CLAIM_TEXT = "Run `shipit --workers 4`."
+CLAIM = claim_id("docs/usage.md", "2", CLAIM_TEXT)
 
 
 class ResultProtocolTests(unittest.TestCase):
@@ -20,6 +25,7 @@ class ResultProtocolTests(unittest.TestCase):
         self.write("src/cli.py", "def main():\n    workers = 4\n")
         self.head = self.commit("fixture")
         self.base = self.head
+        self.claims = [{"id": CLAIM, "path": "docs/usage.md", "line": 2, "text": CLAIM_TEXT}]
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -45,11 +51,11 @@ class ResultProtocolTests(unittest.TestCase):
 
     def result(self, **updates):
         result = {
-            "schema_version": 2,
+            "schema_version": 3,
             "status": "complete",
             "base": self.base,
             "head": self.head,
-            "claims": {"total": 1, "certified": 1, "drift": 0, "unverified": 0},
+            "verdicts": self.verdicts("certified"),
             "findings": [],
             "unverified": [],
             "errors": [],
@@ -58,8 +64,18 @@ class ResultProtocolTests(unittest.TestCase):
         result.update(updates)
         return result
 
+    def verdicts(self, verdict, claim=CLAIM):
+        return [{"id": claim, "verdict": verdict}]
+
+    def validate(self, result, claims=None):
+        return validate_result(
+            result, self.repo, self.base, self.head,
+            claims=self.claims if claims is None else claims,
+        )
+
     def finding(self, **updates):
         finding = {
+            "id": CLAIM,
             "severity": "high",
             "category": "in_docs_not_code",
             "doc_path": "docs/usage.md",
@@ -76,6 +92,7 @@ class ResultProtocolTests(unittest.TestCase):
 
     def unverified(self, **updates):
         item = {
+            "id": CLAIM,
             "doc_path": "docs/usage.md",
             "doc_line": 2,
             "claim": "Run `shipit --workers 4`.",
@@ -85,7 +102,7 @@ class ResultProtocolTests(unittest.TestCase):
         return item
 
     def assert_invalid(self, result, phrase):
-        errors = validate_result(result, self.repo, self.base, self.head)
+        errors = self.validate(result)
         self.assertTrue(any(phrase in error for error in errors), errors)
 
     def test_parses_one_whole_object_and_one_fenced_envelope(self):
@@ -107,27 +124,28 @@ class ResultProtocolTests(unittest.TestCase):
                     parse_result(text)
 
     def test_accepts_explicit_clean_result(self):
-        result = self.result()
-        self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
-        self.assertEqual(
-            load_validated_result(json.dumps(result), self.repo, self.base, self.head),
-            (result, []),
+        text = json.dumps(self.result())
+        self.assertEqual(self.validate(self.result()), [])
+        loaded, errors = load_validated_result(
+            text, self.repo, self.base, self.head, claims=self.claims
         )
+        self.assertEqual(errors, [])
+        self.assertEqual(loaded["claims"], {"total": 1, "certified": 1, "drift": 0, "unverified": 0})
 
     def test_accepts_findings_and_checks_head_content_not_worktree_content(self):
         finding = self.finding()
         result = self.result(
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            verdicts=self.verdicts("drift"),
             findings=[finding],
         )
         self.write("docs/usage.md", "working tree no longer contains the claim\n")
         self.write("src/cli.py", "working tree has only one line\n")
-        self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
+        self.assertEqual(self.validate(result), [])
 
     def test_hanging_citation_git_is_a_bounded_validation_error(self):
         finding = self.finding()
         result = self.result(
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            verdicts=self.verdicts("drift"),
             findings=[finding],
         )
         with mock.patch.object(
@@ -135,21 +153,21 @@ class ResultProtocolTests(unittest.TestCase):
             return_value=(124, b"", "command timed out after 0.1 seconds"),
             create=True,
         ) as run:
-            errors = validate_result(result, self.repo, self.base, self.head)
+            errors = self.validate(result)
 
         self.assertTrue(any("timed out" in error for error in errors))
         self.assertTrue(run.called)
 
     def test_citation_validation_has_one_aggregate_deadline(self):
         result = self.result(
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            verdicts=self.verdicts("drift"),
             findings=[self.finding()],
         )
         with mock.patch.object(result_protocol, "CITATION_TIMEOUT_SECONDS", 1), \
              mock.patch("time.monotonic", side_effect=[0, 2]), \
              mock.patch.object(result_protocol, "run_bounded",
                                return_value=(0, b"", None)) as run:
-            errors = validate_result(result, self.repo, self.base, self.head)
+            errors = self.validate(result)
 
         self.assertTrue(any("citation validation" in error and "wall-clock limit" in error
                             for error in errors), errors)
@@ -157,14 +175,14 @@ class ResultProtocolTests(unittest.TestCase):
 
     def test_citation_validation_stops_at_one_git_call_budget(self):
         result = self.result(
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            verdicts=self.verdicts("drift"),
             findings=[self.finding()],
         )
         entry = b"100644 blob " + b"a" * 40 + b"\tdocs/usage.md\0"
         with mock.patch.object(result_protocol, "MAX_CITATION_GIT_CALLS", 1, create=True), \
              mock.patch.object(result_protocol, "run_bounded",
                                return_value=(0, entry, None)) as run:
-            errors = validate_result(result, self.repo, self.base, self.head)
+            errors = self.validate(result)
 
         self.assertTrue(any("citation Git call limit" in error for error in errors), errors)
         self.assertEqual(run.call_count, 1)
@@ -172,11 +190,11 @@ class ResultProtocolTests(unittest.TestCase):
     def test_accepts_release_identity_drift_findings(self):
         finding = self.finding(category="release_identity_drift")
         result = self.result(
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            verdicts=self.verdicts("drift"),
             findings=[finding],
         )
 
-        self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
+        self.assertEqual(self.validate(result), [])
 
     def test_protocol_docs_list_every_accepted_finding_category(self):
         root = Path(__file__).parents[1]
@@ -194,19 +212,21 @@ class ResultProtocolTests(unittest.TestCase):
     def test_accepts_unverified_claims(self):
         item = self.unverified()
         result = self.result(
-            claims={"total": 1, "certified": 0, "drift": 0, "unverified": 1},
+            verdicts=self.verdicts("unverified"),
             unverified=[item],
         )
-        self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
+        self.assertEqual(self.validate(result), [])
 
     def test_load_returns_none_and_parse_error(self):
-        result, errors = load_validated_result("prose only", self.repo, self.base, self.head)
+        result, errors = load_validated_result(
+            "prose only", self.repo, self.base, self.head, claims=self.claims
+        )
         self.assertIsNone(result)
         self.assertTrue(any("result envelope" in error for error in errors), errors)
 
     def test_rejects_wrong_schema_status_base_and_head(self):
         cases = [
-            ({"schema_version": 3}, "schema_version"),
+            ({"schema_version": 2}, "schema_version"),
             ({"status": "clean"}, "status"),
             ({"base": "wrong"}, "base"),
             ({"head": "wrong"}, "head"),
@@ -217,7 +237,7 @@ class ResultProtocolTests(unittest.TestCase):
 
     def test_rejects_boolean_schema_and_non_string_status_without_raising(self):
         self.assert_invalid(self.result(schema_version=True), "schema_version")
-        self.assert_invalid(self.result(schema_version=2.0), "schema_version")
+        self.assert_invalid(self.result(schema_version=3.0), "schema_version")
         self.assert_invalid(self.result(status=["complete"]), "status")
 
     def test_rejects_missing_or_extra_envelope_fields(self):
@@ -226,16 +246,87 @@ class ResultProtocolTests(unittest.TestCase):
         self.assert_invalid(missing, "missing result fields")
         self.assert_invalid(self.result(extra="ignored"), "unknown result fields")
 
-    def test_rejects_bad_claim_counts_and_boolean_counts(self):
+    def test_rejects_model_reported_claim_counts(self):
+        counts = {"total": 1, "certified": 1, "drift": 0, "unverified": 0}
+        self.assert_invalid(self.result(claims=counts), "unknown result fields: claims")
+
+    def test_rejects_missing_duplicate_and_unknown_claim_ids(self):
         cases = [
-            {"total": 2, "certified": 1, "drift": 0, "unverified": 0},
-            {"total": 1, "certified": 0, "drift": 1, "unverified": 0},
-            {"total": 1, "certified": 0, "drift": 0, "unverified": 1},
-            {"total": True, "certified": 1, "drift": 0, "unverified": 0},
+            ([], "1 missing claim id(s): " + CLAIM),
+            (self.verdicts("certified") * 2, "1 duplicate claim id(s): " + CLAIM),
+            (self.verdicts("certified") + self.verdicts("drift"), "1 duplicate claim id(s)"),
+            (self.verdicts("certified") + self.verdicts("certified", "f" * 16),
+             "1 unknown claim id(s): " + "f" * 16),
+            (self.verdicts("certified", "f" * 16), "1 missing claim id(s)"),
         ]
-        for claims in cases:
-            with self.subTest(claims=claims):
-                self.assert_invalid(self.result(claims=claims), "claims")
+        for verdicts, phrase in cases:
+            with self.subTest(verdicts=verdicts):
+                self.assert_invalid(self.result(verdicts=verdicts), phrase)
+
+    def test_rejects_malformed_verdict_entries_without_raising(self):
+        cases = [
+            ({"verdicts": {"id": CLAIM}}, "verdicts must be an array"),
+            ({"verdicts": [{"id": CLAIM, "verdict": "clean"}]}, "verdicts[0].verdict"),
+            ({"verdicts": [{"id": [CLAIM], "verdict": "certified"}]}, "verdicts[0].id"),
+            ({"verdicts": [{"id": CLAIM}]}, "missing verdicts[0] fields"),
+            ({"verdicts": self.verdicts("certified") * (result_protocol.MAX_ITEMS + 2)},
+             "entries for 1 supplied claims"),
+        ]
+        for updates, phrase in cases:
+            with self.subTest(updates=updates):
+                self.assert_invalid(self.result(**updates), phrase)
+
+    def test_derives_claim_totals_from_trusted_verdicts(self):
+        second = claim_id("docs/usage.md", "1", "# Usage")
+        third = claim_id("src/cli.py", "1", "def main():")
+        claims = [
+            *self.claims,
+            {"id": second, "path": "docs/usage.md", "line": 1, "text": "# Usage"},
+            {"id": third, "path": "src/cli.py", "line": 1, "text": "def main():"},
+        ]
+        result = self.result(
+            verdicts=[
+                {"id": third, "verdict": "certified"},
+                {"id": CLAIM, "verdict": "drift"},
+                {"id": second, "verdict": "unverified"},
+            ],
+            findings=[self.finding()],
+            unverified=[self.unverified(id=second, doc_line=1, claim="# Usage")],
+        )
+
+        self.assertEqual(self.validate(result, claims=claims), [])
+        self.assertEqual(
+            result["claims"], {"total": 3, "certified": 1, "drift": 1, "unverified": 1}
+        )
+
+        empty = self.result(verdicts=[])
+        self.assertEqual(self.validate(empty, claims=[]), [])
+        self.assertEqual(empty["claims"], {"total": 0, "certified": 0, "drift": 0, "unverified": 0})
+
+    def test_binds_every_finding_and_unverified_entry_to_its_claim(self):
+        cases = [
+            (self.result(verdicts=self.verdicts("drift")), "1 drift verdict(s) have no matching findings"),
+            (self.result(verdicts=self.verdicts("unverified")),
+             "1 unverified verdict(s) have no matching unverified"),
+            (self.result(findings=[self.finding()]), "findings[0].id is not a supplied claim with verdict drift"),
+            (self.result(unverified=[self.unverified()]),
+             "unverified[0].id is not a supplied claim with verdict unverified"),
+            (self.result(verdicts=self.verdicts("drift"), findings=[self.finding()] * 2),
+             "findings repeat a claim id"),
+            (self.result(verdicts=self.verdicts("drift"), findings=[self.finding(doc_line=1, claim="# Usage")]),
+             "findings[0] does not cite its claim's documentation line"),
+            (self.result(verdicts=self.verdicts("drift"), findings=[self.finding(id="f" * 16)]),
+             "findings[0].id is not a supplied claim"),
+        ]
+        for result, phrase in cases:
+            with self.subTest(phrase=phrase):
+                self.assert_invalid(result, phrase)
+        missing_id = self.finding()
+        del missing_id["id"]
+        self.assert_invalid(
+            self.result(verdicts=self.verdicts("drift"), findings=[missing_id]),
+            "missing findings[0] fields: id",
+        )
 
     def test_rejects_complete_result_with_errors(self):
         self.assert_invalid(self.result(errors=["model timed out"]), "complete result")
@@ -245,7 +336,7 @@ class ResultProtocolTests(unittest.TestCase):
             with self.subTest(path=path):
                 finding = self.finding(doc_path=path)
                 result = self.result(
-                    claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                    verdicts=self.verdicts("drift"),
                     findings=[finding],
                 )
                 self.assert_invalid(result, "doc_path")
@@ -255,7 +346,7 @@ class ResultProtocolTests(unittest.TestCase):
             with self.subTest(path=repr(path)):
                 finding = self.finding(doc_path=path)
                 result = self.result(
-                    claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                    verdicts=self.verdicts("drift"),
                     findings=[finding],
                 )
                 self.assert_invalid(result, "doc_path")
@@ -271,7 +362,7 @@ class ResultProtocolTests(unittest.TestCase):
             finding = self.finding(doc_path="escape.md", doc_line=1)
             result = self.result(
                 head=self.head,
-                claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                verdicts=self.verdicts("drift"),
                 findings=[finding],
             )
             self.assert_invalid(result, "symlink")
@@ -289,7 +380,7 @@ class ResultProtocolTests(unittest.TestCase):
         finding = self.finding(doc_path="linked.md", doc_line=1)
         result = self.result(
             head=self.head,
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            verdicts=self.verdicts("drift"),
             findings=[finding],
         )
         self.assert_invalid(result, "symlink")
@@ -303,10 +394,10 @@ class ResultProtocolTests(unittest.TestCase):
         try:
             finding = self.finding()
             result = self.result(
-                claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                verdicts=self.verdicts("drift"),
                 findings=[finding],
             )
-            self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
+            self.assertEqual(self.validate(result), [])
         finally:
             outside.unlink(missing_ok=True)
 
@@ -318,7 +409,7 @@ class ResultProtocolTests(unittest.TestCase):
         finding = self.finding(doc_path="loop.md", doc_line=1)
         result = self.result(
             head=self.head,
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            verdicts=self.verdicts("drift"),
             findings=[finding],
         )
         self.assert_invalid(result, "symlink")
@@ -328,7 +419,7 @@ class ResultProtocolTests(unittest.TestCase):
             with self.subTest(updates=updates):
                 finding = self.finding(**updates)
                 result = self.result(
-                    claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                    verdicts=self.verdicts("drift"),
                     findings=[finding],
                 )
                 self.assert_invalid(result, "line")
@@ -336,7 +427,7 @@ class ResultProtocolTests(unittest.TestCase):
     def test_rejects_claim_not_found_on_cited_documentation_line(self):
         finding = self.finding(claim="A different claim")
         result = self.result(
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            verdicts=self.verdicts("drift"),
             findings=[finding],
         )
         self.assert_invalid(result, "claim does not occur")
@@ -356,7 +447,7 @@ class ResultProtocolTests(unittest.TestCase):
                 )
                 result = self.result(
                     head=self.head,
-                    claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                    verdicts=self.verdicts("drift"),
                     findings=[finding],
                 )
                 self.assert_invalid(result, "line")
@@ -370,7 +461,7 @@ class ResultProtocolTests(unittest.TestCase):
                 else:
                     finding["claim"] = claim
                 result = self.result(
-                    claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                    verdicts=self.verdicts("drift"),
                     findings=[finding],
                 )
                 self.assert_invalid(result, "claim")
@@ -380,10 +471,10 @@ class ResultProtocolTests(unittest.TestCase):
             with self.subTest(updates=updates):
                 finding = self.finding(**updates)
                 result = self.result(
-                    claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                    verdicts=self.verdicts("drift"),
                     findings=[finding],
                 )
-                errors = validate_result(result, self.repo, self.base, self.head)
+                errors = self.validate(result)
                 self.assertTrue(
                     any(phrase in error and "non-whitespace" in error for error in errors),
                     errors,
@@ -400,7 +491,7 @@ class ResultProtocolTests(unittest.TestCase):
             with self.subTest(updates=updates):
                 finding = self.finding(**updates)
                 result = self.result(
-                    claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                    verdicts=self.verdicts("drift"),
                     findings=[finding],
                 )
                 self.assert_invalid(result, phrase)
@@ -410,7 +501,7 @@ class ResultProtocolTests(unittest.TestCase):
             with self.subTest(field=field):
                 finding = self.finding(**{field: ["high"]})
                 result = self.result(
-                    claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+                    verdicts=self.verdicts("drift"),
                     findings=[finding],
                 )
                 self.assert_invalid(result, field)
@@ -418,14 +509,14 @@ class ResultProtocolTests(unittest.TestCase):
     def test_rejects_unknown_finding_and_unverified_fields(self):
         finding = self.finding(extra="data")
         result = self.result(
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            verdicts=self.verdicts("drift"),
             findings=[finding],
         )
         self.assert_invalid(result, "unknown findings[0] fields")
 
         item = self.unverified(extra="data")
         result = self.result(
-            claims={"total": 1, "certified": 0, "drift": 0, "unverified": 1},
+            verdicts=self.verdicts("unverified"),
             unverified=[item],
         )
         self.assert_invalid(result, "unknown unverified[0] fields")
@@ -433,7 +524,7 @@ class ResultProtocolTests(unittest.TestCase):
     def test_rejects_oversized_text_and_collection_fields(self):
         finding = self.finding(why="x" * 5000)
         result = self.result(
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            verdicts=self.verdicts("drift"),
             findings=[finding],
         )
         self.assert_invalid(result, "why")
@@ -453,20 +544,22 @@ class ResultProtocolTests(unittest.TestCase):
         )
         result = self.result(
             head=self.head,
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+            verdicts=self.verdicts("drift"),
             findings=[finding],
         )
         self.assert_invalid(result, "citation exceeds")
 
     def test_caches_head_blob_reads_by_path(self):
-        findings = [self.finding(), self.finding()]
+        heading = claim_id("docs/usage.md", "1", "# Usage")
+        claims = [*self.claims, {"id": heading, "path": "docs/usage.md", "line": 1, "text": "# Usage"}]
+        findings = [self.finding(), self.finding(id=heading, doc_line=1, claim="# Usage")]
         result = self.result(
-            claims={"total": 2, "certified": 0, "drift": 2, "unverified": 0},
+            verdicts=self.verdicts("drift") + self.verdicts("drift", heading),
             findings=findings,
         )
         real_run = result_protocol.run_bounded
         with mock.patch.object(result_protocol, "run_bounded", wraps=real_run) as run:
-            self.assertEqual(validate_result(result, self.repo, self.base, self.head), [])
+            self.assertEqual(self.validate(result, claims=claims), [])
         cat_file_calls = [
             call for call in run.call_args_list
             if "cat-file" in call.args[0]
