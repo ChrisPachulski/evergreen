@@ -26,7 +26,15 @@ SEED_RES = (
     re.compile(r"--[A-Za-z0-9][A-Za-z0-9_-]*"),
     re.compile(r"\b[A-Z][A-Z0-9_]{2,}\b"),
     re.compile(r"/[A-Za-z0-9][A-Za-z0-9._~!$&()*+,;=:@%/-]*"),
-    re.compile(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b"),
+    # ponytail: declaration heuristic, not every rung-2 contract; a symbol renamed only at call
+    # sites seeds nothing (changed paths remain terms). Widen the keyword lists if recall matters.
+    re.compile(
+        r"^\s*(?:(?:export|default|public|private|protected|static|async|abstract|final"
+        r"|pub(?:\([\w ]*\))?)\s+)*"
+        r"(?:def|class|func|function|type|struct|interface|enum|trait|impl|const|var|let|fn)\s+"
+        r"(?:\([^)]*\)\s*)?\*?([A-Za-z_][A-Za-z0-9_]*)",
+        re.M,
+    ),
 )
 
 
@@ -170,7 +178,7 @@ def _patch(
         base,
         head,
         "--",
-        *paths,
+        *(f":(literal){path}" for path in paths),
     )
     if returncode and not truncated:
         display = file["_path"].decode("utf-8", errors="replace")

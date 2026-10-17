@@ -161,6 +161,7 @@ cd "$REPO_ROOT" 2>/dev/null || {
   echo "evergreen: cannot enter repository root." >&2
   finish_fallback "the repository root could not be opened."
 }
+REPO_ROOT="$(pwd -P)"
 
 PYTHON3_BIN="$(type -P python3 2>/dev/null)"
 [ -n "$PYTHON3_BIN" ] && [ -x "$PYTHON3_BIN" ] || \
