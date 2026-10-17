@@ -28,13 +28,17 @@ SEED_RES = (
     re.compile(r"/[A-Za-z0-9][A-Za-z0-9._~!$&()*+,;=:@%/-]*"),
     # ponytail: declaration heuristic, not every rung-2 contract; a symbol renamed only at call
     # sites seeds nothing (changed paths remain terms). Widen the keyword lists if recall matters.
+    # Whitespace is [ \t], never \s: under re.M a \s* after ^ re-scans every following blank
+    # line from each line start, which is quadratic on an untrusted hunk of empty lines.
     re.compile(
-        r"^\s*(?:(?:export|default|public|private|protected|static|async|abstract|final"
-        r"|pub(?:\([\w ]*\))?)\s+)*"
-        r"(?:def|class|func|function|type|struct|interface|enum|trait|impl|const|var|let|fn)\s+"
-        r"(?:\([^)]*\)\s*)?\*?([A-Za-z_][A-Za-z0-9_]*)",
+        r"^[ \t]*(?:(?:export|default|public|private|protected|static|async|abstract|final"
+        r"|pub(?:\([\w ]*\))?)[ \t]+)*"
+        r"(?:def|class|func|function|type|struct|interface|enum|trait|impl|const|var|let|fn)[ \t]+"
+        r"(?:\([^)\n]*\)[ \t]*)?\*?([A-Za-z_][A-Za-z0-9_]*)",
         re.M,
     ),
+    # A top-level assignment is a module constant or config key; indented locals stay out.
+    re.compile(r"^([A-Za-z_][A-Za-z0-9_]{2,})[ \t]*=(?!=)", re.M),
 )
 
 

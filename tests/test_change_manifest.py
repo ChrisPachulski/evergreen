@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -107,6 +108,22 @@ class ChangeManifestTests(unittest.TestCase):
         seeds = change_manifest.build_manifest(self.repo, base, head)["contract_seeds"]
 
         self.assertEqual(seeds, ["ServeHTTP", "Worker", "fetchItems", "parse_args", "run_batch"])
+
+    def test_top_level_assignments_seed_and_indented_locals_do_not(self):
+        self.write("app.py", "workers = 4\n")
+        base = self.commit("base")
+        self.write("app.py", "concurrency = 4\ndef run():\n    local_total = 0\n")
+        head = self.commit("changes")
+
+        seeds = change_manifest.build_manifest(self.repo, base, head)["contract_seeds"]
+
+        self.assertEqual(seeds, ["concurrency", "run", "workers"])
+
+    def test_a_hunk_of_blank_lines_scans_in_linear_time(self):
+        changed = "\n" * 64_000
+        start = time.monotonic()
+        change_manifest._seeds(["@@ -1 +1 @@\n" + changed.replace("\n", "+\n")])
+        self.assertLess(time.monotonic() - start, 1.0)
 
     def test_pathspec_magic_in_a_changed_filename_is_read_literally(self):
         self.write("demo.py", "def plain():\n")
