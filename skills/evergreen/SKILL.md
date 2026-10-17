@@ -316,7 +316,7 @@ run falsifiable, and
 **light must never emit a `prose` finding**. Declaring nothing is itself a violation.
 
 Point at the line; don't scold, pad, or rewrite. One-line read of what changed, one line per
-finding, one-line verdict. Exempt docs go on a trailing `left alone:` line, never as a finding.
+finding, one-line verdict. Exempt docs go on a trailing `left alone:` line, never as a finding or a suggested edit, not even an added note.
 
 Per finding: `[high|med|low] category rung  file:line — what's wrong (cite the code) → fix | flag`
 

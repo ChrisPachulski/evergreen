@@ -137,7 +137,7 @@ Output, per finding: `[high|med|low] category rung  file:line — what's wrong (
 Open with the mode: `evergreen [light]:`. light must never emit a `prose` finding.
 Rung is which ladder rung proved it: `path · contract · snippet · prose`. Name the one that
 actually proved it; `prose` is the only one resting on judgment.
-Exempt docs go on a trailing `left alone:` line, never as a finding.
+Exempt docs go on a trailing `left alone:` line, never as a finding or a suggested edit, not even an added note.
 Surface still matches → one line: `evergreen: docs still match`.
 
 Full ruleset (taxonomy, flag-vs-winnow depths, the seed/flourish/cultivate family): load the
