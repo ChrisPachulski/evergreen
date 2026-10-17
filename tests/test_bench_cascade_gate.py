@@ -341,73 +341,86 @@ class AdjudicationOverlayTests(TempDirTestCase):
 # -- quality gate boundaries ----------------------------------------------------------------------
 
 class QualityGateBoundaryTests(unittest.TestCase):
-    thresholds = (0.80, 0.80, 0.80)
+    thresholds = (0.80, 0.60, 0.15)
 
-    def test_precision_exactly_at_threshold_passes(self):
-        gate = cascade_gate.evaluate_quality_gate(
-            None, {"precision": 0.80, "recall": 0.90, "f1": 0.90}, self.thresholds
+    def gate(self, recall=0.90, natural_precision=0.90, natural_flag_rate=0.10):
+        return cascade_gate.evaluate_quality_gate(
+            None, {"precision": 0.90, "recall": recall, "f1": 0.90},
+            {"precision": natural_precision, "recall": recall, "flag_rate": natural_flag_rate},
+            self.thresholds,
         )
-        self.assertTrue(gate["passed"])
-
-    def test_precision_just_below_threshold_fails(self):
-        gate = cascade_gate.evaluate_quality_gate(
-            None, {"precision": 0.7999999, "recall": 0.90, "f1": 0.90}, self.thresholds
-        )
-        self.assertFalse(gate["passed"])
 
     def test_recall_exactly_at_threshold_passes(self):
-        gate = cascade_gate.evaluate_quality_gate(
-            None, {"precision": 0.90, "recall": 0.80, "f1": 0.90}, self.thresholds
-        )
-        self.assertTrue(gate["passed"])
+        self.assertTrue(self.gate(recall=0.80)["passed"])
 
     def test_recall_just_below_threshold_fails(self):
-        gate = cascade_gate.evaluate_quality_gate(
-            None, {"precision": 0.90, "recall": 0.7999999, "f1": 0.90}, self.thresholds
-        )
+        gate = self.gate(recall=0.7999999)
         self.assertFalse(gate["passed"])
+        self.assertIn("recall", gate["reason"])
 
-    def test_f1_exactly_at_threshold_passes(self):
-        gate = cascade_gate.evaluate_quality_gate(
-            None, {"precision": 0.90, "recall": 0.90, "f1": 0.80}, self.thresholds
-        )
-        self.assertTrue(gate["passed"])
+    def test_natural_precision_exactly_at_floor_passes(self):
+        self.assertTrue(self.gate(natural_precision=0.60)["passed"])
 
-    def test_f1_just_below_threshold_fails(self):
-        gate = cascade_gate.evaluate_quality_gate(
-            None, {"precision": 0.90, "recall": 0.90, "f1": 0.7999999}, self.thresholds
-        )
+    def test_natural_precision_just_below_floor_fails(self):
+        gate = self.gate(natural_precision=0.5999999)
         self.assertFalse(gate["passed"])
+        self.assertIn("natural precision", gate["reason"])
+
+    def test_natural_flag_rate_exactly_at_ceiling_passes(self):
+        self.assertTrue(self.gate(natural_flag_rate=0.15)["passed"])
+
+    def test_natural_flag_rate_just_above_ceiling_fails(self):
+        gate = self.gate(natural_flag_rate=0.1500001)
+        self.assertFalse(gate["passed"])
+        self.assertIn("natural flag_rate", gate["reason"])
 
     def test_missing_adjudicated_metrics_fails_even_when_nominal_would_pass(self):
         gate = cascade_gate.evaluate_quality_gate(
-            {"precision": 1.0, "recall": 1.0, "f1": 1.0}, None, self.thresholds
+            {"precision": 1.0, "recall": 1.0, "f1": 1.0}, None, None, self.thresholds
         )
         self.assertFalse(gate["passed"])
         self.assertIn("adjudicated", gate["reason"])
 
     def test_unavailable_adjudicated_metrics_fails(self):
         gate = cascade_gate.evaluate_quality_gate(
-            None, {"precision": None, "recall": None, "f1": None}, self.thresholds
+            None, {"precision": None, "recall": None, "f1": None},
+            {"precision": None, "recall": None, "flag_rate": None}, self.thresholds,
         )
         self.assertFalse(gate["passed"])
 
+    def test_unavailable_natural_view_fails_closed(self):
+        for natural in (None, {"precision": None, "recall": None, "flag_rate": None}):
+            gate = cascade_gate.evaluate_quality_gate(
+                None, {"precision": 1.0, "recall": 1.0, "f1": 1.0}, natural, self.thresholds
+            )
+            self.assertFalse(gate["passed"])
+            self.assertIn("natural", gate["reason"])
+
 
 class QualityGateIntegrationTests(TempDirTestCase):
-    def test_exact_boundary_probe_passes_when_adjudication_confirms_nominal(self):
-        fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=10, tn=40)
+    def build(self, fixture):
         dataset_path, receipt_path, artifact_path = fixture.write(self.root)
         overlay_path = self.write_json("adjudicated.json", fixture.identity_overlay())
-
-        packet = cascade_gate.build_decision_packet(
+        return cascade_gate.build_decision_packet(
             artifact_path, dataset_path, receipt_path, adjudicated_path=overlay_path,
             accept_projected_cost_gate=True,
         )
 
+    def test_balanced_point_eight_probe_fails_at_the_natural_base_rate(self):
+        # 40 TP / 10 FP is 0.80 precision on the balanced probe, but at a 10/90 deployed base rate
+        # the same 20% control false-positive rate is ~90 FP against 40 TP: ~0.31 precision.
+        fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=10, tn=40)
+        packet = self.build(fixture)
+
         self.assertEqual(packet["quality"]["nominal"]["precision"], 0.8)
         self.assertEqual(packet["quality"]["nominal"]["recall"], 0.8)
-        self.assertAlmostEqual(packet["quality"]["nominal"]["f1"], 0.8)
-        self.assertTrue(packet["gates"]["quality"]["passed"])
+        gate = packet["gates"]["quality"]
+        self.assertFalse(gate["passed"])
+        self.assertAlmostEqual(gate["natural_precision"], 40 / 130, delta=0.03)
+        self.assertIn("natural precision", gate["reason"])
+        self.assertIn("natural flag_rate", gate["reason"])
+        self.assertNotIn("recall", gate["reason"])
+        self.assertFalse(packet["passed"])
         # End-to-end (not just the unit-level auto_clear_false_negatives() coverage above):
         # the packet's own field, built through build_decision_packet, must carry the same
         # auto-cleared missed-drift ids for both label views once adjudication merely confirms
@@ -417,7 +430,26 @@ class QualityGateIntegrationTests(TempDirTestCase):
             packet["auto_clear_false_negatives"]["adjudicated"], sorted(fixture.fn_clear_ids)
         )
 
-    def test_packet_reports_the_natural_prevalence_view_without_changing_the_gate(self):
+    def test_low_false_positive_probe_passes(self):
+        # 1 FP in 50 controls: ~9 FP against 45 TP at 10/90, ~0.83 precision and ~0.11 flag rate.
+        packet = self.build(ProbeFixture(tp=45, fn_clear=3, fn_jury=2, fp=1, tn=49))
+
+        gate = packet["gates"]["quality"]
+        self.assertTrue(gate["passed"], gate["reason"])
+        self.assertIsNone(gate["reason"])
+        self.assertGreaterEqual(gate["natural_precision"], 0.60)
+        self.assertLessEqual(gate["natural_flag_rate"], 0.15)
+
+    def test_precise_but_low_recall_probe_fails_on_recall(self):
+        packet = self.build(ProbeFixture(tp=5, fn_clear=25, fn_jury=20, fp=0, tn=50))
+
+        gate = packet["gates"]["quality"]
+        self.assertFalse(gate["passed"])
+        self.assertEqual(gate["natural_precision"], 1.0)
+        self.assertLessEqual(gate["natural_flag_rate"], 0.15)
+        self.assertEqual(gate["reason"], "recall 0.100 < 0.80")
+
+    def test_packet_gates_on_the_adjudicated_natural_view_deterministically(self):
         # 40 TP / 10 FP is 0.80 precision on the balanced probe, but at a 10/90 deployed base rate
         # the same 20% control false-positive rate is ~90 FP against 40 TP: ~0.31 precision.
         fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=10, tn=40)
@@ -438,11 +470,20 @@ class QualityGateIntegrationTests(TempDirTestCase):
             self.assertAlmostEqual(natural["flag_rate"], 130 / 500, delta=0.03)
             self.assertEqual(natural["recall"], balanced["recall"])
             self.assertEqual(balanced["precision"], 0.8)
-        self.assertTrue(packet["gates"]["quality"]["passed"])
+        gate = packet["gates"]["quality"]
+        self.assertEqual(
+            gate["natural_precision"], packet["quality"]["adjudicated_views"]["natural"]["precision"]
+        )
         self.assertEqual(json.dumps(packet, sort_keys=True), json.dumps(build(), sort_keys=True))
         table = cascade_gate.render_table(packet)
         self.assertIn("natural 10/90", table)
         self.assertIn("balanced 50/50", table)
+        self.assertIn("(>= 0.60)", table)
+        self.assertIn("(<= 0.15)", table)
+        natural_line = next(
+            line for line in table.splitlines() if "adjudicated  natural 10/90" in line
+        )
+        self.assertNotIn("not gated", natural_line)
 
     def test_packet_natural_view_is_absent_without_adjudication(self):
         fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=10, tn=40)
@@ -453,19 +494,6 @@ class QualityGateIntegrationTests(TempDirTestCase):
         self.assertIsNone(packet["quality"]["adjudicated_views"])
         self.assertIsNotNone(packet["quality"]["nominal_views"]["natural"]["precision"])
         cascade_gate.render_table(packet)
-
-    def test_probe_just_below_precision_threshold_fails(self):
-        fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=11, tn=39)
-        dataset_path, receipt_path, artifact_path = fixture.write(self.root)
-        overlay_path = self.write_json("adjudicated.json", fixture.identity_overlay())
-
-        packet = cascade_gate.build_decision_packet(
-            artifact_path, dataset_path, receipt_path, adjudicated_path=overlay_path,
-        )
-
-        self.assertLess(packet["quality"]["adjudicated"]["precision"], 0.80)
-        self.assertFalse(packet["gates"]["quality"]["passed"])
-        self.assertFalse(packet["passed"])
 
     def test_missing_adjudication_fails_the_whole_packet_even_with_perfect_nominal_metrics(self):
         fixture = ProbeFixture(tp=50, fn_clear=0, fn_jury=0, fp=0, tn=50)
