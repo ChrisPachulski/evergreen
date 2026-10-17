@@ -267,6 +267,8 @@ def _validate_finding(
     errors: list[str],
     cache: dict[str, tuple[list[str] | None, str | None]],
     state: dict,
+    *,
+    cite: bool = True,
 ) -> None:
     label = f"findings[{index}]"
     if not _shape(item, FINDING_FIELDS, label, errors):
@@ -279,6 +281,8 @@ def _validate_finding(
     _enum(item["fix_or_flag"], FIX_OR_FLAG, f"{label}.fix_or_flag", errors)
     _text(item["claim"], f"{label}.claim", errors, single_line=True)
     _text(item["why"], f"{label}.why", errors)
+    if not cite:
+        return
     _citation(item, "doc", repo, head, errors, cache, state, verify_claim=True)
     if not state["failure"]:
         _citation(item, "code", repo, head, errors, cache, state, verify_claim=False)
@@ -292,6 +296,8 @@ def _validate_unverified(
     errors: list[str],
     cache: dict[str, tuple[list[str] | None, str | None]],
     state: dict,
+    *,
+    cite: bool = True,
 ) -> None:
     label = f"unverified[{index}]"
     if not _shape(item, UNVERIFIED_FIELDS, label, errors):
@@ -300,7 +306,8 @@ def _validate_unverified(
     _text(item["id"], f"{label}.id", errors, limit=MAX_ID, single_line=True)
     _text(item["claim"], f"{label}.claim", errors, single_line=True)
     _text(item["reason"], f"{label}.reason", errors)
-    _citation(item, "doc", repo, head, errors, cache, state, verify_claim=True)
+    if cite:
+        _citation(item, "doc", repo, head, errors, cache, state, verify_claim=True)
 
 
 def _report_ids(errors: list[str], label: str, ids: list[str]) -> None:
@@ -340,15 +347,10 @@ def _verdicts(value: object, claim_ids: list[str], errors: list[str]) -> dict[st
     return verdicts
 
 
-def _without_controls(value: object, control_ids: set[str]) -> object:
-    """Drop entries a model wrote for a calibration control; a control never cites head."""
-    if not isinstance(value, list):
-        return value
-    return [
-        item for item in value
-        if not (isinstance(item, dict) and isinstance(item.get("id"), str)
-                and item["id"] in control_ids)
-    ]
+def _is_control(item: object, control_ids: set[str]) -> bool:
+    """True for an entry a model wrote for a calibration control; a control never cites head."""
+    return (isinstance(item, dict) and isinstance(item.get("id"), str)
+            and item["id"] in control_ids)
 
 
 def _bind(
@@ -357,6 +359,7 @@ def _bind(
     verdict: str,
     verdicts: dict[str, str],
     locations: dict[str, tuple[str, int]],
+    control_ids: set[str],
     errors: list[str],
 ) -> None:
     """Require one entry per claim with this verdict, citing that claim's own line, and no other."""
@@ -365,6 +368,8 @@ def _bind(
     for index, item in enumerate(items):
         if not isinstance(item, dict) or not isinstance(item.get("id"), str):
             continue  # its shape error is already reported
+        if item["id"] in control_ids:
+            continue  # a control is graded by its verdict alone
         cited.append(item["id"])
         if item["id"] not in expected:
             errors.append(f"{label}[{index}].id is not a supplied claim with verdict {verdict}")
@@ -423,8 +428,9 @@ def validate_result(
         return errors
     control_ids = set((controls or {}).values())
     verdicts = _verdicts(result["verdicts"], claim_ids, errors)
-    findings = _without_controls(result["findings"], control_ids)
-    unverified = _without_controls(result["unverified"], control_ids)
+    # Bounds and shape checks see the model's raw arrays; control entries are exempt only from
+    # citation at head, and are dropped from the result after everything else has validated.
+    findings, unverified = result["findings"], result["unverified"]
     for name, value in (("findings", findings), ("unverified", unverified),
                         ("errors", result["errors"])):
         if not isinstance(value, list):
@@ -435,7 +441,8 @@ def validate_result(
     if isinstance(findings, list) and len(findings) <= MAX_ITEMS:
         for index, item in enumerate(findings):
             _validate_finding(
-                item, index, repo, expected_head, errors, citation_cache, citation_state
+                item, index, repo, expected_head, errors, citation_cache, citation_state,
+                cite=not _is_control(item, control_ids),
             )
             if citation_state["failure"]:
                 break
@@ -443,7 +450,8 @@ def validate_result(
             len(unverified) <= MAX_ITEMS):
         for index, item in enumerate(unverified):
             _validate_unverified(
-                item, index, repo, expected_head, errors, citation_cache, citation_state
+                item, index, repo, expected_head, errors, citation_cache, citation_state,
+                cite=not _is_control(item, control_ids),
             )
             if citation_state["failure"]:
                 break
@@ -451,9 +459,9 @@ def validate_result(
     if verdicts is not None:
         reviewed = {claim: value for claim, value in verdicts.items() if claim not in control_ids}
         if isinstance(findings, list):
-            _bind(findings, "findings", "drift", reviewed, locations, errors)
+            _bind(findings, "findings", "drift", reviewed, locations, control_ids, errors)
         if isinstance(unverified, list):
-            _bind(unverified, "unverified", "unverified", reviewed, locations, errors)
+            _bind(unverified, "unverified", "unverified", reviewed, locations, control_ids, errors)
     if isinstance(result["errors"], list) and len(result["errors"]) <= MAX_ITEMS:
         for index, item in enumerate(result["errors"]):
             _text(item, f"errors[{index}]", errors)
@@ -470,8 +478,8 @@ def validate_result(
 
     assert verdicts is not None
     result["verdicts"] = [item for item in result["verdicts"] if item["id"] not in control_ids]
-    result["findings"] = findings
-    result["unverified"] = unverified
+    result["findings"] = [item for item in findings if not _is_control(item, control_ids)]
+    result["unverified"] = [item for item in unverified if not _is_control(item, control_ids)]
     counted = list(reviewed.values())
     result["claims"] = {
         "total": len(counted),

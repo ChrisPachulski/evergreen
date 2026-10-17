@@ -299,9 +299,11 @@ def add_controls(context: dict, nonce: str) -> tuple[dict, dict]:
     Both controls restate a documentation line the context already carries from the head
     commit. The negative control quotes its line exactly, so its correct verdict is certified;
     the positive control attributes another supplied line's text to it, so its correct verdict
-    is drift. Their ids share the claim id format and the whole list is shuffled from the
-    nonce, so neither position nor id marks a control. Return the new context and the
-    trusted answer key, or raise ValueError when the evidence cannot carry both controls.
+    is drift. Every id in the mixed list, real or control, is rekeyed with the nonce, so no id
+    can be recomputed from a claim's public fields, and the whole list is shuffled from the
+    same nonce, so neither position nor id marks a control. The controls' "reads exactly:"
+    form still does. Return the new context and the trusted answer key, or raise ValueError
+    when the evidence cannot carry both controls.
     """
     if context["errors"] or context["truncated"]:
         raise ValueError("calibration controls need a complete review context")
@@ -320,19 +322,19 @@ def add_controls(context: dict, nonce: str) -> tuple[dict, dict]:
     if not others:
         raise ValueError("no second supplied documentation line can contradict a control")
 
-    def control(role: str, source: dict, quote: str) -> dict:
-        return {
-            "id": claim_id("control", nonce, role),
-            "path": source["path"],
-            "line": source["line"],
-            "text": f"{source['path']} line {source['line']} reads exactly: {quote}",
-        }
+    def keyed(path: str, line: int, text: str) -> dict:
+        return {"id": claim_id(nonce, path, str(line), text), "path": path, "line": line,
+                "text": text}
 
-    controls = [
-        control("negative", negative, negative["text"]),
-        control("positive", positive, rng.choice(others)),
+    def control(source: dict, quote: str) -> dict:
+        statement = f"{source['path']} line {source['line']} reads exactly: {quote}"
+        return keyed(source["path"], source["line"], statement)
+
+    controls = [control(negative, negative["text"]), control(positive, rng.choice(others))]
+    claims = [
+        *(keyed(claim["path"], claim["line"], claim["text"]) for claim in context["claims"]),
+        *controls,
     ]
-    claims = [*context["claims"], *controls]
     if len({claim["id"] for claim in claims}) != len(claims):
         raise ValueError("calibration control id collides with a claim id")
     rng.shuffle(claims)

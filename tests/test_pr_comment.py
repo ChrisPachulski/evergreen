@@ -309,6 +309,31 @@ class PRCommentTests(unittest.TestCase):
             self.assertNotIn(POSITIVE, output.stdout)
             self.assertNotIn(NEGATIVE, output.stdout)
 
+    def test_cli_redacts_model_text_that_repeats_a_control_statement(self):
+        # The input that used to publish the control text: correct verdicts, an inconclusive
+        # status, and the synthetic statement copied into a model error.
+        statement = "docs/usage.md line 2 reads exactly: # Usage"
+        echoed = self.controlled_envelope()
+        echoed.update(status="inconclusive", errors=[statement, "a plain model error"])
+        why = self.controlled_envelope()
+        why["verdicts"][1]["verdict"] = "drift"
+        why["findings"] = [self.finding(why="Compare " + statement)]
+        forged_id = self.controlled_envelope()
+        forged_id["verdicts"].append({"id": "docs/usage.md line 2 reads exactly:", "verdict": "drift"})
+
+        outputs = [
+            self.run_cli(json.dumps(envelope), self.write_inventory(controls=True))
+            for envelope in (echoed, why, forged_id)
+        ]
+
+        for output in outputs:
+            self.assertNotIn("reads exactly", output.stdout)
+            self.assertIn("redacted: repeats a calibration control", output.stdout)
+        self.assertIn("a plain model error", outputs[0].stdout)
+        self.assertIn("controls: positive pass, negative pass", outputs[1].stdout)
+        plain = self.run_cli(json.dumps(self.envelope(status="inconclusive", errors=[statement])))
+        self.assertIn("reads exactly", plain.stdout)
+
     def test_render_without_controls_has_no_controls_line(self):
         plain = pr_comment.render_result(self.result(), [])
         graded = pr_comment.render_result(

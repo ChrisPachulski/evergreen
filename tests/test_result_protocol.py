@@ -386,6 +386,23 @@ class ResultProtocolTests(unittest.TestCase):
         self.assertEqual(result["unverified"], [])
         self.assertEqual(result["controls"], {"negative": "pass", "positive": "pass"})
 
+    def test_control_entries_still_meet_collection_bounds_and_shape(self):
+        # The input that used to validate as complete: control entries were dropped before the
+        # 100-item bound and the shape checks ran.
+        flood, claims, controls = self.controlled(
+            findings=[{"id": "b" * 16}] * 1000,
+            unverified=[{"id": "a" * 16, "reason": "x" * 5000}],
+        )
+        errors = self.validate(flood, claims=claims, controls=controls)
+        self.assertIn(f"findings exceeds {result_protocol.MAX_ITEMS} items", errors)
+        self.assertTrue(any("missing unverified[0] fields" in error for error in errors), errors)
+
+        malformed, claims, controls = self.controlled(
+            unverified=[self.unverified(id="a" * 16, reason="x" * 5000)]
+        )
+        errors = self.validate(malformed, claims=claims, controls=controls)
+        self.assertTrue(any("unverified[0].reason exceeds" in error for error in errors), errors)
+
     def test_control_ids_still_need_exactly_one_verdict(self):
         result, claims, controls = self.controlled()
         result["verdicts"] = [item for item in result["verdicts"] if item["id"] != "b" * 16]

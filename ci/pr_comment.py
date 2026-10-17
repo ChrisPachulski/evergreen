@@ -15,6 +15,7 @@ except ImportError:  # Direct script execution.
 
 MARKER = "<!-- evergreen-report -->"
 MAX_RENDER_TEXT = 500
+CONTROL_REDACTION = "[redacted: repeats a calibration control]"
 MARKDOWN_CONTROLS = "\\`*_[]()|"
 BIDI_CONTROLS = {
     0x061C,
@@ -188,6 +189,32 @@ def _trusted_inventory(
     return claims, controls
 
 
+def _redact_controls(
+    result: dict | None, errors: list[str], claims: list[dict], controls: dict
+) -> list[str]:
+    """Replace any rendered model text that repeats a calibration control's statement.
+
+    A control's statement opens with "<path> line <n> reads exactly:"; model-supplied errors,
+    claims, reasons, and ids echoed in validation errors can all carry it into the report.
+    """
+    markers = [
+        f"{claim['path']} line {claim['line']} reads exactly:"
+        for claim in claims if claim["id"] in controls.values()
+    ]
+
+    def clean(value: object) -> object:
+        if isinstance(value, str) and any(marker in value for marker in markers):
+            return CONTROL_REDACTION
+        return value
+
+    if result is not None:
+        result["errors"] = [clean(error) for error in result["errors"]]
+        for name, fields in (("findings", ("claim", "why")), ("unverified", ("claim", "reason"))):
+            for item in result[name]:
+                item.update({field: clean(item[field]) for field in fields})
+    return [clean(error) for error in errors]
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv == ["--selftest"]:
@@ -234,6 +261,8 @@ def main(argv: list[str] | None = None) -> int:
             if supplied_runtime[name] != expected:
                 errors.append(f"runtime.{name} does not match trusted runtime identity")
         result["runtime"] = expected_runtime
+    if controls:
+        errors = _redact_controls(result, errors, claims, controls)
     sys.stdout.write(
         render_result(
             result,

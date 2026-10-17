@@ -291,13 +291,35 @@ class ReviewContextTests(unittest.TestCase):
         self.assertNotEqual(key, other_key)
         self.assertEqual(set(key), {"negative", "positive"})
         self.assertEqual(len(mixed["claims"]), len(context["claims"]) + 2)
+        place = lambda claim: (claim["path"], claim["line"], claim["text"])
         self.assertEqual(
-            sorted(claim["id"] for claim in mixed["claims"] if claim["id"] not in key.values()),
-            sorted(claim["id"] for claim in context["claims"]),
+            sorted(place(claim) for claim in mixed["claims"] if claim["id"] not in key.values()),
+            sorted(place(claim) for claim in context["claims"]),
         )
         for claim in mixed["claims"]:
             self.assertEqual(set(claim), {"id", "path", "line", "text"})
             self.assertRegex(claim["id"], r"^[0-9a-f]{16}$")
+
+    def test_controls_rekey_every_id_so_none_is_recomputable_from_public_fields(self):
+        # The recovery that used to work: real ids were claim_id(path, line, text), so the
+        # entries whose id did not recompute were exactly the two controls.
+        context = self.control_context()
+        mixed, key = review_context.add_controls(context, "nonce-a")
+
+        recomputable = [
+            claim for claim in mixed["claims"]
+            if claim["id"] == review_context.claim_id(claim["path"], str(claim["line"]), claim["text"])
+        ]
+        self.assertEqual(recomputable, [])
+        for claim in mixed["claims"]:
+            self.assertEqual(
+                claim["id"],
+                review_context.claim_id("nonce-a", claim["path"], str(claim["line"]), claim["text"]),
+            )
+        self.assertEqual(
+            [claim["id"] for claim in context["claims"]],
+            [review_context.claim_id(c["path"], str(c["line"]), c["text"]) for c in context["claims"]],
+        )
 
     def test_negative_control_quotes_head_exactly_and_positive_contradicts_it(self):
         context = self.control_context()
