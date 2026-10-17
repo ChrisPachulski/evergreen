@@ -9,7 +9,9 @@
 The [`../`](../) eval seeds a whole fixture repo and runs a full winnow. This benchmark is the
 other axis: **per-pair** code-vs-doc consistency, in the schema the research literature uses, so
 evergreen's numbers sit next to published baselines. The numbers come first; everything after
-them is the provenance that earns them.
+them is the provenance that earns them. These numbers describe this research harness (the
+`trial.py` jury, resolvers v1-v3), not the single-call `bin/evergreen judge` certification path
+that seed, flourish, winnow, and cultivate ship.
 
 > **Integrity notice (2026-07-18).** The 0.4.0 artifacts remain byte-replayable historical
 > records, but their metrics are **not valid performance evidence**. The frozen judge prompt

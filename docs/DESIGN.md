@@ -51,7 +51,7 @@ model's head. Three thin hooks make it ride along, and they never read or analyz
 - **`evergreen-activate.sh`** (SessionStart) injects the mode preamble plus the condensed
   `DIGEST.md` (about two-fifths of the full skill by words, which stays loadable on demand).
 - **`evergreen-mode-tracker.sh`** (UserPromptSubmit) is the *sole writer* of the intensity state. It
-  matches a sigil form where it begins a line or sits in the first sixty characters of the prompt,
+  matches a sigil form where it begins the first non-blank line or sits in the first sixty characters of the prompt,
   and an imperative form only inside that window, so text that merely quotes them never flips the mode.
 - **`evergreen-stop.sh`** (Stop) is a post-turn audit request when code-with-docs changed; git/state
   guards only, always non-blocking, deduped to fire once per distinct change state (a signature in
