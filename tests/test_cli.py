@@ -49,11 +49,14 @@ class EvergreenCLITests(unittest.TestCase):
         # Background auto-gc/maintenance spawned by add/commit/clone keeps
         # rewriting .git/objects after the command returns, racing the
         # snapshot helpers below; keep test repositories fully deterministic.
+        # A developer's global core.hooksPath would otherwise run their own
+        # commit hooks against the copied plugin tree and fail the commit.
         return subprocess.run(
             ["git", "-C", str(directory),
              "-c", "gc.auto=0",
              "-c", "gc.autoDetach=false",
              "-c", "maintenance.auto=false",
+             "-c", f"core.hooksPath={os.devnull}",
              *args],
             check=True,
             stdout=subprocess.PIPE,
