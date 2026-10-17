@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -57,6 +58,27 @@ class ImpactTests(unittest.TestCase):
         self.assertIn("map src/public-api/** matched src/public-api/client.py",
                       report.candidates[0].reasons)
         self.assertTrue(all(not hasattr(candidate, "verdict") for candidate in report.candidates))
+
+    def test_repo_argument_inside_the_worktree_is_rejected_not_silently_narrowed(self):
+        from evergreen.impact import impact
+
+        (self.repo / "src").mkdir()
+        (self.repo / "docs").mkdir()
+        (self.repo / "src/thing.py").write_text("def resolve():\n    pass\n", encoding="utf-8")
+        (self.repo / "docs/api.md").write_text("Call `resolve` first.\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+
+        # From a subdirectory `git ls-files` narrows to it and docs/api.md vanishes silently.
+        with self.assertRaises(ValueError):
+            impact(self.repo / "src", ["src/thing.py"], [])
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve().parents[1] / "bin" / "evergreen"),
+             "impact", "src/thing.py"],
+            cwd=self.repo / "src", capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("repository root", result.stderr)
 
     def test_zero_config_discovers_tracked_living_docs_by_path_and_contract_symbol(self):
         from evergreen.impact import impact
@@ -797,6 +819,19 @@ class SymbolContextRankTests(unittest.TestCase):
         self.assertEqual(ranks["docs/call.md"], 80)
         self.assertEqual(ranks["docs/qualified.md"], 80)
 
+    def test_a_sentence_final_period_is_prose_not_a_qualified_name(self):
+        (self.repo / "src/resolver.py").write_text("def resolve():\n    pass\n", encoding="utf-8")
+        (self.repo / "docs/sentence.md").write_text("The path must resolve.\n", encoding="utf-8")
+        (self.repo / "docs/attribute.md").write_text(
+            "Read resolve.cache for the last lane.\n", encoding="utf-8"
+        )
+        self.commit()
+
+        ranks = self.ranks(["src/resolver.py"])
+
+        self.assertEqual(ranks["docs/sentence.md"], 20)
+        self.assertEqual(ranks["docs/attribute.md"], 80)
+
     def test_fenced_blocks_are_code_context_and_survive_inline_backticks(self):
         (self.repo / "src/resolver.py").write_text("def resolve():\n    pass\n", encoding="utf-8")
         (self.repo / "docs/fenced.md").write_text(
@@ -981,6 +1016,28 @@ class ContractSymbolScopeTests(unittest.TestCase):
             {"Registry", "Listener", "Mode"},
         )
 
+    def test_java_stacked_modifier_types_are_contracts_and_commented_ones_are_not(self):
+        source = (
+            "/*\n"
+            "class Ghost {}\n"
+            "*/\n"
+            "// interface Phantom {}\n"
+            "public final class Registry {\n"
+            "    public abstract static class Entry {\n"
+            "    }\n"
+            "    public int size() {\n"
+            "        return 0;\n"
+            "    }\n"
+            "}\n"
+        )
+
+        self.assertEqual(
+            self.contracts(
+                "Registry.java", source, ["Ghost", "Phantom", "Registry", "Entry", "size"]
+            ),
+            {"Registry", "Entry", "size"},
+        )
+
     def test_typescript_exports_survive_while_a_function_body_does_not(self):
         source = (
             "export class Widget {\n"
@@ -1154,6 +1211,15 @@ class DeclarationScanTests(unittest.TestCase):
         self.assertEqual(
             self.names(b"function internalHelper() {}\nmodule.exports = {};\n", ".cjs"), set()
         )
+
+    def test_commonjs_object_keys_publish_the_value_under_the_key_name(self):
+        source = (
+            b"function internal() {}\n"
+            b"function shared() {}\n"
+            b"module.exports = { publicApi: internal, shared };\n"
+        )
+
+        self.assertEqual(self.names(source, ".cjs"), {"publicApi", "shared"})
 
 
 if __name__ == "__main__":

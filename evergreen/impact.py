@@ -104,6 +104,34 @@ TS_MEMBER_RE = re.compile(
     rb"((?:(?:public|protected|private|static|readonly|abstract|override|async|get|set)[ \t]+)*)"
     rb"([A-Za-z_$][A-Za-z0-9_$]*)[ \t]*\("
 )
+# Java stacks modifiers (`public final class`, `public abstract static class`) where the shared
+# grammar allows one, so Java types get their own pattern. DECLARATION_RE stays unwidened: its
+# `static` exclusion is what keeps a TS/Swift member modifier from reading as a phantom name.
+# Annotations ride among the modifiers (`@Override public`, `public @Nullable String`): a missed
+# signature leaves its body's statements looking like members of the enclosing type.
+# ponytail: `@interface` annotation types are not inventoried, and an annotation argument holding
+# `)` (`@Foo(bar = @Baz(1))`) still hides its declaration; a Java parser is the upgrade path.
+JAVA_ANNOTATION = rb"@[A-Za-z_$][A-Za-z0-9_$.]*(?:\([^\r\n)]*\))?[ \t]+"
+JAVA_TYPE_RE = re.compile(
+    rb"(?m)^([ \t]*)((?:(?:public|protected|private|abstract|final|static|sealed|non-sealed"
+    rb"|strictfp)[ \t]+|" + JAVA_ANNOTATION + rb")*)"
+    rb"(class|interface|enum|record)[ \t]+()([A-Za-z_$][A-Za-z0-9_$]*)"
+)
+# A Java method names its return type before itself, which TS_MEMBER_RE cannot see past. The
+# lookahead keeps a modifier from posing as the type (`private Client(` is a constructor, which
+# TS_MEMBER_RE reads with its `private` intact) and a statement keyword likewise (`return
+# compute(x);` calls, it declares nothing). ponytail: constructors are inventoried as methods
+# under their class's name.
+JAVA_MEMBER_RE = re.compile(
+    rb"(?m)^([ \t]+)"
+    rb"((?:(?:public|protected|private|static|final|abstract|synchronized|native|default"
+    rb"|strictfp)[ \t]+|" + JAVA_ANNOTATION + rb")*)"
+    rb"(?:<[^\r\n(]*>[ \t]+)?"
+    rb"(?!(?:public|protected|private|static|final|abstract|synchronized|native|default"
+    rb"|strictfp|return|new|throw|else|yield|case|assert)[ \t])"
+    rb"[A-Za-z_$][A-Za-z0-9_$.]*(?:<[^\r\n(]*>)?(?:\[\])*[ \t]+"
+    rb"([A-Za-z_$][A-Za-z0-9_$]*)[ \t]*\("
+)
 TS_MEMBER_STOPWORDS = frozenset((
     b"if", b"for", b"while", b"switch", b"catch", b"do", b"else", b"return",
     b"function", b"new", b"typeof", b"delete", b"void", b"throw", b"await",
@@ -127,6 +155,7 @@ CJS_EXPORT_RE = re.compile(
     rb"[ \t]*(?P<value>[A-Za-z_$][A-Za-z0-9_$]*)?"
     rb"|=[ \t]*(?:{(?P<body>(?s:[^}]*))}|(?P<whole>[A-Za-z_$][A-Za-z0-9_$]*)))"
 )
+CJS_PAIR_RE = re.compile(rb"([A-Za-z_$][A-Za-z0-9_$]*)[ \t]*:[ \t]*([A-Za-z_$][A-Za-z0-9_$]*)")
 # RHS words that are expression syntax, not the local identifier an export alias vouches for.
 CJS_VALUE_STOPWORDS = frozenset((
     b"function", b"async", b"class", b"new", b"require", b"import", b"await", b"void",
@@ -181,7 +210,8 @@ _LITERAL_BLANK = bytes(byte if byte in (10, 13) else 32 for byte in range(256))
 # structure available without one parser per language, and it costs nothing to be wrong about --
 # an unindented file reads as all module scope, which is exactly what this replaced.
 TYPE_DECLARATION_KEYWORDS = frozenset(
-    (b"class", b"struct", b"enum", b"protocol", b"interface", b"trait", b"actor", b"type")
+    (b"class", b"struct", b"enum", b"protocol", b"interface", b"trait", b"actor", b"type",
+     b"record")
 )
 # Visibility itself is only decided outright where a compiler decides it. Go exports on an
 # uppercase initial and Rust on `pub`, with no exceptions to be wrong about. TypeScript's `export`
@@ -577,6 +607,22 @@ def _bounded_git_output(repo, arguments):
     return bytes(output), truncated
 
 
+def _require_repository_root(repo):
+    """Refuse a repo argument below the worktree root instead of scanning a narrowed tree.
+
+    `git ls-files` run from a subdirectory silently narrows to that subdirectory -- a clean
+    15/15 till report of a 268-file repository, or an impact run whose docs all vanished.
+    """
+    toplevel, truncated = _bounded_git_output(repo, ["rev-parse", "--show-toplevel"])
+    if toplevel is not None and not truncated:
+        root = Path(os.fsdecode(toplevel.rstrip(b"\n")))
+        if root.resolve() != Path(repo).resolve():
+            raise ValueError(
+                f"repository root is {root}, not {repo}; "
+                "pass the root and name paths relative to it"
+            )
+
+
 def _tracked_living_docs(repo):
     payload, truncated = _bounded_git_output(
         repo, ["ls-files", "-z", "--", "*.md", "*.mdx", "*.rst"],
@@ -674,8 +720,9 @@ def _masked_literals(payload, suffix):
     """Blank string/comment bodies so quoted code is neither a declaration nor a reference."""
     if suffix == ".py":
         return PY_LITERAL_RE.sub(_blank_span, payload)
-    # ponytail: Go's literal shapes are the TS set (raw strings ride the template branch).
-    if suffix in TS_FAMILY_SUFFIXES or suffix == ".go":
+    # ponytail: Go's and Java's literal shapes are the TS set (Go raw strings ride the template
+    # branch); Java text-block (`"""`) content stays unmasked pending a per-language lexer.
+    if suffix in TS_FAMILY_SUFFIXES or suffix in (".go", ".java"):
         return TS_LITERAL_RE.sub(_blank_span, payload)
     if suffix == ".rs":
         return RUST_LITERAL_RE.sub(_blank_span, payload)
@@ -732,9 +779,17 @@ def _es_exports(payload):
             aliases[value] = name
         elif name:
             exported.add(name)
-        for group in (body, whole):
-            if group:
-                exported.update(RECEIVER_IDENTIFIER_RE.findall(group))
+        for entry in body.split(b",") if body else ():
+            # `{ publicApi: internal }` publishes the local `internal` as `publicApi`, the
+            # same alias `exports.publicApi = internal` draws; a shorthand key is its own name.
+            pair = CJS_PAIR_RE.fullmatch(entry.strip())
+            if pair and pair.group(2) not in CJS_VALUE_STOPWORDS:
+                exported.add(pair.group(2))
+                aliases[pair.group(2)] = pair.group(1)
+            else:
+                exported.update(RECEIVER_IDENTIFIER_RE.findall(entry))
+        if whole:
+            exported.update(RECEIVER_IDENTIFIER_RE.findall(whole))
     exported.discard(b"as")
     exported.discard(b"default")
     return exported, aliases, module
@@ -754,9 +809,10 @@ def _reachable_declarations(payload, suffix):
             if not name.startswith(b"_"):
                 yield payload.count(b"\n", 0, match.start()) + 1, 0, "func", name.decode("ascii")
         return
+    java = suffix == ".java"
     matches = [
         (match.start(), "decl", match)
-        for match in DECLARATION_RE.finditer(payload)
+        for match in (JAVA_TYPE_RE if java else DECLARATION_RE).finditer(payload)
         # Outside Rust, `static` is a member modifier; the member scan below owns that form.
         if match.group(3) != b"static" or suffix in MARKED_EXPORT_SUFFIXES
     ]
@@ -766,14 +822,21 @@ def _reachable_declarations(payload, suffix):
     if suffix in TS_FAMILY_SUFFIXES:
         exported, aliases, cjs = _es_exports(payload)
         module = cjs or ES_MODULE_MARKER_RE.search(payload) is not None
-    if suffix in TS_FAMILY_SUFFIXES or suffix in UPPERCASE_EXPORT_SUFFIXES:
-        # Members carry no keyword in TS/JS classes and Go interfaces alike.
+    if suffix in TS_FAMILY_SUFFIXES or suffix in UPPERCASE_EXPORT_SUFFIXES or java:
+        # Members carry no keyword in TS/JS classes, Go interfaces, or Java classes. Java
+        # methods need their own pattern; TS_MEMBER_RE still reads Java constructors.
         starts = {start for start, _flavor, _match in matches}
-        matches.extend(
-            (match.start(), "member", match)
-            for match in TS_MEMBER_RE.finditer(payload)
-            if match.start() not in starts and match.group(3) not in TS_MEMBER_STOPWORDS
-        )
+        # In Java TS_MEMBER_RE is only there for constructors, which carry their type's name;
+        # any other bare `name(` is a call in an initializer block or a lambda body.
+        java_types = {match.group(5) for _start, _flavor, match in matches} if java else None
+        for member_re in (JAVA_MEMBER_RE, TS_MEMBER_RE) if java else (TS_MEMBER_RE,):
+            for match in member_re.finditer(payload):
+                if match.start() in starts or match.group(3) in TS_MEMBER_STOPWORDS:
+                    continue
+                if member_re is TS_MEMBER_RE and java and match.group(3) not in java_types:
+                    continue
+                starts.add(match.start())
+                matches.append((match.start(), "member", match))
     if suffix == ".go":
         matches.extend(
             (offset, "group", (keyword, name))
@@ -828,6 +891,10 @@ def _reachable_declarations(payload, suffix):
             if not (scopes and scopes[-1][1] and scopes[-1][2]):
                 public = False
         elif scopes and not (scopes[-1][1] and scopes[-1][2]):
+            public = False
+        # A Java member sits directly in its type's braces; one level deeper is an initializer
+        # block, a lambda, or a method body whose signature the patterns missed.
+        if java and scopes and brace_depth != scopes[-1][3] + 1:
             public = False
         depth = len(scopes)
         scopes.append((
@@ -947,7 +1014,9 @@ def _symbol_match_rank(symbol, payload, spans, match):
         return SYMBOL_RANK_CODE_CONTEXT
     after = payload[match.end():match.end() + 1]
     before = payload[max(match.start() - 2, 0):match.start()]
-    if after == b"(" or after == b"." or before.endswith(b".") or before.endswith(b"::"):
+    # `resolve.attr` is qualified; `must resolve.` is a sentence ending, as `_mentions_path` reads.
+    qualified = after == b"." and RECEIVER_IDENTIFIER_RE.match(payload, match.end() + 1)
+    if after == b"(" or qualified or before.endswith(b".") or before.endswith(b"::"):
         return SYMBOL_RANK_CODE_CONTEXT
     if _is_distinct_identifier(symbol):
         return SYMBOL_RANK_DISTINCT_WORD
@@ -955,8 +1024,12 @@ def _symbol_match_rank(symbol, payload, spans, match):
 
 
 def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactReport:
-    """Return additive candidates; maps never suppress and limits retain caller-order prefixes."""
+    """Return additive candidates; maps never suppress and limits retain caller-order prefixes.
+
+    Raises ValueError when `repo` is inside a git worktree but is not its root.
+    """
     repo = Path(repo)
+    _require_repository_root(repo)
     mappings, map_warnings = load_map(repo)
     warnings = _WarningCollector(map_warnings)
     candidates = {}

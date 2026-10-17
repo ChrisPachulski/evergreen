@@ -253,7 +253,11 @@ def run_impact(args):
     if args.evidence is not None:
         evidence, evidence_warnings = load_evidence(Path(args.evidence), repo)
         warnings.extend(evidence_warnings)
-    report = impact(repo, args.paths, evidence)
+    try:
+        report = impact(repo, args.paths, evidence)
+    except ValueError as error:
+        print(f"evergreen: {error_display(error)}", file=sys.stderr)
+        return 2
     warnings.extend(report.warnings)
     warnings = sorted(set(warnings))
     payload = {
