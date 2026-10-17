@@ -3,6 +3,7 @@
 
 import argparse
 import html
+import json
 from pathlib import Path
 import sys
 
@@ -14,6 +15,7 @@ except ImportError:  # Direct script execution.
 
 MARKER = "<!-- evergreen-report -->"
 MAX_RENDER_TEXT = 500
+CONTROL_REDACTION = "[redacted: repeats a calibration control]"
 MARKDOWN_CONTROLS = "\\`*_[]()|"
 BIDI_CONTROLS = {
     0x061C,
@@ -81,6 +83,13 @@ def render_result(
             "",
         ]
     )
+    if result is not None and "controls" in result:
+        controls = result["controls"]
+        lines.extend([
+            f"controls: positive {_safe(controls['positive'])}, "
+            f"negative {_safe(controls['negative'])}",
+            "",
+        ])
 
     if inconclusive:
         lines.append("⚠️ evergreen: review inconclusive — no clean certification was issued.")
@@ -156,6 +165,60 @@ def render_result(
     return "\n".join(lines)
 
 
+def _trusted_inventory(
+    context_path: Path, controls_path: Path | None, head: str
+) -> tuple[list[dict], dict | None]:
+    """Read the driver's own context and answer key; neither ever comes from model output."""
+    context = json.loads(context_path.read_text(encoding="utf-8"))
+    if not isinstance(context, dict) or context.get("head") != head:
+        raise ValueError("review context is not bound to the head commit")
+    claims = context.get("claims")
+    if not isinstance(claims, list) or not all(
+        isinstance(claim, dict) and isinstance(claim.get("id"), str)
+        and isinstance(claim.get("path"), str) and type(claim.get("line")) is int
+        for claim in claims
+    ):
+        raise ValueError("review context has no valid claim inventory")
+    controls = None
+    if controls_path is not None:
+        controls = json.loads(controls_path.read_text(encoding="utf-8"))
+        if not isinstance(controls, dict) or not all(
+            isinstance(value, str) for value in controls.values()
+        ):
+            raise ValueError("calibration answer key is malformed")
+    return claims, controls
+
+
+def _redact_controls(
+    result: dict | None, errors: list[str], claims: list[dict], controls: dict
+) -> list[str]:
+    """Replace any rendered model text that repeats a calibration control's statement.
+
+    A control's statement opens with "<path> line <n> reads exactly:"; model-supplied errors,
+    claims, reasons, citation paths (a head file can be named after the statement), and ids
+    echoed in validation errors can all carry it into the report.
+    """
+    markers = [
+        f"{claim['path']} line {claim['line']} reads exactly:"
+        for claim in claims if claim["id"] in controls.values()
+    ]
+
+    def clean(value: object) -> object:
+        if isinstance(value, str) and any(marker in value for marker in markers):
+            return CONTROL_REDACTION
+        return value
+
+    if result is not None:
+        result["errors"] = [clean(error) for error in result["errors"]]
+        for name, fields in (
+            ("findings", ("doc_path", "code_path", "claim", "why")),
+            ("unverified", ("doc_path", "claim", "reason")),
+        ):
+            for item in result[name]:
+                item.update({field: clean(item[field]) for field in fields})
+    return [clean(error) for error in errors]
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv == ["--selftest"]:
@@ -169,9 +232,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--cli-version", required=True)
+    parser.add_argument(
+        "--context", type=Path,
+        help="trusted review context whose claims list is the claim inventory the model received",
+    )
+    parser.add_argument(
+        "--controls", type=Path,
+        help="trusted calibration answer key for the controls mixed into that inventory",
+    )
     args = parser.parse_args(argv)
 
-    result, errors = load_validated_result(sys.stdin.read(), args.repo, args.base, args.head)
+    claims, controls, errors = [], None, []
+    if args.context is not None:
+        try:
+            claims, controls = _trusted_inventory(args.context, args.controls, args.head)
+        except (OSError, ValueError, RecursionError):
+            errors.append("trusted review context is unreadable or not bound to the head commit")
+    result, validation_errors = load_validated_result(
+        sys.stdin.read(), args.repo, args.base, args.head, claims=claims, controls=controls
+    )
+    errors.extend(validation_errors)
+    if result is not None and args.context is None and result["status"] == "complete":
+        errors.append("a complete result requires the trusted claim inventory")
     expected_runtime = {
         "provider": args.provider,
         "model": args.model,
@@ -183,6 +265,8 @@ def main(argv: list[str] | None = None) -> int:
             if supplied_runtime[name] != expected:
                 errors.append(f"runtime.{name} does not match trusted runtime identity")
         result["runtime"] = expected_runtime
+    if controls:
+        errors = _redact_controls(result, errors, claims, controls)
     sys.stdout.write(
         render_result(
             result,

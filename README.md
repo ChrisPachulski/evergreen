@@ -234,9 +234,11 @@ No grade verifier ships: an earned quality grade needs detector evidence this tr
 so nothing here re-derives one.
 
 The semantic pass may gather optional local evidence with read, grep, diff, or a scratch test. In CI,
-the deterministic trust layer does the mechanical work: it binds a bounded change manifest and
-matched documentation excerpts to the exact base/head commits, validates counts and citations
-against Git at that head, enforces runtime identity, and renders only a valid result envelope. The
+the deterministic trust layer does the mechanical work: it binds a bounded change manifest,
+matched documentation excerpts, and a claim inventory with one stable id per matching
+documentation line to the exact base/head commits, requires one verdict for every supplied id,
+validates citations against Git at that head, enforces runtime identity, and renders only a valid
+result envelope. Claim counts are derived by the trust layer from one verdict per supplied claim id, never reported by the model. The
 CI model has no file or shell tools. Repository files, diffs, paths, excerpts, and comments are
 **untrusted data**; instructions embedded in them never change the audit or publication rules.
 
@@ -350,7 +352,8 @@ while the tree sits dirty.
 #### What a green check means
 
 Drift never fails the build. Under the default fail-closed policy, a green check means the result
-passed protocol validation — commit-bound, shape-checked, citations resolved at head — on any PR
+passed protocol validation — commit-bound, shape-checked, one verdict for every supplied claim id,
+citations resolved at head — on any PR
 that actually reached review; advisory `fail_on_inconclusive: false` runs can be green while still
 reporting an inconclusive audit. The nothing-to-check early exit is also green, but it never
 reached review and never produced or validated a result envelope.
@@ -378,9 +381,39 @@ The outcomes are explicit:
 - **complete with unverified** — the review finished, but it names claims the available code could
   not settle; this is reported and is not a clean certification.
 - **inconclusive** — the audit itself could not be trusted or completed, such as malformed output,
-  truncated evidence, invalid citations, missing credentials, or a tool failure. This fails by
+  truncated evidence, a missing, repeated, or unknown claim id, invalid citations, a wrong answer
+  to an enabled calibration control, missing credentials, or a tool failure. This fails by
   default. Set `fail_on_inconclusive: false` for advisory-only infrastructure behavior; the report
   still says inconclusive and never pretends to be clean.
+
+#### Claim inventory and calibration controls
+
+The trust layer, not the model, decides what the review covers. Every documentation line that
+matches a manifest term becomes one claim with a stable id, a hash of its path, line number, and
+text (rekeyed per run when calibration controls are on). The model returns one `certified`, `drift`, or `unverified` verdict per id; each drift
+verdict needs a finding and each unverified verdict an unverified entry, citing that claim's own
+line. If the inventory hits any context bound, the context is truncated and the audit is
+inconclusive. An empty inventory is still reviewed, and a clean result reports zero
+claims.
+
+`calibration_controls: true` opts into two extra claims with answers the trust layer already
+knows, both built from documentation lines at the head commit. The negative control quotes a line
+exactly, so its correct verdict is `certified`. The positive control attributes a different line's
+text to it, so its correct verdict is `drift`. With controls on, every id in the list, real or
+control, is a hash keyed by a per-run nonce, so no id can be recomputed from a claim's path, line,
+and text, and the list is shuffled from the same nonce. The answer key stays in a trusted
+temporary file. The validator grades both answers and then removes the controls from every count,
+finding, and unverified entry; a control is exempt only from citation at head, never from the
+collection bounds or shape checks. A wrong answer makes the audit inconclusive. The report adds
+`controls: positive pass|fail, negative pass|fail`, and any model-supplied text, citation paths
+included, that repeats a control's statement is replaced with a redaction marker. If the head
+evidence cannot supply two distinct lines of at most 500 characters, the audit is inconclusive
+before the provider runs.
+
+A control is still recognizable by its `reads exactly:` form. A pass therefore shows only that the
+reviewer checked the supplied evidence for the controls. It does not show that the reviewer
+reviewed the real claims. Controls stay off by default until a paid real-provider calibration run
+measures how often a real model trips them; with them off, the run is unchanged.
 
 #### Process bounds
 

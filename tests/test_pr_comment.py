@@ -6,10 +6,14 @@ import tempfile
 import unittest
 
 from ci import pr_comment
+from ci.review_context import claim_id
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "ci" / "pr_comment.py"
+CLAIM_TEXT = "Run `shipit --workers 4`."
+CLAIM = claim_id("docs/usage.md", "2", CLAIM_TEXT)
+NEGATIVE, POSITIVE = "a" * 16, "b" * 16
 
 
 class PRCommentTests(unittest.TestCase):
@@ -25,6 +29,7 @@ class PRCommentTests(unittest.TestCase):
         self.git("commit", "-qm", "fixture")
         self.head = self.git("rev-parse", "HEAD")
         self.base = self.head
+        self.claims = [{"id": CLAIM, "path": "docs/usage.md", "line": 2, "text": CLAIM_TEXT}]
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -58,8 +63,35 @@ class PRCommentTests(unittest.TestCase):
         result.update(updates)
         return result
 
+    def envelope(self, **updates):
+        """Return a schema 3 model envelope: verdicts in, no model-reported counts."""
+        envelope = self.result()
+        del envelope["claims"]
+        envelope.update(schema_version=3, verdicts=[{"id": CLAIM, "verdict": "certified"}])
+        envelope.update(updates)
+        return envelope
+
+    def write_inventory(self, controls=False, head=None):
+        claims = list(self.claims)
+        if controls:
+            claims += [
+                {"id": NEGATIVE, "path": "docs/usage.md", "line": 2,
+                 "text": "docs/usage.md line 2 reads exactly: " + CLAIM_TEXT},
+                {"id": POSITIVE, "path": "docs/usage.md", "line": 2,
+                 "text": "docs/usage.md line 2 reads exactly: # Usage"},
+            ]
+            key = Path(self.temp_dir.name) / "controls.json"
+            key.write_text(json.dumps({"negative": NEGATIVE, "positive": POSITIVE}), encoding="utf-8")
+        context = Path(self.temp_dir.name) / "context.json"
+        context.write_text(
+            json.dumps({"schema_version": 2, "head": head or self.head, "claims": claims}),
+            encoding="utf-8",
+        )
+        return ["--context", str(context)] + (["--controls", str(key)] if controls else [])
+
     def finding(self, **updates):
         finding = {
+            "id": CLAIM,
             "severity": "high",
             "category": "in_docs_not_code",
             "doc_path": "docs/usage.md",
@@ -74,7 +106,9 @@ class PRCommentTests(unittest.TestCase):
         finding.update(updates)
         return finding
 
-    def run_cli(self, text):
+    def run_cli(self, text, inventory=None):
+        if inventory is None:
+            inventory = self.write_inventory()
         return subprocess.run(
             [
                 sys.executable,
@@ -91,6 +125,7 @@ class PRCommentTests(unittest.TestCase):
                 "test-model",
                 "--cli-version",
                 "1.2.3",
+                *inventory,
             ],
             input=text,
             stdout=subprocess.PIPE,
@@ -204,13 +239,129 @@ class PRCommentTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
 
     def test_cli_returns_zero_for_valid_complete_result(self):
-        result = self.run_cli(json.dumps(self.result()))
+        result = self.run_cli(json.dumps(self.envelope()))
 
-        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("docs still match", result.stdout)
+        self.assertIn("| 1 | 0 | 0 | 1 |", result.stdout)
+        self.assertNotIn("controls:", result.stdout)
+
+    def test_cli_renders_counts_derived_from_verdicts_not_the_model(self):
+        drift = self.run_cli(json.dumps(self.envelope(
+            verdicts=[{"id": CLAIM, "verdict": "drift"}], findings=[self.finding()],
+        )))
+        counted = self.envelope(claims={"total": 9, "certified": 9, "drift": 0, "unverified": 0})
+        forged = self.run_cli(json.dumps(counted))
+        missing = self.run_cli(json.dumps(self.envelope(verdicts=[])))
+
+        self.assertEqual(drift.returncode, 0, drift.stdout)
+        self.assertIn("| 0 | 1 | 0 | 1 |", drift.stdout)
+        self.assertEqual(forged.returncode, 2)
+        self.assertIn("unknown result fields: claims", forged.stdout)
+        self.assertNotIn("| 9 |", forged.stdout)
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn("missing claim id", missing.stdout)
+
+    def test_cli_requires_the_trusted_inventory_for_a_complete_result(self):
+        absent = self.run_cli(json.dumps(self.envelope(verdicts=[])), inventory=[])
+        unbound = self.run_cli(json.dumps(self.envelope()), inventory=self.write_inventory(head="0" * 40))
+        fallback = self.run_cli(
+            json.dumps(self.envelope(verdicts=[], status="inconclusive", errors=["no key"])),
+            inventory=[],
+        )
+
+        self.assertEqual(absent.returncode, 2)
+        self.assertIn("requires the trusted claim inventory", absent.stdout)
+        self.assertEqual(unbound.returncode, 2)
+        self.assertIn("trusted review context is unreadable", unbound.stdout)
+        self.assertEqual(fallback.returncode, 2)
+        self.assertIn("no key", fallback.stdout)
+        self.assertIn("| 0 | 0 | 0 | 0 |", fallback.stdout)
+
+    def controlled_envelope(self, negative="certified", positive="drift"):
+        return self.envelope(verdicts=[
+            {"id": POSITIVE, "verdict": positive},
+            {"id": CLAIM, "verdict": "certified"},
+            {"id": NEGATIVE, "verdict": negative},
+        ])
+
+    def test_cli_renders_control_grades_without_synthetic_text(self):
+        passed = self.run_cli(json.dumps(self.controlled_envelope()), self.write_inventory(controls=True))
+        missed = self.run_cli(
+            json.dumps(self.controlled_envelope(positive="certified")), self.write_inventory(controls=True)
+        )
+        flagged = self.run_cli(
+            json.dumps(self.controlled_envelope(negative="drift")), self.write_inventory(controls=True)
+        )
+
+        self.assertEqual(passed.returncode, 0, passed.stdout)
+        self.assertIn("controls: positive pass, negative pass", passed.stdout)
+        self.assertIn("docs still match", passed.stdout)
+        self.assertIn("| 1 | 0 | 0 | 1 |", passed.stdout)
+        for output, line in [(missed, "controls: positive fail, negative pass"),
+                             (flagged, "controls: positive pass, negative fail")]:
+            self.assertEqual(output.returncode, 2)
+            self.assertIn(line, output.stdout)
+            self.assertIn("inconclusive", output.stdout.lower())
+            self.assertNotIn("docs still match", output.stdout)
+        for output in (passed, missed, flagged):
+            self.assertNotIn("reads exactly", output.stdout)
+            self.assertNotIn(POSITIVE, output.stdout)
+            self.assertNotIn(NEGATIVE, output.stdout)
+
+    def test_cli_redacts_model_text_that_repeats_a_control_statement(self):
+        # The input that used to publish the control text: correct verdicts, an inconclusive
+        # status, and the synthetic statement copied into a model error.
+        statement = "docs/usage.md line 2 reads exactly: # Usage"
+        echoed = self.controlled_envelope()
+        echoed.update(status="inconclusive", errors=[statement, "a plain model error"])
+        why = self.controlled_envelope()
+        why["verdicts"][1]["verdict"] = "drift"
+        why["findings"] = [self.finding(why="Compare " + statement)]
+        forged_id = self.controlled_envelope()
+        forged_id["verdicts"].append({"id": "docs/usage.md line 2 reads exactly:", "verdict": "drift"})
+
+        outputs = [
+            self.run_cli(json.dumps(envelope), self.write_inventory(controls=True))
+            for envelope in (echoed, why, forged_id)
+        ]
+
+        for output in outputs:
+            self.assertNotIn("reads exactly", output.stdout)
+            self.assertIn("redacted: repeats a calibration control", output.stdout)
+        self.assertIn("a plain model error", outputs[0].stdout)
+        self.assertIn("controls: positive pass, negative pass", outputs[1].stdout)
+        plain = self.run_cli(json.dumps(self.envelope(status="inconclusive", errors=[statement])))
+        self.assertIn("reads exactly", plain.stdout)
+
+    def test_redaction_covers_citation_paths_named_after_a_control_statement(self):
+        # A head file named exactly like the statement passes the path policy and would
+        # otherwise reach the report through a finding's citation.
+        statement = "README.md line 1 reads exactly: Other line."
+        result = {
+            "errors": [],
+            "findings": [{"doc_path": "README.md", "code_path": statement, "claim": "c", "why": "w"}],
+            "unverified": [{"doc_path": statement, "claim": "c", "reason": "r"}],
+        }
+        claims = [{"id": "ctl", "path": "README.md", "line": 1, "text": statement}]
+
+        pr_comment._redact_controls(result, [], claims, {"positive": "ctl"})
+
+        self.assertEqual(result["findings"][0]["code_path"], pr_comment.CONTROL_REDACTION)
+        self.assertEqual(result["unverified"][0]["doc_path"], pr_comment.CONTROL_REDACTION)
+        self.assertEqual(result["findings"][0]["doc_path"], "README.md")
+
+    def test_render_without_controls_has_no_controls_line(self):
+        plain = pr_comment.render_result(self.result(), [])
+        graded = pr_comment.render_result(
+            self.result(controls={"negative": "pass", "positive": "fail"}), []
+        )
+
+        self.assertNotIn("controls:", plain)
+        self.assertEqual(graded.replace("controls: positive fail, negative pass\n\n", ""), plain)
 
     def test_cli_rejects_and_replaces_model_controlled_runtime_identity(self):
-        envelope = self.result(
+        envelope = self.envelope(
             runtime={"provider": "attacker", "model": "forged", "cli_version": "0.0.0"}
         )
 
@@ -223,8 +374,8 @@ class PRCommentTests(unittest.TestCase):
         self.assertNotIn("forged", result.stdout)
 
     def test_cli_rejects_invalid_citations_as_inconclusive(self):
-        envelope = self.result(
-            claims={"total": 1, "certified": 0, "drift": 1, "unverified": 0},
+        envelope = self.envelope(
+            verdicts=[{"id": CLAIM, "verdict": "drift"}],
             findings=[self.finding(doc_line=1)],
         )
 

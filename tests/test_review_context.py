@@ -52,7 +52,7 @@ class ReviewContextTests(unittest.TestCase):
 
         context = review_context.build_context(self.repo, head, manifest)
 
-        self.assertEqual(context["schema_version"], 1)
+        self.assertEqual(context["schema_version"], 2)
         self.assertEqual(context["head"], head)
         self.assertFalse(context["truncated"])
         self.assertEqual(context["errors"], [])
@@ -227,7 +227,7 @@ class ReviewContextTests(unittest.TestCase):
             [],
         )
         hits = review_context._excerpts("README.md", "Call recover() up to MAX_TERMS.\n", terms, deadline)
-        self.assertEqual([hit["matched_terms"] for hit in hits], [terms])
+        self.assertEqual([window["matched_terms"] for window, _claims in hits], [terms])
 
     def test_path_seeds_match_inside_longer_paths_and_urls(self):
         deadline = review_context.time.monotonic() + 3
@@ -238,7 +238,141 @@ class ReviewContextTests(unittest.TestCase):
         for term, doc in cases:
             with self.subTest(term=term):
                 hits = review_context._excerpts("README.md", doc, [term], deadline)
-                self.assertEqual([hit["matched_terms"] for hit in hits], [[term]])
+                self.assertEqual([window["matched_terms"] for window, _claims in hits], [[term]])
+
+    def test_enumerates_one_claim_per_matching_line_with_stable_ids(self):
+        doc = "# Title\nSet `workers` here.\nunrelated\n\n\n\n\nAgain `workers`.\n"
+        _base, head, manifest = self.fixture(doc)
+
+        context = review_context.build_context(self.repo, head, manifest)
+        again = review_context.build_context(self.repo, head, manifest)
+
+        self.assertEqual(len(context["candidates"]), 2)
+        self.assertEqual(
+            [(claim["path"], claim["line"], claim["text"]) for claim in context["claims"]],
+            [("README.md", 2, "Set `workers` here."), ("README.md", 8, "Again `workers`.")],
+        )
+        for claim in context["claims"]:
+            self.assertRegex(claim["id"], r"^[0-9a-f]{16}$")
+            self.assertEqual(
+                claim["id"],
+                review_context.claim_id(claim["path"], str(claim["line"]), claim["text"]),
+            )
+        self.assertEqual(context["claims"], again["claims"])
+        moved = review_context.claim_id("README.md", "3", "Set `workers` here.")
+        edited = review_context.claim_id("README.md", "2", "Set `workers` there.")
+        self.assertNotIn(moved, [claim["id"] for claim in context["claims"]])
+        self.assertNotIn(edited, [claim["id"] for claim in context["claims"]])
+
+    def test_claims_leave_with_the_window_the_output_bound_drops(self):
+        _base, head, manifest = self.fixture("workers\n\n\n\n\n\nworkers\n")
+        full = review_context.build_context(self.repo, head, manifest)
+        bound = len(review_context.encode_context(full))
+        with mock.patch.object(review_context, "MAX_OUTPUT_BYTES", bound - 1):
+            limited = review_context.build_context(self.repo, head, manifest)
+
+        self.assertEqual(len(full["claims"]), 2)
+        self.assertTrue(limited["truncated"])
+        self.assertEqual([claim["line"] for claim in limited["claims"]], [1])
+        self.assertEqual(len(limited["candidates"]), 1)
+
+    def control_context(self):
+        _base, head, manifest = self.fixture("# Demo\nRun `workers` now.\nMore `workers` text.\n")
+        return review_context.build_context(self.repo, head, manifest)
+
+    def test_controls_are_deterministic_per_nonce_and_look_like_claims(self):
+        context = self.control_context()
+
+        mixed, key = review_context.add_controls(context, "nonce-a")
+        replay, replay_key = review_context.add_controls(context, "nonce-a")
+        other, other_key = review_context.add_controls(context, "nonce-b")
+
+        self.assertEqual((mixed, key), (replay, replay_key))
+        self.assertNotEqual(key, other_key)
+        self.assertEqual(set(key), {"negative", "positive"})
+        self.assertEqual(len(mixed["claims"]), len(context["claims"]) + 2)
+        place = lambda claim: (claim["path"], claim["line"], claim["text"])
+        self.assertEqual(
+            sorted(place(claim) for claim in mixed["claims"] if claim["id"] not in key.values()),
+            sorted(place(claim) for claim in context["claims"]),
+        )
+        for claim in mixed["claims"]:
+            self.assertEqual(set(claim), {"id", "path", "line", "text"})
+            self.assertRegex(claim["id"], r"^[0-9a-f]{16}$")
+
+    def test_controls_rekey_every_id_so_none_is_recomputable_from_public_fields(self):
+        # The recovery that used to work: real ids were claim_id(path, line, text), so the
+        # entries whose id did not recompute were exactly the two controls.
+        context = self.control_context()
+        mixed, key = review_context.add_controls(context, "nonce-a")
+
+        recomputable = [
+            claim for claim in mixed["claims"]
+            if claim["id"] == review_context.claim_id(claim["path"], str(claim["line"]), claim["text"])
+        ]
+        self.assertEqual(recomputable, [])
+        for claim in mixed["claims"]:
+            self.assertEqual(
+                claim["id"],
+                review_context.claim_id("nonce-a", claim["path"], str(claim["line"]), claim["text"]),
+            )
+        self.assertEqual(
+            [claim["id"] for claim in context["claims"]],
+            [review_context.claim_id(c["path"], str(c["line"]), c["text"]) for c in context["claims"]],
+        )
+
+    def test_negative_control_quotes_head_exactly_and_positive_contradicts_it(self):
+        context = self.control_context()
+        lines = {(claim["path"], claim["line"]): claim["text"] for claim in context["claims"]}
+        for nonce in ("one", "two", "three", "four"):
+            with self.subTest(nonce=nonce):
+                mixed, key = review_context.add_controls(context, nonce)
+                by_id = {claim["id"]: claim for claim in mixed["claims"]}
+                for role, control_id in key.items():
+                    control = by_id[control_id]
+                    prefix = f"{control['path']} line {control['line']} reads exactly: "
+                    self.assertTrue(control["text"].startswith(prefix))
+                    quote = control["text"][len(prefix):]
+                    actual = lines[(control["path"], control["line"])]
+                    if role == "negative":
+                        self.assertEqual(quote, actual)
+                    else:
+                        self.assertNotEqual(quote.strip(), actual.strip())
+
+    def test_controls_fail_closed_without_enough_head_evidence(self):
+        _base, head, manifest = self.fixture("Use `workers` for concurrency.\n")
+        single = review_context.build_context(self.repo, head, manifest)
+        empty = review_context._empty(head)
+        truncated = dict(self.control_context(), truncated=True)
+
+        for context in (single, empty, truncated):
+            with self.subTest(claims=len(context["claims"]), truncated=context["truncated"]):
+                with self.assertRaises(ValueError):
+                    review_context.add_controls(context, "nonce")
+
+    def test_cli_mixes_controls_and_writes_the_answer_key(self):
+        context = self.control_context()
+        key_file = Path(self.temporary.name) / "controls.json"
+        script = Path(review_context.__file__)
+        command = ["python3", str(script), "--repo", str(self.repo),
+                   "--head", context["head"], "--add-controls", str(key_file)]
+
+        result = subprocess.run(
+            command, input=json.dumps(context), text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        refused = subprocess.run(
+            command, input=json.dumps(dict(context, head="0" * 40)), text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        key = json.loads(key_file.read_text(encoding="utf-8"))
+        mixed = json.loads(result.stdout)
+        self.assertEqual(set(key), {"negative", "positive"})
+        self.assertLessEqual(set(key.values()), {claim["id"] for claim in mixed["claims"]})
+        self.assertEqual(refused.returncode, 2)
+        self.assertEqual(refused.stdout, "")
 
     def test_cli_emits_one_versioned_json_object(self):
         _base, head, manifest = self.fixture()

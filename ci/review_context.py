@@ -2,9 +2,12 @@
 """Build bounded documentation context from one exact Git commit and change manifest."""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path, PurePosixPath
+import random
 import re
+import secrets
 import sys
 import time
 
@@ -16,7 +19,7 @@ except ImportError:  # Direct script execution.
     from path_policy import is_protocol_path
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_DOC_LIST_BYTES = 1024 * 1024
 MAX_DOC_FILES = 1000
 MAX_BLOB_BYTES = 1024 * 1024
@@ -27,6 +30,8 @@ MAX_OUTPUT_BYTES = 120_000
 MAX_ERRORS = 100
 TIMEOUT_SECONDS = 3
 CONTEXT_LINES = 2
+CLAIM_ID_HEX = 16
+MAX_CONTROL_TEXT = 500
 EXEMPT_DOC_PARTS = {
     "adr", "adrs", "archive", "archives", "audit", "audits", "plans", "readiness",
     "roadmaps", "specs",
@@ -45,9 +50,15 @@ def _empty(head: str) -> dict:
         "schema_version": SCHEMA_VERSION,
         "head": head,
         "candidates": [],
+        "claims": [],
         "truncated": False,
         "errors": [],
     }
+
+
+def claim_id(*parts: str) -> str:
+    """Return the opaque, stable id of one claim; no part may contain NUL except the last."""
+    return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()[:CLAIM_ID_HEX]
 
 
 def _git(repo: Path, deadline: float, limit: int, *args: str) -> tuple[bytes | None, str | None]:
@@ -146,7 +157,9 @@ def _tree_docs(payload: bytes, context: dict) -> list[tuple[str, str, int]]:
     return docs
 
 
-def _excerpts(path: str, text: str, terms: list[str], deadline: float) -> list[dict]:
+def _excerpts(
+    path: str, text: str, terms: list[str], deadline: float
+) -> list[tuple[dict, list[dict]]]:
     lines = text.split("\n") if text else []
     if text.endswith("\n"):
         lines.pop()
@@ -175,11 +188,12 @@ def _excerpts(path: str, text: str, terms: list[str], deadline: float) -> list[d
     for index in matching:
         start, end = max(0, index - CONTEXT_LINES), min(len(lines), index + CONTEXT_LINES + 1)
         if ranges and start <= ranges[-1][1]:
-            ranges[-1] = (ranges[-1][0], max(ranges[-1][1], end))
+            ranges[-1][1] = max(ranges[-1][1], end)
+            ranges[-1][2].append(index)
         else:
-            ranges.append((start, end))
+            ranges.append([start, end, [index]])
     result = []
-    for start, end in ranges:
+    for start, end, claimed in ranges:
         excerpt = "\n".join(lines[start:end])
         folded = excerpt.casefold()
         matched = []
@@ -188,24 +202,33 @@ def _excerpts(path: str, text: str, terms: list[str], deadline: float) -> list[d
                 raise TimeoutError
             if needle.search(folded):
                 matched.append(term)
-        result.append({
+        window = {
             "path": path,
             "start_line": start + 1,
             "end_line": end,
             "matched_terms": matched,
             "excerpt": excerpt,
-        })
+        }
+        # One claim per matching line; its id changes whenever the line's place or text does.
+        claims = [
+            {"id": claim_id(path, str(index + 1), lines[index]),
+             "path": path, "line": index + 1, "text": lines[index]}
+            for index in claimed
+        ]
+        result.append((window, claims))
     return result
 
 
-def _fit(context: dict, candidate: dict) -> bool:
+def _fit(context: dict, candidate: dict, claims: list[dict]) -> bool:
     if len(context["candidates"]) >= MAX_CANDIDATES:
         context["truncated"] = True
         return False
     context["candidates"].append(candidate)
+    context["claims"].extend(claims)
     if len(encode_context(context)) + 1 <= MAX_OUTPUT_BYTES:
         return True
     context["candidates"].pop()
+    del context["claims"][len(context["claims"]) - len(claims):]
     context["truncated"] = True
     return False
 
@@ -257,23 +280,94 @@ def build_context(repo: Path, head: str, manifest: dict) -> dict:
         except TimeoutError:
             context["errors"].append("review context exceeded wall-clock limit")
             break
-        for candidate in excerpts:
-            if not _fit(context, candidate):
+        for candidate, claims in excerpts:
+            if not _fit(context, candidate, claims):
                 break
         if context["truncated"]:
             break
     if len(context["errors"]) > MAX_ERRORS or len(encode_context(context)) + 1 > MAX_OUTPUT_BYTES:
         context["candidates"] = []
+        context["claims"] = []
         context["errors"] = ["review context errors exceed output bound"]
         context["truncated"] = True
     return context
+
+
+def add_controls(context: dict, nonce: str) -> tuple[dict, dict]:
+    """Mix two calibration controls into a complete context's claim list.
+
+    Both controls restate a documentation line the context already carries from the head
+    commit. The negative control quotes its line exactly, so its correct verdict is certified;
+    the positive control attributes another supplied line's text to it, so its correct verdict
+    is drift. Every id in the mixed list, real or control, is rekeyed with the nonce, so no id
+    can be recomputed from a claim's public fields, and the whole list is shuffled from the
+    same nonce, so neither position nor id marks a control. The controls' "reads exactly:"
+    form still does. Return the new context and the trusted answer key, or raise ValueError
+    when the evidence cannot carry both controls.
+    """
+    if context["errors"] or context["truncated"]:
+        raise ValueError("calibration controls need a complete review context")
+    rng = random.Random(nonce)
+    sources = [claim for claim in context["claims"] if len(claim["text"]) <= MAX_CONTROL_TEXT]
+    quotes = sorted({
+        line.strip()
+        for window in context["candidates"]
+        for line in window["excerpt"].split("\n")
+        if line.strip() and len(line) <= MAX_CONTROL_TEXT
+    })
+    if not sources:
+        raise ValueError("no supplied documentation line can carry a calibration control")
+    negative, positive = rng.choice(sources), rng.choice(sources)
+    others = [quote for quote in quotes if quote != positive["text"].strip()]
+    if not others:
+        raise ValueError("no second supplied documentation line can contradict a control")
+
+    def keyed(path: str, line: int, text: str) -> dict:
+        return {"id": claim_id(nonce, path, str(line), text), "path": path, "line": line,
+                "text": text}
+
+    def control(source: dict, quote: str) -> dict:
+        statement = f"{source['path']} line {source['line']} reads exactly: {quote}"
+        return keyed(source["path"], source["line"], statement)
+
+    controls = [control(negative, negative["text"]), control(positive, rng.choice(others))]
+    claims = [
+        *(keyed(claim["path"], claim["line"], claim["text"]) for claim in context["claims"]),
+        *controls,
+    ]
+    if len({claim["id"] for claim in claims}) != len(claims):
+        raise ValueError("calibration control id collides with a claim id")
+    rng.shuffle(claims)
+    mixed = dict(context, claims=claims)
+    if len(encode_context(mixed)) + 1 > MAX_OUTPUT_BYTES:
+        raise ValueError("calibration controls exceed the review context output bound")
+    return mixed, {"negative": controls[0]["id"], "positive": controls[1]["id"]}
+
+
+def _controls_main(args: argparse.Namespace) -> int:
+    try:
+        context = json.load(sys.stdin)
+        if not isinstance(context, dict) or context.get("head") != args.head:
+            raise ValueError("review context is not bound to the requested head")
+        mixed, key = add_controls(context, secrets.token_hex(16))
+        args.add_controls.write_text(json.dumps(key, sort_keys=True), encoding="utf-8")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
+        return 2
+    sys.stdout.buffer.write(encode_context(mixed) + b"\n")
+    return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--head", required=True)
+    parser.add_argument(
+        "--add-controls", type=Path, metavar="KEY_FILE",
+        help="read a built context on stdin, mix in calibration controls, write the answer key",
+    )
     args = parser.parse_args()
+    if args.add_controls is not None:
+        return _controls_main(args)
     try:
         manifest = json.load(sys.stdin)
     except (json.JSONDecodeError, RecursionError):

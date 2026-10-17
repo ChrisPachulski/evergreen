@@ -46,7 +46,46 @@ if [ -e "$HOME/oversized-model" ]; then
   python3 -c 'print("x" * 100000)'
   exit 0
 fi
-cat "$HOME/model.txt"
+# Answer from the supplied evidence the way a reviewer would: __VERDICTS__ becomes one verdict
+# per claim id in the prompt's context (drift for each path:line in drift-claims, certified
+# otherwise), and __ID:path:line__ becomes that claim's id. A calibration control is answered
+# by reading its quoted line in the excerpts (honest), or blindly (rubber: all certified;
+# paranoid: all drift).
+python3 -I - "$HOME/prompt.txt" "$HOME/model.txt" "$(cat "$HOME/verdict-mode" 2>/dev/null)" \
+  "$(cat "$HOME/drift-claims" 2>/dev/null)" <<'PY'
+import json, re, sys
+from pathlib import Path
+
+prompt = Path(sys.argv[1]).read_text(encoding="utf-8")
+output = Path(sys.argv[2]).read_text(encoding="utf-8")
+mode, drift = sys.argv[3] or "honest", set(sys.argv[4].split())
+found = re.search(r'<untrusted_repository_context encoding="json">\n(.*?)\n</untrusted_repository_context>',
+                  prompt, re.S)
+context = json.loads(found.group(1)) if found else {"claims": [], "candidates": []}
+lines = {
+    (window["path"], window["start_line"] + offset): text
+    for window in context["candidates"]
+    for offset, text in enumerate(window["excerpt"].split("\n"))
+}
+
+def quote(claim):
+    return re.fullmatch(r"(.+) line (\d+) reads exactly: (.*)", claim["text"], re.S)
+
+def verdict(claim):
+    control = quote(claim)
+    if control is None:
+        return "drift" if f'{claim["path"]}:{claim["line"]}' in drift else "certified"
+    if mode in ("rubber", "paranoid"):
+        return "certified" if mode == "rubber" else "drift"
+    return "certified" if lines.get((control[1], int(control[2]))) == control[3] else "drift"
+
+ids = {(claim["path"], str(claim["line"])): claim["id"]
+       for claim in context["claims"] if quote(claim) is None}
+output = output.replace("__VERDICTS__", json.dumps(
+    [{"id": claim["id"], "verdict": verdict(claim)} for claim in context["claims"]]))
+output = re.sub(r"__ID:([^:]+):(\d+)__", lambda match: ids[(match[1], match[2])], output)
+sys.stdout.write(output)
+PY
 exit 0
 EOF
 
@@ -186,7 +225,7 @@ clean_result() {
 Analysis complete.
 
 \`\`\`evergreen-result
-{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
+{"schema_version":3,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","verdicts":__VERDICTS__,"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -194,7 +233,7 @@ EOF
 finding_result() {
   cat <<EOF
 \`\`\`evergreen-result
-{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":0,"drift":1,"unverified":0},"findings":[{"severity":"high","category":"name_mismatch","rung":"contract","doc_path":"README.md","doc_line":2,"claim":"Run \u0060demo --workers 4\u0060.","code_path":"app.py","code_line":1,"why":"The implementation now exposes concurrency instead of workers.","fix_or_flag":"fix"}],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
+{"schema_version":3,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","verdicts":__VERDICTS__,"findings":[{"id":"__ID:README.md:2__","severity":"high","category":"name_mismatch","rung":"contract","doc_path":"README.md","doc_line":2,"claim":"Run \u0060demo --workers 4\u0060.","code_path":"app.py","code_line":1,"why":"The implementation now exposes concurrency instead of workers.","fix_or_flag":"fix"}],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -202,7 +241,7 @@ EOF
 wrong_commit_result() {
   cat <<EOF
 \`\`\`evergreen-result
-{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"0000000000000000000000000000000000000000","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
+{"schema_version":3,"status":"complete","base":"$BASE_SHA","head":"0000000000000000000000000000000000000000","verdicts":__VERDICTS__,"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -210,7 +249,7 @@ EOF
 wrong_runtime_result() {
   cat <<EOF
 \`\`\`evergreen-result
-{"schema_version":2,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","claims":{"total":1,"certified":1,"drift":0,"unverified":0},"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"attacker","model":"forged-model","cli_version":"0.0.0"}}
+{"schema_version":3,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","verdicts":__VERDICTS__,"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"attacker","model":"forged-model","cli_version":"0.0.0"}}
 \`\`\`
 EOF
 }
@@ -246,6 +285,8 @@ run_driver() {
   esac
   printf '%s' "${TEST_PREFILTER_BEHAVIOR:-}" > "$CASE_DIR/hang-prefilter"
   printf '%s' "${TEST_GIT_FAIL_MODE:-}" > "$CASE_DIR/git-fail-mode"
+  printf '%s' "${TEST_VERDICT_MODE:-honest}" > "$CASE_DIR/verdict-mode"
+  printf '%s' "${TEST_DRIFT_CLAIMS:-}" > "$CASE_DIR/drift-claims"
   set +e
   (cd "${TEST_CWD:-.}" && PATH="$path_prefix:$PYTHON_BIN:/usr/bin:/bin" \
     EVERGREEN_REPO_ROOT="${TEST_REPO_ROOT:-}" \
@@ -259,6 +300,7 @@ run_driver() {
     EVERGREEN_MODEL="${TEST_MODEL-test-model}" \
     EVERGREEN_POST_COMMENT=true \
     EVERGREEN_FAIL_ON_INCONCLUSIVE="$policy" \
+    EVERGREEN_CALIBRATION_CONTROLS="${TEST_CALIBRATION_CONTROLS:-}" \
     EVERGREEN_CLI_TIMEOUT_SECONDS="${TEST_CLI_TIMEOUT_SECONDS:-15}" \
     EVERGREEN_MODEL_TIMEOUT_SECONDS="${TEST_MODEL_TIMEOUT_SECONDS:-600}" \
     EVERGREEN_MAX_MODEL_OUTPUT_BYTES="${TEST_MAX_MODEL_OUTPUT_BYTES:-262144}" \
@@ -311,10 +353,109 @@ TEST_IS_FORK=true run_driver isolated-json-inconclusive "$(clean_result)"
 pass "inline Python ignores repository modules"
 
 make_repo findings
-run_driver findings "$(finding_result)"
+TEST_DRIFT_CLAIMS=README.md:2 run_driver findings "$(finding_result)"
 [ "$STATUS" -eq 0 ] || fail "findings should remain advisory (got $STATUS)"
 contains "$SUMMARY_FILE" "README.md:2" "finding was not rendered through the validator"
+contains "$SUMMARY_FILE" "| 0 | 1 | 0 | 1 |" "finding counts were not derived from the verdicts"
 pass "findings remain advisory"
+
+make_repo derived-counts
+run_driver derived-counts "$(clean_result)"
+[ "$STATUS" -eq 0 ] || fail "one verdict per supplied claim id should complete (got $STATUS)"
+contains "$SUMMARY_FILE" "| 1 | 0 | 0 | 1 |" "summary did not render counts derived from the verdicts"
+contains "$PROMPT_FILE" '"schema_version":3' "prompt does not request the schema 3 envelope"
+contains "$PROMPT_FILE" '"verdicts":[]' "prompt envelope shape lacks the verdicts list"
+not_contains "$PROMPT_FILE" '"claims":{"total"' "prompt still asks the model for claim counts"
+CONTEXT_JSON="$(awk '/^<untrusted_repository_context encoding="json">$/{take=1;next} /^<\/untrusted_repository_context>$/{take=0} take' "$PROMPT_FILE" | tr -d '\n')"
+printf '%s' "$CONTEXT_JSON" | python3 -c 'import json,sys; c=json.load(sys.stdin); assert [(i["path"], i["line"]) for i in c["claims"]] == [("README.md", 2)], c["claims"]' \
+  || fail "prompt context does not carry the one-claim-per-line inventory"
+pass "claim counts are derived from per-id verdicts"
+
+make_repo missing-verdicts
+run_driver missing-verdicts "$(clean_result | sed 's/__VERDICTS__/[]/')"
+[ "$STATUS" -ne 0 ] || fail "an envelope that omits a supplied claim id must be inconclusive"
+contains "$SUMMARY_FILE" "1 missing claim id" "missing verdict was not named"
+not_contains "$SUMMARY_FILE" "docs still match" "missing verdict rendered clean"
+
+make_repo model-counts
+run_driver model-counts "$(clean_result | sed 's/"verdicts":__VERDICTS__/"verdicts":__VERDICTS__,"claims":{"total":7,"certified":7,"drift":0,"unverified":0}/')"
+[ "$STATUS" -ne 0 ] || fail "model-reported claim counts must be rejected"
+contains "$SUMMARY_FILE" "unknown result fields: claims" "model-reported counts were not rejected"
+pass "the claim inventory is enforced by id"
+
+make_repo empty-inventory
+printf '%s\n' '# Nothing that names a changed term' > "$REPO/README.md"
+git -C "$REPO" add README.md
+git -C "$REPO" commit -qm unrelated-doc
+HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
+run_driver empty-inventory "$(clean_result)"
+[ "$STATUS" -eq 0 ] || fail "an empty claim inventory should keep the clean path (got $STATUS)"
+contains "$SUMMARY_FILE" "| 0 | 0 | 0 | 0 |" "empty inventory did not render zero derived counts"
+pass "empty inventory keeps the clean path"
+
+make_repo controls-off
+run_driver controls-off-default "$(clean_result)"
+DEFAULT_SUMMARY="$SUMMARY_FILE"
+DEFAULT_PROMPT="$PROMPT_FILE"
+[ "$STATUS" -eq 0 ] || fail "default calibration setting should complete (got $STATUS)"
+not_contains "$DEFAULT_SUMMARY" "controls:" "controls were graded without the input"
+not_contains "$DEFAULT_PROMPT" "reads exactly" "controls reached the prompt without the input"
+for value in false TRUE; do
+  TEST_CALIBRATION_CONTROLS="$value" run_driver "controls-off-$value" "$(clean_result)"
+  [ "$STATUS" -eq 0 ] || fail "calibration_controls=$value should behave as off (got $STATUS)"
+  cmp -s "$DEFAULT_SUMMARY" "$SUMMARY_FILE" || fail "calibration_controls=$value changed the report"
+  cmp -s "$DEFAULT_PROMPT" "$PROMPT_FILE" || fail "calibration_controls=$value changed the prompt"
+done
+pass "calibration controls are off unless exactly true"
+
+make_repo controls-pass
+TEST_CALIBRATION_CONTROLS=true run_driver controls-pass "$(clean_result)"
+[ "$STATUS" -eq 0 ] || fail "evidence-read control answers should complete (got $STATUS)"
+contains "$SUMMARY_FILE" "controls: positive pass, negative pass" "control grades were not rendered"
+contains "$SUMMARY_FILE" "docs still match the code" "passing controls did not keep the clean result"
+contains "$SUMMARY_FILE" "| 1 | 0 | 0 | 1 |" "controls leaked into the derived counts"
+not_contains "$SUMMARY_FILE" "reads exactly" "report published synthetic control text"
+[ "$(grep -o 'reads exactly: ' "$PROMPT_FILE" | wc -l | tr -d ' ')" -eq 2 ] || \
+  fail "prompt did not carry exactly two calibration controls"
+not_contains "$PROMPT_FILE" '"positive"' "prompt revealed a control's polarity"
+not_contains "$PROMPT_FILE" '"negative"' "prompt revealed a control's polarity"
+
+make_repo controls-findings
+TEST_CALIBRATION_CONTROLS=true TEST_DRIFT_CLAIMS=README.md:2 run_driver controls-findings "$(finding_result)"
+[ "$STATUS" -eq 0 ] || fail "controls with a real finding should complete (got $STATUS)"
+contains "$SUMMARY_FILE" "README.md:2" "real finding was lost beside the controls"
+contains "$SUMMARY_FILE" "| 0 | 1 | 0 | 1 |" "the positive control was counted as drift"
+contains "$SUMMARY_FILE" "controls: positive pass, negative pass" "a drift control demanded a citation"
+pass "passing controls are graded and stripped"
+
+for case_row in "rubber|controls: positive fail, negative pass" "paranoid|controls: positive pass, negative fail"; do
+  mode="${case_row%%|*}"
+  make_repo "controls-$mode"
+  TEST_CALIBRATION_CONTROLS=true TEST_VERDICT_MODE="$mode" run_driver "controls-$mode" "$(clean_result)"
+  [ "$STATUS" -ne 0 ] || fail "a wrong $mode control answer must fail under strict policy"
+  contains "$SUMMARY_FILE" "${case_row#*|}" "wrong $mode control grade was not rendered"
+  contains "$SUMMARY_FILE" "inconclusive" "wrong $mode control answer did not render inconclusive"
+  not_contains "$SUMMARY_FILE" "docs still match" "wrong $mode control answer rendered clean"
+  not_contains "$SUMMARY_FILE" "reads exactly" "wrong $mode control published synthetic text"
+done
+make_repo controls-advisory
+TEST_CALIBRATION_CONTROLS=true TEST_VERDICT_MODE=rubber run_driver controls-advisory "$(clean_result)" false
+[ "$STATUS" -eq 0 ] || fail "advisory policy should allow a failed control (got $STATUS)"
+contains "$SUMMARY_FILE" "inconclusive" "advisory policy hid the failed control"
+pass "a wrong control answer is inconclusive"
+
+make_repo controls-thin
+printf '%s\n' 'Run `demo --workers 4`.' > "$REPO/README.md"
+git -C "$REPO" add README.md
+git -C "$REPO" commit -qm one-line-doc
+HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
+TEST_CALIBRATION_CONTROLS=true run_driver controls-thin "$(clean_result)"
+[ "$STATUS" -ne 0 ] || fail "controls without enough head evidence must be inconclusive"
+contains "$SUMMARY_FILE" "Calibration controls could not be built from head evidence." "unbuildable controls lost their exact reason"
+[ ! -s "$CLAUDE_ARGS_FILE_PATH" ] || fail "unbuildable controls still invoked Claude"
+run_driver controls-thin-off "$(clean_result)"
+[ "$STATUS" -eq 0 ] || fail "the same evidence without controls should complete (got $STATUS)"
+pass "unbuildable controls fail closed"
 
 make_repo malformed
 run_driver malformed 'not an evergreen envelope'
@@ -394,7 +535,9 @@ contains "$PROMPT_FILE" 'Run `demo --concurrency 4`.' "large corpus lost the ren
 pass "contract seeds stay bounded on a large prose corpus"
 
 make_repo expanded-prompt
-python3 -c 'from pathlib import Path; p=Path(__import__("sys").argv[1]); p.write_text("--workers " + "<" * 100000 + "\n")' "$REPO/README.md"
+# 50,000 characters: the context carries the line twice (excerpt and claim text) and must stay
+# under its 120,000-byte bound, while sanitizing still expands the prompt to about 600 KB.
+python3 -c 'from pathlib import Path; p=Path(__import__("sys").argv[1]); p.write_text("--workers " + "<" * 50000 + "\n")' "$REPO/README.md"
 git -C "$REPO" add README.md
 git -C "$REPO" commit -qm expanded-prompt-doc
 HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
@@ -683,6 +826,9 @@ contains "$ROOT/action.yml" 'default: "claude-opus-5"' "Action model default is 
 contains "$ROOT/action.yml" 'EVERGREEN_MODEL: ${{ inputs.model }}' "Action does not pass its concrete model"
 contains "$ROOT/action.yml" 'fail_on_inconclusive:' "Action lacks fail_on_inconclusive input"
 contains "$ROOT/action.yml" 'EVERGREEN_FAIL_ON_INCONCLUSIVE:' "Action does not pass the inconclusive policy"
+grep -A3 '^  calibration_controls:' "$ROOT/action.yml" | grep -Fq 'default: "false"' || \
+  fail "Action calibration controls are not opt-in"
+contains "$ROOT/action.yml" 'EVERGREEN_CALIBRATION_CONTROLS: ${{ inputs.calibration_controls }}' "Action does not pass the calibration controls input"
 contains "$ROOT/action.yml" 'EVERGREEN_SETUP_ERROR' "Action does not route npm failure through audit policy"
 contains "$ROOT/action.yml" 'EVERGREEN_IS_FORK:' "Action does not declare its fork policy"
 contains "$ROOT/action.yml" 'repo_path:' "Action lacks an explicit reviewed-repository input"
