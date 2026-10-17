@@ -151,11 +151,11 @@ make_repo() {
 # Demo
 Run `demo --workers 4`.
 EOF
-  printf '%s\n' 'workers = 4' > "$REPO/app.py"
+  printf '%s\n' 'parser.add_argument("--workers")' > "$REPO/app.py"
   git -C "$REPO" add .
   git -C "$REPO" commit -qm base
   BASE_SHA="$(git -C "$REPO" rev-parse HEAD)"
-  printf '%s\n' 'concurrency = 4' > "$REPO/app.py"
+  printf '%s\n' 'parser.add_argument("--concurrency")' > "$REPO/app.py"
   if [ "$hostile" = "true" ]; then
     cat >> "$REPO/README.md" <<'EOF'
 
@@ -247,7 +247,8 @@ run_driver() {
   printf '%s' "${TEST_PREFILTER_BEHAVIOR:-}" > "$CASE_DIR/hang-prefilter"
   printf '%s' "${TEST_GIT_FAIL_MODE:-}" > "$CASE_DIR/git-fail-mode"
   set +e
-  PATH="$path_prefix:$PYTHON_BIN:/usr/bin:/bin" \
+  (cd "${TEST_CWD:-.}" && PATH="$path_prefix:$PYTHON_BIN:/usr/bin:/bin" \
+    EVERGREEN_REPO_ROOT="${TEST_REPO_ROOT:-}" \
     GITHUB_WORKSPACE="$REPO" \
     GITHUB_STEP_SUMMARY="$SUMMARY_FILE" \
     GITHUB_BASE_REF=main \
@@ -284,7 +285,7 @@ run_driver() {
     GH_USER_FAIL="${GH_USER_FAIL:-false}" \
     GH_LIST_FAIL="${GH_LIST_FAIL:-false}" \
     GH_HANG="${GH_HANG:-false}" \
-    bash "$ROOT/ci/evergreen-pr.sh" >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"
+    bash "$ROOT/ci/evergreen-pr.sh") >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"
   STATUS=$?
   set -e
 }
@@ -372,8 +373,14 @@ not_contains "$PROMPT_FILE" 'dirty worktree must not reach the prompt' "review c
 contains "$PROMPT_FILE" 'Run `demo --workers 4`.' "review context omitted the unchanged HEAD documentation"
 pass "review context is bound to HEAD"
 
+make_repo relative-root
+TEST_CWD="$(dirname "$REPO")" TEST_REPO_ROOT=repo run_driver relative-root "$(clean_result)"
+[ "$STATUS" -eq 0 ] || fail "relative repo_path should resolve against the starting directory once (got $STATUS)"
+contains "$SUMMARY_FILE" "docs still match the code" "relative repo_path did not complete the review"
+pass "relative repo_path is resolved once"
+
 make_repo expanded-prompt
-python3 -c 'from pathlib import Path; p=Path(__import__("sys").argv[1]); p.write_text("workers " + "<" * 100000 + "\n")' "$REPO/README.md"
+python3 -c 'from pathlib import Path; p=Path(__import__("sys").argv[1]); p.write_text("--workers " + "<" * 100000 + "\n")' "$REPO/README.md"
 git -C "$REPO" add README.md
 git -C "$REPO" commit -qm expanded-prompt-doc
 HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
