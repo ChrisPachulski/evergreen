@@ -48,15 +48,18 @@ If the command, isolation, timeout, dependencies, or test setup cannot be truste
 Classifier output is advisory: allowed still requires the runtime safeguards above.
 
 Write the smallest scratch test that encodes what the *doc* claims; show it and do not commit it.
-Use argv, not a shell string. A trusted application-behavior failure proves drift and a pass
-certifies by test. Any refused, inconclusive, timed-out, unavailable, or setup-failed run falls back
-to `behavior-asserted — verify manually`.
+Use argv, not a shell string. A trusted pass certifies by test. A trusted application-behavior
+failure faces one more condition before it blames the doc:
+A failing scratch test proves drift only when an implementation written from the doc alone, without reading the code, passes the identical test in the same scratch boundary.
+If that doc-only implementation also fails, the test is suspect and proves nothing: the claim falls back to certified by reading or `unverified`, never dropped; if it cannot be written or run safely, the claim is `behavior-asserted — verify manually`.
+Any refused, inconclusive, timed-out, unavailable, or setup-failed run falls back to
+`behavior-asserted — verify manually`.
 
 **Second provider — mandatory.** After the ladder and the trial, run
-`bin/evergreen judge --repo . --doc <doc> --json` for every doc in scope. Sum the verdicts into one
-line the report carries verbatim: `judge: <provider> ok — docs K, certified N, drift D, unverified
-U`. A claim you certified that the judge calls drift goes back
-through the trial; it ships as drift only if the accusation beats its defence, and either way the
+`python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" judge --repo . --doc <doc> --json` for every doc in scope.
+Sum the verdicts into one line the report carries verbatim:
+`judge: <provider> ok — docs K, certified N, drift D, unverified U`. A claim you certified that the
+judge calls drift goes back through the trial; it ships as drift only if the accusation beats its defence, and either way the
 disagreement is named. No codex, or an abstention, is `judge: abstain — <reason>`: the run is
 reported, not clean, and never claims a cross-provider check that did not happen. A certification
 record for the release gate carries the same numbers as a `judge` object.
@@ -69,11 +72,12 @@ record for the release gate carries the same numbers as a `judge` object.
   from `UNVERIFIABLE` (a claim about another system — still dropped).
 
 For each surviving drift, classify: category (`in_code_not_docs` / `in_docs_not_code` /
-`name_mismatch` / `release_identity_drift` / `UNVERIFIABLE`), severity, and whether it's a
-derivable fix or a human-judgment flag.
+`name_mismatch` / `release_identity_drift` / `UNVERIFIABLE`), rung (the ladder rung that proved it:
+`path · contract · snippet · prose`), severity, and whether it's a derivable fix or a
+human-judgment flag.
 
 Report verdict-first, one line per finding:
-`[sev] category  file:line — what's wrong (cited) → fix or flag`.
+`[sev] category rung  file:line — what's wrong (cited) → fix or flag`.
 For derivable drift (dead references, endpoint/type/config tables, a snippet that should mirror its
 source) propose a minimal diff. For prose/intent/signature drift, flag — never rewrite.
 

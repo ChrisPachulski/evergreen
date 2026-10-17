@@ -20,8 +20,8 @@ judgment.
 ## Forbidden shortcuts (take any one and you have NOT run seed)
 
 1. **Ranking by taste.** "Document everything public" buries what matters; "document what looks
-   important" is your opinion, not evidence. The candidate set comes from the impact provider,
-   command shown.
+   important" is your opinion, not evidence. The candidate set comes from the till
+   surface-inventory provider (pass B), command shown.
 2. **Inventing prose.** A sentence about intent, rationale, or roadmap the code can't settle is not
    filler — it is fabrication. Marker it (`<!-- seed:gap — author: … -->`), never write it.
 3. **Shipping without the winnow.** Docs are claims from the moment they exist. Seeded docs never
@@ -43,10 +43,11 @@ truncation warning is `not done — surface inventory unavailable`; write nothin
 `python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" till --json --repo <repo> [path…]` — deterministic
 and read-only; a scope path narrows the inventory. Candidates are nominations, never verdicts.) The
 inventory is judgment frozen into grammar, so it is judged before it is trusted: save the JSON to a
-scratch path and run `bin/evergreen judge --repo . --inventory <that file> --json`. A listed row the
-judge calls drift leaves the candidate set with the reason named; a public declaration the judge
-finds missing joins the walk after the provider's last rank, marked `judge-found`; carry the trailer
-verbatim, `judge: <provider> ok — docs K, certified N, drift D, unverified U` with stage
+scratch path and run
+`python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" judge --repo . --inventory <that file> --json`.
+A listed row the judge calls drift leaves the candidate set with the reason named; a public
+declaration the judge finds missing joins the walk after the provider's last rank, marked
+`judge-found`; carry the trailer verbatim, `judge: <provider> ok — docs K, certified N, drift D, unverified U` with stage
 `inventory`. An abstention is `judge: abstain — <reason>`, reported, and the run is not clean.
 
 **C · Gap triage — walk until the ranking goes cold.** Enumerate the exact tracked living-document
@@ -100,9 +101,9 @@ prose in the session that authored it is not a check: the reader has already see
 for every sentence, so the blindness the trial depends on is gone before it starts. Hand the
 judge the *proposed doc and the repository* and nothing else — never the authoring transcript,
 never the claim ledger's reasoning, never pass C's worthiness argument. Run
-`bin/evergreen judge --repo <repo> --doc <proposed doc>`: it packs the doc and the in-repo files
-the doc names into one isolated codex call, resolves the model from the host's own codex
-configuration, and prints a verdict per claim (exit 3 when the judge is unavailable or abstains).
+`python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" judge --repo <repo> --doc <proposed doc>`:
+it packs the doc and the in-repo files the doc names into one isolated codex call, resolves the
+model from the host's own codex configuration, and prints a verdict per claim (exit 3 when the judge is unavailable or abstains).
 The report carries its summed block verbatim, `judge: <provider> ok — docs K, certified N, drift D,
 unverified U`; a claim it calls drift goes back through winnow's trial. If codex is unavailable or
 the call abstains, the line is `judge: abstain — <reason>`, the in-session certification stands on
