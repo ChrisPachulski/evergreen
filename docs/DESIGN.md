@@ -65,10 +65,21 @@ flag — there is no hook that parses it; the skill is the enforcement.
 The PR Action adds a deterministic trust layer around the semantic reviewer. It produces a bounded
 manifest plus matched living-document excerpts from regular Git blobs at the exact head,
 JSON-escapes boundary characters, labels all repository material as **untrusted data**, and rejects
-any result that fails schema, count, commit, citation, or trusted-runtime checks. The CI model has
-no tools or project customizations and receives only its provider credential. The validator reads
-citations from Git at the audited head; model prose cannot certify itself. The layer prepares and
-validates evidence but does not decide whether prose is semantically true.
+any result that fails schema, claim-inventory, commit, citation, or trusted-runtime checks. The CI
+model has no tools or project customizations and receives only its provider credential. The
+validator reads citations from Git at the audited head; model prose cannot certify itself. The
+layer prepares and validates evidence but does not decide whether prose is semantically true.
+
+The layer, not the model, fixes the review's denominator. Each matching documentation line becomes
+one claim whose id hashes its path, line number, and text, and the driver keeps that inventory as
+trusted input for the validator, never reading it back from model output. The model returns one
+verdict per id; the validator rejects a missing, repeated, or unknown id and binds every finding
+and unverified entry to the drift or unverified claim it cites. Claim counts are derived by the trust layer from one verdict per supplied claim id, never reported by the model.
+Opt-in calibration controls (`calibration_controls`) add a known-certified exact quote and a
+known-drift misattributed quote of head documentation, shuffled into the inventory under opaque
+ids. The validator grades them against a trusted answer key, strips them from every count,
+finding, and unverified entry, and makes the run inconclusive when either is answered wrong. A
+pass shows that the reviewer checked the evidence it was given, not that it reviewed every claim.
 
 Every repository path in a manifest entry or result citation passes one shared gate before the
 trust layer will carry it: `is_protocol_path` (`ci/path_policy.py`). A citable path is a non-empty

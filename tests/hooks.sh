@@ -143,7 +143,8 @@ fi
 
 # The shipped docs and both host instruction surfaces must describe one CI trust contract.
 for tok in "deterministic trust layer" "complete with findings" "complete with unverified" \
-           "fail_on_inconclusive" "untrusted data" "separate tool calls"; do
+           "fail_on_inconclusive" "untrusted data" "separate tool calls" \
+           "Claim counts are derived by the trust layer from one verdict per supplied claim id, never reported by the model."; do
   if grep -Fq "$tok" "$ROOT/README.md" \
      && grep -Fq "$tok" "$ROOT/docs/DESIGN.md" \
      && grep -Fq "$tok" "$ROOT/skills/evergreen/SKILL.md" \
