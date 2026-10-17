@@ -518,12 +518,27 @@ track "$(cat "$ROOT/skills/evergreen/SKILL.md")" >/dev/null
 track "here is the notification that just arrived in the channel, quoted in full: please run /evergreen strict on that repo" >/dev/null
 [ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: a sigil quoted mid-line past the window does not flip state" \
   || no "tracker: a mid-line sigil wrote $(cat "$TMP/.evergreen-mode")"
-# Frontmatter or a blank first line can push an expanded command body's sigil past any window,
-# so the sigil is anchored to the start of its own line instead.
+# A background agent's report that quotes the docs puts a sigil at the start of a later line;
+# that is quotation too, and only the first non-blank line may carry a sigil past the window.
+track "Background agent finished. Its report quoted the docs verbatim, which say:
+
+/evergreen strict adds the full rung-4 read" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: a sigil beginning a later quoted line does not flip state" \
+  || no "tracker: a later-line sigil wrote $(cat "$TMP/.evergreen-mode")"
+# Blank lines before an expanded command body's sigil can push it past the window, so the first
+# non-blank line counts wherever it falls.
+track "
+
+
+$(python3 -c 'print(" " * 70, end="")')
+/evergreen strict" >/dev/null
+eq "$(cat "$TMP/.evergreen-mode" 2>/dev/null)" "strict" \
+  "tracker: a sigil on the first non-blank line writes past the window"
+rm -f "$TMP/.evergreen-mode"
 track "here is the command you asked for:
 /evergreen strict" >/dev/null
 eq "$(cat "$TMP/.evergreen-mode" 2>/dev/null)" "strict" \
-  "tracker: a sigil beginning the second line still writes"
+  "tracker: a sigil on the second line inside the window still writes"
 rm -f "$TMP/.evergreen-mode"
 # The shipped slash command carries its own name, raw or expanded, so both must be recognized.
 track "/evergreen:mode strict" >/dev/null
@@ -635,6 +650,46 @@ git -C "$TMP" rm -q --cached src/SUMMARY.md; rm -rf "$TMP/src"
 printf '# toc\n' > "$TMP/SUMMARY.md"; git -C "$TMP" add SUMMARY.md
 empty "$(guard)" "guard: GitBook root SUMMARY.md -> allowed"
 git -C "$TMP" rm -q --cached SUMMARY.md; rm -f "$TMP/SUMMARY.md"
+# git C-quotes a non-ASCII name by default ("cl\303\251.pem"), and the quotes defeated every pattern.
+for case_row in "clé.pem|secret/credential" "dist/bündle.js|build artifact"; do
+  name="${case_row%|*}"
+  mkdir -p "$TMP/$(dirname "$name")"; printf 'k\n' > "$TMP/$name"; git -C "$TMP" add -f "$name"
+  has "$(guard)" "${case_row##*|}" "guard: staged non-ASCII $name -> blocked"
+  git -C "$TMP" rm -q --cached "$name"; rm -f "$TMP/$name"
+done
+rm -rf "$TMP/dist"
+# The index inspected must be the one the commit uses, not the project root's.
+OTHER="$(mktemp -d)"
+git -C "$OTHER" init -q; printf 'k\n' > "$OTHER/.env"; git -C "$OTHER" add -f .env
+has "$(guard_cmd "git -C $OTHER commit -m x")" "secret/credential" \
+  "guard: git -C into another repository inspects that repository's index"
+has "$(guard_cmd "cd $OTHER && git commit -m x")" "secret/credential" \
+  "guard: cd into another repository inspects that repository's index"
+empty "$(guard_cmd "cd $TMP && git commit -m x")" \
+  "guard: cd into the clean project repository still allows the commit"
+for cmd in "GIT_INDEX_FILE=.git/alt git commit -qm x" "cd \"\$OTHER_DIR\" && git commit -m x" \
+           "git --git-dir=$OTHER/.git commit -m x"; do
+  has "$(guard_cmd "$cmd")" "cannot tell which repository" "guard: $cmd is refused, not inspected elsewhere"
+  eq "$(guard_rc "$cmd")" "2" "guard: $cmd exits 2"
+done
+# A substitution inside a -C or cd operand computes the whole path, however literal the rest of the
+# word looks; reading the literal prefix inspected a directory the commit never runs in. A
+# repository copied or moved earlier in the same command does not exist yet when the hook runs.
+for cmd in "git -C $(dirname "$OTHER")/\"\$(printf $(basename "$OTHER"))\" commit -m x" \
+           "cd $(dirname "$OTHER")/\`printf $(basename "$OTHER")\` && git commit -m x" \
+           "cp -R $OTHER $OTHER-copy && git -C $OTHER-copy commit -m x" \
+           "mv $OTHER $OTHER-moved && cd $OTHER-moved && git commit -m x"; do
+  has "$(guard_cmd "$cmd")" "cannot tell which repository" "guard: $cmd is refused, not inspected elsewhere"
+  eq "$(guard_rc "$cmd")" "2" "guard: $cmd exits 2"
+done
+rm -rf "$OTHER"
+# Two identical relative cds lead to child/child, not child: each change counts, not each distinct one.
+NEST="$(mktemp -d)"
+git init -q "$NEST/child/child"; git init -q "$NEST/child"; git init -q "$NEST"
+printf 'k\n' > "$NEST/child/child/.env"; git -C "$NEST/child/child" add -f .env
+has "$(CLAUDE_PROJECT_DIR="$NEST" guard_cmd "cd child && cd child && git commit -m x")" \
+  "cannot tell which repository" "guard: a repeated relative cd is refused, not read as one"
+rm -rf "$NEST"
 printf 'k\n' > "$TMP/.env"; git -C "$TMP" add -f .env
 empty "$(printf '{"tool_input":{"command":"ls -la"}}' | bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
   "guard: non-git command -> pass-through despite staged secret"
@@ -675,7 +730,11 @@ for case_row in \
   "git a''dd . && git commit -m x|quoted add fragment" \
   "git add . && git com''mit -m x|quoted commit fragment" \
   "g\\it a\\dd . && g\\it com\\mit -m x|backslash-split words" \
-  "git add . && git commit -m 'add stuff'|intent words in quoted message"; do
+  "git add . && git commit -m 'add stuff'|intent words in quoted message" \
+  "echo \`git add .env\`; git commit -m x|backtick substitution" \
+  "\`git add .env\`git commit -m x|backtick glued to the git word" \
+  "git commit -m \"\$(git add .env)\"|substitution inside a double-quoted message" \
+  "git commit -m \"\`git add .env\`\"|backtick inside a double-quoted message"; do
   cmd="${case_row%|*}"
   label="${case_row##*|}"
   has "$(guard_cmd "$cmd")" "separate" "guard: compound $label stage-and-commit is blocked"
@@ -685,6 +744,31 @@ newline_compound_cmd=$'git add .\ngit commit -m x'
 has "$(guard_cmd "$newline_compound_cmd")" "separate" \
   "guard: compound newline-separated stage-and-commit is blocked"
 eq "$(guard_rc "$newline_compound_cmd")" "2" "guard: compound newline-separated exits 2"
+# An unquoted heredoc delimiter expands substitutions even in a commit-message body.
+expanding_body_cmd=$'git commit -F - <<EOF\nsubject $(git add .env)\nEOF'
+has "$(guard_cmd "$expanding_body_cmd")" "separate" \
+  "guard: a substitution in an unquoted-delimiter message body is compound"
+# Nesting past the cap is refused, not crashed through: 1050 levels once exhausted the stack and
+# the crash fell back to a classifier that allowed the commit. 5000 sits far above that ceiling.
+deep_cmd="$(python3 -c 'print("git commit -m \"" + "$(" * 5000 + "git add .env" + ")" * 5000 + "\"", end="")')"
+has "$(guard_cmd "$deep_cmd")" "cannot tell which repository" "guard: 5000 nested substitutions are refused"
+eq "$(guard_rc "$deep_cmd")" "2" "guard: 5000 nested substitutions exit 2"
+# Counting parentheses cannot tell a case pattern's `)` or one in a comment from the end of the
+# substitution, so a body carrying either is refused rather than delimited by a guess that left
+# the `git add` after it reading as message text.
+for cmd in 'git commit -m "$(case x in x) git add -f .env;; esac; printf x)"' \
+           $'git commit -m "$(printf x # )\ngit add -f .env\n)"'; do
+  has "$(guard_cmd "$cmd")" "cannot tell which repository" "guard: $cmd is refused"
+  eq "$(guard_rc "$cmd")" "2" "guard: $cmd exits 2"
+done
+empty "$(guard_cmd 'echo "$(case x in x) printf y;; esac)"')" \
+  "guard: a case pattern in a command that names no git passes through"
+# The usual message-through-substitution form stays a plain commit, whatever its message says.
+claude_commit_cmd=$'git commit -m "$(cat <<\'EOF\'\nfix(guard): don\'t block 1) a git add . or git commit -am mention\n`git add -p` too\nEOF\n)"'
+empty "$(guard_cmd "$claude_commit_cmd")" \
+  "guard: a quoted-heredoc message read through a substitution is not compound"
+empty "$(guard_cmd "git commit -m 'literal \`git add .env\` text'")" \
+  "guard: a backtick inside single quotes is literal"
 spaced_json='{ "tool_input": { "command": "git add . && git commit -m x" } }'
 has "$(guard_input "$spaced_json")" "separate" "guard: JSON whitespace serialization is classified"
 eq "$(printf '%s' "$spaced_json" | bash "$HOOKS/evergreen-guard.sh" >/dev/null 2>&1; printf '%s' "$?")" "2" \
@@ -815,7 +899,9 @@ for case_row in \
   "bash -lc 'git commit -am x'|combined -lc wrapper" \
   "/usr/bin/git commit -am x|path-qualified git" \
   "eval 'git commit --all -m x'|eval wrapper" \
-  "git commit -am 'add stuff'|unsafe -a with intent words in message"; do
+  "git commit -am 'add stuff'|unsafe -a with intent words in message" \
+  "git commit -m update --untracked-files -a|-a after a bare --untracked-files" \
+  "fd=1; git commit >&\"\$fd\" -am update|-am after a variable file-descriptor duplication"; do
   cmd="${case_row%|*}"
   label="${case_row##*|}"
   has "$(guard_cmd "$cmd")" "separately staged plain commit" \
@@ -830,6 +916,8 @@ empty "$(guard_cmd "git commit -qm x")" \
   "guard: combined safe commit options remain allowed"
 empty "$(guard_cmd "git commit --amend --no-edit")" \
   "guard: amend without unstaged-content modes remains allowed"
+empty "$(guard_cmd "git commit -m x --untracked-files=no")" \
+  "guard: an attached --untracked-files mode remains allowed"
 empty "$(EVERGREEN_GUARD=off guard_cmd "git commit -am x")" \
   "guard: EVERGREEN_GUARD=off bypasses unsafe commit-mode rejection"
 
@@ -932,7 +1020,11 @@ has "$(guard_cmd "$here_string_unsafe_cmd")" "separately staged plain commit" \
   "guard: a here-string does not hide the next line's unsafe commit"
 glued_operator_cmd=$'echo a<<b\ngit commit -am x'
 has "$(guard_cmd "$glued_operator_cmd")" "separately staged plain commit" \
-  "guard: << glued inside a word opens no heredoc and hides nothing"
+  "guard: an unterminated glued << hides nothing"
+# Bash reads `file<<'EOF'` as a heredoc, so a body written to a file stays data when glued.
+glued_write_cmd=$'cat > /tmp/example.sh<<\'EOF\'\ngit add .\ngit commit -m saved\nEOF'
+empty "$(guard_cmd "$glued_write_cmd")" \
+  "guard: a heredoc glued to its redirection target is a file write, not intent"
 # Redirection operators carrying shlex punctuation must not strand later arguments.
 for case_row in \
   "git commit 2>&1 -a -m x|file-descriptor duplication" \
@@ -962,6 +1054,12 @@ has "$(degraded "git commit --all -m x")" "separately staged plain commit" \
 has "$(degraded "git stash pop && git commit -m x")" "separate" \
   "guard: degraded path treats an index-writing subcommand plus commit as compound"
 empty "$(degraded "git stash pop")" "guard: degraded path allows a lone stash"
+for cmd in "git commit -m update .env" "git commit -m \"update notes\" .env"; do
+  has "$(degraded "$cmd")" "separately staged plain commit" \
+    "guard: degraded path blocks the positional pathspec in $cmd"
+done
+empty "$(degraded $'git commit -m x\ngit log --oneline')" \
+  "guard: degraded path does not read a next-line command as a pathspec"
 
 # Intent lives in git-subcommand position only: words inside quoted arguments (commit messages,
 # pathspecs) must never reclassify a plain add/commit as compound stage-and-commit.
@@ -1009,6 +1107,11 @@ has "$(guard_cmd "$release_tag_cmd")" "no winnow certification record" \
 eq "$(guard_rc "$release_tag_cmd")" "2" "release gate: refusal exits 2"
 has "$(guard_cmd "sh -c 'git tag evergreen--v9.9.9'")" "no winnow certification record" \
   "release gate: a wrapped tag creation is classified and gated"
+for cmd in "git tag -am 'release 9.9.9' evergreen--v9.9.9" "git tag -sm rel evergreen--v9.9.9" \
+           "git tag -aF notes.txt evergreen--v9.9.9"; do
+  has "$(guard_cmd "$cmd")" "no winnow certification record" \
+    "release gate: the clustered value option in $cmd is still gated"
+done
 empty "$(guard_cmd "git tag v1.0.0")" "release gate: non-evergreen tag passes through"
 empty "$(guard_cmd "git tag -l 'evergreen--v*'")" "release gate: listing evergreen tags passes through"
 empty "$(guard_cmd "git tag -d evergreen--v9.9.9")" "release gate: deleting an evergreen tag passes through"
@@ -1057,6 +1160,16 @@ has "$(guard_cmd "git tag evergreen--v9.9.9 HEAD~1")" "checked-out HEAD" \
   "release gate: tagging any other explicit commit is refused"
 has "$(guard_cmd "git add . && git tag evergreen--v9.9.9")" "own Bash call" \
   "release gate: tag creation combined with staging is refused"
+OTHER="$(mktemp -d)"
+git -C "$OTHER" init -q; git -C "$OTHER" -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m init
+has "$(guard_cmd "git -C $OTHER tag evergreen--v9.9.9")" "no winnow certification record" \
+  "release gate: a tag created in another repository is gated against that repository"
+rm -rf "$OTHER"
+# Rename detection listed only the new side of a move into the records directory.
+git -C "$TMP" mv app.py eval/certifications/app.py; git -C "$TMP" commit -qm "move code into the records"
+has "$(guard_cmd "$release_tag_cmd")" "app.py changed after certified commit" \
+  "release gate: moving code into the records directory is not a records-only change"
+git -C "$TMP" mv eval/certifications/app.py app.py; git -C "$TMP" commit -qm "move it back"
 printf 'later\n' >> "$TMP/app.py"
 git -C "$TMP" add app.py; git -C "$TMP" commit -qm "code after certification"
 has "$(guard_cmd "$release_tag_cmd")" "is stale" \

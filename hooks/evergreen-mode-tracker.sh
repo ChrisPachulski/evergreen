@@ -17,18 +17,20 @@ except Exception: pass' 2>/dev/null)"
 [ -z "$p" ] && p="$input"
 p="$(printf '%s' "$p" | tr '[:upper:]' '[:lower:]')"
 # A mode change is ADDRESSED to evergreen, and the two form families are addressed differently.
-# A sigil form must BEGIN A LINE, or else fall inside the opening window: the slash command
-# expands to a body whose first line is the sigil, while a notification quoting one and the
-# skill body naming the forms it documents carry them mid-sentence and far in. An imperative
-# form is typed by hand, so it opens the prompt, and sixty characters covers the longest
-# documented request plus a courtesy word. Past that window the same words are quotation, and
-# both of those quotations rewrote this file before the rules existed.
+# A sigil form must BEGIN THE FIRST NON-BLANK LINE, or else fall inside the opening window: the
+# slash command expands to a body whose first line is the sigil, while a notification quoting one
+# and the skill body naming the forms it documents carry them mid-sentence, far in, or at the start
+# of a later line of quoted text. An imperative form is typed by hand, so it opens the prompt, and
+# sixty characters covers the longest documented request plus a courtesy word. Past that window
+# the same words are quotation, and all of those quotations rewrote this file before the rules
+# existed.
 opening="${p:0:60}"
+first_line="$(printf '%s\n' "$p" | grep -m1 -v '^[[:space:]]*$')"
 # The optional `:mode` is the shipped slash command's own name (`/evergreen:mode strict`), whose
 # expanded body opens with exactly that line. No other `:<command>` suffix is accepted, so
 # `/evergreen:winnow off` asks winnow for something and never rewrites persistent state.
 sigil_line(){
-  printf '%s' "$p" | grep -qE "^[[:space:]]*[/@\$]evergreen(:mode)?[: ]+$1\b" \
+  printf '%s' "$first_line" | grep -qE "^[[:space:]]*[/@\$]evergreen(:mode)?[: ]+$1\b" \
     || printf '%s' "$opening" | grep -qE "[/@\$]evergreen(:mode)?[: ]+$1\b"
 }
 opening_has(){ printf '%s' "$opening" | grep -qE "$1"; }

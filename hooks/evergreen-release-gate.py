@@ -102,12 +102,14 @@ def _bind_subject(repo: str, path: str, kind: str, subject: str, head: str) -> N
     rc, _ = _git(repo, "merge-base", "--is-ancestor", subject, head)
     if rc:
         _refuse(f"{path} certifies {subject}, which is not an ancestor of HEAD")
-    rc, changed = _git(repo, "diff", "--name-only", subject, head)
+    # Rename detection would list only the new side of a move, so `git mv app.py
+    # eval/certifications/` read as a records-only change; -z keeps names unquoted.
+    rc, changed = _git(repo, "diff", "--no-renames", "--name-only", "-z", subject, head)
     if rc:
         _refuse(f"could not diff certified commit {subject} against HEAD")
     outside = [
-        line for line in changed.splitlines()
-        if line and not line.startswith(RECORD_DIR + "/")
+        name for name in changed.split("\0")
+        if name and not name.startswith(RECORD_DIR + "/")
     ]
     if outside:
         _refuse(
