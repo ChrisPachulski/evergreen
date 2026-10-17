@@ -89,6 +89,38 @@ class ChangeManifestTests(unittest.TestCase):
         for seed in ("renamed_handler", "--workers", "SERVICE_TOKEN", "/v1/items"):
             self.assertIn(seed, first["contract_seeds"])
 
+    def test_seeds_are_declared_names_not_every_word_on_a_changed_line(self):
+        self.write("app.py", "x = 1\n")
+        base = self.commit("base")
+        self.write(
+            "app.py",
+            "class Worker:\n"
+            "    async def run_batch(self, items):\n"
+            "        for item in items:  # read the file for the caller\n"
+            "            return item.value\n"
+            "export function fetchItems() {}\n"
+            "pub(crate) fn parse_args() {}\n"
+            "func (s *Server) ServeHTTP() {}\n",
+        )
+        head = self.commit("changes")
+
+        seeds = change_manifest.build_manifest(self.repo, base, head)["contract_seeds"]
+
+        self.assertEqual(seeds, ["ServeHTTP", "Worker", "fetchItems", "parse_args", "run_batch"])
+
+    def test_pathspec_magic_in_a_changed_filename_is_read_literally(self):
+        self.write("demo.py", "def plain():\n")
+        self.write(":(literal)demo.py", "def magic():\n")
+        base = self.commit("base")
+        self.write(":(literal)demo.py", "def magic_renamed():\n")
+        head = self.commit("changes")
+
+        manifest = change_manifest.build_manifest(self.repo, base, head)
+
+        self.assertEqual([item["path"] for item in manifest["files"]], [":(literal)demo.py"])
+        self.assertTrue(manifest["files"][0]["hunks"])
+        self.assertIn("magic_renamed", manifest["contract_seeds"])
+
     def test_stops_before_a_hunk_that_exceeds_the_byte_budget(self):
         original = "".join(f"line {number}\n" for number in range(30))
         self.write("large.txt", original)
@@ -113,8 +145,8 @@ class ChangeManifestTests(unittest.TestCase):
         self.write("dense.txt", original)
         base = self.commit("base")
         lines = original.splitlines(keepends=True)
-        lines[1] = "small_contract_seed\n"
-        lines[80] = " ".join(f"dense_contract_{number}" for number in range(20_000)) + "\n"
+        lines[1] = "def small_contract_seed():\n"
+        lines[80] = "".join(f"def dense_contract_{number}(): pass\n" for number in range(20_000))
         self.write("dense.txt", "".join(lines))
         head = self.commit("changes")
 

@@ -379,6 +379,20 @@ TEST_CWD="$(dirname "$REPO")" TEST_REPO_ROOT=repo run_driver relative-root "$(cl
 contains "$SUMMARY_FILE" "docs still match the code" "relative repo_path did not complete the review"
 pass "relative repo_path is resolved once"
 
+make_repo large-corpus
+python3 -c 'from pathlib import Path; import sys; Path(sys.argv[1]).write_text("# Demo\nRun `demo --concurrency 4`.\n" + "The worker reads the file for the caller and returns the value.\n" * 2500)' "$REPO/README.md"
+git -C "$REPO" add README.md
+git -C "$REPO" commit -qm large-prose-corpus
+BASE_SHA="$(git -C "$REPO" rev-parse HEAD)"
+printf '%s\n' 'parser.add_argument("--parallelism")  # read the file for the caller' > "$REPO/app.py"
+git -C "$REPO" add app.py
+git -C "$REPO" commit -qm rename-flag
+HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
+run_driver large-corpus "$(clean_result)"
+[ "$STATUS" -eq 0 ] || fail "code comment words flooded a 160 KB prose corpus into inconclusive (got $STATUS)"
+contains "$PROMPT_FILE" 'Run `demo --concurrency 4`.' "large corpus lost the renamed flag's documentation"
+pass "contract seeds stay bounded on a large prose corpus"
+
 make_repo expanded-prompt
 python3 -c 'from pathlib import Path; p=Path(__import__("sys").argv[1]); p.write_text("--workers " + "<" * 100000 + "\n")' "$REPO/README.md"
 git -C "$REPO" add README.md

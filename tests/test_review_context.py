@@ -39,9 +39,9 @@ class ReviewContextTests(unittest.TestCase):
 
     def fixture(self, doc="Use `workers` for concurrency.\n"):
         self.write("README.md", doc)
-        self.write("src/app.py", "workers = 4\n")
+        self.write("src/app.py", "def workers():\n")
         base = self.commit("base")
-        self.write("src/app.py", "concurrency = 4\n")
+        self.write("src/app.py", "def concurrency():\n")
         head = self.commit("head")
         manifest = change_manifest.build_manifest(self.repo, base, head)
         return base, head, manifest
@@ -199,6 +199,35 @@ class ReviewContextTests(unittest.TestCase):
         context = review_context.build_context(self.repo, head, manifest)
 
         self.assertEqual([item["path"] for item in context["candidates"]], ["README.md"])
+
+    def test_code_comment_words_do_not_flood_a_large_prose_corpus(self):
+        prose = "The worker will retry the request for the caller and return the value.\n"
+        self.write("README.md", prose * 1500 + "Pass `--retry-limit` to cap retries.\n" + prose * 1500)
+        self.write("src/app.py", 'parser.add_argument("--retry-limit")  # retry the request for the caller\n')
+        base = self.commit("base")
+        self.write("src/app.py", 'parser.add_argument("--max-retries")  # retry the request for the caller\n')
+        head = self.commit("head")
+        manifest = change_manifest.build_manifest(self.repo, base, head)
+
+        context = review_context.build_context(self.repo, head, manifest)
+
+        self.assertFalse(context["truncated"])
+        self.assertEqual(context["errors"], [])
+        self.assertEqual([item["path"] for item in context["candidates"]], ["README.md"])
+        window = context["candidates"][0]
+        self.assertLess(window["end_line"] - window["start_line"] + 1, 10)
+        self.assertIn("`--retry-limit`", window["excerpt"])
+
+    def test_terms_match_whole_tokens_not_substrings(self):
+        deadline = review_context.time.monotonic() + 3
+        terms = ["recover", "MAX_TERMS"]
+
+        self.assertEqual(
+            review_context._excerpts("README.md", "recovery mode\nMAX_TERMS_EXTRA = 1\n", terms, deadline),
+            [],
+        )
+        hits = review_context._excerpts("README.md", "Call recover() up to MAX_TERMS.\n", terms, deadline)
+        self.assertEqual([hit["matched_terms"] for hit in hits], [terms])
 
     def test_cli_emits_one_versioned_json_object(self):
         _base, head, manifest = self.fixture()
