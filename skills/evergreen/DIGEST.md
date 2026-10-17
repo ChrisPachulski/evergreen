@@ -17,7 +17,8 @@ not the whole tree. Walk the rungs in order per claim; cheap mechanical checks b
 
 Provider evidence and source maps nominate candidates, never findings or verdicts.
 Re-read every candidate against current code before deciding drift.
-Use `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` as a read-only ranking
+Use `impact [--repo PATH] [--evidence FILE] [--json] PATH...`, run from the plugin root as
+`/evergreen:impact` spells it out (never a project-relative `bin/evergreen`), as a read-only ranking
 query. Deterministic provider confidence proves only a mechanical fact; maps and Drift-shaped
 evidence never settle the semantic claim.
 

@@ -97,7 +97,7 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
 
    **Run this pass on a different provider than the one that rewrote the doc.** You just wrote every
    badge and bullet on the page; checking them in the same context is self-assessment wearing a
-   trial's clothes. `bin/evergreen judge` always calls codex and never asks who wrote the doc, so
+   trial's clothes. The judge CLI always calls codex and never asks who wrote the doc, so
    from a Claude session the provider differs by construction; a rewrite codex itself made gets no
    cross-provider check here, and the report says so; neither the CLI nor the scorer's judge gate
    checks that inequality. Hand the judge the *rewritten doc and the repository* — never the craft

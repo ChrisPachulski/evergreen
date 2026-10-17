@@ -85,11 +85,11 @@ Provider evidence and source maps nominate candidates, never findings or verdict
 Re-read every candidate against current code before deciding drift.
 
 When evidence or a source map is available, use
-`bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` to rank likely docs before
-walking the ladder. Treat deterministic confidence as proof of a mechanical fact only; treat
-advisory confidence as a lower-ranked hint. Do not adopt external outcomes. Keep malformed or
-forbidden provider fields as warnings. Drift-shaped adapters may translate fact records into the
-v1 schema, but must discard verdict semantics. Reject tempting semantic leaps: a default-value
+`python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" impact [--repo PATH] [--evidence FILE] [--json] PATH...`
+to rank likely docs before walking the ladder. Treat deterministic confidence as proof of a
+mechanical fact only; treat advisory confidence as a lower-ranked hint. Do not adopt external
+outcomes. Keep malformed or forbidden provider fields as warnings. Drift-shaped adapters may
+translate fact records into the v1 schema, but must discard verdict semantics. Reject tempting semantic leaps: a default-value
 change can nominate timeout docs while a per-project override remains true.
 
 ## Release identity reflex

@@ -35,7 +35,7 @@ class DocDriftTests(unittest.TestCase):
             ROOT / "skills" / "evergreen" / "SKILL.md",
             ROOT / "skills" / "evergreen" / "DIGEST.md",
         ]
-        relative = re.compile(r'(?<![/\w"])bin/evergreen\s+\w+\s+--')
+        relative = re.compile(r'(?<![/\w"])bin/evergreen\s+(?:judge|impact|till|receipt)\b')
         for surface in surfaces:
             with self.subTest(surface=surface.name):
                 self.assertIsNone(relative.search(surface.read_text(encoding="utf-8")))
