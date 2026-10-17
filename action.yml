@@ -28,6 +28,10 @@ inputs:
     description: "Fail the step when Evergreen cannot produce a conclusive validated audit ('true'/'false')."
     required: false
     default: "true"
+  calibration_controls:
+    description: "Mix two calibration controls with known answers into the claim inventory and treat a wrong answer as inconclusive ('true'/'false'). Off until a real-provider calibration run measures how often they trip."
+    required: false
+    default: "false"
   repo_path:
     description: "Repository checkout to review. Defaults to the workflow workspace."
     required: false
@@ -62,6 +66,7 @@ runs:
         EVERGREEN_MODEL: ${{ inputs.model }}
         EVERGREEN_POST_COMMENT: ${{ inputs.post_comment }}
         EVERGREEN_FAIL_ON_INCONCLUSIVE: ${{ inputs.fail_on_inconclusive }}
+        EVERGREEN_CALIBRATION_CONTROLS: ${{ inputs.calibration_controls }}
         EVERGREEN_REPO_ROOT: ${{ inputs.repo_path }}
         EVERGREEN_PR_NUMBER: ${{ inputs.pr_number }}
         EVERGREEN_MODEL_TIMEOUT_SECONDS: ${{ inputs.model_timeout_seconds }}

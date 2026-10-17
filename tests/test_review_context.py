@@ -276,6 +276,82 @@ class ReviewContextTests(unittest.TestCase):
         self.assertEqual([claim["line"] for claim in limited["claims"]], [1])
         self.assertEqual(len(limited["candidates"]), 1)
 
+    def control_context(self):
+        _base, head, manifest = self.fixture("# Demo\nRun `workers` now.\nMore `workers` text.\n")
+        return review_context.build_context(self.repo, head, manifest)
+
+    def test_controls_are_deterministic_per_nonce_and_look_like_claims(self):
+        context = self.control_context()
+
+        mixed, key = review_context.add_controls(context, "nonce-a")
+        replay, replay_key = review_context.add_controls(context, "nonce-a")
+        other, other_key = review_context.add_controls(context, "nonce-b")
+
+        self.assertEqual((mixed, key), (replay, replay_key))
+        self.assertNotEqual(key, other_key)
+        self.assertEqual(set(key), {"negative", "positive"})
+        self.assertEqual(len(mixed["claims"]), len(context["claims"]) + 2)
+        self.assertEqual(
+            sorted(claim["id"] for claim in mixed["claims"] if claim["id"] not in key.values()),
+            sorted(claim["id"] for claim in context["claims"]),
+        )
+        for claim in mixed["claims"]:
+            self.assertEqual(set(claim), {"id", "path", "line", "text"})
+            self.assertRegex(claim["id"], r"^[0-9a-f]{16}$")
+
+    def test_negative_control_quotes_head_exactly_and_positive_contradicts_it(self):
+        context = self.control_context()
+        lines = {(claim["path"], claim["line"]): claim["text"] for claim in context["claims"]}
+        for nonce in ("one", "two", "three", "four"):
+            with self.subTest(nonce=nonce):
+                mixed, key = review_context.add_controls(context, nonce)
+                by_id = {claim["id"]: claim for claim in mixed["claims"]}
+                for role, control_id in key.items():
+                    control = by_id[control_id]
+                    prefix = f"{control['path']} line {control['line']} reads exactly: "
+                    self.assertTrue(control["text"].startswith(prefix))
+                    quote = control["text"][len(prefix):]
+                    actual = lines[(control["path"], control["line"])]
+                    if role == "negative":
+                        self.assertEqual(quote, actual)
+                    else:
+                        self.assertNotEqual(quote.strip(), actual.strip())
+
+    def test_controls_fail_closed_without_enough_head_evidence(self):
+        _base, head, manifest = self.fixture("Use `workers` for concurrency.\n")
+        single = review_context.build_context(self.repo, head, manifest)
+        empty = review_context._empty(head)
+        truncated = dict(self.control_context(), truncated=True)
+
+        for context in (single, empty, truncated):
+            with self.subTest(claims=len(context["claims"]), truncated=context["truncated"]):
+                with self.assertRaises(ValueError):
+                    review_context.add_controls(context, "nonce")
+
+    def test_cli_mixes_controls_and_writes_the_answer_key(self):
+        context = self.control_context()
+        key_file = Path(self.temporary.name) / "controls.json"
+        script = Path(review_context.__file__)
+        command = ["python3", str(script), "--repo", str(self.repo),
+                   "--head", context["head"], "--add-controls", str(key_file)]
+
+        result = subprocess.run(
+            command, input=json.dumps(context), text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        refused = subprocess.run(
+            command, input=json.dumps(dict(context, head="0" * 40)), text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        key = json.loads(key_file.read_text(encoding="utf-8"))
+        mixed = json.loads(result.stdout)
+        self.assertEqual(set(key), {"negative", "positive"})
+        self.assertLessEqual(set(key.values()), {claim["id"] for claim in mixed["claims"]})
+        self.assertEqual(refused.returncode, 2)
+        self.assertEqual(refused.stdout, "")
+
     def test_cli_emits_one_versioned_json_object(self):
         _base, head, manifest = self.fixture()
         script = Path(review_context.__file__)

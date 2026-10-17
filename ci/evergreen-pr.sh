@@ -27,9 +27,11 @@ PREFILTER_TIMEOUT_SECONDS="${EVERGREEN_PREFILTER_TIMEOUT_SECONDS:-$GIT_TIMEOUT_S
 GIT_MAX_OUTPUT_BYTES="${EVERGREEN_GIT_MAX_OUTPUT_BYTES:-1048576}"
 COMMENT_TIMEOUT_SECONDS="${EVERGREEN_COMMENT_TIMEOUT_SECONDS:-15}"
 COMMENT_MAX_OUTPUT_BYTES="${EVERGREEN_COMMENT_MAX_OUTPUT_BYTES:-1048576}"
-# The trusted claim inventory the validator grades against.
+CALIBRATION_CONTROLS="${EVERGREEN_CALIBRATION_CONTROLS:-false}"
+# The trusted claim inventory and calibration answer key the validator grades against.
 CONTEXT_FILE=""
-trap 'rm -f "$CONTEXT_FILE" 2>/dev/null || true' EXIT
+CONTROLS_FILE=""
+trap 'rm -f "$CONTEXT_FILE" "$CONTROLS_FILE" 2>/dev/null || true' EXIT
 
 run_gh() {
   python3 "$BOUNDED_PY" --timeout-seconds "$COMMENT_TIMEOUT_SECONDS" \
@@ -132,6 +134,7 @@ finish_review() {
   local -a inventory=()
   if [ "$trusted" = trusted ]; then
     inventory=(--context "$CONTEXT_FILE")
+    [ -z "$CONTROLS_FILE" ] || inventory+=(--controls "$CONTROLS_FILE")
   fi
   markdown="$(printf '%s' "$raw" | python3 "$COMMENT_PY" \
     --repo "$REPO_ROOT" --base "$BASE_SHA" --head "$HEAD_SHA" \
@@ -270,6 +273,16 @@ CONTEXT_STATUS=$?
 if [ "$CONTEXT_STATUS" -ne 0 ] || [ -z "$CONTEXT" ]; then
   echo "evergreen: commit-derived review context is incomplete; review is inconclusive." >&2
   finish_inconclusive "Commit-derived review context is truncated or contains deterministic errors."
+fi
+if [ "$CALIBRATION_CONTROLS" = "true" ]; then
+  CONTROLS_FILE="$(mktemp 2>/dev/null)" || \
+    finish_inconclusive "Secure temporary file creation failed for calibration controls."
+  CONTEXT="$(printf '%s' "$CONTEXT" | python3 "$CONTEXT_PY" \
+    --repo "$REPO_ROOT" --head "$HEAD_SHA" --add-controls "$CONTROLS_FILE" 2>/dev/null)"
+  if [ $? -ne 0 ] || [ -z "$CONTEXT" ]; then
+    echo "evergreen: calibration controls could not be built; review is inconclusive." >&2
+    finish_inconclusive "Calibration controls could not be built from head evidence."
+  fi
 fi
 CONTEXT_FILE="$(mktemp 2>/dev/null)" || \
   finish_inconclusive "Secure temporary file creation failed for the claim inventory."

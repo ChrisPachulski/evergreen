@@ -25,7 +25,8 @@ CITATION_TIMEOUT_SECONDS = 3
 MAX_CITATION_GIT_CALLS = 600
 
 # The model returns one verdict per trusted claim id; it never reports counts. The validator
-# derives the claims object from the verdicts and adds it only to a result that validated.
+# derives the claims object from the verdicts and adds it, and the controls grades when the
+# run carried calibration controls, only to a result that validated.
 RESULT_FIELDS = {
     "schema_version", "status", "base", "head", "verdicts", "findings",
     "unverified", "errors", "runtime",
@@ -37,6 +38,7 @@ FINDING_FIELDS = {
     "code_path", "code_line", "why", "fix_or_flag",
 }
 UNVERIFIED_FIELDS = {"id", "doc_path", "doc_line", "claim", "reason"}
+CONTROL_ANSWERS = {"positive": "drift", "negative": "certified"}
 RUNTIME_FIELDS = {"provider", "model", "cli_version"}
 STATUSES = {"complete", "inconclusive"}
 SEVERITIES = {"high", "med", "low"}
@@ -338,6 +340,17 @@ def _verdicts(value: object, claim_ids: list[str], errors: list[str]) -> dict[st
     return verdicts
 
 
+def _without_controls(value: object, control_ids: set[str]) -> object:
+    """Drop entries a model wrote for a calibration control; a control never cites head."""
+    if not isinstance(value, list):
+        return value
+    return [
+        item for item in value
+        if not (isinstance(item, dict) and isinstance(item.get("id"), str)
+                and item["id"] in control_ids)
+    ]
+
+
 def _bind(
     items: list,
     label: str,
@@ -371,12 +384,16 @@ def validate_result(
     expected_head: str,
     *,
     claims: list[dict],
+    controls: dict[str, str] | None = None,
 ) -> list[str]:
     """Return every protocol or HEAD-citation error in a result envelope.
 
     `claims` is the trusted claim inventory the driver built and supplied to the model, never
-    anything read from model output. A result that validates gains the claims object derived
-    from its verdicts.
+    anything read from model output; `controls` is the trusted calibration answer key, mapping
+    "positive" and "negative" to the control ids mixed into that inventory. A result that
+    validates is normalized in place: control entries are removed, the claims object is derived
+    from the verdicts, and a run with controls gains their grades and turns inconclusive when
+    either control was answered wrong.
     """
     errors: list[str] = []
     citation_cache: dict[str, tuple[list[str] | None, str | None]] = {}
@@ -399,9 +416,15 @@ def validate_result(
 
     claim_ids = [claim["id"] for claim in claims]
     locations = {claim["id"]: (claim["path"], claim["line"]) for claim in claims}
+    if controls is not None and (
+        set(controls) != set(CONTROL_ANSWERS) or not set(controls.values()) <= set(claim_ids)
+    ):
+        errors.append("trusted calibration answer key does not match the claim inventory")
+        return errors
+    control_ids = set((controls or {}).values())
     verdicts = _verdicts(result["verdicts"], claim_ids, errors)
-    findings = result["findings"]
-    unverified = result["unverified"]
+    findings = _without_controls(result["findings"], control_ids)
+    unverified = _without_controls(result["unverified"], control_ids)
     for name, value in (("findings", findings), ("unverified", unverified),
                         ("errors", result["errors"])):
         if not isinstance(value, list):
@@ -424,11 +447,13 @@ def validate_result(
             )
             if citation_state["failure"]:
                 break
+    reviewed = {}
     if verdicts is not None:
+        reviewed = {claim: value for claim, value in verdicts.items() if claim not in control_ids}
         if isinstance(findings, list):
-            _bind(findings, "findings", "drift", verdicts, locations, errors)
+            _bind(findings, "findings", "drift", reviewed, locations, errors)
         if isinstance(unverified, list):
-            _bind(unverified, "unverified", "unverified", verdicts, locations, errors)
+            _bind(unverified, "unverified", "unverified", reviewed, locations, errors)
     if isinstance(result["errors"], list) and len(result["errors"]) <= MAX_ITEMS:
         for index, item in enumerate(result["errors"]):
             _text(item, f"errors[{index}]", errors)
@@ -444,11 +469,27 @@ def validate_result(
         return errors
 
     assert verdicts is not None
-    counted = list(verdicts.values())
+    result["verdicts"] = [item for item in result["verdicts"] if item["id"] not in control_ids]
+    result["findings"] = findings
+    result["unverified"] = unverified
+    counted = list(reviewed.values())
     result["claims"] = {
         "total": len(counted),
         **{name: counted.count(name) for name in sorted(VERDICTS)},
     }
+    if controls is not None:
+        grades = {
+            role: "pass" if verdicts[control] == CONTROL_ANSWERS[role] else "fail"
+            for role, control in sorted(controls.items())
+        }
+        result["controls"] = grades
+        if "fail" in grades.values():
+            result["status"] = "inconclusive"
+            result["errors"] = [
+                *result["errors"],
+                "a calibration control was answered wrong, so the review did not track the "
+                "supplied evidence",
+            ]
     return errors
 
 
@@ -459,11 +500,14 @@ def load_validated_result(
     expected_head: str,
     *,
     claims: list[dict],
+    controls: dict[str, str] | None = None,
 ) -> tuple[dict | None, list[str]]:
     """Parse and validate text, returning no result when either step fails."""
     try:
         result = parse_result(text)
     except ValueError as error:
         return None, [str(error)]
-    errors = validate_result(result, repo, expected_base, expected_head, claims=claims)
+    errors = validate_result(
+        result, repo, expected_base, expected_head, claims=claims, controls=controls
+    )
     return (None, errors) if errors else (result, [])

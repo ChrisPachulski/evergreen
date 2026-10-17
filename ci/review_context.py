@@ -5,7 +5,9 @@ import argparse
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
+import random
 import re
+import secrets
 import sys
 import time
 
@@ -29,6 +31,7 @@ MAX_ERRORS = 100
 TIMEOUT_SECONDS = 3
 CONTEXT_LINES = 2
 CLAIM_ID_HEX = 16
+MAX_CONTROL_TEXT = 500
 EXEMPT_DOC_PARTS = {
     "adr", "adrs", "archive", "archives", "audit", "audits", "plans", "readiness",
     "roadmaps", "specs",
@@ -290,11 +293,79 @@ def build_context(repo: Path, head: str, manifest: dict) -> dict:
     return context
 
 
+def add_controls(context: dict, nonce: str) -> tuple[dict, dict]:
+    """Mix two calibration controls into a complete context's claim list.
+
+    Both controls restate a documentation line the context already carries from the head
+    commit. The negative control quotes its line exactly, so its correct verdict is certified;
+    the positive control attributes another supplied line's text to it, so its correct verdict
+    is drift. Their ids share the claim id format and the whole list is shuffled from the
+    nonce, so neither position nor id marks a control. Return the new context and the
+    trusted answer key, or raise ValueError when the evidence cannot carry both controls.
+    """
+    if context["errors"] or context["truncated"]:
+        raise ValueError("calibration controls need a complete review context")
+    rng = random.Random(nonce)
+    sources = [claim for claim in context["claims"] if len(claim["text"]) <= MAX_CONTROL_TEXT]
+    quotes = sorted({
+        line.strip()
+        for window in context["candidates"]
+        for line in window["excerpt"].split("\n")
+        if line.strip() and len(line) <= MAX_CONTROL_TEXT
+    })
+    if not sources:
+        raise ValueError("no supplied documentation line can carry a calibration control")
+    negative, positive = rng.choice(sources), rng.choice(sources)
+    others = [quote for quote in quotes if quote != positive["text"].strip()]
+    if not others:
+        raise ValueError("no second supplied documentation line can contradict a control")
+
+    def control(role: str, source: dict, quote: str) -> dict:
+        return {
+            "id": claim_id("control", nonce, role),
+            "path": source["path"],
+            "line": source["line"],
+            "text": f"{source['path']} line {source['line']} reads exactly: {quote}",
+        }
+
+    controls = [
+        control("negative", negative, negative["text"]),
+        control("positive", positive, rng.choice(others)),
+    ]
+    claims = [*context["claims"], *controls]
+    if len({claim["id"] for claim in claims}) != len(claims):
+        raise ValueError("calibration control id collides with a claim id")
+    rng.shuffle(claims)
+    mixed = dict(context, claims=claims)
+    if len(encode_context(mixed)) + 1 > MAX_OUTPUT_BYTES:
+        raise ValueError("calibration controls exceed the review context output bound")
+    return mixed, {"negative": controls[0]["id"], "positive": controls[1]["id"]}
+
+
+def _controls_main(args: argparse.Namespace) -> int:
+    try:
+        context = json.load(sys.stdin)
+        if not isinstance(context, dict) or context.get("head") != args.head:
+            raise ValueError("review context is not bound to the requested head")
+        mixed, key = add_controls(context, secrets.token_hex(16))
+        args.add_controls.write_text(json.dumps(key, sort_keys=True), encoding="utf-8")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
+        return 2
+    sys.stdout.buffer.write(encode_context(mixed) + b"\n")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--head", required=True)
+    parser.add_argument(
+        "--add-controls", type=Path, metavar="KEY_FILE",
+        help="read a built context on stdin, mix in calibration controls, write the answer key",
+    )
     args = parser.parse_args()
+    if args.add_controls is not None:
+        return _controls_main(args)
     try:
         manifest = json.load(sys.stdin)
     except (json.JSONDecodeError, RecursionError):

@@ -82,6 +82,13 @@ def render_result(
             "",
         ]
     )
+    if result is not None and "controls" in result:
+        controls = result["controls"]
+        lines.extend([
+            f"controls: positive {_safe(controls['positive'])}, "
+            f"negative {_safe(controls['negative'])}",
+            "",
+        ])
 
     if inconclusive:
         lines.append("⚠️ evergreen: review inconclusive — no clean certification was issued.")
@@ -157,8 +164,10 @@ def render_result(
     return "\n".join(lines)
 
 
-def _trusted_inventory(context_path: Path, head: str) -> list[dict]:
-    """Read the driver's own context; the inventory never comes from model output."""
+def _trusted_inventory(
+    context_path: Path, controls_path: Path | None, head: str
+) -> tuple[list[dict], dict | None]:
+    """Read the driver's own context and answer key; neither ever comes from model output."""
     context = json.loads(context_path.read_text(encoding="utf-8"))
     if not isinstance(context, dict) or context.get("head") != head:
         raise ValueError("review context is not bound to the head commit")
@@ -169,7 +178,14 @@ def _trusted_inventory(context_path: Path, head: str) -> list[dict]:
         for claim in claims
     ):
         raise ValueError("review context has no valid claim inventory")
-    return claims
+    controls = None
+    if controls_path is not None:
+        controls = json.loads(controls_path.read_text(encoding="utf-8"))
+        if not isinstance(controls, dict) or not all(
+            isinstance(value, str) for value in controls.values()
+        ):
+            raise ValueError("calibration answer key is malformed")
+    return claims, controls
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -189,16 +205,20 @@ def main(argv: list[str] | None = None) -> int:
         "--context", type=Path,
         help="trusted review context whose claims list is the claim inventory the model received",
     )
+    parser.add_argument(
+        "--controls", type=Path,
+        help="trusted calibration answer key for the controls mixed into that inventory",
+    )
     args = parser.parse_args(argv)
 
-    claims, errors = [], []
+    claims, controls, errors = [], None, []
     if args.context is not None:
         try:
-            claims = _trusted_inventory(args.context, args.head)
+            claims, controls = _trusted_inventory(args.context, args.controls, args.head)
         except (OSError, ValueError, RecursionError):
             errors.append("trusted review context is unreadable or not bound to the head commit")
     result, validation_errors = load_validated_result(
-        sys.stdin.read(), args.repo, args.base, args.head, claims=claims
+        sys.stdin.read(), args.repo, args.base, args.head, claims=claims, controls=controls
     )
     errors.extend(validation_errors)
     if result is not None and args.context is None and result["status"] == "complete":

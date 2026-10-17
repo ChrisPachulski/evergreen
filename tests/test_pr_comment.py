@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "ci" / "pr_comment.py"
 CLAIM_TEXT = "Run `shipit --workers 4`."
 CLAIM = claim_id("docs/usage.md", "2", CLAIM_TEXT)
+NEGATIVE, POSITIVE = "a" * 16, "b" * 16
 
 
 class PRCommentTests(unittest.TestCase):
@@ -70,14 +71,23 @@ class PRCommentTests(unittest.TestCase):
         envelope.update(updates)
         return envelope
 
-    def write_inventory(self, head=None):
+    def write_inventory(self, controls=False, head=None):
         claims = list(self.claims)
+        if controls:
+            claims += [
+                {"id": NEGATIVE, "path": "docs/usage.md", "line": 2,
+                 "text": "docs/usage.md line 2 reads exactly: " + CLAIM_TEXT},
+                {"id": POSITIVE, "path": "docs/usage.md", "line": 2,
+                 "text": "docs/usage.md line 2 reads exactly: # Usage"},
+            ]
+            key = Path(self.temp_dir.name) / "controls.json"
+            key.write_text(json.dumps({"negative": NEGATIVE, "positive": POSITIVE}), encoding="utf-8")
         context = Path(self.temp_dir.name) / "context.json"
         context.write_text(
             json.dumps({"schema_version": 2, "head": head or self.head, "claims": claims}),
             encoding="utf-8",
         )
-        return ["--context", str(context)]
+        return ["--context", str(context)] + (["--controls", str(key)] if controls else [])
 
     def finding(self, **updates):
         finding = {
@@ -234,6 +244,7 @@ class PRCommentTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("docs still match", result.stdout)
         self.assertIn("| 1 | 0 | 0 | 1 |", result.stdout)
+        self.assertNotIn("controls:", result.stdout)
 
     def test_cli_renders_counts_derived_from_verdicts_not_the_model(self):
         drift = self.run_cli(json.dumps(self.envelope(
@@ -266,6 +277,46 @@ class PRCommentTests(unittest.TestCase):
         self.assertEqual(fallback.returncode, 2)
         self.assertIn("no key", fallback.stdout)
         self.assertIn("| 0 | 0 | 0 | 0 |", fallback.stdout)
+
+    def controlled_envelope(self, negative="certified", positive="drift"):
+        return self.envelope(verdicts=[
+            {"id": POSITIVE, "verdict": positive},
+            {"id": CLAIM, "verdict": "certified"},
+            {"id": NEGATIVE, "verdict": negative},
+        ])
+
+    def test_cli_renders_control_grades_without_synthetic_text(self):
+        passed = self.run_cli(json.dumps(self.controlled_envelope()), self.write_inventory(controls=True))
+        missed = self.run_cli(
+            json.dumps(self.controlled_envelope(positive="certified")), self.write_inventory(controls=True)
+        )
+        flagged = self.run_cli(
+            json.dumps(self.controlled_envelope(negative="drift")), self.write_inventory(controls=True)
+        )
+
+        self.assertEqual(passed.returncode, 0, passed.stdout)
+        self.assertIn("controls: positive pass, negative pass", passed.stdout)
+        self.assertIn("docs still match", passed.stdout)
+        self.assertIn("| 1 | 0 | 0 | 1 |", passed.stdout)
+        for output, line in [(missed, "controls: positive fail, negative pass"),
+                             (flagged, "controls: positive pass, negative fail")]:
+            self.assertEqual(output.returncode, 2)
+            self.assertIn(line, output.stdout)
+            self.assertIn("inconclusive", output.stdout.lower())
+            self.assertNotIn("docs still match", output.stdout)
+        for output in (passed, missed, flagged):
+            self.assertNotIn("reads exactly", output.stdout)
+            self.assertNotIn(POSITIVE, output.stdout)
+            self.assertNotIn(NEGATIVE, output.stdout)
+
+    def test_render_without_controls_has_no_controls_line(self):
+        plain = pr_comment.render_result(self.result(), [])
+        graded = pr_comment.render_result(
+            self.result(controls={"negative": "pass", "positive": "fail"}), []
+        )
+
+        self.assertNotIn("controls:", plain)
+        self.assertEqual(graded.replace("controls: positive fail, negative pass\n\n", ""), plain)
 
     def test_cli_rejects_and_replaces_model_controlled_runtime_identity(self):
         envelope = self.envelope(

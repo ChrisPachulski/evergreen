@@ -67,10 +67,10 @@ class ResultProtocolTests(unittest.TestCase):
     def verdicts(self, verdict, claim=CLAIM):
         return [{"id": claim, "verdict": verdict}]
 
-    def validate(self, result, claims=None):
+    def validate(self, result, claims=None, controls=None):
         return validate_result(
             result, self.repo, self.base, self.head,
-            claims=self.claims if claims is None else claims,
+            claims=self.claims if claims is None else claims, controls=controls,
         )
 
     def finding(self, **updates):
@@ -131,6 +131,7 @@ class ResultProtocolTests(unittest.TestCase):
         )
         self.assertEqual(errors, [])
         self.assertEqual(loaded["claims"], {"total": 1, "certified": 1, "drift": 0, "unverified": 0})
+        self.assertNotIn("controls", loaded)
 
     def test_accepts_findings_and_checks_head_content_not_worktree_content(self):
         finding = self.finding()
@@ -327,6 +328,79 @@ class ResultProtocolTests(unittest.TestCase):
             self.result(verdicts=self.verdicts("drift"), findings=[missing_id]),
             "missing findings[0] fields: id",
         )
+
+    def controlled(self, negative="certified", positive="drift", **updates):
+        controls = {"negative": "a" * 16, "positive": "b" * 16}
+        claims = [
+            *self.claims,
+            {"id": controls["negative"], "path": "docs/usage.md", "line": 2,
+             "text": "docs/usage.md line 2 reads exactly: " + CLAIM_TEXT},
+            {"id": controls["positive"], "path": "docs/usage.md", "line": 2,
+             "text": "docs/usage.md line 2 reads exactly: # Usage"},
+        ]
+        verdicts = [
+            {"id": controls["positive"], "verdict": positive},
+            *self.verdicts("certified"),
+            {"id": controls["negative"], "verdict": negative},
+        ]
+        result = self.result(verdicts=verdicts, **updates)
+        return result, claims, controls
+
+    def test_controls_pass_and_leave_no_trace_in_counts(self):
+        result, claims, controls = self.controlled()
+
+        self.assertEqual(self.validate(result, claims=claims, controls=controls), [])
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["controls"], {"negative": "pass", "positive": "pass"})
+        self.assertEqual(result["claims"], {"total": 1, "certified": 1, "drift": 0, "unverified": 0})
+        self.assertEqual(result["verdicts"], self.verdicts("certified"))
+        self.assertEqual(result["errors"], [])
+
+    def test_a_wrong_control_answer_makes_the_run_inconclusive(self):
+        cases = [
+            ({"positive": "certified"}, {"negative": "pass", "positive": "fail"}),
+            ({"positive": "unverified"}, {"negative": "pass", "positive": "fail"}),
+            ({"negative": "drift"}, {"negative": "fail", "positive": "pass"}),
+            ({"negative": "drift", "positive": "certified"}, {"negative": "fail", "positive": "fail"}),
+        ]
+        for answers, grades in cases:
+            with self.subTest(answers=answers):
+                result, claims, controls = self.controlled(**answers)
+                self.assertEqual(self.validate(result, claims=claims, controls=controls), [])
+                self.assertEqual(result["controls"], grades)
+                self.assertEqual(result["status"], "inconclusive")
+                self.assertTrue(any("calibration control" in error for error in result["errors"]))
+                self.assertFalse(any("reads exactly" in error for error in result["errors"]))
+                self.assertEqual(result["claims"]["total"], 1)
+
+    def test_control_findings_and_unverified_entries_are_stripped_before_citation(self):
+        positive_finding = self.finding(id="b" * 16, claim="docs/usage.md line 2 reads exactly: # Usage",
+                                        code_path="missing/at/head.py")
+        negative_note = self.unverified(id="a" * 16, doc_path="gone.md", claim="anything")
+        result, claims, controls = self.controlled(
+            findings=[positive_finding], unverified=[negative_note]
+        )
+
+        self.assertEqual(self.validate(result, claims=claims, controls=controls), [])
+        self.assertEqual(result["findings"], [])
+        self.assertEqual(result["unverified"], [])
+        self.assertEqual(result["controls"], {"negative": "pass", "positive": "pass"})
+
+    def test_control_ids_still_need_exactly_one_verdict(self):
+        result, claims, controls = self.controlled()
+        result["verdicts"] = [item for item in result["verdicts"] if item["id"] != "b" * 16]
+        self.assertTrue(any(
+            "1 missing claim id(s): " + "b" * 16 in error
+            for error in self.validate(result, claims=claims, controls=controls)
+        ))
+
+    def test_rejects_an_answer_key_that_does_not_match_the_inventory(self):
+        result, claims, _controls = self.controlled()
+        for controls in ({"negative": "a" * 16}, {"negative": "a" * 16, "positive": "c" * 16},
+                         {"negative": "a" * 16, "positive": "b" * 16, "extra": CLAIM}):
+            with self.subTest(controls=controls):
+                errors = self.validate(result, claims=claims, controls=controls)
+                self.assertTrue(any("answer key" in error for error in errors), errors)
 
     def test_rejects_complete_result_with_errors(self):
         self.assert_invalid(self.result(errors=["model timed out"]), "complete result")
