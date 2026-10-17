@@ -73,9 +73,9 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
      and (d) are your call: `eval/flourish/score.py`'s face gate checks presence only — a centered
      hero, an italic line distinct from the first prose, a badge row, prose before any architecture
      heading, and an earned visual (a non-badge image, a fenced ASCII diagram, or a `<details>`
-     block; a mermaid fence is not counted there) — and the mermaid block is its separate diagram
-     gate, where ASCII art fails. A doc with a correct spine but a dead face is not at the gold
-     standard — it is "accurate but ugly," which is exactly flourish's job.
+     block) — and the mermaid block is its separate diagram gate, where ASCII art fails. A doc with
+     a correct spine but a dead face is not at the gold standard — it is "accurate but ugly," which
+     is exactly flourish's job.
    - **Diff against a shipped exemplar.** Open one concrete gold-standard README (this plugin's own,
      or one from the 28-repo survey) and compare the target's shape and voice to it — not only the
      abstract style doc. The exemplar catches what the checklist misses.
@@ -101,10 +101,11 @@ The "why" is auto-derived from code by default. With `--manual`, never invent ra
    from a Claude session the provider differs by construction; a rewrite codex itself made gets no
    cross-provider check here, and the report says so; neither the CLI nor the scorer's judge gate
    checks that inequality. Hand the judge the *rewritten doc and the repository* — never the craft
-   reasoning, never the source doc's ledger. Run `bin/evergreen judge --repo <repo> --doc <rewritten
-   doc>`: it packs the doc and the in-repo files the doc names into one isolated codex call,
-   resolves the model from the host's own codex configuration, and prints a verdict per claim (exit
-   3 when the judge is unavailable or abstains). The report carries its summed block verbatim,
+   reasoning, never the source doc's ledger. Run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" judge --repo <repo> --doc <rewritten doc>`:
+   it packs the doc and the in-repo files the doc names into one isolated codex call, resolves the
+   model from the host's own codex configuration, and prints a verdict per claim (exit 3 when the
+   judge is unavailable or abstains). The report carries its summed block verbatim,
    `judge: <provider> ok — docs K, certified N, drift D, unverified U`; a claim it calls drift goes
    back through the truth trial. If codex is unavailable or the call abstains, the line is `judge:
    abstain — <reason>`, the in-session verification stands on its own, and the rewrite is reported

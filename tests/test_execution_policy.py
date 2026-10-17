@@ -16,6 +16,12 @@ CONTRACT = (
     "If the command, isolation, timeout, dependencies, or test setup cannot be trusted, report inconclusive, never drift.",
     "Classifier output is advisory: allowed still requires the runtime safeguards above.",
 )
+# Prove-by-test's second condition: a failing scratch test blames the doc only when a
+# doc-only implementation passes it. Checked verbatim on every surface that runs the rule.
+OUTCOME = (
+    "A failing scratch test proves drift only when an implementation written from the doc alone, without reading the code, passes the identical test in the same scratch boundary.",
+    "If that doc-only implementation also fails, the test is suspect and proves nothing: the claim falls back to certified by reading or `unverified`, never dropped; if it cannot be written or run safely, the claim is `behavior-asserted — verify manually`.",
+)
 
 
 class ExecutionPolicyTests(unittest.TestCase):
@@ -30,13 +36,30 @@ class ExecutionPolicyTests(unittest.TestCase):
                 with self.subTest(sentence=sentence, surface=surface.name):
                     self.assertIn(sentence, surface.read_text())
 
+    def test_prove_by_test_outcome_rule_is_identical_across_agent_surfaces(self):
+        """CASCADE's second condition: a failed scratch test blames the doc only when a
+        doc-only implementation passes the same test; otherwise the test is suspect."""
+        surfaces = (
+            ROOT / "skills" / "evergreen" / "SKILL.md",
+            ROOT / "skills" / "evergreen" / "DIGEST.md",
+            ROOT / "commands" / "winnow.md",
+        )
+        for sentence in OUTCOME:
+            for surface in surfaces:
+                with self.subTest(sentence=sentence[:40], surface=surface.name):
+                    self.assertIn(sentence, surface.read_text())
+        readme = (ROOT / "README.md").read_text()
+        row = next(line for line in readme.splitlines()
+                   if line.startswith("| `/evergreen:winnow"))
+        self.assertIn("doc alone", row)
+
     def test_agents_md_routes_codex_to_the_digest_instead_of_copying_the_contract(self):
         """AGENTS.md is Codex's every-response surface and a router since 2026-09-05: it names
         DIGEST.md as the binding text and carries no second copy, which would be drift."""
         agents = (ROOT / "AGENTS.md").read_text()
         self.assertIn("skills/evergreen/DIGEST.md", agents)
         self.assertIn("safe prove by test", agents.lower())
-        for sentence in CONTRACT:
+        for sentence in CONTRACT + OUTCOME:
             self.assertNotIn(sentence, agents)
 
     def test_no_module_level_private_helper_is_unreferenced(self):

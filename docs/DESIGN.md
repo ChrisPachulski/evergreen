@@ -134,7 +134,7 @@ not expose semantic findings or verdicts.
 
 No host installer ships. Claude Code and Codex load the plugin through their own plugin
 mechanisms, other agents take `SKILL.md` or `AGENTS.md` directly, and nothing in the repository
-writes outside the checkout.
+writes to a home directory or installs into a host (temporary files and `.git/` state are expected).
 
 ## Evidence-backed completion receipts
 

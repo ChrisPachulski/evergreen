@@ -95,8 +95,10 @@ Disable network access when the host can do so safely; otherwise declare the net
 Refuse privileged, destructive, cleanup, deployment, upload, push, publication, and portal-mutation commands.
 If the command, isolation, timeout, dependencies, or test setup cannot be trusted, report inconclusive, never drift.
 Classifier output is advisory: allowed still requires the runtime safeguards above.
-Only a trusted application-behavior failure of the scratch test proves drift; setup and safety
-failures remain `behavior-asserted — verify manually`.
+A trusted pass certifies by test; setup and safety failures remain `behavior-asserted — verify
+manually`.
+A failing scratch test proves drift only when an implementation written from the doc alone, without reading the code, passes the identical test in the same scratch boundary.
+If that doc-only implementation also fails, the test is suspect and proves nothing: the claim falls back to certified by reading or `unverified`, never dropped; if it cannot be written or run safely, the claim is `behavior-asserted — verify manually`.
 
 Rules:
 - **Prove it or drop it.** Cite the code that makes the doc wrong, or it isn't a finding. Every
@@ -105,9 +107,11 @@ Rules:
   either direction), three independent blind reads (winnow's: defend / prove-wrong /
   hardest-broken), a blind-spot pass, weighed into the verdict, never a veto. Mechanical facts
   (a grep, a reference count) skip the trial. Prove by test is the default where the code runs: a
-  failing test the doc backs is drift; a test that won't run is inconclusive.
-- Every command that judges ends with the second-provider judge: `bin/evergreen judge --repo .
-  --doc <doc> --json` per doc in winnow, seed, and flourish, `--inventory <till.json>` over the
+  failing test the doc backs is drift once a doc-only implementation passes it; a test that won't
+  run is inconclusive.
+- Every command that judges ends with the second-provider judge, `judge --repo . --doc <doc>
+  --json` run from the plugin root as each command spells it out (never a project-relative
+  `bin/evergreen`), per doc in winnow, seed, and flourish, `--inventory <till.json>` over the
   surface in seed and till, `--rubric cultivate` over cultivate's judgment rows; the report carries
   `judge: <provider> ok — docs K, certified N, drift D, unverified U`; an abstention is reported as
   `judge: abstain — <reason>`, never skipped, and leaves the run not clean.

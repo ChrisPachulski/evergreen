@@ -37,9 +37,9 @@ Blindness between reads is not enough when the reader wrote the text; a single m
 someone else's docs is still one opinion; and a grammar that decides what counts as public was
 written by someone who could be wrong. So every command that judges ends with a mandatory judge
 pass on a different provider. Over prose, in winnow, seed, and flourish:
-`bin/evergreen judge --repo . --doc <doc> --json` per doc in scope packs the doc plus the in-repo
-files it names into one isolated codex call, resolves the model from the host's own codex
-configuration (never hardcode a model name here, it goes stale the week the next tier ships), and
+`python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" judge --repo . --doc <doc> --json` per doc in scope
+packs the doc plus the in-repo files it names into one isolated codex call, resolves the model
+from the host's own codex configuration (never hardcode a model name here, it goes stale the week the next tier ships), and
 returns a certified, drift, or unverified verdict per claim. The report carries the summed block
 verbatim, `judge: <provider> ok — docs K, certified N, drift D, unverified U`; a claim the judge calls drift goes back through the trial before the run reports.
 Over the surface inventory, in seed and the till command, `--inventory <till.json>` reads the
@@ -227,7 +227,10 @@ it. Use `classify_command(argv)` only as a conservative helper: `refused` means 
 `inconclusive` means do not run without a separately established safe path. `allowed` recognizes a
 test-driver shape, not available isolation or permission to skip the safeguards.
 
-A trusted test failure caused by application behavior proves drift; a pass certifies by test.
+A trusted pass certifies by test. A trusted test failure caused by application behavior is not yet
+drift, because the scratch test may itself misread the doc (CASCADE's second condition):
+A failing scratch test proves drift only when an implementation written from the doc alone, without reading the code, passes the identical test in the same scratch boundary.
+If that doc-only implementation also fails, the test is suspect and proves nothing: the claim falls back to certified by reading or `unverified`, never dropped; if it cannot be written or run safely, the claim is `behavior-asserted — verify manually`.
 Timeout, compilation/setup failure, missing dependencies, unavailable isolation, or an untrusted
 test is inconclusive and falls back to `behavior-asserted — verify manually`.
 

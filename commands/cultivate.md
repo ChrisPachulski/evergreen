@@ -87,9 +87,10 @@ claim; a mismatch is a finding even when no single file is individually wrong. I
 unavailable, say so and flag visibility as unchecked — never pass it silently.
 
 **G · Test coverage, by assertion.** Enumerate the non-trivial code elements — public functions,
-types, CLI subcommands, hooks — with the command shown (`bin/evergreen till --repo .` for parsed
-languages, a grep otherwise). Classify each as **tested** (cite a test `file:line` whose body
-asserts on it) or **gap**. A test that only calls the element and asserts nothing is a gap. The
+types, CLI subcommands, hooks — with the command shown
+(`python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" till --repo .` for parsed languages, a grep
+otherwise). Classify each as **tested** (cite a test `file:line` whose body asserts on it) or
+**gap**. A test that only calls the element and asserts nothing is a gap. The
 enumerated count equals the classified count; a gap is reported, never fixed here.
 
 ## Prove every verdict — both directions
@@ -127,10 +128,10 @@ the escape hatch. The blocking path keeps its human override regardless.
 
 The mechanical evidence stands; the conclusions drawn from it get a second opinion. Write every
 non-`keep` row — `delete`, `untrack`, `flag`, `unsettled`, and the exposure verdict — with its
-executed evidence to a scratch file outside the repository and run `bin/evergreen judge --repo .
---doc <that file> --rubric cultivate --json`. It reads the named files and rules on whether each
-conclusion follows from the evidence shown. A row it calls drift goes back through the trial before
-it is proposed; carry its trailer verbatim, `judge: <provider> ok — docs K, certified N, drift D,
+executed evidence to a scratch file outside the repository and run
+`python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" judge --repo . --doc <that file> --rubric cultivate --json`.
+It reads the named files and rules on whether each conclusion follows from the evidence shown. A
+row it calls drift goes back through the trial before it is proposed; carry its trailer verbatim, `judge: <provider> ok — docs K, certified N, drift D,
 unverified U`, stage `report`. No codex, or an abstention, is `judge: abstain — <reason>`: reported,
 and the run is not clean. A certification record for the release gate carries the same numbers as a
 `judge` object.
