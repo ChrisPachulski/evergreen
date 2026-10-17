@@ -150,6 +150,7 @@ CJS_EXPORT_RE = re.compile(
     rb"[ \t]*(?P<value>[A-Za-z_$][A-Za-z0-9_$]*)?"
     rb"|=[ \t]*(?:{(?P<body>(?s:[^}]*))}|(?P<whole>[A-Za-z_$][A-Za-z0-9_$]*)))"
 )
+CJS_PAIR_RE = re.compile(rb"([A-Za-z_$][A-Za-z0-9_$]*)[ \t]*:[ \t]*([A-Za-z_$][A-Za-z0-9_$]*)")
 # RHS words that are expression syntax, not the local identifier an export alias vouches for.
 CJS_VALUE_STOPWORDS = frozenset((
     b"function", b"async", b"class", b"new", b"require", b"import", b"await", b"void",
@@ -601,6 +602,22 @@ def _bounded_git_output(repo, arguments):
     return bytes(output), truncated
 
 
+def _require_repository_root(repo):
+    """Refuse a repo argument below the worktree root instead of scanning a narrowed tree.
+
+    `git ls-files` run from a subdirectory silently narrows to that subdirectory -- a clean
+    15/15 till report of a 268-file repository, or an impact run whose docs all vanished.
+    """
+    toplevel, truncated = _bounded_git_output(repo, ["rev-parse", "--show-toplevel"])
+    if toplevel is not None and not truncated:
+        root = Path(os.fsdecode(toplevel.rstrip(b"\n")))
+        if root.resolve() != Path(repo).resolve():
+            raise ValueError(
+                f"repository root is {root}, not {repo}; "
+                "pass the root and name paths relative to it"
+            )
+
+
 def _tracked_living_docs(repo):
     payload, truncated = _bounded_git_output(
         repo, ["ls-files", "-z", "--", "*.md", "*.mdx", "*.rst"],
@@ -757,9 +774,17 @@ def _es_exports(payload):
             aliases[value] = name
         elif name:
             exported.add(name)
-        for group in (body, whole):
-            if group:
-                exported.update(RECEIVER_IDENTIFIER_RE.findall(group))
+        for entry in body.split(b",") if body else ():
+            # `{ publicApi: internal }` publishes the local `internal` as `publicApi`, the
+            # same alias `exports.publicApi = internal` draws; a shorthand key is its own name.
+            pair = CJS_PAIR_RE.fullmatch(entry.strip())
+            if pair and pair.group(2) not in CJS_VALUE_STOPWORDS:
+                exported.add(pair.group(2))
+                aliases[pair.group(2)] = pair.group(1)
+            else:
+                exported.update(RECEIVER_IDENTIFIER_RE.findall(entry))
+        if whole:
+            exported.update(RECEIVER_IDENTIFIER_RE.findall(whole))
     exported.discard(b"as")
     exported.discard(b"default")
     return exported, aliases, module
@@ -974,7 +999,9 @@ def _symbol_match_rank(symbol, payload, spans, match):
         return SYMBOL_RANK_CODE_CONTEXT
     after = payload[match.end():match.end() + 1]
     before = payload[max(match.start() - 2, 0):match.start()]
-    if after == b"(" or after == b"." or before.endswith(b".") or before.endswith(b"::"):
+    # `resolve.attr` is qualified; `must resolve.` is a sentence ending, as `_mentions_path` reads.
+    qualified = after == b"." and RECEIVER_IDENTIFIER_RE.match(payload, match.end() + 1)
+    if after == b"(" or qualified or before.endswith(b".") or before.endswith(b"::"):
         return SYMBOL_RANK_CODE_CONTEXT
     if _is_distinct_identifier(symbol):
         return SYMBOL_RANK_DISTINCT_WORD
@@ -982,8 +1009,12 @@ def _symbol_match_rank(symbol, payload, spans, match):
 
 
 def impact(repo: Path, paths: list[str], evidence: list[Evidence]) -> ImpactReport:
-    """Return additive candidates; maps never suppress and limits retain caller-order prefixes."""
+    """Return additive candidates; maps never suppress and limits retain caller-order prefixes.
+
+    Raises ValueError when `repo` is inside a git worktree but is not its root.
+    """
     repo = Path(repo)
+    _require_repository_root(repo)
     mappings, map_warnings = load_map(repo)
     warnings = _WarningCollector(map_warnings)
     candidates = {}

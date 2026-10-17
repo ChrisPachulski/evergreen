@@ -26,6 +26,7 @@ from .impact import (
     _masked_literals,
     _path,
     _reachable_declarations,
+    _require_repository_root,
 )
 
 MAX_GAP_SOURCE_FILES = 10_000
@@ -201,16 +202,8 @@ def till(repo: Path, scope: tuple[str, ...] = ()) -> TillReport:
     scope_set = set(scope)
     collector = _WarningCollector()
 
-    # `git ls-files` run from a subdirectory silently narrows to that subdirectory -- a clean
-    # 15/15 report of a 268-file repository. A non-root repo argument is an error, never a scan.
-    toplevel, toplevel_truncated = _bounded_git_output(repo, ["rev-parse", "--show-toplevel"])
-    if toplevel is not None and not toplevel_truncated:
-        root = Path(os.fsdecode(toplevel.rstrip(b"\n")))
-        if root.resolve() != repo.resolve():
-            raise ValueError(
-                f"repository root is {root}, not {repo}; "
-                "pass the root and narrow with a scope path instead"
-            )
+    # A non-root repo argument is an error, never a silently narrowed scan.
+    _require_repository_root(repo)
 
     # One deadline covers enumeration and scan alike: per-file shebang probes are filesystem
     # work too, and leaving them outside the budget left the wall time unbounded.
