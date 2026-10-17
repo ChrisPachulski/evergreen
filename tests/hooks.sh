@@ -1072,6 +1072,11 @@ has "$(guard_cmd "git tag evergreen--v9.9.9 HEAD~1")" "checked-out HEAD" \
   "release gate: tagging any other explicit commit is refused"
 has "$(guard_cmd "git add . && git tag evergreen--v9.9.9")" "own Bash call" \
   "release gate: tag creation combined with staging is refused"
+# Rename detection listed only the new side of a move into the records directory.
+git -C "$TMP" mv app.py eval/certifications/app.py; git -C "$TMP" commit -qm "move code into the records"
+has "$(guard_cmd "$release_tag_cmd")" "app.py changed after certified commit" \
+  "release gate: moving code into the records directory is not a records-only change"
+git -C "$TMP" mv eval/certifications/app.py app.py; git -C "$TMP" commit -qm "move it back"
 printf 'later\n' >> "$TMP/app.py"
 git -C "$TMP" add app.py; git -C "$TMP" commit -qm "code after certification"
 has "$(guard_cmd "$release_tag_cmd")" "is stale" \
