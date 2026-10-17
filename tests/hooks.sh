@@ -667,11 +667,44 @@ has "$(guard_cmd "cd $OTHER && git commit -m x")" "secret/credential" \
   "guard: cd into another repository inspects that repository's index"
 empty "$(guard_cmd "cd $TMP && git commit -m x")" \
   "guard: cd into the clean project repository still allows the commit"
+# A wrapper option's operand (`env -u NAME`) or a leading keyword is not the command word, so the
+# assignments after it still redirect the index; `env -C` moves the command like a cd.
 for cmd in "GIT_INDEX_FILE=.git/alt git commit -qm x" "cd \"\$OTHER_DIR\" && git commit -m x" \
-           "git --git-dir=$OTHER/.git commit -m x"; do
+           "git --git-dir=$OTHER/.git commit -m x" \
+           "env -u UNUSED GIT_INDEX_FILE=.git/alt git commit -m x" \
+           "env --unset=UNUSED GIT_INDEX_FILE=.git/alt git commit -m x" \
+           "env - GIT_INDEX_FILE=.git/alt git commit -m x" \
+           "nice -n 5 env GIT_INDEX_FILE=.git/alt git commit -m x" \
+           "if GIT_INDEX_FILE=.git/alt git commit -m x; then :; fi" \
+           "while :; do GIT_INDEX_FILE=.git/alt git commit -m x; done" \
+           "env -C $OTHER git commit -m x"; do
   has "$(guard_cmd "$cmd")" "cannot tell which repository" "guard: $cmd is refused, not inspected elsewhere"
   eq "$(guard_rc "$cmd")" "2" "guard: $cmd exits 2"
 done
+# Only a cd in command position changes directory; a commit message reading `cd` or `popd` does not.
+for cmd in "git commit -m popd" "git commit -m cd -m x -m y" "git commit -m pushd"; do
+  empty "$(guard_cmd "$cmd")" "guard: $cmd is not a directory change"
+  eq "$(guard_rc "$cmd")" "0" "guard: $cmd exits 0"
+done
+has "$(guard_cmd "if cd $OTHER; then git commit -m x; fi")" "secret/credential" \
+  "guard: a cd opening an if condition still counts"
+# A -C resolves against the directory in effect where it runs: after `cd / &&` a relative -C names
+# an absolute path, not one under the project root. A cd that may be skipped resolves both ways.
+empty "$(guard_cmd "cd / && git -C ${TMP#/} commit -m x")" \
+  "guard: a relative -C after cd / && resolves from /"
+has "$(guard_cmd "cd / && git -C ${OTHER#/} commit -m x")" "secret/credential" \
+  "guard: a relative -C after cd / && inspects the repository it reaches"
+for cmd in "true || cd / && git -C ${OTHER#/} commit -m x" "(cd /); git -C ${OTHER#/} commit -m x" \
+           "echo \";\" cd / && git -C ${OTHER#/} commit -m x"; do
+  has "$(guard_cmd "$cmd")" "cannot tell which repository" "guard: $cmd resolves from both directories"
+done
+# Resolving every -C against every cd emitted 40,401 lines for 200 of each; the count is bounded.
+expansion_cmd=""
+for i in $(seq 1 200); do expansion_cmd="$expansion_cmd cd /r$i; git -C c$i commit -m x;"; done
+eq "$(guard_payload "$expansion_cmd" | "$PYTHON3" "$HOOKS/evergreen-guard-command.py" | wc -l | tr -d ' ')" "1" \
+  "guard: 200 cds and 200 -C chains classify in one line"
+has "$(guard_cmd "$expansion_cmd")" "cannot tell which repository" \
+  "guard: more directories than the bound are refused"
 # A substitution inside a -C or cd operand computes the whole path, however literal the rest of the
 # word looks; reading the literal prefix inspected a directory the commit never runs in. A
 # repository copied or moved earlier in the same command does not exist yet when the hook runs.
@@ -857,6 +890,10 @@ eq "$(printf '%s' "$wrapped_compound_payload" | PATH="$TMP/no-python:$PATH" bash
 quoted_pathspec_payload="$(guard_payload "git add -- \"my commit log.txt\"")"
 empty "$(printf '%s' "$quoted_pathspec_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
   "guard: unavailable Python quoted pathspec stays a plain add"
+# A spaced heredoc operator owns its delimiter word; it is not a positional pathspec.
+spaced_heredoc_payload="$(guard_payload $'git commit -F - << \'MSG\'\nsubject\nMSG')"
+empty "$(printf '%s' "$spaced_heredoc_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
+  "guard: unavailable Python spaced heredoc delimiter is not a pathspec"
 regression_message_payload="$(guard_payload "git -C $TMP commit -m \"feat(bench): add resolver-v2 split manifest and deterministic split generator\"")"
 empty "$(printf '%s' "$regression_message_payload" | PATH="$TMP/no-python:$PATH" bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
   "guard: unavailable Python quoted message with intent word is not blocked"
@@ -1154,6 +1191,8 @@ empty "$(guard_cmd "$release_tag_cmd")" \
 eq "$(guard_rc "$release_tag_cmd")" "0" "release gate: allowed tag exits 0"
 empty "$(guard_cmd "git tag -a evergreen--v9.9.9 -m 'release notes'")" \
   "release gate: annotated creation passes the same gate"
+empty "$(guard_cmd "git tag -a evergreen--v9.9.9 -m popd")" \
+  "release gate: a message reading popd is not a directory change"
 empty "$(guard_cmd "git tag evergreen--v9.9.9 HEAD")" \
   "release gate: an explicit literal HEAD is the checked-out HEAD"
 has "$(guard_cmd "git tag evergreen--v9.9.9 HEAD~1")" "checked-out HEAD" \

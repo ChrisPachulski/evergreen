@@ -122,7 +122,18 @@ STDIN_WRITERS = {"cat", "tee", "dd", "base64"}
 # Words that run their argument or their stdin as shell code, whatever else the line looks like.
 SOURCE_WORDS = {".", "source", "eval"}
 # Words that run the command after them, so the word that decides the line is further right.
-COMMAND_WRAPPERS = {"env", "command", "exec", "nohup", "nice", "stdbuf"}
+COMMAND_WRAPPERS = {"env", "command", "exec", "nohup", "nice", "stdbuf", "builtin", "time", "eval"}
+# Each wrapper's options that take an operand: (short letters, long names). The operand is skipped
+# with its option, or `env -u NAME` read NAME as the command and hid every assignment after it.
+WRAPPER_VALUE_OPTIONS = {
+    "env": ("uCSPLU", ("--unset", "--chdir", "--split-string")),
+    "nice": ("n", ("--adjustment",)),
+    "stdbuf": ("ioe", ("--input", "--output", "--error")),
+    "exec": ("a", ()),
+}
+# Reserved words that may open a command position: the command they introduce is further right,
+# so `if GIT_DIR=x git commit` and `do cd x` are read past them.
+CONTROL_KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!"}
 ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 # Every scan of a nested body (eval/-c string, heredoc, substitution) is one level deeper. Past this
 # many levels, or this many bodies in all, the command is refused outright: an uncapped walk let
@@ -148,6 +159,14 @@ AMBIGUOUS_WORD_RE = re.compile(r"#|case(?=[\s;&|()]|$)")
 # Each directory change is its own fact, however often the same operand repeats: `cd child && cd
 # child` lands in child/child, and folding the two into one set member hid the second change.
 CHANGE_SERIAL = itertools.count()
+# Directories one command may run git in, past which it is refused rather than inspected: each costs
+# the hook an index read inside its timeout, and resolving every `-C` against every `cd` once let 1600
+# of each print 2.5 million lines.
+MAX_TARGETS = 32
+# Shell operators, and the characters that make them up. shlex glues adjacent operator characters
+# into one token (`);`, `()`), which is split back into its operators before any is read.
+OPERATOR_CHARACTERS = ";&|(){}"
+OPERATOR_RE = re.compile(r";;&|;;|;&|\|&|&&|\|\||[;&|(){}]")
 
 
 class AmbiguousSubstitution(Exception):
@@ -204,12 +223,39 @@ def _feeds_a_shell(line: str) -> bool:
     return False
 
 
-def _command_word(segment: "list[str]") -> "tuple[int, str] | None":
-    """(index, token) of the word a segment actually runs, past assignments, options, wrappers."""
+def _command_word(
+    segment: "list[str]", options: "list[tuple[str, str]] | None" = None,
+) -> "tuple[int, str] | None":
+    """(index, token) of the word a segment actually runs, past keywords, assignments, wrappers,
+    and wrapper options with their operands. Each wrapper option is appended to `options` as
+    (wrapper, letter or long name)."""
+    wrapper = ""
+    skip = False
     for index, token in enumerate(segment):
-        if token.startswith("-") and token != "-":
+        if skip:
+            skip = False
             continue
-        if ASSIGNMENT_RE.match(token) or _basename(token) in COMMAND_WRAPPERS:
+        if token.startswith("-") and (token != "-" or wrapper == "env"):
+            letters, names = WRAPPER_VALUE_OPTIONS.get(wrapper, ("", ()))
+            if token.startswith("--"):
+                name = token.partition("=")[0]
+                found = [option for option in names if name != "--" and option.startswith(name)]
+                if options is not None:
+                    options.append((wrapper, found[0] if len(found) == 1 else name))
+                # getopt accepts any unambiguous prefix of a long option, `--uns NAME` included.
+                skip = bool(found) and "=" not in token
+                continue
+            for position, letter in enumerate(token[1:], start=2):
+                if options is not None:
+                    options.append((wrapper, letter))
+                if letter in letters:
+                    skip = position == len(token)
+                    break
+            continue
+        if token in CONTROL_KEYWORDS or ASSIGNMENT_RE.match(token):
+            continue
+        if _basename(token) in COMMAND_WRAPPERS:
+            wrapper = _basename(token)
             continue
         return index, token
     return None
@@ -602,53 +648,116 @@ def _git_location(options: "list[str]") -> set:
     return {("C", chain)} if chain else set()
 
 
-def _location_facts(marked: "list[str]") -> set:
-    """Directory changes and git-location environment assignments one command segment makes.
+def _location_facts(segment: "list[str]") -> "tuple[bool, tuple[int, str] | None]":
+    """(unresolvable, the command word as `_command_word` finds it) for one command segment.
 
-    The segment arrives with its COMPUTED marks, which only the path operands keep."""
-    segment = [token.replace(COMPUTED, "") for token in marked]
-    facts = set()
-    found = _command_word(segment)
+    Unresolvable is a git-location environment assignment, or `env -C`, which moves the command
+    somewhere the hook does not follow. Only the command word can change directory: a `cd` that is
+    an option value (`git commit -m cd`) changes nothing, while `if cd x; then` still counts."""
+    options: "list[tuple[str, str]]" = []
+    found = _command_word(segment, options)
     assigning = segment if found is None or found[1] in DECLARATION_WORDS else segment[:found[0]]
-    if any(
+    unresolvable = ("env", "C") in options or ("env", "--chdir") in options or any(
         ASSIGNMENT_RE.match(token) and token.split("=", 1)[0] in GIT_LOCATION_ENV
         for token in assigning
-    ):
-        facts.add("unresolved-target")
-    # Like `git`, any `cd` word counts, not only the segment head (`if cd x; then`), so over-reading
-    # can only add a directory to inspect.
-    for index, word in enumerate(segment):
-        if word in DIRECTORY_CHANGERS:
-            facts.add(_directory_change(marked[index + 1:], word))
-    return facts
+    )
+    return unresolvable, found
+
+
+def _split_operators(tokens: "list[str]") -> "list[str]":
+    """The tokens with each glued run of operator characters (`);`, `()`) split into its operators."""
+    split: "list[str]" = []
+    for token in tokens:
+        bare = token.replace(COMPUTED, "")
+        operator = bool(bare) and not bare.strip(OPERATOR_CHARACTERS) and token == bare
+        split.extend(OPERATOR_RE.findall(token) if operator else [token])
+    return split
+
+
+def _join(base: str, path: str) -> str:
+    """path resolved from base the way `cd` would, with an empty path meaning base itself."""
+    return os.path.join(base, path) if path else base
+
+
+def _is_operator(token: str) -> bool:
+    return bool(token) and not token.strip(OPERATOR_CHARACTERS)
+
+
+def _quoted_operator(text: str, tokens: "list[str]") -> bool:
+    """True when some operator token came from quoted or escaped text (`echo ";"`, `\\;`).
+
+    shlex removes the quotes, so such a token reads exactly like the operator. Counting the operator
+    characters the shell itself sees tells the two apart: any surplus among the tokens is quoted."""
+    seen = 0
+    quote = None
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if quote is not None:
+            if character == quote:
+                quote = None
+            elif character == "\\" and quote == '"':
+                index += 1
+        elif character == "\\":
+            index += 1
+        elif character in "'\"":
+            quote = character
+        elif character in OPERATOR_CHARACTERS:
+            seen += 1
+        index += 1
+    return sum(len(token) for token in tokens if _is_operator(token)) != seen
 
 
 def collect_intents(
     command: str, depth: int = 0, captured: bool = False, scans: "list[int] | None" = None,
 ) -> set:
     """add/commit intents found in git-subcommand position, recursing into eval, sh -c, heredoc,
-    and substitution bodies. Location facts (`cd`, `-C`, GIT_DIR-style assignments) ride along.
-    Past MAX_NESTING levels or MAX_SCANS bodies the answer is "too-deep", which refuses the call."""
+    and substitution bodies. Location facts ride along: ("cd", path, serial) per directory change,
+    ("at", directory) per directory git may run in, relative to where this text starts, and
+    "unresolved-target" for one the hook cannot follow. Past MAX_NESTING levels or MAX_SCANS bodies
+    the answer is "too-deep", which refuses the call.
+
+    Directories are tracked in order. `places` holds every directory the text may be in by now,
+    the root included: a cd can be skipped (`false && cd x`), fail, or run in a subshell, so it only
+    ever adds to them. The exception is an `&&` chain a cd heads, whose later commands run only if
+    the cd did: `cd / && git -C srv/repo commit` runs in /srv/repo, never in root/srv/repo. A body
+    lifted out of the text may run wherever the text does, so its relative directories are resolved
+    against every place, and the places it may move to ("moved", through `eval` or a function it
+    defines) are places of this text from the start. A chain lasts only through git commands: any
+    other command (`eval "cd b"`, a function) may move it."""
     scans = [MAX_SCANS] if scans is None else scans
     scans[0] -= 1
     if depth > MAX_NESTING or scans[0] < 0:
         return {"too-deep"}
     intents = set()
     normalized, heredoc_bodies, substitutions = prepare(command, captured)
-    marked = shell_tokens(normalized)
+    marked = _split_operators(shell_tokens(normalized))
     tokens = [token.replace(COMPUTED, "") for token in marked]
+    nested = set()
     for index in _shell_body_indices(tokens):
-        intents |= collect_intents(marked[index], depth + 1, scans=scans)
+        nested |= collect_intents(marked[index], depth + 1, scans=scans)
     for body in heredoc_bodies:
-        intents |= collect_intents(body, depth + 1, scans=scans)
+        nested |= collect_intents(body, depth + 1, scans=scans)
     for body in substitutions:
-        intents |= collect_intents(body, depth + 1, True, scans)
+        nested |= collect_intents(body, depth + 1, True, scans)
+    loose = _quoted_operator(normalized, tokens)
+    places = {""} | {fact[1] for fact in nested if isinstance(fact, tuple) and fact[0] == "moved"}
+    targets = set(places)
+    chained: "set[str] | None" = None
+    overflow = False
+    before = ";"
     start = 0
     for end, token in enumerate(tokens + [";"]):
-        if token not in CONTROL_TOKENS:
+        if not _is_operator(token):
             continue
         segment, marked_segment, start = tokens[start:end], marked[start:end], end + 1
-        intents |= _location_facts(marked_segment)
+        bases = places if chained is None else chained
+        unresolvable, command_word = _location_facts(segment)
+        changer = None
+        if command_word is not None and command_word[1] in DIRECTORY_CHANGERS:
+            changer = command_word[0]
+        if unresolvable:
+            intents.add("unresolved-target")
         # Every `git` token in the segment is inspected, not only the segment head: wrappers
         # (command, env, function bodies) and even `echo git add` stay conservatively covered.
         # Basename matching keeps path-qualified /usr/bin/git covered as well.
@@ -658,15 +767,55 @@ def collect_intents(
                 if found is None:
                     continue
                 subcommand = segment[found]
+                locate = subcommand in ("commit", "add")
                 if subcommand == "commit" or subcommand in STAGING_SUBCOMMANDS:
                     intents.add(subcommand)
                 elif subcommand == "tag":
                     tag_intent = _release_tag_intent(segment, found)
                     if tag_intent:
                         intents.add(tag_intent)
-                        intents |= _git_location(marked_segment[index + 1:found])
-                if subcommand in ("commit", "add"):
-                    intents |= _git_location(marked_segment[index + 1:found])
+                        locate = True
+                location = _git_location(marked_segment[index + 1:found]) if locate else set()
+                if "unresolved-target" in location:
+                    intents.add("unresolved-target")
+                elif locate and not overflow:
+                    chain = next((fact[1] for fact in location), "")
+                    targets |= {_join(base, chain) for base in bases}
+        heads_chain = False
+        if changer is not None:
+            chained = None
+            change = _directory_change(marked_segment[changer + 1:], segment[changer])
+            if change == "unresolved-target":
+                intents.add(change)
+            elif not overflow:
+                intents.add(change)
+                landed = {_join(base, change[1]) for base in bases}
+                places |= landed
+                targets |= landed
+                # Only a cd that opens an and-or list (or extends a chain) and is followed by `&&`
+                # decides where the chain runs: after `||` or in a pipeline it may never take effect.
+                heads_chain = token == "&&" and not loose and before not in ("||", "|", "|&") and (
+                    "!" not in segment[:changer]
+                )
+                chained = landed if heads_chain else None
+        keeps = not segment or (command_word is not None and _basename(command_word[1]) == "git")
+        if not heads_chain and not (keeps and token in ("&&", "(", "{")):
+            chained = None
+        before = token
+        overflow = overflow or len(places) > MAX_TARGETS or len(targets) > MAX_TARGETS
+    for fact in nested:
+        if isinstance(fact, tuple) and fact[0] == "moved":
+            continue
+        if not (isinstance(fact, tuple) and fact[0] == "at"):
+            intents.add(fact)
+        elif not overflow:
+            targets |= {_join(place, fact[1]) for place in places}
+            overflow = len(targets) > MAX_TARGETS
+    if overflow:
+        intents.add("unresolved-target")
+    else:
+        intents |= {("at", target) for target in targets}
+        intents |= {("moved", place) for place in places if place}
     return intents
 
 
@@ -794,12 +943,10 @@ def main() -> int:
     has_commit = "commit" in intents
     release = intents & {"release-tag", "release-tag-elsewhere"}
     changes = [fact[1] for fact in intents if isinstance(fact, tuple) and fact[0] == "cd"]
-    directories = set(changes)
-    chains = {fact[1] for fact in intents if isinstance(fact, tuple) and fact[0] == "C"}
-    # Order is lost in the set, so several directory changes resolve only when each is absolute:
-    # then wherever the commit runs is one of them. `cd a && cd b` could be a/b, and `cd a && cd a`
-    # is a/a, so both are refused.
-    unresolved = "unresolved-target" in intents or (
+    targets = {fact[1] for fact in intents if isinstance(fact, tuple) and fact[0] == "at"} - {""}
+    # Several directory changes resolve only when each is absolute: a skipped or failed relative cd
+    # moves every later one, so `cd a || cd b` could run in a, b, or a/b, and is refused.
+    unresolved = "unresolved-target" in intents or len(targets) > MAX_TARGETS or (
         len(changes) > 1 and not all(os.path.isabs(path) for path in changes)
     )
     if "too-deep" in intents:
@@ -824,10 +971,8 @@ def main() -> int:
         print("none")
     else:
         # Every directory the command may run git in, beyond the hook's own root, one per line:
-        # each literal `cd`, and each `-C` chain resolved from the root and from every `cd`.
-        bases = [""] + sorted(directories)
-        extra = directories | {os.path.join(base, chain) for base in bases for chain in chains}
-        print("\n".join(["release-tag" if release else "git", *sorted(extra)]))
+        # each literal `cd`, and each `-C` chain resolved from the directories in effect where it runs.
+        print("\n".join(["release-tag" if release else "git", *sorted(targets)]))
     return 0
 
 

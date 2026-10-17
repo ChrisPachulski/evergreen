@@ -87,7 +87,8 @@ fallback_commit_has_pathspec() {
       --*) ;;
       -*[mFCc]) value=true ;;
       -*) ;;
-      '>'|'>>'|'<'|'>|'|[0-9]'>'|[0-9]'>>'|[0-9]'<') value=true ;;
+      # A spaced heredoc or here-string operator owns its delimiter word, as `>` owns its target.
+      '>'|'>>'|'<'|'>|'|'<>'|'<<'|'<<-'|'<<<'|[0-9]'>'|[0-9]'>>'|[0-9]'<'|[0-9]'<>'|[0-9]'<<'|[0-9]'<<-'|[0-9]'<<<') value=true ;;
       *'>'*|*'<'*) ;;
       *) return 0 ;;
     esac
@@ -166,7 +167,7 @@ fi
 # certify the wrong set of files, so a location the classifier cannot follow is refused, and so is
 # one it names that does not exist yet (created, copied, or moved earlier in the same command).
 refuse_unresolved() {
-  echo "evergreen guard: cannot tell which repository or index this commit or release tag uses (a cd or git -C to a computed path or one that does not exist yet, more than one relative cd, GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR, --git-dir/--work-tree, or a substitution nested too deep or too ambiguous to read); run it with literal paths and the default index, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
+  echo "evergreen guard: cannot tell which repository or index this commit or release tag uses (a cd or git -C to a computed path or one that does not exist yet, more than one relative cd, more directories than the guard inspects, GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR, --git-dir/--work-tree, or a substitution nested too deep or too ambiguous to read); run it with literal paths and the default index, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
   exit 2
 }
 [ "$intent" = "unresolved" ] && refuse_unresolved
