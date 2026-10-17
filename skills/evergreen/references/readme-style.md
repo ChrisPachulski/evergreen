@@ -40,9 +40,9 @@ Changelog / version history · roadmaps / planning notes · aspirational "coming
 internal TODOs · walls of unbroken prose · full API reference inline (always linked out) ·
 feature-comparison matrices · benchmark dumps (a single purposeful chart is the rare exception).
 
-> These overlap exactly with what `cultivate` hunts at the repo level. If flourish meets a
-> README stuffed with changelog/planning, it *cuts* — moving that content out, not prettying it
-> up in place.
+> Planning notes are also what `cultivate` hunts at the repo level (stray `.planning` files). If
+> flourish meets a README stuffed with changelog/planning, it *cuts* — moving that content out, not
+> prettying it up in place.
 
 **One scope caveat that outranks the list:** it describes what the *visitor-facing top* never
 carries. "Full API reference inline" is banished to a docs site **when the project has one**. The
@@ -67,8 +67,8 @@ sting, a metaphor, a stakes-raising scenario — then land the value prop. This 
 README people remember from one they skim, and it's what this repo's own README does: a tagline
 that's a dare ("The docs said yes. The code said no. Only one of them gets to be true."), then a
 paragraph that dramatizes the pain ("Your README was true the day you wrote it. Then a flag got
-renamed, a file moved… the docs stayed exactly where they were") *before* it ever says what evergreen
-is. A tool with a sharp point of view should reach for this, not the bare formula.
+renamed, a file moved… the docs stayed exactly where they were") *before* the next paragraph says
+what evergreen is. A tool with a sharp point of view should reach for this, not the bare formula.
 
 The formula is the floor you must clear; the hook is the ceiling you should aim for when the product
 has a point of view. Never open with install steps, a TOC, or "Welcome to" — line one either says
@@ -87,7 +87,7 @@ likely to ship if it stops at the skeleton. Earn a voice:
 - **Personality in the seams** — section intros and FAQ answers are where voice breathes. evergreen's
   FAQ: "Why 'evergreen'? A doc that stays true as the code grows is evergreen. Yours aren't. Yet."
 - **A `show it working` beat** — for a dev tool with no screenshot, the demo *is* the proof: a
-  before/after or a real slice of the tool's own output (evergreen's rendered `evergreen:` finding
+  before/after or a real slice of the tool's own output (evergreen's `evergreen [light]:` finding
   block) carries more than any prose claim. Show it doing the thing.
 - **Match and amplify the project's register** — read the existing voice; a playful project stays
   playful, a serious one stays crisp. **Never sand an evocative doc down to neutral** to fit the
@@ -108,7 +108,7 @@ Voice is never a license to fabricate: every claim the voice makes still faces t
 
 ## Visuals (earned, never decorative)
 
-Hero (identity) + at most one screenshot (proof, placed right after the feature list, only if
+Hero (identity) + at most one screenshot (proof, placed right after the quick start, only if
 the product has a visual surface) + **one "how it works" diagram**. Never a gallery.
 Dev-tool READMEs often ship **zero** *images* — their demo is a code block, not a screenshot. That
 is not licence to skip the diagram: a diagram is text.
@@ -124,8 +124,8 @@ verify pass can read. Horizontal layouts fight the page: a README is read in a n
 already scrolls.
 
 Full contract — ELK directive, shape vocabulary, dark-first palette, syntax traps, and the render
-check — in [`mermaid-diagrams.md`](mermaid-diagrams.md). It is enforced by `hard-goals/flourish.md`
-goal 10.
+check — in [`mermaid-diagrams.md`](mermaid-diagrams.md). `hard-goals/flourish.md` goal 10 enforces
+its countable part: a mermaid fence, a vertical declaration, no `LR`, no box-drawing characters.
 
 ## Badges
 

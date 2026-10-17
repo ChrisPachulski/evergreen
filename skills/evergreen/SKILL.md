@@ -46,8 +46,8 @@ Over the surface inventory, in seed and the till command, `--inventory <till.jso
 source files and rules on every row, listing what the grammar missed. Over cultivate's delete,
 untrack, flag, unsettled, and exposure rows, `--rubric cultivate` rules on whether each conclusion
 follows from the evidence shown. It does *not* bind judgments made before anything is written
-(seed's worthiness) or judgments
-with no external arbiter (flourish's craft floors, graded mechanically by a frozen fixture), and
+(seed's worthiness) or judgments with no external arbiter (flourish's craft trial, whose outside
+check is a scorer grading its countable floors against a frozen fixture), and
 it never runs per turn. No codex, or an abstention: report `judge: abstain — <reason>` and mark
 the run not clean, because a silent fallback claims a cross-provider check that did not happen.
 

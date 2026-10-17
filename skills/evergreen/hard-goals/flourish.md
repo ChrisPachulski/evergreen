@@ -72,7 +72,7 @@ If a goal's check needs the AI's opinion to pass, it isn't hard — rewrite it u
    EOF
    ```
    Pass = ≤ 2,500 words, `readme-style.md`'s own onboarding ceiling. `<details>` content is
-   rent-free and excluded, per `readme-style.md`'s "the budgets measure the open page, not the
+   rent-free and excluded, per `readme-style.md`'s "the budgets above measure the open page, not the
    collapsed reference beneath it." Over the bound, the fix is goals 1–3's demotion path —
    `<details>` or a linked file — never deletion.
 

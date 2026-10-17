@@ -88,9 +88,10 @@ supplied evidence for the controls. It does not show that the reviewer reviewed 
 Every repository path in a manifest entry or result citation passes one shared gate before the
 trust layer will carry it: `is_protocol_path` (`ci/path_policy.py`). A citable path is a non-empty
 string of at most 1024 characters, relative (neither POSIX- nor Windows-absolute), forward-slash
-only, already in normalized POSIX form, with no `.` or `..` segments and no newlines, carriage
-returns, NULs, or Unicode surrogates. A path failing any rule is rejected as "not citable by the
-result protocol"; the change manifest and review-context citations enforce the same policy.
+only, already in normalized POSIX form, with no `.` or `..` segments (the bare path `.` has none
+and passes) and no newlines, carriage returns, NULs, or Unicode surrogates. A path failing any
+rule is rejected as not citable by the result protocol; the change manifest and review-context
+citations enforce the same policy.
 
 POSIX timeouts terminate the pinned CLI's inherited process group. Portable standard-library code
 cannot contain a deliberately detached descendant; runner-level OS isolation owns that boundary.
@@ -100,7 +101,7 @@ creating such a descendant.
 Command execution passes through a shared gate as well: `run_bounded` (`ci/bounded_process.py`),
 which runs one command under wall-clock, output, process-group, and environment bounds. With
 `clean_env` the child's environment is rebuilt from an allowlist — `PATH`, `HOME`, `TMPDIR`,
-`LANG`, `LC_ALL`, plus caller-named keeps — rather than inherited, and stderr is discarded.
+`LANG`, `LC_ALL`, plus caller-named keeps — rather than inherited; stderr is always discarded.
 Its three bounded failures return instead of raising: a timeout returns exit 124, an output
 overflow 125, a command that cannot start 126, and captured output is dropped on failure unless `preserve_partial` keeps the truncated
 prefix. The process-group termination described above is enforced here.
@@ -148,8 +149,9 @@ Their human and JSON forms expose ranked candidates, reasons or scan counts, and
 not expose semantic findings or verdicts.
 
 No host installer ships. Claude Code and Codex load the plugin through their own plugin
-mechanisms, other agents take `SKILL.md` or `AGENTS.md` directly, and nothing in the repository
-writes to a home directory or installs into a host (temporary files and `.git/` state are expected).
+mechanisms, other agents take `SKILL.md` or `AGENTS.md` directly, and nothing the plugin, its
+hooks, or `bin/evergreen` runs writes to a home directory or installs into a host (temporary files
+and `.git/` state are expected).
 
 ## Evidence-backed completion receipts
 
@@ -182,7 +184,7 @@ publication; without direct authority, external release state remains unverified
 The receipt command is a bounded, deterministic, read-only architecture seam. It reads local Git
 metadata and, optionally, one validated in-repository benchmark-publication manifest; it writes no
 source-repository, index, ref, configuration, or receipt file. Status collection uses disposable
-synthetic Git metadata in the operating system's temporary directory and removes it afterward. It performs no network request and never
+synthetic Git metadata under `/tmp` or `/var/tmp`, outside the repository, and removes it afterward. It performs no network request and never
 queries GitHub, a registry, a marketplace, a store, a deployment provider, or a benchmark provider.
 No timestamp is emitted, so unchanged input has stable JSON. The human renderer presents the same
 repository, release, and benchmark fields without adding interpretation. Local tags remain local
@@ -340,9 +342,10 @@ receipts, both read from the HEAD tree and never from the working directory:
 `eval/certifications/cultivate.json`, the same shape without claim counts (`pass: "cultivate"`,
 `date`, `commit`, and the same `judge` object), because cultivate never reports "clean"; its record
 asserts cadence and a judged report, not cleanliness.
-Each record's commit must be HEAD itself or an ancestor of HEAD from which nothing outside
-`eval/certifications/` has since changed, so committing the records is the only history permitted
-between running a pass and tagging. The ritual is therefore: commit the release work, run the winnow
+Each record's commit must be HEAD itself or an ancestor of HEAD whose tree differs from HEAD's
+only under `eval/certifications/` (the gate compares the two trees, not the commits between), so
+committing the records is the only net change permitted between running a pass and tagging. The
+ritual is therefore: commit the release work, run the winnow
 and cultivate passes at that commit, write each record naming it, commit the records, then tag. Tag
 deletion, listing, and verification pass through unclassified; a creation naming an explicit
 committish other than `HEAD`, a creation combined with `git add`/`git commit` in one call, and a run
@@ -364,10 +367,9 @@ result identity fixed before execution. Thresholds may then be proposed for a fu
 not be retrofitted to turn an observed result into an A.
 
 The unfinished executable-oracle certification proposal is deferred and is not an active release
-gate. Its useful in-project mutation pilot and pinned source catalogs are research inputs, not
-evidence that a corpus, five-language run, A grade, or best-in-class result exists. A future version
-is chosen from shipped product scope and completed evidence, not from the amount of certification
-machinery written.
+gate. Its pinned source catalogs are research inputs, not evidence that a corpus, five-language
+run, A grade, or best-in-class result exists. A future version is chosen from shipped product scope
+and completed evidence, not from the amount of certification machinery written.
 
 The decision package under `eval/bench/public/0.4.0` and `eval/bench/results-0.4.0.md` are a separate,
 immutable evaluated-release identity. A later source-version bump must not rename them, inherit

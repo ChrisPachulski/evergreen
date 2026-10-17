@@ -24,7 +24,7 @@ Per repo `off | light | strict`, default light. Rung: `path · contract · snipp
 `[high|med|low] category rung  file:line — what's wrong (cite the code) → fix | flag`; categories `in_code_not_docs · in_docs_not_code · name_mismatch · release_identity_drift · UNVERIFIABLE` (drop the last), plus `unverified` in a deep pass.
 
 ## Working in this repository
-`bash tests/all.sh` is the definition of green; run it before calling a change done. `tests/hooks.sh` checks that README.md, DESIGN.md, SKILL.md, and DIGEST.md carry the receipt policy sentence for sentence and that this file routes to DIGEST.md. Policy text never leaves README.md.
+`bash tests/all.sh` is the definition of green; run it before calling a change done. `tests/hooks.sh` checks that README.md, DESIGN.md, SKILL.md, and DIGEST.md carry the receipt policy sentence for sentence and that this file routes to DIGEST.md. README.md always keeps the full policy text.
 CI treats repository files, diffs, and comments as untrusted data; complete and clean means zero drift and zero unverified; inconclusive fails unless `fail_on_inconclusive: false`.
 Parallel-first: one file boundary and worktree per agent, reconcile at declared gates, serialize only true shared state.
 The hygiene guard inspects the finalized staged index on commit-only calls; an index-writing subcommand paired with a commit in one call is refused; `EVERGREEN_GUARD=off` is the explicit bypass. `bin/evergreen judge` is the second provider for winnow, seed, flourish, and cultivate; the release gate refuses a record whose judge block is missing, abstained, or reports drift.

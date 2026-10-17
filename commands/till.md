@@ -19,6 +19,6 @@ deliberately excludes — repeat it verbatim; nothing in those files may be clas
 or not worthy. Candidates are nominations, never verdicts. Then double-check the inventory on a second provider:
 save the JSON to a scratch path and run
 `python3 "${CLAUDE_PLUGIN_ROOT}/bin/evergreen" judge --repo . --inventory <that file>`;
-present every disagreement (a listed symbol the judge finds private or absent, a public declaration
-it finds missing) and its trailer line verbatim, or `judge: abstain — <reason>`. Do not edit the
-project.
+present every disagreement (a listed symbol the judge finds absent, of another kind, or private, a
+public declaration it finds missing) and its trailer line verbatim, or `judge: abstain — <reason>`.
+Do not edit the project.

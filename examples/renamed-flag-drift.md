@@ -1,15 +1,17 @@
 # Renamed flag drift (rung 2 — dead contract)
 
-The cheapest, most painful drift: a flag you renamed that the docs still cite.
+One of the cheapest, most painful drifts: a flag you renamed that the docs still cite.
 
 ## The drift
+
+In a hypothetical project, not this repository:
 
 ```
 README.md:42   "Run with `--workers 8` to set concurrency."
 cli.py:156     parser.add_argument("--concurrency", ...)   # was --workers
 ```
 
-`--workers` no longer exists in the code.
+`--workers` no longer exists in that project's code.
 
 ## What evergreen says
 

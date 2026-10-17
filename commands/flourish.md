@@ -158,7 +158,7 @@ list is a claim like any other — it goes through the craft trial with the rest
 
 **Visitor floor** (the floor that counts, because judgments drift). The other four ask whether the
 doc is *right*; this one asks whether a stranger with thirty seconds ever gets to the point. It is
-the only floor with numbers, and the numbers are `readme-style.md`'s own. Run both, print both:
+the only floor with numbers, and both derive from `readme-style.md`'s budgets. Run both, print both:
 
 ```sh
 # 1. words before the quick start — hard goal 7, must be <= 400

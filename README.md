@@ -227,7 +227,7 @@ Use `--json` when another tool needs the same fields:
 
 An optional checked-in public benchmark manifest identifies declared evidence; it does not prove a
 fresh provider execution, artifact reverification, or detector-quality result. Artifacts the
-manifest tracks at HEAD must exist and match; the raw dataset rows it names are local and ignored
+manifest names must exist as regular files; the raw dataset rows it names are local and ignored
 by git, so a fresh clone reports them as absent under `local_datasets` rather than refusing.
 
 No grade verifier ships: an earned quality grade needs detector evidence this tree does not publish,
@@ -256,9 +256,10 @@ sibling: a deterministic, ranked inventory of the tracked public declaration sur
 consumes, failing closed with a `truncated` warning whenever the inventory it builds could be
 incomplete. Tracked files in languages it cannot parse, extensionless scripts without a Python or shell
 shebang (a Python-shebang script such as `bin/evergreen` joins the parsed inventory), and untracked
-source stay outside that inventory and are named in an `outside inventory` warning instead of
-vanishing silently; files dropped by the tests/vendor rule are counted in their own warning, and a
-truncation warning names which cap tripped (files, bytes, candidates, or the deadline).
+source stay outside that inventory and are counted in `outside inventory` warnings that name the
+first five, instead of vanishing silently; files dropped by the tests/vendor rule are counted in
+their own warning, and a truncation warning names which cap tripped (files, bytes, candidates, or
+the deadline).
 Drift-shaped adapters may translate mechanical facts into this
 schema, but provider-supplied findings and verdicts are rejected at the boundary. See the
 [`provider-evidence.json`](examples/provider-evidence.json) sample and the
@@ -338,7 +339,8 @@ warnings. JSON reports preserve the warnings as well as verdict counts.
 
 There is no host installer. Claude Code and Codex both load this plugin through their own plugin
 mechanisms, and any other skill-capable agent takes `skills/evergreen/SKILL.md` as a skill or
-[`AGENTS.md`](AGENTS.md) as flat instructions; nothing in the repository writes to a home directory.
+[`AGENTS.md`](AGENTS.md) as flat instructions; nothing the plugin, its hooks, or `bin/evergreen`
+runs writes to a home directory.
 
 ### What the plugin costs per session
 
@@ -482,7 +484,7 @@ Four axes — **truth · craft · hygiene · creation** — one creed: prove it 
 | `/evergreen:impact [--repo PATH] [--evidence FILE] PATH...` | **Truth, candidate query.** Find additive documentation candidates before editing changed paths. Read-only; never emits findings or verdicts. |
 | `/evergreen:till [--repo PATH] [PATH...]` | **Creation, surface inventory.** Inventory the undocumented-surface candidates — every public declaration reachable from outside its file. Read-only. The inventory is then judged on a second provider and every disagreement shown. |
 | `bin/evergreen impact [--repo PATH] [--evidence FILE] [--json] PATH...` | **Truth, candidate query.** Rank documentation related to changed paths and optional provider evidence. Read-only; never emits findings or verdicts. |
-| `bin/evergreen till [--repo PATH] [--json] [PATH...]` | **Creation, surface inventory.** Deterministic ranked inventory of every declaration in its parsed surface (Python, Go, Rust, Swift, Java, JS/TS, POSIX shell) reachable from outside its file, ranked by references including names on multi-line import continuations — the fail-closed provider behind `/evergreen:seed`. Read-only; scan incompleteness fails closed with a `truncated` warning, and files outside the parsed surface are named in `outside inventory` warnings. |
+| `bin/evergreen till [--repo PATH] [--json] [PATH...]` | **Creation, surface inventory.** Deterministic ranked inventory of every declaration in its parsed surface (Python, Go, Rust, Swift, Java, JS/TS, POSIX shell) reachable from outside its file, ranked by references including names on multi-line import continuations — the fail-closed provider behind `/evergreen:seed`. Read-only; scan incompleteness fails closed with a `truncated` warning, and files outside the parsed surface are counted, the first five by name, in `outside inventory` warnings. |
 | `bin/evergreen receipt [--repo PATH] [--benchmark-manifest PATH] [--json]` | **Operational evidence.** Emit deterministic local repository, release-boundary, and optional declared benchmark identity without network access or mutation; absent local dataset files are counted, not refused. |
 
 ## How it's checked
@@ -514,7 +516,7 @@ Not unless you ask. The reflex points; you write — a dead flag or moved path i
 It flags only what it can cite against the code. Git's flags, CSS variables, other repos' paths, your ADRs — not its business. Tell it to drop something once and it offers the `.evergreen-ignore` line that keeps it dropped in every session after. The asymmetry is the product choice: a false flag costs you the ten seconds it takes to read the cited line and say no, while missed drift costs whoever trusts the doc next — which is why every flag must carry evidence you can dismiss at a glance.
 
 **Does it scale?**
-It reads paths, contracts, and prose — not your abstract syntax tree. The reflex greps and reads, so it works in any language with nothing to compile; the `till` inventory behind `seed` uses small per-language declaration grammars (Python, Go, Rust, Swift, Java, JS/TS, POSIX shell) and names every file it cannot parse rather than skipping it.
+It reads paths, contracts, and prose — not your abstract syntax tree. The reflex greps and reads, so it works in any language with nothing to compile; the `till` inventory behind `seed` uses small per-language declaration grammars (Python, Go, Rust, Swift, Java, JS/TS, POSIX shell) and counts every file it cannot parse in a warning that names the first five, rather than skipping it.
 
 **What about releases?**
 It treats a shipped marketing version as a living public claim, distinct from the build number, and reconciles the surfaces that repeat that identity. Rules in the operations reference above.

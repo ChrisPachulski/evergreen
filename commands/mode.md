@@ -6,8 +6,10 @@ argument-hint: "[off | light | strict]"
 
 The first line of this prompt is the mode sigil. The UserPromptSubmit tracker hook persists it
 before you read this: when an intensity was given, `.evergreen-mode` at the project root already
-holds it and the file is excluded from git through `.git/info/exclude`. It takes effect from the
-next message. Confirm in one line, `evergreen: mode set to <mode>`, and do not restate the sigil.
+holds it and the file is excluded from git through `.git/info/exclude`. The post-turn nudge reads
+the file at the end of every turn; the session preamble picks it up at the next session start,
+resume, clear, or compact. Confirm in one line, `evergreen: mode set to <mode>`, and do not
+restate the sigil.
 
 - off -- pause the ride-along reflex. Commands you type still run at full depth.
 - light (default) -- ladder rungs 1-3 (paths, contracts, snippets) only; never a prose finding.

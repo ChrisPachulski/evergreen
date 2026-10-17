@@ -11,8 +11,9 @@ unverified claims with counts that sum to its total, and carry a `judge` object 
 second-provider certification pass (`bin/evergreen judge`) with status `"ok"`, a named
 provider, and zero drift — an abstained or missing judge, or one reporting drift, refuses the
 tag exactly like a dirty winnow record does. The certified commit must be HEAD itself or an
-ancestor of HEAD from which nothing outside `eval/certifications/` has since changed:
-committing the records is the only history permitted between running a pass and tagging.
+ancestor of HEAD whose tree differs from HEAD's only under `eval/certifications/` (the gate
+compares the two trees, not the commits between): committing the records is the only net change
+permitted between running a pass and tagging.
 
 The gate verifies record arithmetic and commit binding. That a record honestly reflects a
 pass that ran remains the runner's responsibility — a gate cannot re-run the reasoning pass.

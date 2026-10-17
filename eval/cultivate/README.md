@@ -81,14 +81,14 @@ classification against the manifest.
 | goal | status | what the check actually proves |
 |------|--------|--------------------------------|
 | 1 — inventory the filesystem, not the index | enforced | one inventory row whose `tracked` (15), `on_disk` (16) and `gap_accounted` (1) match the manifest. The two counting commands and the line-by-line gap accounting are not checked. |
-| 2 — a reference graph behind every verdict | enforced | every verdict's `evidence` carries a `git grep` command **and its captured result** — a count (`3 hits`), an explicit zero (`0 hits` / `no hits`), or a path list. The bare words `git grep`, and a command followed by prose, are both rejected: they are what a run that skipped the pass also writes. |
+| 2 — a reference graph behind every verdict | enforced | every verdict's `evidence` names `git grep` **and carries a captured result** after it — a count (`3 hits`), an explicit zero (`0 hits` / `no hits`), or a path list. The bare words `git grep`, and a command followed by prose, are both rejected: they are what a run that skipped the pass also writes. |
 | verdict identity | enforced | every verdict path belongs to the manifest and appears at most once, including repeated rows with the same verdict; unknown verdict values fail. |
 | 3 — no bare "clean" verdict | enforced | a `verdict`/`conclusion`/`result` line concluding clean or no slop, or a "repository is clean" sentence, fails (`CLEAN_CONCLUSION_RE`; other phrasings pass), and a specific not-checked list must be present. |
 | 4 — real exposure, not prose | **half-covered** | the fixture has no remote, so only the fallback branch is graded: `gh_ran: false` with `visibility: unchecked`. The live-remote branch is not covered by this exam. |
-| 5 — tested-with-an-assertion or a gap | enforced, proxied in part | a `tested` claim needs a `file:line`, and the planted assertion-free test (`tests/test_runner.py`) is rejected by path. The scorer does not open the cited line and does not compare the enumerated count with the classified count. |
-| 6 — state what was NOT checked | enforced | at least one specific item; "everything" and its cousins do not count. |
-| second provider — judged report | enforced | one `judge` row with stage `report`, status `ok`, drift 0; missing, abstained, or drifting fails the run. The scorer proves the row is present with that status and drift, not its arithmetic and not that codex really ran. |
-| 7 — unresolvable stays unsettled | enforced | the unresolvable file may not be forced into a settled verdict, and an `unsettled` row must name a concrete resolver. |
+| 5 — tested-with-an-assertion or a gap | enforced, proxied in part | a `tested` claim needs a `test_ref` containing a colon (the `file:line` shape is not parsed), and the planted assertion-free test (`tests/test_runner.py`) is rejected by path. The scorer does not open the cited line and does not compare the enumerated count with the classified count. |
+| 6 — state what was NOT checked | enforced | at least one non-empty item outside a fixed vague list (`all`, `everything`, `nothing`, `none`, `checked everything`); other vague wording passes. |
+| second provider — judged report | enforced | one `judge` row with stage `report` (a missing stage counts as `report`), status `ok`, drift 0 as read by `int()`; missing, abstained, or drifting fails the run. The scorer proves the row is present with that status and drift, not its arithmetic and not that codex really ran. |
+| 7 — unresolvable stays unsettled | enforced | the unresolvable file may not be forced into a settled verdict, and an `unsettled` row must carry a resolver-shaped token (`RESOLVER_RE`: an upper-case name of four or more characters, or a `.py`/config file name); whether it really settles the file is not checked. |
 
 ## What the scorer cannot do
 

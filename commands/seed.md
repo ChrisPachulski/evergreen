@@ -139,7 +139,7 @@ trial", with seed's parameters:
 The certification side needs no second harness: pass E already runs the seeded claims through
 winnow's trial verbatim, on a different provider. Between the two, every judgment in seed stands
 trial — worthiness before the budget is spent, truth before the proposal ships — while the
-mechanical goals in `hard-goals/seed.md` skip it, as facts always do.
+mechanical goals in `skills/evergreen/hard-goals/seed.md` skip it, as facts always do.
 
 The worthiness trial above deliberately stays **in-session**. It rules before anything is
 written, so it is not grading its own output; the externalization applies only where seed would
@@ -156,5 +156,5 @@ otherwise certify prose it just authored.
    winnow verdict counts (`certified == ledger rows, drift 0, unverified 0`).
 4. The `seed:gap` markers, listed — the author's to-do, stated plainly (at most one per written
    candidate).
-5. Coverage: `documented + worthy + not-worthy + deferred == N`, `written == owner-approved ≤
+5. Coverage: `documented + worthy + not-worthy + deferred == N`, `written ≤ owner-approved ≤
    worthy`, and every doc within the 60-line per-doc bound — stated with the numbers.

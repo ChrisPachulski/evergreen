@@ -39,11 +39,11 @@ greps against — no model needed to grade.
 Both source READMEs are ACCURATE. The ugliness is the exam; don't fix it in place — the repo's
 reflex skips `eval/flourish/fixtures/*` (its own `.evergreen-ignore` line, same as
 `eval/fixture/*`). Grading is hard-goals mechanics (`skills/evergreen/hard-goals/flourish.md`):
-heading-set diff vs the ledger, evidence greps, and a five-check face gate (hero and tagline
-mandatory per goal 4, ≥4 of 5 overall). The hook check is advisory voice reporting, never
-grading — plus body
+heading-set diff vs the ledger, claim greps for the `backed: false` temptations, and a
+five-check face gate (hero and tagline mandatory per goal 4, ≥4 of 5 overall), plus body
 conservation: a demoted or kept section must carry >= 70% of the source section's unique body
-tokens (sections under 10 unique body tokens keep plain heading-match semantics).
+tokens (sections under 10 unique body tokens keep plain heading-match semantics). The hook check
+is advisory voice reporting, never grading.
 
 ## Which hard goals are enforced
 
@@ -57,7 +57,7 @@ golden with a sibling `<name>.report.md` is graded with them on — `good.report
 |------|--------|--------------------------------|
 | 1 — conserve every source section | enforced | every ground-truth heading is present, in a `<details>`, in a linked in-fixture file, or on the cuts declaration — and the home carries >= 70% of the source body's unique tokens. |
 | 2 — name every cut | enforced | via `--cuts`: a row needs a reason of >= 10 characters that is not "trimmed for length" or a synonym. |
-| 3 — never delete sole-copy material | enforced | `only_home` sections accept only a kept section or a `<details>`; a declared cut cannot save them. |
+| 3 — never delete sole-copy material | enforced | `only_home` sections accept only a kept section, a `<details>`, or a linked in-fixture file; a declared cut cannot save them. |
 | 4 — keep the face | enforced | hero and tagline are both mandatory, inside a wider 4-of-5 overlay (badges, prose opener, earned visual). |
 | 5 — certified / cut / markered counts | enforced with `--report` | the three counts are stated and sum to the stated claim total. Arithmetic only — the scorer cannot tell whether the counts are honest. |
 | 6 — show the rewrite | enforced with `--report` | the report holds a ```diff fence (or the full result inlined) **and** a line naming a ledger. Presence only. |
@@ -69,4 +69,5 @@ golden with a sibling `<name>.report.md` is graded with them on — `good.report
 | voice | advisory | reported (kept / flattened / absent) and never gates, so `flattened.md` still exits 0. |
 
 The `good` and `flattened` goldens carry a vertical mermaid diagram where their ASCII pipeline art
-used to be, because goal 10 admits no ASCII alternative.
+used to be, because goal 10 requires a vertical mermaid fence and accepts no ASCII diagram in
+its place.

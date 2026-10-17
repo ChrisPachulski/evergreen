@@ -1139,7 +1139,7 @@ git -C "$TMP" commit -qm "remove slop"
 # --- release-tag certification gate (winnow-before-tag + cultivate cadence) ---
 # An evergreen--v* tag creation is refused unless winnow + cultivate certification records
 # are committed at HEAD: winnow clean (zero drift, zero unverified, counts summing to total)
-# and each record bound to a commit from which only eval/certifications/ has since changed.
+# and each record bound to a commit whose tree differs from HEAD only under eval/certifications/.
 release_tag_cmd="git tag evergreen--v9.9.9"
 has "$(guard_cmd "$release_tag_cmd")" "no winnow certification record" \
   "release gate: tag without records is refused naming the winnow record"

@@ -66,8 +66,8 @@ those matrices cannot support a detector-quality claim.
 | Go | 299 / 299 | 0 | 0.261 | 0.750 | 0.387 | 0.880 |
 
 These are the recorded dataset-base-rate matrices, not a detector-quality baseline. The publication
-still proves decision-level replay and coverage for this frozen run; label-proxy exposure prevents
-using its precision, recall, or F1 as performance evidence.
+still proves provenance, coverage, and offline rescoring for this frozen run; label-proxy exposure
+prevents using its precision, recall, or F1 as performance evidence.
 
 ## How a verdict happens
 
@@ -83,8 +83,9 @@ constant ID `pair`. Consistency comes from machinery, not from the model behavin
    challenge, tie, missed angle, or thin evidence escalates; a unique direct-evidence plurality
    can stand without synthesis.
 2. **No freeform verdicts.** Every response must match its stage's rigid schema. Verdict-bearing
-   stages use fixed verdict/category menus and evidence fields. A malformed answer is retried a
-   bounded number of times, then recorded as an abstention. Nothing is inferred from prose.
+   stages use fixed verdict/category menus and evidence fields. A call that returns no parseable
+   JSON is retried a bounded number of times, then recorded as an abstention; a parsed answer that
+   misses its schema abstains at once. Nothing is inferred from prose.
 3. **Replay and folding are deterministic code.** Contested cases can receive a synthesis-model
    verdict; [`resolver.py`](resolver.py) validates and folds the stored stage outputs into the
    decision. Every stage output ships in the artifact, and `replay.py --expect-stored` re-derives
@@ -163,12 +164,13 @@ gates:
   — and a projected counterfactual can only pass with an explicit `--accept-projected-cost-gate`; a
   projection never manufactures a pass on its own.
 
-These are **gates the probe has to clear, not results it has produced.** The cascade has not yet
-been run: no precision, recall, F1, or cost-reduction number exists for it yet, measured or
-otherwise. Both thresholds are demanding by construction — the probe is a balanced 50/50, and the
-router's asymmetric rule (only a direct, category-free, non-uncertain `consistent` screen may
-clear) means the 50 positive rows always escalate to the full jury, and any control row whose
-screen isn't as clean does too, so at most half the probe can ever auto-clear. A 70%-fewer-attempts
+These are **gates the probe has to clear, not results it has produced.** No gate decision is
+tracked in this repository, and the quality gate cannot pass without an adjudicated overlay.
+Both thresholds are demanding by construction — the probe is a balanced 50/50, and the router's
+asymmetric rule (only a direct, category-free, non-uncertain `consistent` screen may clear) means
+a positive row escalates to the full jury unless its screen wrongly clears it (an auto-clear false
+negative, which the gate reports), and any control row whose screen isn't as clean escalates too,
+so an accurate screen auto-clears at most about half the probe. A 70%-fewer-attempts
 bar sized for that probe is suited to natural-prevalence deployment, where most pairs are boring
 negatives, not to a probe deliberately built to contain as many hard cases as easy ones. A passing
 probe is engineering go/no-go evidence for a larger run — it is not a best-in-class claim, and it
@@ -201,8 +203,8 @@ python3 eval/bench/cascade_gate.py \
   --json cascade-gate-decision.json --table cascade-gate-decision.txt
 ```
 
-`<N>` is a deliberately unfilled placeholder: this repository does not yet declare a chosen probe
-budget, because the probe itself has not been authorized to run.
+`<N>` is a deliberately unfilled placeholder: this repository does not declare a chosen probe
+budget, and `frozen_run.py --resolver v3` refuses to start until one is passed.
 
 ## The datasets
 
@@ -451,7 +453,7 @@ Replay stored trial stages through their versioned decision policy, require exac
 parity, and compare the strong snap diagnostically without model calls:
 
 ```sh
-python3 eval/bench/replay.py out/bench-default.json \
+python3 eval/bench/replay.py <trial-artifact.json> \
   --resolver v1 --expect-stored --compare-snap
 ```
 
