@@ -302,6 +302,17 @@ setting does not follow the docs. A documentation-only correction with no surfac
 patch under the `0.5.0` precedent. So `0.8.2`, not `0.9.0`. The stream still carries no build-number
 field.
 
+### 0.9.0 release decision
+
+`0.9.0` adds surface. The PR Action's model envelope moves to `schema_version` 3: the trust layer
+enumerates one claim per matching documentation line and derives every count from one verdict per
+supplied claim id, and the Action gains an opt-in `calibration_controls` input. `till` admits Java,
+the winnow exam gains an `attack` kind, and the benchmark cascade gate now judges the natural 10/90
+base rate rather than the balanced probe. The commit-hygiene guard and release-tag gate close
+bypasses without changing what they refuse by design. New inputs, a new envelope schema, and a new
+inventory language are additions, so the `0.5.0` precedent takes minor `0.9.0`, not patch `0.8.3`
+or stable `1.0.0`. The stream still carries no build-number field.
+
 ### Winnow-before-tag certification gate
 
 A local `evergreen--v*` tag is a certification claim about the commit it names, so the PreToolUse
