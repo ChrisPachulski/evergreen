@@ -49,7 +49,7 @@ Exit codes: 0 = every gate and the fixture exam pass, 2 = any failure,
 import argparse
 import csv
 import json
-import os
+import posixpath
 import re
 from pathlib import Path
 
@@ -96,8 +96,23 @@ def load_output(text):
     return claims, verdicts, left, judge
 
 
-def base(p):
-    return os.path.basename(str(p or ""))
+def fixture_relative(path):
+    """A run's doc path, relative to the fixture root.
+
+    run.sh hands the agent the fixture as its cwd, so paths arrive root-relative; a run made
+    from the repo root prefixes `eval/fixture/`, and an absolute path runs through run.sh's
+    `winnow-exam.*` sandbox. Both prefixes are cut. Nothing else is: a basename match would
+    score `docs/README.md` as `README.md`.
+    """
+    parts = posixpath.normpath(str(path or "")).split("/")
+    for i in range(len(parts) - 1, -1, -1):
+        if parts[i].startswith("winnow-exam.") or parts[i - 1:i + 1] == ["eval", "fixture"]:
+            return "/".join(parts[i + 1:])
+    return "/".join(parts)
+
+
+def same_doc(run_path, manifest_path):
+    return fixture_relative(run_path) == posixpath.normpath(manifest_path)
 
 
 def code_ref(row):
@@ -210,20 +225,19 @@ def score(text, manifest_path, allow_misses=0):
     exempt = [r for r in rows if r["kind"] == "exempt"]
 
     def hit(row, f):
-        return base(row["file"]) == base(f.get("file")) and \
+        return same_doc(f.get("file"), row["file"]) and \
             row["token"].lower() in str(f.get("claim", "")).lower()
 
-    exempt_files = {base(r["file"]) for r in exempt}
+    def is_exempt(f):
+        return any(same_doc(f.get("file"), r["file"]) for r in exempt)
+
     caught = [r for r in drift if any(hit(r, f) for f in drift_rows)]
     missed = [r for r in drift if r not in caught]
     fps = [r for r in decoys if any(hit(r, f) for f in drift_rows)]
-    violations = [f for f in drift_rows + certified_rows
-                  if base(f.get("file")) in exempt_files]
+    violations = [f for f in drift_rows + certified_rows if is_exempt(f)]
     unmatched = [f for f in drift_rows
-                 if not any(hit(r, f) for r in drift + decoys)
-                 and base(f.get("file")) not in exempt_files]
-    honored = [r for r in exempt
-               if any(base(x.get("file")) == base(r["file"]) for x in left)]
+                 if not any(hit(r, f) for r in drift + decoys) and not is_exempt(f)]
+    honored = [r for r in exempt if any(same_doc(x.get("file"), r["file"]) for x in left)]
     true_flags = [f for f in drift_rows if any(hit(r, f) for r in drift)]
 
     goals["goal 6 — exempt docs stay out of findings"] = {
@@ -411,6 +425,23 @@ def selftest(manifest_path):
         rows[0]["n"] = int(rows[0]["n"]) + 1
         return rows
     mutate("fixture exam — a true decoy flagged", decoy_flagged)
+
+    def same_name_other_dir(rows):
+        for r in rows:
+            if r.get("status") == "drift" and r["file"] == "README.md":
+                r["file"] = "docs/README.md"
+                break
+        return rows
+    mutate("fixture exam — a drift row on docs/README.md does not catch README.md",
+           same_name_other_dir)
+
+    rows = [dict(r) for r in base_rows]
+    rows.append({"type": "verdict", "status": "certified",
+                 "file": "vendor/CHANGELOG.md", "line": 3,
+                 "claim": "the vendored changelog lists 1.0", "code": "shipit/cli.py:12"})
+    rows[0]["n"] = int(rows[0]["n"]) + 1
+    cases.append(("known-pass — vendor/CHANGELOG.md is not the exempt CHANGELOG.md",
+                  rows, "", True))
 
     ok = True
     for label, rows, prose_text, want_pass in cases:
