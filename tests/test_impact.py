@@ -981,6 +981,28 @@ class ContractSymbolScopeTests(unittest.TestCase):
             {"Registry", "Listener", "Mode"},
         )
 
+    def test_java_stacked_modifier_types_are_contracts_and_commented_ones_are_not(self):
+        source = (
+            "/*\n"
+            "class Ghost {}\n"
+            "*/\n"
+            "// interface Phantom {}\n"
+            "public final class Registry {\n"
+            "    public abstract static class Entry {\n"
+            "    }\n"
+            "    public int size() {\n"
+            "        return 0;\n"
+            "    }\n"
+            "}\n"
+        )
+
+        self.assertEqual(
+            self.contracts(
+                "Registry.java", source, ["Ghost", "Phantom", "Registry", "Entry", "size"]
+            ),
+            {"Registry", "Entry", "size"},
+        )
+
     def test_typescript_exports_survive_while_a_function_body_does_not(self):
         source = (
             "export class Widget {\n"
@@ -1154,6 +1176,7 @@ class DeclarationScanTests(unittest.TestCase):
         self.assertEqual(
             self.names(b"function internalHelper() {}\nmodule.exports = {};\n", ".cjs"), set()
         )
+
 
 
 if __name__ == "__main__":

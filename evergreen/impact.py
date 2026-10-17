@@ -104,6 +104,29 @@ TS_MEMBER_RE = re.compile(
     rb"((?:(?:public|protected|private|static|readonly|abstract|override|async|get|set)[ \t]+)*)"
     rb"([A-Za-z_$][A-Za-z0-9_$]*)[ \t]*\("
 )
+# Java stacks modifiers (`public final class`, `public abstract static class`) where the shared
+# grammar allows one, so Java types get their own pattern. DECLARATION_RE stays unwidened: its
+# `static` exclusion is what keeps a TS/Swift member modifier from reading as a phantom name.
+# ponytail: an annotation on the declaration's own line (`@Deprecated public class X`) hides it,
+# and `@interface` annotation types are not inventoried; a Java parser is the upgrade path.
+JAVA_TYPE_RE = re.compile(
+    rb"(?m)^([ \t]*)((?:(?:public|protected|private|abstract|final|static|sealed|non-sealed"
+    rb"|strictfp)[ \t]+)*)(class|interface|enum|record)[ \t]+()([A-Za-z_$][A-Za-z0-9_$]*)"
+)
+# A Java method names its return type before itself, which TS_MEMBER_RE cannot see past. The
+# lookahead keeps a modifier from posing as the type: `private Client(` is a constructor, and
+# TS_MEMBER_RE reads it with its `private` intact. ponytail: constructors are inventoried as
+# methods under their class's name.
+JAVA_MEMBER_RE = re.compile(
+    rb"(?m)^([ \t]+)"
+    rb"((?:(?:public|protected|private|static|final|abstract|synchronized|native|default"
+    rb"|strictfp)[ \t]+)*)"
+    rb"(?:<[^\r\n(]*>[ \t]+)?"
+    rb"(?!(?:public|protected|private|static|final|abstract|synchronized|native|default"
+    rb"|strictfp)[ \t])"
+    rb"[A-Za-z_$][A-Za-z0-9_$.]*(?:<[^\r\n(]*>)?(?:\[\])*[ \t]+"
+    rb"([A-Za-z_$][A-Za-z0-9_$]*)[ \t]*\("
+)
 TS_MEMBER_STOPWORDS = frozenset((
     b"if", b"for", b"while", b"switch", b"catch", b"do", b"else", b"return",
     b"function", b"new", b"typeof", b"delete", b"void", b"throw", b"await",
@@ -181,7 +204,8 @@ _LITERAL_BLANK = bytes(byte if byte in (10, 13) else 32 for byte in range(256))
 # structure available without one parser per language, and it costs nothing to be wrong about --
 # an unindented file reads as all module scope, which is exactly what this replaced.
 TYPE_DECLARATION_KEYWORDS = frozenset(
-    (b"class", b"struct", b"enum", b"protocol", b"interface", b"trait", b"actor", b"type")
+    (b"class", b"struct", b"enum", b"protocol", b"interface", b"trait", b"actor", b"type",
+     b"record")
 )
 # Visibility itself is only decided outright where a compiler decides it. Go exports on an
 # uppercase initial and Rust on `pub`, with no exceptions to be wrong about. TypeScript's `export`
@@ -674,8 +698,9 @@ def _masked_literals(payload, suffix):
     """Blank string/comment bodies so quoted code is neither a declaration nor a reference."""
     if suffix == ".py":
         return PY_LITERAL_RE.sub(_blank_span, payload)
-    # ponytail: Go's literal shapes are the TS set (raw strings ride the template branch).
-    if suffix in TS_FAMILY_SUFFIXES or suffix == ".go":
+    # ponytail: Go's and Java's literal shapes are the TS set (Go raw strings ride the template
+    # branch); Java text-block (`"""`) content stays unmasked pending a per-language lexer.
+    if suffix in TS_FAMILY_SUFFIXES or suffix in (".go", ".java"):
         return TS_LITERAL_RE.sub(_blank_span, payload)
     if suffix == ".rs":
         return RUST_LITERAL_RE.sub(_blank_span, payload)
@@ -754,9 +779,10 @@ def _reachable_declarations(payload, suffix):
             if not name.startswith(b"_"):
                 yield payload.count(b"\n", 0, match.start()) + 1, 0, "func", name.decode("ascii")
         return
+    java = suffix == ".java"
     matches = [
         (match.start(), "decl", match)
-        for match in DECLARATION_RE.finditer(payload)
+        for match in (JAVA_TYPE_RE if java else DECLARATION_RE).finditer(payload)
         # Outside Rust, `static` is a member modifier; the member scan below owns that form.
         if match.group(3) != b"static" or suffix in MARKED_EXPORT_SUFFIXES
     ]
@@ -766,14 +792,15 @@ def _reachable_declarations(payload, suffix):
     if suffix in TS_FAMILY_SUFFIXES:
         exported, aliases, cjs = _es_exports(payload)
         module = cjs or ES_MODULE_MARKER_RE.search(payload) is not None
-    if suffix in TS_FAMILY_SUFFIXES or suffix in UPPERCASE_EXPORT_SUFFIXES:
-        # Members carry no keyword in TS/JS classes and Go interfaces alike.
+    if suffix in TS_FAMILY_SUFFIXES or suffix in UPPERCASE_EXPORT_SUFFIXES or java:
+        # Members carry no keyword in TS/JS classes, Go interfaces, or Java classes. Java
+        # methods need their own pattern; TS_MEMBER_RE still reads Java constructors.
         starts = {start for start, _flavor, _match in matches}
-        matches.extend(
-            (match.start(), "member", match)
-            for match in TS_MEMBER_RE.finditer(payload)
-            if match.start() not in starts and match.group(3) not in TS_MEMBER_STOPWORDS
-        )
+        for member_re in (JAVA_MEMBER_RE, TS_MEMBER_RE) if java else (TS_MEMBER_RE,):
+            for match in member_re.finditer(payload):
+                if match.start() not in starts and match.group(3) not in TS_MEMBER_STOPWORDS:
+                    starts.add(match.start())
+                    matches.append((match.start(), "member", match))
     if suffix == ".go":
         matches.extend(
             (offset, "group", (keyword, name))

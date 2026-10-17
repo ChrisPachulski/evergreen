@@ -173,7 +173,7 @@ class GapsTests(unittest.TestCase):
 
         self.track({
             "api.py": "def real():\n    pass\n",
-            "Main.java": "public class Main {}\n",
+            "main.c": "int main(void) { return 0; }\n",
             "build.sh": "echo build\n",
             "LICENSE": "MIT\n",
         })
@@ -181,11 +181,11 @@ class GapsTests(unittest.TestCase):
         report = till(self.repo)
 
         self.assertEqual([c.symbol for c in report.candidates], ["real"])
-        # build.sh is parsed source with no function in it; only Java stays unparsed.
+        # build.sh is parsed source with no function in it; only C stays unparsed.
         self.assertEqual(report.source_files_in_scope, 2)
         # The exclusion names its files: a bare count once hid what was dropped.
         self.assertTrue(any(
-            "1 tracked source file(s) outside inventory" in item and "Main.java" in item
+            "1 tracked source file(s) outside inventory" in item and "main.c" in item
             for item in report.warnings
         ))
         self.assertFalse(any("truncated" in item for item in report.warnings))
@@ -732,6 +732,75 @@ class GapsTests(unittest.TestCase):
         self.assertEqual(
             sorted((c.symbol, c.path) for c in report.candidates),
             [("publicApi", "esm.mjs"), ("renamedApi", "cjs.cjs")],
+        )
+
+    def test_java_types_enter_the_inventory(self):
+        from evergreen.till import till
+
+        self.track({"src/Registry.java": (
+            "package registry;\n"
+            "\n"
+            "/* class Ghost {} */\n"
+            "public final class Registry {\n"
+            "    public static class Entry {\n"
+            "    }\n"
+            "    public sealed interface Listener permits Entry {\n"
+            "    }\n"
+            "    private static final class Hidden {\n"
+            "    }\n"
+            "}\n"
+            "abstract class Base {\n"
+            "}\n"
+            "enum Mode {\n"
+            "    ONCE\n"
+            "}\n"
+            "public record Point(int x, int y) {\n"
+            "}\n"
+        )})
+
+        report = till(self.repo)
+
+        self.assertEqual(report.warnings, ())
+        self.assertEqual(report.source_files_in_scope, 1)
+        self.assertEqual(
+            sorted((c.symbol, c.kind) for c in report.candidates),
+            [("Base", "class"), ("Entry", "class"), ("Listener", "interface"),
+             ("Mode", "enum"), ("Point", "record"), ("Registry", "class")],
+        )
+
+    def test_java_public_methods_enter_the_inventory_and_bodies_do_not(self):
+        from evergreen.till import till
+
+        self.track({"Client.java": (
+            "public class Client {\n"
+            "    public Client(String host) {\n"
+            "        connect(host);\n"
+            "    }\n"
+            "    public int value() {\n"
+            "        return compute(1);\n"
+            "    }\n"
+            "    public static <T> List<T> wrap(T item) {\n"
+            "        return null;\n"
+            "    }\n"
+            "    public <T extends Comparable<T>> T max(T[] items) {\n"
+            "        return items[0];\n"
+            "    }\n"
+            "    private void connect(String host) {\n"
+            "    }\n"
+            "    private Client() {\n"
+            "    }\n"
+            "}\n"
+            "interface Sink {\n"
+            "    void accept(String line);\n"
+            "}\n"
+        )})
+
+        report = till(self.repo)
+
+        self.assertEqual(report.warnings, ())
+        self.assertEqual(
+            sorted(c.symbol for c in report.candidates),
+            ["Client", "Client", "Sink", "accept", "max", "value", "wrap"],
         )
 
     def test_untracked_unparsed_uppercase_and_script_files_are_counted(self):
