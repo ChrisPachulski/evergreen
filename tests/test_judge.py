@@ -439,6 +439,21 @@ class JudgeJsonEndToEndTest(unittest.TestCase):
         self.assertEqual(result["status"], "abstain")
         self.assertEqual(result["attempts"], 2)
 
+    def test_an_unhashable_verdict_abstains_instead_of_raising(self):
+        value = {"findings": [{"verdict": [], "claim": "x", "evidence": "a.py:1"}],
+                 "summary": "x"}
+        message = json.dumps({"payload": json.dumps(value)})
+        self.fake_codex(
+            json.dumps(
+                {"type": "item.completed",
+                 "item": {"type": "agent_message", "text": message}}
+            ) + "\n" + json.dumps({"type": "turn.completed"}) + "\n"
+        )
+
+        result = judge_json("judge this", timeout=30, max_retries=0)
+
+        self.assertEqual(result["status"], "abstain")
+
 
 class IntakeSafetyTest(unittest.TestCase):
     """What a judge prompt is allowed to carry out of the repository, and what it is not."""
