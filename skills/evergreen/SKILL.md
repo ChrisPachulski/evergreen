@@ -18,7 +18,7 @@ holds. Silent only when nothing documented was touched. Off with "stop evergreen
 
 ## Intensity (`/evergreen:mode off|light|strict`, per repo)
 
-- **light** (default) — ladder rungs 1–3 + cite-only prose checks.
+- **light** (default) — ladder rungs 1–3 only; no `prose` finding.
 - **strict** — also the full rung-4 semantic pass.
 - **off** — paused.
 

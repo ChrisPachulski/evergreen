@@ -20,7 +20,7 @@ fi
 
 PREAMBLE=""
 case "$MODE" in
-  light)  PREAMBLE="EVERGREEN MODE: light — run ladder rungs 1-3 (vanished paths, dead contracts, drifted snippets) plus cite-only prose checks. Defer the deep semantic rung-4 read unless asked." ;;
+  light)  PREAMBLE="EVERGREEN MODE: light — run ladder rungs 1-3 (vanished paths, dead contracts, drifted snippets) only; never emit a prose finding. Defer the deep semantic rung-4 read unless asked." ;;
   strict) PREAMBLE="EVERGREEN MODE: strict — run all four rungs, including the full rung-4 semantic prose pass." ;;
 esac
 

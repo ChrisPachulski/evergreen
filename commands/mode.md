@@ -10,7 +10,7 @@ holds it and the file is excluded from git through `.git/info/exclude`. It takes
 next message. Confirm in one line, `evergreen: mode set to <mode>`, and do not restate the sigil.
 
 - off -- pause the ride-along reflex. Commands you type still run at full depth.
-- light (default) -- ladder rungs 1-3 (paths, contracts, snippets) plus cite-only prose checks.
+- light (default) -- ladder rungs 1-3 (paths, contracts, snippets) only; never a prose finding.
 - strict -- also the full rung-4 semantic prose pass.
 
 If no argument was given: read `.evergreen-mode` (default light if absent) and report the current
