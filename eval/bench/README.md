@@ -145,7 +145,10 @@ gates:
 - **Quality gate:** precision AND recall AND F1 must each be **≥ 0.80** on the probe, scored
   against adjudicated labels. There is no fallback to nominal labels — without an adjudication
   overlay covering exactly the probe's 100 ids, the gate fails outright rather than scoring
-  something weaker and calling it a pass.
+  something weaker and calling it a pass. Beside it the packet reports each label view resampled
+  to the natural 10/90 base rate and to a balanced 50/50 one (`metrics.split_metrics`, medians
+  over 1000 resamples), so the false-positive cost at deployed prevalence is visible. That view is
+  reported only; it does not change the pass condition.
 - **Cost gate:** actual provider attempts must be **≥ 70% fewer** than a full-v2 counterfactual on
   the same rows, with retries counted, never hidden. The counterfactual prefers a measured
   same-row full-v2 artifact; lacking one, it falls back to a conservative *projected*

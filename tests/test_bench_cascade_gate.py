@@ -12,6 +12,18 @@ from eval.bench import cascade_gate
 EMPTY_SHA = hashlib.sha256(b"").hexdigest()
 
 
+def setUpModule():
+    # The packet's prevalence views bootstrap 1000 resamples per label view per build; every
+    # packet-building test here would pay that. 50 keeps the medians stable and the suite fast.
+    global _production_resamples
+    _production_resamples = cascade_gate.PREVALENCE_RESAMPLES
+    cascade_gate.PREVALENCE_RESAMPLES = 50
+
+
+def tearDownModule():
+    cascade_gate.PREVALENCE_RESAMPLES = _production_resamples
+
+
 # -- fixture builders -----------------------------------------------------------------------
 
 def clear_execution(attempts=1):
@@ -404,6 +416,43 @@ class QualityGateIntegrationTests(TempDirTestCase):
         self.assertEqual(
             packet["auto_clear_false_negatives"]["adjudicated"], sorted(fixture.fn_clear_ids)
         )
+
+    def test_packet_reports_the_natural_prevalence_view_without_changing_the_gate(self):
+        # 40 TP / 10 FP is 0.80 precision on the balanced probe, but at a 10/90 deployed base rate
+        # the same 20% control false-positive rate is ~90 FP against 40 TP: ~0.31 precision.
+        fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=10, tn=40)
+        dataset_path, receipt_path, artifact_path = fixture.write(self.root)
+        overlay_path = self.write_json("adjudicated.json", fixture.identity_overlay())
+
+        def build():
+            return cascade_gate.build_decision_packet(
+                artifact_path, dataset_path, receipt_path, adjudicated_path=overlay_path,
+                accept_projected_cost_gate=True,
+            )
+
+        packet = build()
+        for view in ("nominal_views", "adjudicated_views"):
+            natural = packet["quality"][view]["natural"]
+            balanced = packet["quality"][view]["balanced"]
+            self.assertAlmostEqual(natural["precision"], 40 / 130, delta=0.03)
+            self.assertAlmostEqual(natural["flag_rate"], 130 / 500, delta=0.03)
+            self.assertEqual(natural["recall"], balanced["recall"])
+            self.assertEqual(balanced["precision"], 0.8)
+        self.assertTrue(packet["gates"]["quality"]["passed"])
+        self.assertEqual(json.dumps(packet, sort_keys=True), json.dumps(build(), sort_keys=True))
+        table = cascade_gate.render_table(packet)
+        self.assertIn("natural 10/90", table)
+        self.assertIn("balanced 50/50", table)
+
+    def test_packet_natural_view_is_absent_without_adjudication(self):
+        fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=10, tn=40)
+        dataset_path, receipt_path, artifact_path = fixture.write(self.root)
+
+        packet = cascade_gate.build_decision_packet(artifact_path, dataset_path, receipt_path)
+
+        self.assertIsNone(packet["quality"]["adjudicated_views"])
+        self.assertIsNotNone(packet["quality"]["nominal_views"]["natural"]["precision"])
+        cascade_gate.render_table(packet)
 
     def test_probe_just_below_precision_threshold_fails(self):
         fixture = ProbeFixture(tp=40, fn_clear=5, fn_jury=5, fp=11, tn=39)

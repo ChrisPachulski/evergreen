@@ -8,7 +8,9 @@ exits 0 only when every declared gate passes:
 
   QUALITY: precision AND recall AND F1 each >= 0.80 on the 50/50 probe, evaluated on adjudicated
   labels. Adjudication is required for this gate; if none is supplied the gate fails rather than
-  silently falling back to nominal labels.
+  silently falling back to nominal labels. The packet also reports each label view resampled to
+  the natural 10/90 deployed base rate next to the balanced 50/50 one; that view is disclosure
+  only and never changes the pass condition.
 
   COST: >= 70% fewer ACTUAL provider attempts than a full-v2 counterfactual, with retries counted
   (never hidden). The counterfactual prefers a measured same-row full-v2 artifact; lacking one, it
@@ -41,6 +43,10 @@ PRECISION_THRESHOLD = 0.80
 RECALL_THRESHOLD = 0.80
 F1_THRESHOLD = 0.80
 COST_REDUCTION_THRESHOLD = 0.70
+
+NATURAL_POSITIVE_FRACTION = 0.10
+BALANCED_POSITIVE_FRACTION = 0.50
+PREVALENCE_RESAMPLES = 1000  # metrics.split_metrics' own default, the README protocol
 
 PROBE_POSITIVE_COUNT = 50
 PROBE_CONTROL_COUNT = 50
@@ -246,6 +252,19 @@ def quality_metrics(rows):
     return metrics.score(metrics.rows_from_transcript(rows))
 
 
+def prevalence_views(rows):
+    """Report-only: one label view resampled to the deployed and the balanced base rate."""
+    scored = metrics.rows_from_transcript(rows)
+    return {
+        "natural": metrics.split_metrics(
+            scored, NATURAL_POSITIVE_FRACTION, resamples=PREVALENCE_RESAMPLES
+        ),
+        "balanced": metrics.split_metrics(
+            scored, BALANCED_POSITIVE_FRACTION, resamples=PREVALENCE_RESAMPLES
+        ),
+    }
+
+
 def auto_clear_false_negatives(rows, overlay=None):
     """Ids the cheap screen auto-cleared (route=clear, predicted consistent) whose true label —
     adjudicated when supplied, else nominal — is inconsistent: drift the screen missed and never
@@ -442,6 +461,8 @@ def build_decision_packet(
 
     nominal_metrics = quality_metrics(rows)
     adjudicated_metrics = quality_metrics(_relabeled(rows, overlay)) if overlay else None
+    nominal_views = prevalence_views(rows)
+    adjudicated_views = prevalence_views(_relabeled(rows, overlay)) if overlay else None
     quality_gate = evaluate_quality_gate(
         nominal_metrics, adjudicated_metrics,
         (precision_threshold, recall_threshold, f1_threshold),
@@ -489,7 +510,10 @@ def build_decision_packet(
             "provider": artifact_metadata.get("provider"),
             "models": artifact_metadata.get("settings", {}).get("models"),
         },
-        "quality": {"nominal": nominal_metrics, "adjudicated": adjudicated_metrics},
+        "quality": {
+            "nominal": nominal_metrics, "adjudicated": adjudicated_metrics,
+            "nominal_views": nominal_views, "adjudicated_views": adjudicated_views,
+        },
         "auto_clear_false_negatives": {
             "nominal": auto_clear_fn_nominal, "adjudicated": auto_clear_fn_adjudicated,
         },
@@ -523,6 +547,22 @@ def _fmt(value, spec="{:.3f}"):
     return "unavailable" if value is None else spec.format(value)
 
 
+def _view_lines(quality):
+    lines = []
+    for name in ("adjudicated", "nominal"):
+        views = quality[f"{name}_views"]
+        if views is None:
+            continue
+        for label, key in (("natural 10/90", "natural"), ("balanced 50/50", "balanced")):
+            view = views[key]
+            lines.append(
+                f"  {name:<12} {label:<14} precision={_fmt(view['precision'])}"
+                f"  recall={_fmt(view['recall'])}  f1={_fmt(view['f1'])}"
+                f"  flag_rate={_fmt(view['flag_rate'])}  (report only, not gated)"
+            )
+    return lines
+
+
 def render_table(packet):
     quality = packet["gates"]["quality"]
     cost = packet["gates"]["cost"]
@@ -545,6 +585,7 @@ def render_table(packet):
         f"  nominal      precision={_fmt(packet['quality']['nominal']['precision'])}"
         f"  recall={_fmt(packet['quality']['nominal']['recall'])}"
         f"  f1={_fmt(packet['quality']['nominal']['f1'])}",
+        *_view_lines(packet["quality"]),
         f"  auto-clear false negatives: nominal={packet['auto_clear_false_negatives']['nominal']} "
         f"adjudicated={packet['auto_clear_false_negatives']['adjudicated']}",
         "",
