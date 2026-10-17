@@ -76,10 +76,14 @@ trusted input for the validator, never reading it back from model output. The mo
 verdict per id; the validator rejects a missing, repeated, or unknown id and binds every finding
 and unverified entry to the drift or unverified claim it cites. Claim counts are derived by the trust layer from one verdict per supplied claim id, never reported by the model.
 Opt-in calibration controls (`calibration_controls`) add a known-certified exact quote and a
-known-drift misattributed quote of head documentation, shuffled into the inventory under opaque
-ids. The validator grades them against a trusted answer key, strips them from every count,
-finding, and unverified entry, and makes the run inconclusive when either is answered wrong. A
-pass shows that the reviewer checked the evidence it was given, not that it reviewed every claim.
+known-drift misattributed quote of head documentation. Every id in that run, real or control, is
+rekeyed with a per-run nonce, so none can be recomputed from public fields, and the list is
+shuffled from the same nonce. The validator applies its bounds and shape checks to control entries
+too, grades the controls against a trusted answer key, strips them from every count, finding, and
+unverified entry, and makes the run inconclusive when either is answered wrong. The renderer
+redacts model text that repeats a control's statement. A control is still recognizable by its
+`reads exactly:` form, so a pass shows only that the reviewer checked the supplied evidence for the
+controls. It does not show that the reviewer reviewed the real claims.
 
 Every repository path in a manifest entry or result citation passes one shared gate before the
 trust layer will carry it: `is_protocol_path` (`ci/path_policy.py`). A citable path is a non-empty
