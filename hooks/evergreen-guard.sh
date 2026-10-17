@@ -163,11 +163,13 @@ if [ "$intent" = "compound" ]; then
 fi
 
 # Inspecting the project's index while the commit lands in another repository or index would
-# certify the wrong set of files, so a location the classifier cannot follow is refused.
-if [ "$intent" = "unresolved" ]; then
-  echo "evergreen guard: cannot tell which repository or index this commit or release tag uses (a cd or git -C to a computed path, more than one relative cd, GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR, --git-dir/--work-tree, or nesting too deep to read); run it with literal paths and the default index, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
+# certify the wrong set of files, so a location the classifier cannot follow is refused, and so is
+# one it names that does not exist yet (created, copied, or moved earlier in the same command).
+refuse_unresolved() {
+  echo "evergreen guard: cannot tell which repository or index this commit or release tag uses (a cd or git -C to a computed path or one that does not exist yet, more than one relative cd, GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR, --git-dir/--work-tree, or a substitution nested too deep or too ambiguous to read); run it with literal paths and the default index, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
   exit 2
-fi
+}
+[ "$intent" = "unresolved" ] && refuse_unresolved
 
 if [ "$intent" = "unsafe" ]; then
   echo "evergreen guard: commit modes that can read unstaged working-tree content are blocked; use a separately staged plain commit, or set EVERGREEN_GUARD=off to bypass deliberately." >&2
@@ -260,7 +262,7 @@ is_slop() {
 hits=""
 seen=""
 while IFS= read -r dir; do
-  [ -n "$dir" ] || continue
+  [ -n "$dir" ] || refuse_unresolved
   top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || continue
   [ -n "$top" ] || continue
   case "$seen" in *"|$top|"*) continue ;; esac

@@ -12,6 +12,7 @@ classified for the release certification gate; tag deletion, listing, and verifi
 unclassified. A literal `cd` or `git -C` names further directories the staged-index inspection
 must cover; a location the guard cannot follow (computed paths, GIT_DIR or GIT_INDEX_FILE,
 `--git-dir`) is reported as unresolved, as is nesting too deep or too wide to read, and refused.
+So is a command naming git with a substitution whose end a `case` pattern or comment obscures.
 
 shlex knows nothing of shell grammar beyond quoting, so three constructs must be separated from
 the argument list before a commit's options are read, or their words are misread as positional
@@ -27,6 +28,7 @@ copied into a file — and never on a line that also reaches a shell, `eval`, or
 resolves toward scanning more text: recursion can only add detected intent, never hide it.
 """
 
+import itertools
 import json
 import os
 import re
@@ -135,6 +137,21 @@ GIT_LOCATION_ENV = {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DI
 GIT_LOCATION_OPTIONS = {"--git-dir", "--work-tree"}
 DIRECTORY_CHANGERS = {"cd", "pushd", "popd"}
 DECLARATION_WORDS = {"export", "declare", "typeset", "local", "readonly"}
+# A substitution leaves this mark where it stood. Every keyword comparison strips it, so a word
+# glued to a substitution still reads as itself, but a `cd` or `-C` operand that carries it was
+# computed, and the literal prefix around it names a directory the command may never run in.
+COMPUTED = "\x1f"
+# The `)` closing a substitution is found by counting parentheses, which knows no shell grammar.
+# A `case` pattern's `)` and a `)` inside a comment are indistinguishable from it to the count, so
+# a body carrying either word is refused instead of being delimited by a guess.
+AMBIGUOUS_WORD_RE = re.compile(r"#|case(?=[\s;&|()]|$)")
+# Each directory change is its own fact, however often the same operand repeats: `cd child && cd
+# child` lands in child/child, and folding the two into one set member hid the second change.
+CHANGE_SERIAL = itertools.count()
+
+
+class AmbiguousSubstitution(Exception):
+    """A substitution body whose end a parenthesis count cannot place."""
 
 
 def _basename(token: str) -> str:
@@ -292,7 +309,8 @@ def _substitution_end(text: str, start: int) -> int:
 
     Quotes, nested parentheses, and heredoc bodies inside the substitution are honoured, so a `)`
     in a message read through `"$(cat <<'EOF' ... EOF)"` does not end the body early. An unclosed
-    body runs to end of input, which can only scan more text, never less.
+    body runs to end of input, which can only scan more text, never less. An unquoted word that
+    opens a `case` or a comment raises AmbiguousSubstitution: its `)` may or may not end the body.
     """
     depth = 1
     quote = None
@@ -308,6 +326,10 @@ def _substitution_end(text: str, start: int) -> int:
             quote = None if character == '"' else quote
         elif character in "'\"":
             quote = character
+        elif (index == start or text[index - 1] in " \t\n;&|()") and AMBIGUOUS_WORD_RE.match(
+            text, index
+        ):
+            raise AmbiguousSubstitution
         elif character == "\n" and pending:
             index = _skip_heredoc_bodies(text, index + 1, pending)
             pending = []
@@ -331,14 +353,15 @@ def _substitution_end(text: str, start: int) -> int:
 
 def _substitutions(text: str, honor_quotes: bool = True) -> "tuple[list[str], str]":
     """(bodies, rest): the `$(...)` and backtick substitutions in text, which the shell runs, and
-    the text with each replaced by an empty quoted word, as if its output were empty.
+    the text with each replaced by a quoted COMPUTED mark, as if its output were empty.
 
     Single quotes make both literal; double quotes do not, which is how `git commit -m "$(git add
     x)"` ran an add the guard never saw. A heredoc body with an unquoted delimiter expands both
     kinds whatever quotes it holds, so it is read with `honor_quotes=False`. An unclosed substitution
     runs to end of input, scanning more text, never less. Only the body is scanned: the command a
-    substitution's OUTPUT might form is computed, and stays outside the threat boundary. Emptying
-    it keeps the words around it whole, so `` `git add x`git commit `` still reads as a commit.
+    substitution's OUTPUT might form is computed, and stays outside the threat boundary. Keyword
+    checks strip the mark, so `` `git add x`git commit `` still reads as a commit, while a path
+    operand carrying it is known to be computed.
     """
     bodies = []
     rest = []
@@ -356,13 +379,13 @@ def _substitutions(text: str, honor_quotes: bool = True) -> "tuple[list[str], st
             while end < len(text) and text[end] != "`":
                 end += 2 if text[end] == "\\" else 1
             bodies.append(text[index + 1:end].replace("\\`", "`"))
-            rest.append(text[last:index] + '""')
+            rest.append(text[last:index] + '"' + COMPUTED + '"')
             index = last = end + 1
             continue
         elif text.startswith("$(", index):
             end = _substitution_end(text, index + 2)
             bodies.append(text[index + 2:end])
-            rest.append(text[last:index] + '""')
+            rest.append(text[last:index] + '"' + COMPUTED + '"')
             index = last = end + 1
             continue
         elif honor_quotes and character in "'\"" and quote in (None, character):
@@ -544,18 +567,19 @@ def _release_tag_intent(segment: list[str], tag_index: int) -> "str | None":
 
 def _literal_path(word: str) -> bool:
     """True when a shell word names one directory without expansion the hook would have to guess."""
-    return bool(word) and word != "-" and not any(character in word for character in "$`*?[\n")
+    expanding = "$`*?[\n" + COMPUTED
+    return bool(word) and word != "-" and not any(character in word for character in expanding)
 
 
-def _directory_change(arguments: "list[str]", word: str) -> "str | tuple[str, str]":
-    """("cd", path) for a `cd`/`pushd` to one literal directory, else "unresolved-target"."""
+def _directory_change(arguments: "list[str]", word: str) -> "str | tuple[str, str, int]":
+    """("cd", path, serial) for a `cd`/`pushd` to one literal directory, else "unresolved-target"."""
     operands = [
         argument for argument in arguments
         if not REDIRECTION_RE.match(argument) and not (argument.startswith("-") and argument != "-")
     ]
     if word == "popd" or len(operands) > 1 or (operands and not _literal_path(operands[0])):
         return "unresolved-target"
-    return "cd", os.path.expanduser(operands[0] if operands else "~")
+    return "cd", os.path.expanduser(operands[0] if operands else "~"), next(CHANGE_SERIAL)
 
 
 def _git_location(options: "list[str]") -> set:
@@ -566,7 +590,7 @@ def _git_location(options: "list[str]") -> set:
     chain = ""
     index = 0
     while index < len(options):
-        option, equals, _value = options[index].partition("=")
+        option, equals, _value = options[index].replace(COMPUTED, "").partition("=")
         if option in GIT_LOCATION_OPTIONS:
             return {"unresolved-target"}
         if option == "-C" and not equals:
@@ -578,8 +602,11 @@ def _git_location(options: "list[str]") -> set:
     return {("C", chain)} if chain else set()
 
 
-def _location_facts(segment: "list[str]") -> set:
-    """Directory changes and git-location environment assignments one command segment makes."""
+def _location_facts(marked: "list[str]") -> set:
+    """Directory changes and git-location environment assignments one command segment makes.
+
+    The segment arrives with its COMPUTED marks, which only the path operands keep."""
+    segment = [token.replace(COMPUTED, "") for token in marked]
     facts = set()
     found = _command_word(segment)
     assigning = segment if found is None or found[1] in DECLARATION_WORDS else segment[:found[0]]
@@ -592,7 +619,7 @@ def _location_facts(segment: "list[str]") -> set:
     # can only add a directory to inspect.
     for index, word in enumerate(segment):
         if word in DIRECTORY_CHANGERS:
-            facts.add(_directory_change(segment[index + 1:], word))
+            facts.add(_directory_change(marked[index + 1:], word))
     return facts
 
 
@@ -608,19 +635,20 @@ def collect_intents(
         return {"too-deep"}
     intents = set()
     normalized, heredoc_bodies, substitutions = prepare(command, captured)
-    tokens = shell_tokens(normalized)
+    marked = shell_tokens(normalized)
+    tokens = [token.replace(COMPUTED, "") for token in marked]
     for index in _shell_body_indices(tokens):
-        intents |= collect_intents(tokens[index], depth + 1, scans=scans)
+        intents |= collect_intents(marked[index], depth + 1, scans=scans)
     for body in heredoc_bodies:
         intents |= collect_intents(body, depth + 1, scans=scans)
     for body in substitutions:
         intents |= collect_intents(body, depth + 1, True, scans)
-    segment: list[str] = []
-    for token in tokens + [";"]:
+    start = 0
+    for end, token in enumerate(tokens + [";"]):
         if token not in CONTROL_TOKENS:
-            segment.append(token)
             continue
-        intents |= _location_facts(segment)
+        segment, marked_segment, start = tokens[start:end], marked[start:end], end + 1
+        intents |= _location_facts(marked_segment)
         # Every `git` token in the segment is inspected, not only the segment head: wrappers
         # (command, env, function bodies) and even `echo git add` stay conservatively covered.
         # Basename matching keeps path-qualified /usr/bin/git covered as well.
@@ -636,10 +664,9 @@ def collect_intents(
                     tag_intent = _release_tag_intent(segment, found)
                     if tag_intent:
                         intents.add(tag_intent)
-                        intents |= _git_location(segment[index + 1:found])
+                        intents |= _git_location(marked_segment[index + 1:found])
                 if subcommand in ("commit", "add"):
-                    intents |= _git_location(segment[index + 1:found])
-        segment = []
+                    intents |= _git_location(marked_segment[index + 1:found])
     return intents
 
 
@@ -718,7 +745,7 @@ def has_unsafe_commit_mode(
     normalized, heredoc_bodies, substitutions = prepare(command, captured)
     if _has_process_substitution(normalized):
         return True
-    tokens = shell_tokens(normalized)
+    tokens = [token.replace(COMPUTED, "") for token in shell_tokens(normalized)]
     for index in _shell_body_indices(tokens):
         if has_unsafe_commit_mode(tokens[index], depth + 1, scans=scans):
             return True
@@ -758,16 +785,22 @@ def main() -> int:
         unsafe = "commit" in intents and has_unsafe_commit_mode(command)
     except RecursionError:
         intents, unsafe = {"too-deep"}, True
+    except AmbiguousSubstitution:
+        # Its body could hide anything, but only a command that names git anywhere is refused.
+        named = "git" in normalize_shell_word_joins(command)
+        intents, unsafe = ({"too-deep"} if named else set()), named
     has_add = "add" in intents
     has_staging = bool(intents & STAGING_SUBCOMMANDS)
     has_commit = "commit" in intents
     release = intents & {"release-tag", "release-tag-elsewhere"}
-    directories = {fact[1] for fact in intents if isinstance(fact, tuple) and fact[0] == "cd"}
+    changes = [fact[1] for fact in intents if isinstance(fact, tuple) and fact[0] == "cd"]
+    directories = set(changes)
     chains = {fact[1] for fact in intents if isinstance(fact, tuple) and fact[0] == "C"}
     # Order is lost in the set, so several directory changes resolve only when each is absolute:
-    # then wherever the commit runs is one of them. `cd a && cd b` could be a/b, and is refused.
+    # then wherever the commit runs is one of them. `cd a && cd b` could be a/b, and `cd a && cd a`
+    # is a/a, so both are refused.
     unresolved = "unresolved-target" in intents or (
-        len(directories) > 1 and not all(os.path.isabs(path) for path in directories)
+        len(changes) > 1 and not all(os.path.isabs(path) for path in changes)
     )
     if "too-deep" in intents:
         print("unresolved")

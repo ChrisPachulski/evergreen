@@ -672,7 +672,24 @@ for cmd in "GIT_INDEX_FILE=.git/alt git commit -qm x" "cd \"\$OTHER_DIR\" && git
   has "$(guard_cmd "$cmd")" "cannot tell which repository" "guard: $cmd is refused, not inspected elsewhere"
   eq "$(guard_rc "$cmd")" "2" "guard: $cmd exits 2"
 done
+# A substitution inside a -C or cd operand computes the whole path, however literal the rest of the
+# word looks; reading the literal prefix inspected a directory the commit never runs in. A
+# repository copied or moved earlier in the same command does not exist yet when the hook runs.
+for cmd in "git -C $(dirname "$OTHER")/\"\$(printf $(basename "$OTHER"))\" commit -m x" \
+           "cd $(dirname "$OTHER")/\`printf $(basename "$OTHER")\` && git commit -m x" \
+           "cp -R $OTHER $OTHER-copy && git -C $OTHER-copy commit -m x" \
+           "mv $OTHER $OTHER-moved && cd $OTHER-moved && git commit -m x"; do
+  has "$(guard_cmd "$cmd")" "cannot tell which repository" "guard: $cmd is refused, not inspected elsewhere"
+  eq "$(guard_rc "$cmd")" "2" "guard: $cmd exits 2"
+done
 rm -rf "$OTHER"
+# Two identical relative cds lead to child/child, not child: each change counts, not each distinct one.
+NEST="$(mktemp -d)"
+git init -q "$NEST/child/child"; git init -q "$NEST/child"; git init -q "$NEST"
+printf 'k\n' > "$NEST/child/child/.env"; git -C "$NEST/child/child" add -f .env
+has "$(CLAUDE_PROJECT_DIR="$NEST" guard_cmd "cd child && cd child && git commit -m x")" \
+  "cannot tell which repository" "guard: a repeated relative cd is refused, not read as one"
+rm -rf "$NEST"
 printf 'k\n' > "$TMP/.env"; git -C "$TMP" add -f .env
 empty "$(printf '{"tool_input":{"command":"ls -la"}}' | bash "$HOOKS/evergreen-guard.sh" 2>&1)" \
   "guard: non-git command -> pass-through despite staged secret"
@@ -736,6 +753,16 @@ has "$(guard_cmd "$expanding_body_cmd")" "separate" \
 deep_cmd="$(python3 -c 'print("git commit -m \"" + "$(" * 5000 + "git add .env" + ")" * 5000 + "\"", end="")')"
 has "$(guard_cmd "$deep_cmd")" "cannot tell which repository" "guard: 5000 nested substitutions are refused"
 eq "$(guard_rc "$deep_cmd")" "2" "guard: 5000 nested substitutions exit 2"
+# Counting parentheses cannot tell a case pattern's `)` or one in a comment from the end of the
+# substitution, so a body carrying either is refused rather than delimited by a guess that left
+# the `git add` after it reading as message text.
+for cmd in 'git commit -m "$(case x in x) git add -f .env;; esac; printf x)"' \
+           $'git commit -m "$(printf x # )\ngit add -f .env\n)"'; do
+  has "$(guard_cmd "$cmd")" "cannot tell which repository" "guard: $cmd is refused"
+  eq "$(guard_rc "$cmd")" "2" "guard: $cmd exits 2"
+done
+empty "$(guard_cmd 'echo "$(case x in x) printf y;; esac)"')" \
+  "guard: a case pattern in a command that names no git passes through"
 # The usual message-through-substitution form stays a plain commit, whatever its message says.
 claude_commit_cmd=$'git commit -m "$(cat <<\'EOF\'\nfix(guard): don\'t block 1) a git add . or git commit -am mention\n`git add -p` too\nEOF\n)"'
 empty "$(guard_cmd "$claude_commit_cmd")" \
