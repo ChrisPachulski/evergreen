@@ -6,11 +6,14 @@ that bind it (Task 1's make_probe output), and an optional adjudicated label ove
 those same 100 ids. Emits a deterministic decision packet (JSON + a human-readable table) and
 exits 0 only when every declared gate passes:
 
-  QUALITY: precision AND recall AND F1 each >= 0.80 on the 50/50 probe, evaluated on adjudicated
-  labels. Adjudication is required for this gate; if none is supplied the gate fails rather than
-  silently falling back to nominal labels. The packet also reports each label view resampled to
-  the natural 10/90 deployed base rate next to the balanced 50/50 one; that view is disclosure
-  only and never changes the pass condition.
+  QUALITY: judged at the natural 10/90 deployed base rate, not the balanced 50/50 probe, on
+  adjudicated labels: recall >= 0.80 AND natural-view precision >= 0.60 AND natural-view flag
+  rate <= 0.15, all inclusive. The natural view resamples the probe's consistent class to nine
+  per inconsistent pair (metrics.split_metrics), so a control false-positive rate that looks
+  harmless at 50/50 shows up as the precision and flag load a deployed run would carry.
+  Adjudication is required for this gate; if none is supplied, or either view's metrics are
+  unavailable, the gate fails rather than silently falling back to nominal labels. Every other
+  label view (nominal, and the balanced 50/50 resample) is reported only.
 
   COST: >= 70% fewer ACTUAL provider attempts than a full-v2 counterfactual, with retries counted
   (never hidden). The counterfactual prefers a measured same-row full-v2 artifact; lacking one, it
@@ -39,9 +42,9 @@ except ImportError:  # Direct script execution.
     from split_manifest import _loads_strict
 
 
-PRECISION_THRESHOLD = 0.80
 RECALL_THRESHOLD = 0.80
-F1_THRESHOLD = 0.80
+NATURAL_PRECISION_FLOOR = 0.60
+FLAG_RATE_CEILING = 0.15
 COST_REDUCTION_THRESHOLD = 0.70
 
 NATURAL_POSITIVE_FRACTION = 0.10
@@ -253,7 +256,8 @@ def quality_metrics(rows):
 
 
 def prevalence_views(rows):
-    """Report-only: one label view resampled to the deployed and the balanced base rate."""
+    """One label view resampled to the deployed and the balanced base rate; the gate reads the
+    adjudicated natural view, every other view is reported only."""
     scored = metrics.rows_from_transcript(rows)
     return {
         "natural": metrics.split_metrics(
@@ -280,36 +284,50 @@ def auto_clear_false_negatives(rows, overlay=None):
     return sorted(found)
 
 
-def evaluate_quality_gate(nominal_metrics, adjudicated_metrics, thresholds):
-    """The quality gate is declared over ADJUDICATED labels; nominal is reported, never gated on."""
-    precision_threshold, recall_threshold, f1_threshold = thresholds
+def evaluate_quality_gate(nominal_metrics, adjudicated_metrics, adjudicated_natural, thresholds):
+    """The quality gate is declared over ADJUDICATED labels at the natural 10/90 base rate:
+    recall, natural-view precision and natural-view flag rate. Nominal is reported, never gated
+    on. Every threshold is inclusive."""
+    recall_threshold, natural_precision_floor, flag_rate_ceiling = thresholds
     base = {
         "passed": False,
-        "precision_threshold": precision_threshold,
         "recall_threshold": recall_threshold,
-        "f1_threshold": f1_threshold,
-        "precision": None, "recall": None, "f1": None,
+        "natural_precision_floor": natural_precision_floor,
+        "flag_rate_ceiling": flag_rate_ceiling,
+        "recall": None, "natural_precision": None, "natural_flag_rate": None,
     }
     if adjudicated_metrics is None:
         return {
             **base,
             "reason": "adjudicated labels are required for the quality gate but none were supplied",
         }
-    precision = adjudicated_metrics["precision"]
     recall = adjudicated_metrics["recall"]
-    f1 = adjudicated_metrics["f1"]
-    if precision is None or recall is None or f1 is None:
+    if recall is None:
         return {
             **base,
             "reason": "adjudicated metrics are unavailable (core set lacks both label classes)",
         }
-    passed = (precision >= precision_threshold and recall >= recall_threshold and
-              f1 >= f1_threshold)
+    natural_precision = (adjudicated_natural or {}).get("precision")
+    natural_flag_rate = (adjudicated_natural or {}).get("flag_rate")
+    if natural_precision is None or natural_flag_rate is None:
+        return {
+            **base, "recall": recall,
+            "reason": "adjudicated natural 10/90 view metrics are unavailable",
+        }
+    failed = []
+    if recall < recall_threshold:
+        failed.append(f"recall {recall:.3f} < {recall_threshold:.2f}")
+    if natural_precision < natural_precision_floor:
+        failed.append(
+            f"natural precision {natural_precision:.3f} < {natural_precision_floor:.2f}"
+        )
+    if natural_flag_rate > flag_rate_ceiling:
+        failed.append(f"natural flag_rate {natural_flag_rate:.3f} > {flag_rate_ceiling:.2f}")
     return {
-        "passed": passed, "reason": None,
-        "precision_threshold": precision_threshold, "recall_threshold": recall_threshold,
-        "f1_threshold": f1_threshold,
-        "precision": precision, "recall": recall, "f1": f1,
+        **base,
+        "passed": not failed, "reason": "; ".join(failed) or None,
+        "recall": recall, "natural_precision": natural_precision,
+        "natural_flag_rate": natural_flag_rate,
     }
 
 
@@ -442,8 +460,8 @@ def evaluate_cost_gate(actual, counterfactual, threshold, accept_projected):
 def build_decision_packet(
     artifact_path, dataset_path, receipt_path, *, adjudicated_path=None,
     full_v2_artifact_path=None, historical_lane_path=None, accept_projected_cost_gate=False,
-    precision_threshold=PRECISION_THRESHOLD, recall_threshold=RECALL_THRESHOLD,
-    f1_threshold=F1_THRESHOLD, cost_reduction_threshold=COST_REDUCTION_THRESHOLD,
+    recall_threshold=RECALL_THRESHOLD, natural_precision_floor=NATURAL_PRECISION_FLOOR,
+    flag_rate_ceiling=FLAG_RATE_CEILING, cost_reduction_threshold=COST_REDUCTION_THRESHOLD,
 ):
     """Build the full offline decision packet. Raises ValueError on any structural/binding
     problem (mismatched hashes/ids, incomplete coverage, abstentions) — the caller turns that
@@ -465,7 +483,8 @@ def build_decision_packet(
     adjudicated_views = prevalence_views(_relabeled(rows, overlay)) if overlay else None
     quality_gate = evaluate_quality_gate(
         nominal_metrics, adjudicated_metrics,
-        (precision_threshold, recall_threshold, f1_threshold),
+        adjudicated_views["natural"] if adjudicated_views else None,
+        (recall_threshold, natural_precision_floor, flag_rate_ceiling),
     )
 
     auto_clear_fn_nominal = auto_clear_false_negatives(rows)
@@ -547,7 +566,7 @@ def _fmt(value, spec="{:.3f}"):
     return "unavailable" if value is None else spec.format(value)
 
 
-def _view_lines(quality):
+def _view_lines(quality, gate):
     lines = []
     for name in ("adjudicated", "nominal"):
         views = quality[f"{name}_views"]
@@ -555,6 +574,16 @@ def _view_lines(quality):
             continue
         for label, key in (("natural 10/90", "natural"), ("balanced 50/50", "balanced")):
             view = views[key]
+            if (name, key) == ("adjudicated", "natural"):
+                lines.append(
+                    f"  {name:<12} {label:<14} precision={_fmt(view['precision'])}"
+                    f" (>= {gate['natural_precision_floor']:.2f})"
+                    f"  recall={_fmt(view['recall'])} (>= {gate['recall_threshold']:.2f})"
+                    f"  f1={_fmt(view['f1'])}"
+                    f"  flag_rate={_fmt(view['flag_rate'])} (<= {gate['flag_rate_ceiling']:.2f})"
+                    f"  (gated)"
+                )
+                continue
             lines.append(
                 f"  {name:<12} {label:<14} precision={_fmt(view['precision'])}"
                 f"  recall={_fmt(view['recall'])}  f1={_fmt(view['f1'])}"
@@ -579,13 +608,18 @@ def render_table(packet):
         "",
         f"quality gate: {'PASS' if quality['passed'] else 'FAIL'}"
         + (f" ({quality['reason']})" if quality.get("reason") else ""),
-        f"  adjudicated  precision={_fmt(quality['precision'])} (>= {quality['precision_threshold']:.2f})"
-        f"  recall={_fmt(quality['recall'])} (>= {quality['recall_threshold']:.2f})"
-        f"  f1={_fmt(quality['f1'])} (>= {quality['f1_threshold']:.2f})",
+        f"  gated        recall={_fmt(quality['recall'])} (>= {quality['recall_threshold']:.2f})"
+        f"  natural precision={_fmt(quality['natural_precision'])}"
+        f" (>= {quality['natural_precision_floor']:.2f})"
+        f"  natural flag_rate={_fmt(quality['natural_flag_rate'])}"
+        f" (<= {quality['flag_rate_ceiling']:.2f})",
+        f"  adjudicated  precision={_fmt((packet['quality']['adjudicated'] or {}).get('precision'))}"
+        f"  recall={_fmt((packet['quality']['adjudicated'] or {}).get('recall'))}"
+        f"  f1={_fmt((packet['quality']['adjudicated'] or {}).get('f1'))}",
         f"  nominal      precision={_fmt(packet['quality']['nominal']['precision'])}"
         f"  recall={_fmt(packet['quality']['nominal']['recall'])}"
         f"  f1={_fmt(packet['quality']['nominal']['f1'])}",
-        *_view_lines(packet["quality"]),
+        *_view_lines(packet["quality"], quality),
         f"  auto-clear false negatives: nominal={packet['auto_clear_false_negatives']['nominal']} "
         f"adjudicated={packet['auto_clear_false_negatives']['adjudicated']}",
         "",
@@ -633,9 +667,9 @@ def main(argv=None):
                          help="optional escalated-prong/synthesis rates for the projected counterfactual")
     parser.add_argument("--accept-projected-cost-gate", action="store_true",
                          help="explicitly accept a projected (non-measured) cost counterfactual")
-    parser.add_argument("--precision-threshold", type=float, default=PRECISION_THRESHOLD)
     parser.add_argument("--recall-threshold", type=float, default=RECALL_THRESHOLD)
-    parser.add_argument("--f1-threshold", type=float, default=F1_THRESHOLD)
+    parser.add_argument("--natural-precision-floor", type=float, default=NATURAL_PRECISION_FLOOR)
+    parser.add_argument("--flag-rate-ceiling", type=float, default=FLAG_RATE_CEILING)
     parser.add_argument("--cost-reduction-threshold", type=float, default=COST_REDUCTION_THRESHOLD)
     parser.add_argument("--json", type=Path, required=True, help="where to write the decision packet")
     parser.add_argument("--table", type=Path, default=None, help="optional human-readable table path")
@@ -647,8 +681,10 @@ def main(argv=None):
             adjudicated_path=args.adjudicated, full_v2_artifact_path=args.full_v2_artifact,
             historical_lane_path=args.historical_lane_summary,
             accept_projected_cost_gate=args.accept_projected_cost_gate,
-            precision_threshold=args.precision_threshold, recall_threshold=args.recall_threshold,
-            f1_threshold=args.f1_threshold, cost_reduction_threshold=args.cost_reduction_threshold,
+            recall_threshold=args.recall_threshold,
+            natural_precision_floor=args.natural_precision_floor,
+            flag_rate_ceiling=args.flag_rate_ceiling,
+            cost_reduction_threshold=args.cost_reduction_threshold,
         )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         packet = {"schema_version": 1, "passed": False, "error": str(error)}

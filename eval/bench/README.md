@@ -144,13 +144,16 @@ parent and output hashes plus the exact selection rule.
 v3 probe artifact — no model, network, or subprocess calls. It requires clearing two independent
 gates:
 
-- **Quality gate:** precision AND recall AND F1 must each be **≥ 0.80** on the probe, scored
-  against adjudicated labels. There is no fallback to nominal labels — without an adjudication
-  overlay covering exactly the probe's 100 ids, the gate fails outright rather than scoring
-  something weaker and calling it a pass. Beside it the packet reports each label view resampled
-  to the natural 10/90 base rate and to a balanced 50/50 one (`metrics.split_metrics`, medians
-  over 1000 resamples), so the false-positive cost at deployed prevalence is visible. That view is
-  reported only; it does not change the pass condition.
+- **Quality gate:** judged at the natural 10/90 deployed base rate, not the balanced 50/50 probe,
+  against adjudicated labels: recall **≥ 0.80** AND natural-view precision **≥ 0.60** AND
+  natural-view flag rate **≤ 0.15**, every threshold inclusive. The natural view resamples the
+  probe's consistent class to nine per inconsistent pair (`metrics.split_metrics`, medians over
+  1000 resamples), so a control false-positive rate that looks harmless at 50/50 is charged at the
+  load a deployed run would carry: 40 TP / 10 FP on the probe is 0.80 precision balanced but
+  about 0.31 at 10/90, and fails. There is no fallback to nominal labels — without an
+  adjudication overlay covering exactly the probe's 100 ids, or when the natural view's metrics
+  are unavailable, the gate fails outright rather than scoring something weaker and calling it a
+  pass. The nominal views and the balanced 50/50 resample are reported beside it, never gated.
 - **Cost gate:** actual provider attempts must be **≥ 70% fewer** than a full-v2 counterfactual on
   the same rows, with retries counted, never hidden. The counterfactual prefers a measured
   same-row full-v2 artifact; lacking one, it falls back to a conservative *projected*
