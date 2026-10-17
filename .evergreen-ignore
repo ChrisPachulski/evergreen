@@ -4,3 +4,5 @@ eval/fixture/*
 eval/flourish/fixtures/*
 # The cultivate exam's slop is planted on purpose — the reflex must not "clean" the exam.
 eval/cultivate/template/*
+# The plugin eval cases describe planted drift — the reflex must not "fix" the exam.
+evals/*

@@ -403,14 +403,15 @@ provided = subprocess.run(
 )
 provider_payload = json.loads(provided.stdout)
 assert provider_payload["warnings"] == []
-assert [item["path"] for item in provider_payload["candidates"]] == [
+# The live tree may add later docs that name fixture symbols; pin the ranked head only.
+assert [item["path"] for item in provider_payload["candidates"]][:6] == [
     "eval/fixture/docs/usage.md",
     "eval/fixture/README.md",
     "eval/seed/README.md",
     "examples/provider-boundary.md", "README.md",
     "eval/fixture/config.py",
 ]
-config_candidate = provider_payload["candidates"][-1]
+config_candidate = provider_payload["candidates"][5]
 assert len(config_candidate["reasons"]) == 3
 assert any("changed path" in reason for reason in config_candidate["reasons"])
 
