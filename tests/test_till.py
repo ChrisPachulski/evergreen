@@ -803,6 +803,44 @@ class GapsTests(unittest.TestCase):
             ["Client", "Client", "Sink", "accept", "max", "value", "wrap"],
         )
 
+    def test_java_annotations_initializers_and_lambdas_invent_no_members(self):
+        from evergreen.till import till
+
+        self.track({"src/Registry.java": (
+            "@Deprecated public class Registry {\n"
+            "    static {\n"
+            "        register(DEFAULTS);\n"
+            "    }\n"
+            "    {\n"
+            "        warm(cache);\n"
+            "    }\n"
+            "    private final Runnable task = () -> {\n"
+            "        process(queue);\n"
+            "    };\n"
+            "    private static final int LIMIT =\n"
+            "        compute(8);\n"
+            "    @Nullable public Entry find(String key) {\n"
+            "        return lookup(key);\n"
+            "    }\n"
+            "    public @Nullable String name() {\n"
+            "        return compute(1);\n"
+            "    }\n"
+            "    @Deprecated public void run() { class Local { public void leak() {} } }\n"
+            "    @SuppressWarnings(\"unchecked\") @Override public int size() {\n"
+            "        throw new IllegalStateException(size());\n"
+            "    }\n"
+            "}\n"
+        )})
+
+        report = till(self.repo)
+
+        self.assertEqual(report.warnings, ())
+        self.assertEqual(
+            sorted((c.symbol, c.kind, c.line) for c in report.candidates),
+            [("Registry", "class", 1), ("find", "method", 13), ("name", "method", 16),
+             ("run", "method", 19), ("size", "method", 20)],
+        )
+
     def test_untracked_unparsed_uppercase_and_script_files_are_counted(self):
         from evergreen.till import till
 

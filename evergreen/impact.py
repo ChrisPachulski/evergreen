@@ -107,23 +107,28 @@ TS_MEMBER_RE = re.compile(
 # Java stacks modifiers (`public final class`, `public abstract static class`) where the shared
 # grammar allows one, so Java types get their own pattern. DECLARATION_RE stays unwidened: its
 # `static` exclusion is what keeps a TS/Swift member modifier from reading as a phantom name.
-# ponytail: an annotation on the declaration's own line (`@Deprecated public class X`) hides it,
-# and `@interface` annotation types are not inventoried; a Java parser is the upgrade path.
+# Annotations ride among the modifiers (`@Override public`, `public @Nullable String`): a missed
+# signature leaves its body's statements looking like members of the enclosing type.
+# ponytail: `@interface` annotation types are not inventoried, and an annotation argument holding
+# `)` (`@Foo(bar = @Baz(1))`) still hides its declaration; a Java parser is the upgrade path.
+JAVA_ANNOTATION = rb"@[A-Za-z_$][A-Za-z0-9_$.]*(?:\([^\r\n)]*\))?[ \t]+"
 JAVA_TYPE_RE = re.compile(
     rb"(?m)^([ \t]*)((?:(?:public|protected|private|abstract|final|static|sealed|non-sealed"
-    rb"|strictfp)[ \t]+)*)(class|interface|enum|record)[ \t]+()([A-Za-z_$][A-Za-z0-9_$]*)"
+    rb"|strictfp)[ \t]+|" + JAVA_ANNOTATION + rb")*)"
+    rb"(class|interface|enum|record)[ \t]+()([A-Za-z_$][A-Za-z0-9_$]*)"
 )
 # A Java method names its return type before itself, which TS_MEMBER_RE cannot see past. The
-# lookahead keeps a modifier from posing as the type: `private Client(` is a constructor, and
-# TS_MEMBER_RE reads it with its `private` intact. ponytail: constructors are inventoried as
-# methods under their class's name.
+# lookahead keeps a modifier from posing as the type (`private Client(` is a constructor, which
+# TS_MEMBER_RE reads with its `private` intact) and a statement keyword likewise (`return
+# compute(x);` calls, it declares nothing). ponytail: constructors are inventoried as methods
+# under their class's name.
 JAVA_MEMBER_RE = re.compile(
     rb"(?m)^([ \t]+)"
     rb"((?:(?:public|protected|private|static|final|abstract|synchronized|native|default"
-    rb"|strictfp)[ \t]+)*)"
+    rb"|strictfp)[ \t]+|" + JAVA_ANNOTATION + rb")*)"
     rb"(?:<[^\r\n(]*>[ \t]+)?"
     rb"(?!(?:public|protected|private|static|final|abstract|synchronized|native|default"
-    rb"|strictfp)[ \t])"
+    rb"|strictfp|return|new|throw|else|yield|case|assert)[ \t])"
     rb"[A-Za-z_$][A-Za-z0-9_$.]*(?:<[^\r\n(]*>)?(?:\[\])*[ \t]+"
     rb"([A-Za-z_$][A-Za-z0-9_$]*)[ \t]*\("
 )
@@ -821,11 +826,17 @@ def _reachable_declarations(payload, suffix):
         # Members carry no keyword in TS/JS classes, Go interfaces, or Java classes. Java
         # methods need their own pattern; TS_MEMBER_RE still reads Java constructors.
         starts = {start for start, _flavor, _match in matches}
+        # In Java TS_MEMBER_RE is only there for constructors, which carry their type's name;
+        # any other bare `name(` is a call in an initializer block or a lambda body.
+        java_types = {match.group(5) for _start, _flavor, match in matches} if java else None
         for member_re in (JAVA_MEMBER_RE, TS_MEMBER_RE) if java else (TS_MEMBER_RE,):
             for match in member_re.finditer(payload):
-                if match.start() not in starts and match.group(3) not in TS_MEMBER_STOPWORDS:
-                    starts.add(match.start())
-                    matches.append((match.start(), "member", match))
+                if match.start() in starts or match.group(3) in TS_MEMBER_STOPWORDS:
+                    continue
+                if member_re is TS_MEMBER_RE and java and match.group(3) not in java_types:
+                    continue
+                starts.add(match.start())
+                matches.append((match.start(), "member", match))
     if suffix == ".go":
         matches.extend(
             (offset, "group", (keyword, name))
@@ -880,6 +891,10 @@ def _reachable_declarations(payload, suffix):
             if not (scopes and scopes[-1][1] and scopes[-1][2]):
                 public = False
         elif scopes and not (scopes[-1][1] and scopes[-1][2]):
+            public = False
+        # A Java member sits directly in its type's braces; one level deeper is an initializer
+        # block, a lambda, or a method body whose signature the patterns missed.
+        if java and scopes and brace_depth != scopes[-1][3] + 1:
             public = False
         depth = len(scopes)
         scopes.append((
