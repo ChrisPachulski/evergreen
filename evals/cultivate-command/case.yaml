@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: cultivate-command
+description: The /evergreen:cultivate command finds the orphan and the leaked local file with evidence; needs `--allow-tools Bash` at run time.
+tags: [command, hygiene]
+context:
+  scaffold_script: scaffold.sh

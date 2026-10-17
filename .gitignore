@@ -24,3 +24,5 @@ __pycache__/
 docs/superpowers/plans/
 docs/superpowers/specs/
 goal-trial-cultivate-flourish.md
+# plugin eval runs are local; commit cases, not results.
+evals/results*

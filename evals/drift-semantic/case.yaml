@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: drift-semantic
+description: A full-depth request surfaces rung 3-4 drift (snippet signature, drifted value, prose the code contradicts).
+tags: [drift]
+context:
+  scaffold_script: scaffold.sh

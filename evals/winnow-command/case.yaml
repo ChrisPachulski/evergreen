@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: winnow-command
+description: The /evergreen:winnow command honours its contract; needs `--allow-tools Bash` at run time for grep and the judge.
+tags: [command, winnow]
+context:
+  scaffold_script: scaffold.sh
