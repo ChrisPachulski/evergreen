@@ -151,8 +151,13 @@ def _excerpts(path: str, text: str, terms: list[str], deadline: float) -> list[d
     if text.endswith("\n"):
         lines.pop()
     lines = [line[:-1] if line.endswith("\r") else line for line in lines]
+    word = re.compile(r"[A-Za-z0-9_]")
     folded_terms = [
-        (term, re.compile(r"(?<![A-Za-z0-9_])" + re.escape(term.casefold()) + r"(?![A-Za-z0-9_])"))
+        (term, re.compile(
+            (r"(?<![A-Za-z0-9_])" if word.match(term[0]) else "")    # boundary only on a word-character edge,
+            + re.escape(term.casefold())                             # so "/v1/items" still matches inside a URL
+            + (r"(?![A-Za-z0-9_])" if word.match(term[-1]) else "")
+        ))
         for term in terms
     ]
     matching = []

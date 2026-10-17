@@ -229,6 +229,17 @@ class ReviewContextTests(unittest.TestCase):
         hits = review_context._excerpts("README.md", "Call recover() up to MAX_TERMS.\n", terms, deadline)
         self.assertEqual([hit["matched_terms"] for hit in hits], [terms])
 
+    def test_path_seeds_match_inside_longer_paths_and_urls(self):
+        deadline = review_context.time.monotonic() + 3
+        cases = [
+            ("/settings.toml", "Edit `config/settings.toml` to change workers.\n"),
+            ("/v1/items", "Call GET https://example.com/v1/items\n"),
+        ]
+        for term, doc in cases:
+            with self.subTest(term=term):
+                hits = review_context._excerpts("README.md", doc, [term], deadline)
+                self.assertEqual([hit["matched_terms"] for hit in hits], [[term]])
+
     def test_cli_emits_one_versioned_json_object(self):
         _base, head, manifest = self.fixture()
         script = Path(review_context.__file__)
