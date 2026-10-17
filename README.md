@@ -405,9 +405,10 @@ and text, and the list is shuffled from the same nonce. The answer key stays in 
 temporary file. The validator grades both answers and then removes the controls from every count,
 finding, and unverified entry; a control is exempt only from citation at head, never from the
 collection bounds or shape checks. A wrong answer makes the audit inconclusive. The report adds
-`controls: positive pass|fail, negative pass|fail`, and any model-supplied text that repeats a
-control's statement is replaced with a redaction marker. If the head evidence cannot supply two
-distinct lines of at most 500 characters, the audit is inconclusive before the provider runs.
+`controls: positive pass|fail, negative pass|fail`, and any model-supplied text, citation paths
+included, that repeats a control's statement is replaced with a redaction marker. If the head
+evidence cannot supply two distinct lines of at most 500 characters, the audit is inconclusive
+before the provider runs.
 
 A control is still recognizable by its `reads exactly:` form. A pass therefore shows only that the
 reviewer checked the supplied evidence for the controls. It does not show that the reviewer

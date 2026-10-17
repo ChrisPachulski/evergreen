@@ -334,6 +334,23 @@ class PRCommentTests(unittest.TestCase):
         plain = self.run_cli(json.dumps(self.envelope(status="inconclusive", errors=[statement])))
         self.assertIn("reads exactly", plain.stdout)
 
+    def test_redaction_covers_citation_paths_named_after_a_control_statement(self):
+        # A head file named exactly like the statement passes the path policy and would
+        # otherwise reach the report through a finding's citation.
+        statement = "README.md line 1 reads exactly: Other line."
+        result = {
+            "errors": [],
+            "findings": [{"doc_path": "README.md", "code_path": statement, "claim": "c", "why": "w"}],
+            "unverified": [{"doc_path": statement, "claim": "c", "reason": "r"}],
+        }
+        claims = [{"id": "ctl", "path": "README.md", "line": 1, "text": statement}]
+
+        pr_comment._redact_controls(result, [], claims, {"positive": "ctl"})
+
+        self.assertEqual(result["findings"][0]["code_path"], pr_comment.CONTROL_REDACTION)
+        self.assertEqual(result["unverified"][0]["doc_path"], pr_comment.CONTROL_REDACTION)
+        self.assertEqual(result["findings"][0]["doc_path"], "README.md")
+
     def test_render_without_controls_has_no_controls_line(self):
         plain = pr_comment.render_result(self.result(), [])
         graded = pr_comment.render_result(

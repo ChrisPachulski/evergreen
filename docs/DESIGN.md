@@ -81,9 +81,9 @@ rekeyed with a per-run nonce, so none can be recomputed from public fields, and 
 shuffled from the same nonce. The validator applies its bounds and shape checks to control entries
 too, grades the controls against a trusted answer key, strips them from every count, finding, and
 unverified entry, and makes the run inconclusive when either is answered wrong. The renderer
-redacts model text that repeats a control's statement. A control is still recognizable by its
-`reads exactly:` form, so a pass shows only that the reviewer checked the supplied evidence for the
-controls. It does not show that the reviewer reviewed the real claims.
+redacts model text, citation paths included, that repeats a control's statement. A control is
+still recognizable by its `reads exactly:` form, so a pass shows only that the reviewer checked the
+supplied evidence for the controls. It does not show that the reviewer reviewed the real claims.
 
 Every repository path in a manifest entry or result citation passes one shared gate before the
 trust layer will carry it: `is_protocol_path` (`ci/path_policy.py`). A citable path is a non-empty

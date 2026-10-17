@@ -195,7 +195,8 @@ def _redact_controls(
     """Replace any rendered model text that repeats a calibration control's statement.
 
     A control's statement opens with "<path> line <n> reads exactly:"; model-supplied errors,
-    claims, reasons, and ids echoed in validation errors can all carry it into the report.
+    claims, reasons, citation paths (a head file can be named after the statement), and ids
+    echoed in validation errors can all carry it into the report.
     """
     markers = [
         f"{claim['path']} line {claim['line']} reads exactly:"
@@ -209,7 +210,10 @@ def _redact_controls(
 
     if result is not None:
         result["errors"] = [clean(error) for error in result["errors"]]
-        for name, fields in (("findings", ("claim", "why")), ("unverified", ("claim", "reason"))):
+        for name, fields in (
+            ("findings", ("doc_path", "code_path", "claim", "why")),
+            ("unverified", ("doc_path", "claim", "reason")),
+        ):
             for item in result[name]:
                 item.update({field: clean(item[field]) for field in fields})
     return [clean(error) for error in errors]
