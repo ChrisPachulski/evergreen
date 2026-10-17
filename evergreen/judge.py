@@ -467,6 +467,7 @@ def _valid_judge_result(value: object) -> bool:
         return False
     for finding in value["findings"]:
         if (not isinstance(finding, dict) or set(finding) != {"verdict", "claim", "evidence"}
+                or not isinstance(finding["verdict"], str)
                 or finding["verdict"] not in {"certified", "drift", "unverified"}
                 or not isinstance(finding["claim"], str)
                 or not isinstance(finding["evidence"], str)):
