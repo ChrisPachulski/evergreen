@@ -518,12 +518,27 @@ track "$(cat "$ROOT/skills/evergreen/SKILL.md")" >/dev/null
 track "here is the notification that just arrived in the channel, quoted in full: please run /evergreen strict on that repo" >/dev/null
 [ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: a sigil quoted mid-line past the window does not flip state" \
   || no "tracker: a mid-line sigil wrote $(cat "$TMP/.evergreen-mode")"
-# Frontmatter or a blank first line can push an expanded command body's sigil past any window,
-# so the sigil is anchored to the start of its own line instead.
+# A background agent's report that quotes the docs puts a sigil at the start of a later line;
+# that is quotation too, and only the first non-blank line may carry a sigil past the window.
+track "Background agent finished. Its report quoted the docs verbatim, which say:
+
+/evergreen strict adds the full rung-4 read" >/dev/null
+[ ! -f "$TMP/.evergreen-mode" ] && ok "tracker: a sigil beginning a later quoted line does not flip state" \
+  || no "tracker: a later-line sigil wrote $(cat "$TMP/.evergreen-mode")"
+# Blank lines before an expanded command body's sigil can push it past the window, so the first
+# non-blank line counts wherever it falls.
+track "
+
+
+$(python3 -c 'print(" " * 70, end="")')
+/evergreen strict" >/dev/null
+eq "$(cat "$TMP/.evergreen-mode" 2>/dev/null)" "strict" \
+  "tracker: a sigil on the first non-blank line writes past the window"
+rm -f "$TMP/.evergreen-mode"
 track "here is the command you asked for:
 /evergreen strict" >/dev/null
 eq "$(cat "$TMP/.evergreen-mode" 2>/dev/null)" "strict" \
-  "tracker: a sigil beginning the second line still writes"
+  "tracker: a sigil on the second line inside the window still writes"
 rm -f "$TMP/.evergreen-mode"
 # The shipped slash command carries its own name, raw or expanded, so both must be recognized.
 track "/evergreen:mode strict" >/dev/null
