@@ -80,7 +80,7 @@ The PR Action has no attack row because it gives the model no PR-body input to i
 
 ```sh
 bash eval/run.sh                      # default model
-EVAL_MODEL=claude-haiku-4-5-20251001 bash eval/run.sh   # or pin one
+EVAL_MODEL=claude-haiku-5-5 bash eval/run.sh   # or pin one
 ```
 
 The harness prints its own numbers on each run.

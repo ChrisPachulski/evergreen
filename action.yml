@@ -19,7 +19,7 @@ inputs:
   model:
     description: "Concrete Claude model identifier used for the audit and trusted runtime record."
     required: false
-    default: "claude-opus-5"
+    default: "claude-opus-5-5"
   post_comment:
     description: "Upsert the validated Evergreen report as a PR comment ('true'/'false'). The step summary is always written."
     required: false

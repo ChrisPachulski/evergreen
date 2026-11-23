@@ -93,7 +93,7 @@ averaging them would hide the one that matters.
 
 ```sh
 bash eval/seed/run.sh                                    # default model
-EVAL_MODEL=claude-haiku-4-5-20251001 bash eval/seed/run.sh
+EVAL_MODEL=claude-haiku-5-5 bash eval/seed/run.sh
 ```
 
 The runner pre-executes `till`, embeds its JSON as the pass-B provider result, and saves it as
