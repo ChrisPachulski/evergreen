@@ -6,6 +6,9 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOOKS="$ROOT/hooks"
 export CLAUDE_PLUGIN_ROOT="$ROOT"
+# Match CI: no global or system git config, so a machine-wide core.hooksPath (a secret-scanning
+# pre-commit, say) cannot refuse the fixture commits this suite makes on purpose.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 fails=0
 ok(){ printf 'ok   - %s\n' "$1"; }
@@ -368,9 +371,9 @@ codex = json.loads((root / ".codex-plugin/plugin.json").read_text())
 marketplace = json.loads((root / ".claude-plugin/marketplace.json").read_text())
 entry = next(item for item in marketplace["plugins"] if item["name"] == "evergreen")
 
-assert {claude["version"], codex["version"], entry["version"]} == {"0.9.0"}
+assert {claude["version"], codex["version"], entry["version"]} == {"0.9.1"}
 assert all("build" not in item and "build_number" not in item for item in (claude, codex, entry))
-assert "0.9.0" in marketplace["description"]
+assert "0.9.1" in marketplace["description"]
 for description in (
     claude["description"], codex["description"], marketplace["description"], entry["description"],
 ):
@@ -378,9 +381,9 @@ for description in (
     assert "impact" in lowered and "judge" in lowered and "release identity" in lowered
 PY
 then
-  ok "release 0.9.0 agrees across Claude/Codex/marketplace without a build counter"
+  ok "release 0.9.1 agrees across Claude/Codex/marketplace without a build counter"
 else
-  no "release 0.9.0 agrees across Claude/Codex/marketplace without a build counter"
+  no "release 0.9.1 agrees across Claude/Codex/marketplace without a build counter"
 fi
 
 # Execute both passive-input examples and both semantic branches they nominate.

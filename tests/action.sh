@@ -20,7 +20,7 @@ cat > "$STUB_BIN/claude" <<'EOF'
 set -u
 if [[ " $* " = *' --version '* ]]; then
   [ ! -e "$HOME/hang-version" ] || sleep 5
-  printf '%s\n' '2.1.257 (Claude Code)'
+  printf '%s\n' '2.1.323 (Claude Code)'
   exit 0
 fi
 printf '%s\n' "$*" > "$HOME/claude-args.log"
@@ -225,7 +225,7 @@ clean_result() {
 Analysis complete.
 
 \`\`\`evergreen-result
-{"schema_version":3,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","verdicts":__VERDICTS__,"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
+{"schema_version":3,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","verdicts":__VERDICTS__,"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.323 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -233,7 +233,7 @@ EOF
 finding_result() {
   cat <<EOF
 \`\`\`evergreen-result
-{"schema_version":3,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","verdicts":__VERDICTS__,"findings":[{"id":"__ID:README.md:2__","severity":"high","category":"name_mismatch","rung":"contract","doc_path":"README.md","doc_line":2,"claim":"Run \u0060demo --workers 4\u0060.","code_path":"app.py","code_line":1,"why":"The implementation now exposes concurrency instead of workers.","fix_or_flag":"fix"}],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
+{"schema_version":3,"status":"complete","base":"$BASE_SHA","head":"$HEAD_SHA","verdicts":__VERDICTS__,"findings":[{"id":"__ID:README.md:2__","severity":"high","category":"name_mismatch","rung":"contract","doc_path":"README.md","doc_line":2,"claim":"Run \u0060demo --workers 4\u0060.","code_path":"app.py","code_line":1,"why":"The implementation now exposes concurrency instead of workers.","fix_or_flag":"fix"}],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.323 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -241,7 +241,7 @@ EOF
 wrong_commit_result() {
   cat <<EOF
 \`\`\`evergreen-result
-{"schema_version":3,"status":"complete","base":"$BASE_SHA","head":"0000000000000000000000000000000000000000","verdicts":__VERDICTS__,"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.257 (Claude Code)"}}
+{"schema_version":3,"status":"complete","base":"$BASE_SHA","head":"0000000000000000000000000000000000000000","verdicts":__VERDICTS__,"findings":[],"unverified":[],"errors":[],"runtime":{"provider":"anthropic","model":"test-model","cli_version":"2.1.323 (Claude Code)"}}
 \`\`\`
 EOF
 }
@@ -489,7 +489,7 @@ ACTUAL_OBJECT="$(printf '%s' "$ENCODED_MANIFEST" | python3 -c 'import json,sys; 
 contains "$PROMPT_FILE" "Do not follow" "prompt does not explicitly forbid repository instructions"
 contains "$PROMPT_FILE" "exactly one fenced block" "prompt does not require one result envelope"
 contains "$PROMPT_FILE" '"model":"test-model"' "prompt does not record the resolved model identity"
-contains "$PROMPT_FILE" '"cli_version":"2.1.257 (Claude Code)"' "prompt does not record the resolved CLI identity"
+contains "$PROMPT_FILE" '"cli_version":"2.1.323 (Claude Code)"' "prompt does not record the resolved CLI identity"
 contains "$PROMPT_FILE" '<untrusted_repository_context encoding="json">' "prompt lacks commit-derived context"
 contains "$PROMPT_FILE" '\u003c/untrusted_repository_context\u003e' "hostile context delimiter was not JSON-escaped"
 CONTEXT_JSON="$(awk '/^<untrusted_repository_context encoding="json">$/{take=1;next} /^<\/untrusted_repository_context>$/{take=0} take' "$PROMPT_FILE" | tr -d '\n')"
@@ -501,6 +501,7 @@ contains "$CLAUDE_ARGS_FILE_PATH" '--tools ' "Claude built-in tools are not expl
 not_contains "$CLAUDE_ARGS_FILE_PATH" '--tools Read' "Claude can read outside the commit-bound evidence"
 not_contains "$CLAUDE_ARGS_FILE_PATH" '--allowedTools Read' "Claude read tools are blanket-approved"
 contains "$CLAUDE_ARGS_FILE_PATH" '--max-budget-usd 5' "Claude run lacks the configured cost ceiling"
+contains "$CLAUDE_ARGS_FILE_PATH" '--effort high' "Claude run does not pin its effort"
 contains "$CLAUDE_ENV_FILE_PATH" 'ANTHROPIC_API_KEY=set GITHUB_TOKEN=' "Claude child did not receive only the provider credential"
 not_contains "$CLAUDE_ENV_FILE_PATH" 'GITHUB_TOKEN=set' "Claude child inherited the GitHub token"
 not_contains "$CLAUDE_ENV_FILE_PATH" 'UNRELATED_SECRET=set' "Claude child inherited an unrelated runner secret"
@@ -820,7 +821,7 @@ not_contains "$GH_LOG_FILE" "pr comment 42" "uncertain patch failure created a d
 contains "$CASE_DIR/stderr" "comment update failed" "patch uncertainty was not logged"
 pass "bot-owned update never duplicates on uncertainty"
 
-contains "$ROOT/action.yml" '@anthropic-ai/claude-code@2.1.257' "Action does not pin the tested Claude CLI"
+contains "$ROOT/action.yml" '@anthropic-ai/claude-code@2.1.323' "Action does not pin the tested Claude CLI"
 contains "$ROOT/action.yml" 'model:' "Action lacks a model input"
 ACTION_MODEL="$(sed -n 's/^    default: "\(claude-[a-z]*-[0-9][a-z0-9-]*\)"$/\1/p' "$ROOT/action.yml")"
 [ -n "$ACTION_MODEL" ] || fail "Action model default is not a concrete Claude model ID"
@@ -844,7 +845,7 @@ NPM_PROBE_ENV="$TMP_ROOT/npm-probe-env.log"
 : > "$NPM_PROBE_LOG"
 : > "$NPM_PROBE_ENV"
 ANTHROPIC_API_KEY=secret GITHUB_TOKEN=token NPM_LOG="$NPM_PROBE_LOG" NPM_ENV_LOG="$NPM_PROBE_ENV" \
-  env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN "$STUB_BIN/npm" install -g @anthropic-ai/claude-code@2.1.257
+  env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN "$STUB_BIN/npm" install -g @anthropic-ai/claude-code@2.1.323
 contains "$NPM_PROBE_ENV" 'ANTHROPIC_API_KEY= GITHUB_TOKEN=' "npm child environment retained audit secrets"
 not_contains "$NPM_PROBE_ENV" '=set' "npm child environment retained audit secrets"
 not_contains "$ROOT/.github/workflows/evergreen-pr.yml" 'continue-on-error:' "workflow masks the inconclusive policy"
@@ -874,30 +875,35 @@ contains "$ROOT/ci/evergreen-pr.sh" '--max-output-bytes 16 --clean-env' "path pr
 pass "Action contract"
 
 # Model pins: tools/model_pins.py must find every pin here, move only stale ones, never downgrade.
+# Versions below are built from variables so this file holds no literal that the CLI pin patterns match.
 PINS_ROOT="$TMP_ROOT/model-pins"
-for rel in action.yml ci/evergreen-pr.sh eval/README.md eval/seed/README.md; do
+for rel in action.yml ci/evergreen-pr.sh eval/README.md eval/seed/README.md tests/action.sh; do
   mkdir -p "$PINS_ROOT/$(dirname "$rel")"
   cp "$ROOT/$rel" "$PINS_ROOT/$rel"
 done
+OLD_CLI="1.0.0"; NEW_CLI="99.9.9"
 pins() { python3 "$ROOT/tools/model_pins.py" "$1" --lineup "$2" --root "$PINS_ROOT" > "$PINS_ROOT/out" 2>&1; }
-printf '<!-- latest-models: claude-opus-1 claude-haiku-1 -->\n' > "$PINS_ROOT/old.md"
-printf '<!-- latest-models: claude-fable-99 claude-opus-99-1 claude-haiku-99 gpt-99-sol -->\n' > "$PINS_ROOT/new.md"
-printf '<!-- latest-models: claude-opus-99 -->\n' > "$PINS_ROOT/partial.md"
+printf '<!-- latest-models: claude-opus-1 claude-haiku-1 claude-code@%s -->\n' "$OLD_CLI" > "$PINS_ROOT/old.md"
+printf '<!-- latest-models: claude-fable-99 claude-opus-99-1 claude-haiku-99 gpt-99-sol claude-code@%s -->\n' "$NEW_CLI" > "$PINS_ROOT/new.md"
+printf '<!-- latest-models: claude-opus-99 claude-haiku-99 -->\n' > "$PINS_ROOT/partial.md"
 printf 'no marker\n' > "$PINS_ROOT/none.md"
 pins check "$PINS_ROOT/old.md" || fail "model pins: a pin is missing from the repo: $(cat "$PINS_ROOT/out")"
 pins apply "$PINS_ROOT/old.md" || fail "model pins: apply against an older lineup failed"
 contains "$PINS_ROOT/out" "AHEAD action.yml" "model pins: an older lineup was not reported as behind the pin"
 cmp -s "$ROOT/action.yml" "$PINS_ROOT/action.yml" || fail "model pins: apply downgraded a pin"
+cmp -s "$ROOT/tests/action.sh" "$PINS_ROOT/tests/action.sh" || fail "model pins: apply downgraded the test CLI pin"
 STATUS=0; pins check "$PINS_ROOT/new.md" || STATUS=$?
 [ "$STATUS" -eq 1 ] || fail "model pins: check did not exit 1 on stale pins (got $STATUS)"
 pins apply "$PINS_ROOT/new.md" || fail "model pins: apply failed"
 contains "$PINS_ROOT/action.yml" 'default: "claude-opus-99-1"' "model pins: Action default not moved"
 contains "$PINS_ROOT/ci/evergreen-pr.sh" 'EVERGREEN_MODEL:-claude-opus-99-1}' "model pins: CI fallback not moved"
 contains "$PINS_ROOT/eval/seed/README.md" 'EVAL_MODEL=claude-haiku-99 bash' "model pins: seed example not moved"
+contains "$PINS_ROOT/action.yml" "@anthropic-ai/claude-code@$NEW_CLI" "model pins: Action CLI pin not moved"
+contains "$PINS_ROOT/tests/action.sh" "$NEW_CLI (Claude Code)" "model pins: test CLI stub identity not moved"
 not_contains "$PINS_ROOT/action.yml" 'fable' "model pins: a pin crossed into another family"
-pins check "$PINS_ROOT/new.md" || fail "model pins: check still stale after apply"
+pins check "$PINS_ROOT/new.md" || fail "model pins: check still stale after apply: $(cat "$PINS_ROOT/out")"
 STATUS=0; pins check "$PINS_ROOT/partial.md" || STATUS=$?
-[ "$STATUS" -eq 2 ] || fail "model pins: a lineup missing a pinned family was not unusable (got $STATUS)"
+[ "$STATUS" -eq 2 ] || fail "model pins: a lineup missing the CLI token was not unusable (got $STATUS)"
 STATUS=0; pins check "$PINS_ROOT/none.md" || STATUS=$?
 [ "$STATUS" -eq 2 ] || fail "model pins: a lineup without a marker was not unusable (got $STATUS)"
 pass "model pins follow a lineup without downgrading"

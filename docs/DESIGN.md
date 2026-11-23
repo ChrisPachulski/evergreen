@@ -67,7 +67,8 @@ manifest plus matched living-document excerpts from regular Git blobs at the exa
 JSON-escapes boundary characters, labels all repository material as **untrusted data**, and rejects
 any result that fails schema, claim-inventory, commit, citation, or trusted-runtime checks. The CI
 model has no tools or project customizations and receives only its provider credential. The
-validator reads citations from Git at the audited head; model prose cannot certify itself. The
+validator reads finding and unverified citations from Git at the audited head, never from model
+prose; a certified verdict carries only its id, and the count it joins is the layer's own. The
 layer prepares and validates evidence but does not decide whether prose is semantically true.
 
 The layer, not the model, fixes the review's denominator. Each matching documentation line becomes
@@ -78,15 +79,16 @@ and unverified entry to the drift or unverified claim it cites. Claim counts are
 Opt-in calibration controls (`calibration_controls`) add a known-certified exact quote and a
 known-drift misattributed quote of head documentation. Every id in that run, real or control, is
 rekeyed with a per-run nonce, so none can be recomputed from public fields, and the list is
-shuffled from the same nonce. The validator applies its bounds and shape checks to control entries
-too, grades the controls against a trusted answer key, strips them from every count, finding, and
+shuffled from the same nonce. The validator applies its shape and field-bound checks, but not its
+citation checks, to control entries too, grades the controls against a trusted answer key, strips them from every count, finding, and
 unverified entry, and makes the run inconclusive when either is answered wrong. The renderer
 redacts model text, citation paths included, that repeats a control's statement. A control is
 still recognizable by its `reads exactly:` form, so a pass shows only that the reviewer checked the
 supplied evidence for the controls. It does not show that the reviewer reviewed the real claims.
 
-Every repository path in a manifest entry or result citation passes one shared gate before the
-trust layer will carry it: `is_protocol_path` (`ci/path_policy.py`). A citable path is a non-empty
+Every repository path in a manifest entry or in a result citation the validator checks (a
+calibration control's citations are not, above) is checked by one shared gate, and a
+path that fails it turns the manifest or result into an error the trust layer will not carry past: `is_protocol_path` (`ci/path_policy.py`). A citable path is a non-empty
 string of at most 1024 characters, relative (neither POSIX- nor Windows-absolute), forward-slash
 only, already in normalized POSIX form, with no `.` or `..` segments (the bare path `.` has none
 and passes) and no newlines, carriage returns, NULs, or Unicode surrogates. A path failing any
@@ -98,7 +100,8 @@ cannot contain a deliberately detached descendant; runner-level OS isolation own
 The Action's bare, safe, no-tools, and no-session modes prevent repository or model content from
 creating such a descendant.
 
-Command execution passes through a shared gate as well: `run_bounded` (`ci/bounded_process.py`),
+The CI trust layer (`ci/change_manifest.py`, `ci/review_context.py`, `ci/result_protocol.py`) and
+the peer adapters run commands through a shared gate as well: `run_bounded` (`ci/bounded_process.py`),
 which runs one command under wall-clock, output, process-group, and environment bounds. With
 `clean_env` the child's environment is rebuilt from an allowlist — `PATH`, `HOME`, `TMPDIR`,
 `LANG`, `LC_ALL`, plus caller-named keeps — rather than inherited; stderr is always discarded.
@@ -330,6 +333,17 @@ bypasses without changing what they refuse by design. New inputs, a new envelope
 inventory language are additions, so the `0.5.0` precedent takes minor `0.9.0`, not patch `0.8.3`
 or stable `1.0.0`. The stream still carries no build-number field.
 
+### 0.9.1 release decision
+
+`0.9.1` keeps the PR Action running on current models. The Action's `model` default moves from
+`claude-opus-5` to `claude-opus-5-5`, its pinned Claude Code CLI from `2.1.257` to `2.1.323`
+(2.1.257 rejects `claude-opus-5-5` with a 400 naming 2.1.280 as the minimum), and the driver
+passes `--effort high` because `claude-opus-5-5` defaults to `medium`. `tools/model_pins.py`
+is a maintainer script, not a public subcommand: it moves these pins to a lineup file's newest
+values and never downgrades one. No input, envelope schema, record shape, or command contract
+changes, so the `0.5.0` precedent takes a patch. So `0.9.1`, not `0.10.0`. The stream still
+carries no build-number field.
+
 ### Winnow-before-tag certification gate
 
 A local `evergreen--v*` tag is a certification claim about the commit it names, so the PreToolUse
@@ -344,14 +358,14 @@ receipts, both read from the HEAD tree and never from the working directory:
 asserts cadence and a judged report, not cleanliness.
 Each record's commit must be HEAD itself or an ancestor of HEAD whose tree differs from HEAD's
 only under `eval/certifications/` (the gate compares the two trees, not the commits between), so
-committing the records is the only net change permitted between running a pass and tagging. The
+a change under that directory, such as committing the records, is the only net change permitted between running a pass and tagging. The
 ritual is therefore: commit the release work, run the winnow
 and cultivate passes at that commit, write each record naming it, commit the records, then tag. Tag
 deletion, listing, and verification pass through unclassified; a creation naming an explicit
 committish other than `HEAD`, a creation combined with `git add`/`git commit` in one call, and a run
 where python3 cannot verify the records are each refused rather than guessed at, while
-`EVERGREEN_GUARD=off` remains the deliberate operator bypass. The gate verifies record arithmetic
-and commit binding only — that a record honestly reflects a pass that ran is the runner's
+`EVERGREEN_GUARD=off` remains the deliberate operator bypass. The gate verifies record shape, arithmetic,
+the judge block, and commit binding only — that a record honestly reflects a pass that ran is the runner's
 responsibility, and a tag created outside a hook-carrying session is not intercepted. This is a
 freshness-and-cadence gate on the documentation and hygiene axes, not a detector-quality gate: it
 neither claims nor requires the measured-detector evidence that the measurement-first boundary below
@@ -460,7 +474,7 @@ Each finding carries a severity and an explicit **fix-or-flag** call. *(Zarl-pro
 - **Exempt what leads or freezes code** — specs/ADRs/RFCs/roadmaps/plans lead; audit/
   readiness/archive/dated snapshots and CHANGELOG history freeze. Never gate either.
 - **Noise blocklist + learnings ledger** — third-party tool flags, CSS custom properties,
-  URLs, generic symbols are not your contracts; a rejected flag never returns.
+  URLs, generic symbols are not your contracts; a rejected flag stays dropped for the session, and the skill offers the `.evergreen-ignore` line that keeps it dropped after.
   *(sachn1/readme-drift, drift)*
 
 ## The fix half — generate vs review

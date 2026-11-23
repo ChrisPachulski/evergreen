@@ -99,7 +99,7 @@ EVAL_MODEL=claude-haiku-5-5 bash eval/seed/run.sh
 The runner pre-executes `till`, embeds its JSON as the pass-B provider result, and saves it as
 `till.json` in the sandbox root for the judge's `--inventory`, so the judged run
 needs only `Read,Grep,Glob` plus the judge entry point — no other shell, and one less
-nondeterministic step. It runs from the
+nondeterministic step. The runner calls `till` from the
 repository root with `eval/fixture` as a scope path, not from inside the fixture: `till` resolves
 the repository root and refuses a fixture-relative root.
 
@@ -107,7 +107,7 @@ the repository root and refuses a fixture-relative root.
 
 The grant is read-only plus exactly one shell command, the judge entry point, because the judge is
 mandatory on every run: the inventory row is judged before triage and any written doc after it (one
-codex call per inventory batch and per doc), and a host without codex fails the two second-provider gates rather than passing
+logical judge call per inventory batch and per doc, retrying codex at most twice), and a host without codex fails the two second-provider gates rather than passing
 quietly. The eight hard goals are about triage, ledger discipline, and coverage; the judge gates sit
 beside them. The scorer checks the reported judge rows; it cannot prove that the provider ran
 or that its verdict was right. Separate CLI tests in `tests/test_cli.py` point
