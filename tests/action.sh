@@ -822,7 +822,9 @@ pass "bot-owned update never duplicates on uncertainty"
 
 contains "$ROOT/action.yml" '@anthropic-ai/claude-code@2.1.257' "Action does not pin the tested Claude CLI"
 contains "$ROOT/action.yml" 'model:' "Action lacks a model input"
-contains "$ROOT/action.yml" 'default: "claude-opus-5"' "Action model default is not concrete and tested"
+ACTION_MODEL="$(sed -n 's/^    default: "\(claude-[a-z]*-[0-9][a-z0-9-]*\)"$/\1/p' "$ROOT/action.yml")"
+[ -n "$ACTION_MODEL" ] || fail "Action model default is not a concrete Claude model ID"
+contains "$ROOT/ci/evergreen-pr.sh" "EVERGREEN_MODEL:-$ACTION_MODEL}" "CI fallback model differs from the Action default"
 contains "$ROOT/action.yml" 'EVERGREEN_MODEL: ${{ inputs.model }}' "Action does not pass its concrete model"
 contains "$ROOT/action.yml" 'fail_on_inconclusive:' "Action lacks fail_on_inconclusive input"
 contains "$ROOT/action.yml" 'EVERGREEN_FAIL_ON_INCONCLUSIVE:' "Action does not pass the inconclusive policy"
@@ -870,5 +872,34 @@ contains "$ROOT/ci/evergreen-pr.sh" 'or model content cannot spawn processes' "A
 contains "$ROOT/ci/evergreen-pr.sh" 'requires runner-level' "Action prompt overstates portable process containment"
 contains "$ROOT/ci/evergreen-pr.sh" '--max-output-bytes 16 --clean-env' "path prefilter lacks strict clean outer runner bounds"
 pass "Action contract"
+
+# Model pins: tools/model_pins.py must find every pin here, move only stale ones, never downgrade.
+PINS_ROOT="$TMP_ROOT/model-pins"
+for rel in action.yml ci/evergreen-pr.sh eval/README.md eval/seed/README.md; do
+  mkdir -p "$PINS_ROOT/$(dirname "$rel")"
+  cp "$ROOT/$rel" "$PINS_ROOT/$rel"
+done
+pins() { python3 "$ROOT/tools/model_pins.py" "$1" --lineup "$2" --root "$PINS_ROOT" > "$PINS_ROOT/out" 2>&1; }
+printf '<!-- latest-models: claude-opus-1 claude-haiku-1 -->\n' > "$PINS_ROOT/old.md"
+printf '<!-- latest-models: claude-fable-99 claude-opus-99-1 claude-haiku-99 gpt-99-sol -->\n' > "$PINS_ROOT/new.md"
+printf '<!-- latest-models: claude-opus-99 -->\n' > "$PINS_ROOT/partial.md"
+printf 'no marker\n' > "$PINS_ROOT/none.md"
+pins check "$PINS_ROOT/old.md" || fail "model pins: a pin is missing from the repo: $(cat "$PINS_ROOT/out")"
+pins apply "$PINS_ROOT/old.md" || fail "model pins: apply against an older lineup failed"
+contains "$PINS_ROOT/out" "AHEAD action.yml" "model pins: an older lineup was not reported as behind the pin"
+cmp -s "$ROOT/action.yml" "$PINS_ROOT/action.yml" || fail "model pins: apply downgraded a pin"
+STATUS=0; pins check "$PINS_ROOT/new.md" || STATUS=$?
+[ "$STATUS" -eq 1 ] || fail "model pins: check did not exit 1 on stale pins (got $STATUS)"
+pins apply "$PINS_ROOT/new.md" || fail "model pins: apply failed"
+contains "$PINS_ROOT/action.yml" 'default: "claude-opus-99-1"' "model pins: Action default not moved"
+contains "$PINS_ROOT/ci/evergreen-pr.sh" 'EVERGREEN_MODEL:-claude-opus-99-1}' "model pins: CI fallback not moved"
+contains "$PINS_ROOT/eval/seed/README.md" 'EVAL_MODEL=claude-haiku-99 bash' "model pins: seed example not moved"
+not_contains "$PINS_ROOT/action.yml" 'fable' "model pins: a pin crossed into another family"
+pins check "$PINS_ROOT/new.md" || fail "model pins: check still stale after apply"
+STATUS=0; pins check "$PINS_ROOT/partial.md" || STATUS=$?
+[ "$STATUS" -eq 2 ] || fail "model pins: a lineup missing a pinned family was not unusable (got $STATUS)"
+STATUS=0; pins check "$PINS_ROOT/none.md" || STATUS=$?
+[ "$STATUS" -eq 2 ] || fail "model pins: a lineup without a marker was not unusable (got $STATUS)"
+pass "model pins follow a lineup without downgrading"
 
 echo "all action integration tests passed"
