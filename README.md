@@ -83,8 +83,8 @@ jobs:
 
 Drift never fails the build. The full CI contract — what a green check certifies, the four outcomes, fork-PR behavior, and every process bound — is in the operations reference below.
 
-Every subcommand needs Python 3.10+ and Git, except `judge`, which needs Python 3.11+ for
-`tomllib`; receipt collection runs on macOS and Linux only. Add trusted, passive provider facts to a
+Every subcommand needs Python 3.10+, except `judge`, which needs 3.11+ for `tomllib`; `till` and
+`receipt` call Git, `judge` only when a `.git` entry sits at or above `--repo`; receipt collection runs on macOS and Linux only. Add trusted, passive provider facts to a
 candidate query when available:
 
 ```sh
@@ -107,7 +107,7 @@ graph TD
     r4{"rung 4: does the prose still hold?"}:::constraint
     proof{{"cite the code line that falsifies it"}}:::modelling
     finding[\"finding, tagged with its rung"/]:::output
-    quiet[\"silence means certified"/]:::output
+    quiet[\"evergreen: docs still match"/]:::output
 
     change --> outward
     outward -.->|"describes the past"| exempt
@@ -304,8 +304,8 @@ candidate set; it never suppresses a candidate, and it never settles the semanti
 A verdict is never its author's alone, and a deterministic one is judgment frozen into code, so the
 judge double-checks every command that judges. winnow, seed, and flourish end with it over prose: for
 every doc in scope, `bin/evergreen judge --repo . --doc <doc> --json` hands the doc plus
-the in-repo files it names to codex with tools disabled and returns a certified, drift, or
-unverified verdict per claim, resolving the model from the host's own codex configuration. The
+the in-repo files it names by a path-shaped token (one carrying a `/` or a `.` after its first character) to codex with tools disabled and returns a certified, drift, or
+unverified verdict for each claim the provider reports, resolving the model from the host's own codex configuration. The
 report carries the summed block verbatim, `judge: <provider> ok — docs K, certified N, drift D, unverified U`; a claim the judge calls drift goes back through the
 trial before the run reports. No codex, or an abstention, is reported as `judge: abstain —
 <reason>` and leaves the run not clean; the release gate refuses a winnow or cultivate record whose judge block
@@ -321,7 +321,8 @@ in a cultivate report follows from the evidence it shows. Both certification rec
 result as a `judge` object, and the release gate refuses either without one.
 
 Judge inputs must be regular files: `--doc` is bounded to 256 KiB and `--inventory` to
-16 MiB. Referenced source is packed in batches of at most 40 files and 256 KiB. Reads check
+16 MiB. Referenced source is packed at most 40 files and 256 KiB at a time: `--inventory` splits it into
+batches, while `--doc` sends one pack and skips, with a warning, any reference past the limit. Reads check
 the bytes actually read, including the UTF-8 text sent to the provider. By default, referenced
 files ignored by Git or matching the guard's credential filename patterns are withheld;
 ordinary untracked files remain eligible. For deliberately sanitized evidence, repeat
@@ -331,7 +332,7 @@ containment or byte limits. This is a filename policy, not a secret-content scan
 For a completed document review, withheld source produces `unverified` findings. Inventory rows
 whose source was skipped, whose decision is missing, or whose decisions are duplicated also
 remain `unverified`; no packable source or an empty provider response for a nonempty batch
-abstains the run. Duplicate input rows and malformed warning or coverage fields are rejected. Inventory
+abstains the run. Duplicate input rows, warnings that are not a list of strings, and coverage counts that are not nonnegative integers are rejected. Inventory
 truncation and missing scan coverage become `unverified`, while declared exclusions remain
 warnings. JSON reports preserve the warnings as well as verdict counts.
 
