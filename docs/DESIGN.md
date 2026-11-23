@@ -330,6 +330,17 @@ bypasses without changing what they refuse by design. New inputs, a new envelope
 inventory language are additions, so the `0.5.0` precedent takes minor `0.9.0`, not patch `0.8.3`
 or stable `1.0.0`. The stream still carries no build-number field.
 
+### 0.9.1 release decision
+
+`0.9.1` keeps the PR Action running on current models. The Action's `model` default moves from
+`claude-opus-5` to `claude-opus-5-5`, its pinned Claude Code CLI from `2.1.257` to `2.1.323`
+(2.1.257 rejects `claude-opus-5-5` with a 400 naming 2.1.280 as the minimum), and the driver
+passes `--effort high` because `claude-opus-5-5` defaults to `medium`. `tools/model_pins.py`
+is a maintainer script, not a public subcommand: it moves these pins to a lineup file's newest
+values and never downgrades one. No input, envelope schema, record shape, or command contract
+changes, so the `0.5.0` precedent takes a patch. So `0.9.1`, not `0.10.0`. The stream still
+carries no build-number field.
+
 ### Winnow-before-tag certification gate
 
 A local `evergreen--v*` tag is a certification claim about the commit it names, so the PreToolUse
