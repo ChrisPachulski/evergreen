@@ -6,6 +6,9 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOOKS="$ROOT/hooks"
 export CLAUDE_PLUGIN_ROOT="$ROOT"
+# Match CI: no global or system git config, so a machine-wide core.hooksPath (a secret-scanning
+# pre-commit, say) cannot refuse the fixture commits this suite makes on purpose.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 fails=0
 ok(){ printf 'ok   - %s\n' "$1"; }

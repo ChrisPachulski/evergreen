@@ -376,6 +376,7 @@ RAW="$(printf '%s' "$PROMPT" | python3 "$BOUNDED_PY" \
   --max-turns 1 \
   -p \
   --model "$MODEL" \
+  --effort high \
   --max-budget-usd "$MAX_BUDGET_USD" \
   --tools "" \
   2>/dev/null)"

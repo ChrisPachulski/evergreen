@@ -79,7 +79,7 @@ runs:
         if ! env -u ANTHROPIC_API_KEY -u GITHUB_TOKEN \
           python3 "$GITHUB_ACTION_PATH/ci/bounded_process.py" \
             --timeout-seconds 180 --max-output-bytes 131072 --clean-env -- \
-            npm install -g @anthropic-ai/claude-code@2.1.257; then
+            npm install -g @anthropic-ai/claude-code@2.1.323; then
           export EVERGREEN_SETUP_ERROR="Claude CLI installation failed."
         fi
         bash "$GITHUB_ACTION_PATH/ci/evergreen-pr.sh"
