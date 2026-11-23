@@ -26,3 +26,5 @@ docs/superpowers/specs/
 goal-trial-cultivate-flourish.md
 # plugin eval runs are local; commit cases, not results.
 evals/results*
+# macOS Finder metadata: untracked on disk, never published (cultivate 2026-11-23).
+.DS_Store
